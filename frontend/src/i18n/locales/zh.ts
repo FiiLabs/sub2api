@@ -6998,6 +6998,7 @@ export default {
       stripe: 'Stripe',
       airwallex: 'Airwallex',
       card: '银行卡',
+      crypto: '加密货币',
       link: 'Link',
       alipay_direct: '支付宝（直连）',
       wxpay_direct: '微信支付（直连）',
