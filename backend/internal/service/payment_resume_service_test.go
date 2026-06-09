@@ -25,6 +25,7 @@ func TestNormalizeVisibleMethods(t *testing.T) {
 		"alipay",
 		" wxpay_direct ",
 		"wxpay",
+		"crypto",
 		"stripe",
 	})
 

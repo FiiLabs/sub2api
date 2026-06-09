@@ -86,6 +86,7 @@ func (s *Stripe) currency() string {
 // stripePaymentMethodTypes maps our PaymentType to Stripe payment_method_types.
 var stripePaymentMethodTypes = map[string][]string{
 	payment.TypeCard:   {"card"},
+	payment.TypeCrypto: {"crypto"},
 	payment.TypeAlipay: {"alipay"},
 	payment.TypeWxpay:  {"wechat_pay"},
 	payment.TypeLink:   {"link"},
