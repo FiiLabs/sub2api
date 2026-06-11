@@ -105,7 +105,118 @@ export default {
       description: '注册即可获得免费试用额度，体验一站式 AI 服务',
       button: '免费注册'
     },
+    landing: {
+      hero: {
+        titlePrefix: '最',
+        titleHighlight: '可靠',
+        titleSuffix: '的 AI API 平台',
+        subtitleFallback: 'AI API 网关平台'
+      },
+      badges: {
+        uptime: '99.99% 可用性',
+        lowerCost: '成本最高降低 30%',
+        compatible: '兼容 OpenAI'
+      },
+      statement: {
+        title: '一个 API，连接所有模型，始终可用。',
+        description: '在保持行业领先可靠性的同时，降低 AI 基础设施成本。'
+      },
+      features: {
+        reliability: {
+          title: '行业领先的可靠性',
+          description:
+            '无需再担心服务商故障、速率限制或性能下降。我们的基础设施会持续监控模型可用性，并自动保障你的应用服务不中断。',
+          tags: {
+            uptime: '99.99% 可用性',
+            failover: '自动故障切换',
+            productionReady: '生产环境可用'
+          }
+        },
+        costs: {
+          title: '更低的 AI 成本',
+          description:
+            '无需修改代码即可降低 AI 支出。我们持续优化模型访问与价格策略，帮助开发者和企业在规模化调用中降低推理成本。',
+          tags: {
+            save: '最高节省 30%',
+            transparent: '透明定价',
+            noHiddenFees: '无隐藏费用'
+          }
+        }
+      },
+      reliability: {
+        uptimeWindow: '过去 90 天可用性',
+        operational: '运行正常',
+        healthy: '健康'
+      },
+      costs: {
+        direct: '直连',
+        spendHint: '推理支出最高降低 30%'
+      },
+      models: {
+        eyebrow: '// 模型',
+        title: '一次集成，接入全球领先模型。',
+        available: '已可用',
+        comingSoon: '即将推出',
+        noLockIn: '不绑定单一服务商。',
+        switchHint: '只需修改一项配置，即可切换模型。'
+      },
+      production: {
+        eyebrow: '// 面向生产环境',
+        title: '为真实应用、智能体和企业工作流而设计',
+        capabilities: {
+          streaming: '流式输出支持',
+          toolCalling: '工具调用',
+          structuredOutput: '结构化输出',
+          visionModels: '视觉模型',
+          longContext: '长上下文',
+          highThroughput: '高吞吐'
+        }
+      },
+      security: {
+        eyebrow: '// 企业级安全',
+        title: '你的数据始终属于你',
+        description: '我们绝不会将客户的提示词或响应内容用于模型训练。',
+        highlight: '从第一天起就遵循安全与隐私最佳实践。',
+        capabilities: {
+          encryptedTraffic: '加密传输',
+          noTraining: '不使用客户数据训练',
+          auditReady: '审计就绪',
+          accessControl: '企业级访问控制'
+        }
+      },
+      developers: {
+        title: '开发者友好',
+        description: '几分钟即可开始使用。完全兼容 OpenAI API 标准，无需操心基础设施，只管构建产品。',
+        compatibility: '可直接替换 OpenAI 接入'
+      },
+      socialProof: {
+        eyebrow: '// 深受 AI 开发者信赖',
+        title: '支撑关键业务 AI 应用',
+        description: '从初创团队到企业团队，开发者都依靠 PublicAI 发布产品并扩展业务。',
+        stats: {
+          requests: {
+            value: '数百万',
+            label: 'API 请求已处理'
+          },
+          availability: {
+            label: '可用性'
+          },
+          infrastructure: {
+            value: '全球',
+            label: '基础设施'
+          }
+        }
+      },
+      closing: {
+        titleFirst: '更快构建。',
+        titleSecond: '扩展更远。',
+        description: '专注你的产品，AI 基础设施交给我们。',
+        button: '免费开始构建'
+      }
+    },
     footer: {
+      contactUs: '联系我们',
+      stayConnected: '保持联系',
       allRightsReserved: '保留所有权利。'
     }
   },

@@ -9,7 +9,7 @@
     <!-- Logo/Brand -->
     <div class="sidebar-header" :class="{ 'sidebar-header-collapsed': sidebarCollapsed }">
       <!-- Custom Logo or Default Logo -->
-      <div class="sidebar-logo flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl shadow-glow">
+      <div class="sidebar-logo flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl">
         <img v-if="settingsLoaded" :src="siteLogo || '/logo.png'" alt="Logo" class="h-full w-full object-contain" />
       </div>
       <div class="sidebar-brand" :class="{ 'sidebar-brand-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
@@ -17,7 +17,7 @@
           {{ siteName }}
         </span>
         <!-- Version Badge -->
-        <VersionBadge :version="siteVersion" />
+        <VersionBadge v-if="isAdmin" :version="siteVersion" />
       </div>
     </div>
 

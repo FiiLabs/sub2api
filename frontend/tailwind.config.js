@@ -67,8 +67,8 @@ export default {
       boxShadow: {
         glass: '0 8px 32px rgba(0, 0, 0, 0.08)',
         'glass-sm': '0 4px 16px rgba(0, 0, 0, 0.06)',
-        glow: '0 0 20px rgba(20, 184, 166, 0.25)',
-        'glow-lg': '0 0 40px rgba(20, 184, 166, 0.35)',
+        glow: '0 0 20px rgba(123, 97, 255, 0.25)',
+        'glow-lg': '0 0 40px rgba(123, 97, 255, 0.35)',
         card: '0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06)',
         'card-hover': '0 10px 40px rgba(0, 0, 0, 0.08)',
         'inner-glow': 'inset 0 1px 0 rgba(255, 255, 255, 0.1)'

@@ -1,5 +1,7 @@
 <template>
-  <div class="relative flex min-h-screen items-center justify-center overflow-hidden p-4">
+  <div class="relative flex flex-col min-h-screen items-center justify-center overflow-hidden p-4 pt-16 md:pt-18">
+    <Header />
+
     <!-- Background -->
     <div
       class="absolute inset-0 bg-gradient-to-br from-gray-50 via-primary-50/30 to-gray-100 dark:from-dark-950 dark:via-dark-900 dark:to-dark-950"
@@ -54,11 +56,9 @@
         <slot name="footer" />
       </div>
 
-      <!-- Copyright -->
-      <div class="mt-8 text-center text-xs text-gray-400 dark:text-dark-500">
-        &copy; {{ currentYear }} {{ siteName }}. All rights reserved.
-      </div>
     </div>
+    <!-- Copyright -->
+    <app-footer />
   </div>
 </template>
 
@@ -66,6 +66,8 @@
 import { computed, onMounted } from 'vue'
 import { useAppStore } from '@/stores'
 import { sanitizeUrl } from '@/utils/url'
+import AppFooter from './AppFooter.vue'
+import Header from './Header.vue'
 
 const appStore = useAppStore()
 
@@ -73,8 +75,6 @@ const siteName = computed(() => appStore.siteName || 'PublicAI Gateway')
 const siteLogo = computed(() => sanitizeUrl(appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true }))
 const siteSubtitle = computed(() => appStore.cachedPublicSettings?.site_subtitle || 'Subscription to API Conversion Platform')
 const settingsLoaded = computed(() => appStore.publicSettingsLoaded)
-
-const currentYear = computed(() => new Date().getFullYear())
 
 onMounted(() => {
   appStore.fetchPublicSettings()

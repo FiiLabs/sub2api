@@ -105,7 +105,119 @@ export default {
       description: 'Sign up now and get free trial credits to experience seamless AI access',
       button: 'Sign Up Free'
     },
+    landing: {
+      hero: {
+        titlePrefix: 'The Most',
+        titleHighlight: 'Reliable',
+        titleSuffix: 'AI API Platform',
+        subtitleFallback: 'AI API Gateway Platform'
+      },
+      badges: {
+        uptime: '99.99% Uptime',
+        lowerCost: 'Up to 30% Lower Cost',
+        compatible: 'OpenAI-Compatible'
+      },
+      statement: {
+        title: 'One API. Every Model. Always Available.',
+        description: 'Reduce AI infrastructure costs while maintaining industry-leading reliability.'
+      },
+      features: {
+        reliability: {
+          title: 'Industry-Leading Reliability',
+          description:
+            'Never worry about provider outages, rate limits, or degraded performance again. Our infrastructure continuously monitors model availability and automatically ensures uninterrupted service for your applications.',
+          tags: {
+            uptime: '99.99% Uptime',
+            failover: 'Automatic Failover',
+            productionReady: 'Production Ready'
+          }
+        },
+        costs: {
+          title: 'Lower AI Costs',
+          description:
+            'Reduce your AI spending without changing your code. We continuously optimize model access and pricing to help developers and businesses lower inference costs at scale.',
+          tags: {
+            save: 'Save up to 30%',
+            transparent: 'Transparent Pricing',
+            noHiddenFees: 'No Hidden Fees'
+          }
+        }
+      },
+      reliability: {
+        uptimeWindow: 'uptime / last 90 days',
+        operational: 'operational',
+        healthy: 'healthy'
+      },
+      costs: {
+        direct: 'direct',
+        spendHint: 'up to 30% lower inference spend'
+      },
+      models: {
+        eyebrow: '// Models',
+        title: "Integrate once. Access the world's most advanced models.",
+        available: 'Available',
+        comingSoon: 'Coming soon',
+        noLockIn: 'No vendor lock-in.',
+        switchHint: 'Switch models with a single configuration change.'
+      },
+      production: {
+        eyebrow: '// Built for Production',
+        title: 'Designed for real apps, agents, and enterprise workflows',
+        capabilities: {
+          streaming: 'Streaming Support',
+          toolCalling: 'Tool Calling',
+          structuredOutput: 'Structured Output',
+          visionModels: 'Vision Models',
+          longContext: 'Long Context',
+          highThroughput: 'High Throughput'
+        }
+      },
+      security: {
+        eyebrow: '// Enterprise Security',
+        title: 'Your data belongs to you',
+        description: 'We never use customer prompts or responses for model training.',
+        highlight: 'Built with security and privacy best practices from day one.',
+        capabilities: {
+          encryptedTraffic: 'Encrypted Traffic',
+          noTraining: 'No Training on Customer Data',
+          auditReady: 'Audit Ready',
+          accessControl: 'Enterprise Access Control'
+        }
+      },
+      developers: {
+        title: 'Developer Friendly',
+        description:
+          'Get started in minutes. Fully compatible with the OpenAI API standard. No infrastructure headaches. Just build.',
+        compatibility: 'Drop-in OpenAI compatibility'
+      },
+      socialProof: {
+        eyebrow: '// Trusted by AI Builders',
+        title: 'Powering mission-critical AI applications',
+        description: 'From startups to enterprise teams, developers rely on PublicAI to ship and scale their products.',
+        stats: {
+          requests: {
+            value: 'Millions',
+            label: 'API Requests Served'
+          },
+          availability: {
+            label: 'Availability'
+          },
+          infrastructure: {
+            value: 'Global',
+            label: 'Infrastructure'
+          }
+        }
+      },
+      closing: {
+        titleFirst: 'Build Faster.',
+        titleSecond: 'Scale Further.',
+        description: "Focus on your product. We'll handle the AI infrastructure.",
+        button: 'Start Building Free'
+      }
+    },
     footer: {
+      contactUs: 'Contact Us',
+      stayConnected: 'Stay Connected',
       allRightsReserved: 'All rights reserved.'
     }
   },
