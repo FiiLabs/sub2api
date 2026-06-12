@@ -35,6 +35,7 @@ interface Props {
   subscriptionType?: SubscriptionType
   rateMultiplier?: number
   userRateMultiplier?: number | null // 用户专属倍率
+  dynamicRate?: boolean
   showRate?: boolean
   daysRemaining?: number | null // 剩余天数（订阅类型时使用）
   /**
@@ -50,6 +51,7 @@ const props = withDefaults(defineProps<Props>(), {
   showRate: true,
   daysRemaining: null,
   userRateMultiplier: null,
+  dynamicRate: false,
   alwaysShowRate: false
 })
 
@@ -59,6 +61,7 @@ const isSubscription = computed(() => props.subscriptionType === 'subscription')
 
 // 是否有专属倍率（且与默认倍率不同）
 const hasCustomRate = computed(() => {
+  if (props.dynamicRate) return false
   return (
     props.userRateMultiplier !== null &&
     props.userRateMultiplier !== undefined &&
@@ -78,6 +81,7 @@ const showLabel = computed(() => {
 
 // Label text
 const labelText = computed(() => {
+  if (props.dynamicRate) return t('groups.dynamicRate')
   const rateLabel = props.rateMultiplier !== undefined ? `${props.rateMultiplier}x` : ''
   if (isSubscription.value && !props.alwaysShowRate) {
     // 如果有剩余天数，显示天数

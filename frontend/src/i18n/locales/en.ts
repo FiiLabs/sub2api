@@ -783,7 +783,8 @@ export default {
 
   // Groups (shared)
   groups: {
-    subscription: 'Sub'
+    subscription: 'Sub',
+    dynamicRate: 'Dynamic rate'
   },
 
   // API Keys
@@ -2234,6 +2235,34 @@ export default {
       platformHint: 'Select the platform this group is associated with',
       platformNotEditable: 'Platform cannot be changed after creation',
       rateMultiplierHint: 'Cost multiplier for this group (e.g., 1.5 = 150% of base cost)',
+      dynamicRate: {
+        title: 'Dynamic Rate',
+        description: 'When enabled, the user-facing multiplier is calculated from the final serving account multiplier. The fixed multiplier is still used when dynamic rate is disabled.',
+        badge: 'Dynamic {mode} +{margin}x',
+        mode: 'Dynamic Mode',
+        margin: 'Markup Parameter',
+        minMultiplier: 'Minimum Multiplier',
+        maxMultiplier: 'Maximum Multiplier',
+        noLimit: 'No limit',
+        currentFormula: 'Current formula: {formula}',
+        modes: {
+          accountPlusMargin: 'Account multiplier + fixed markup',
+          accountMarkup: 'Account multiplier × markup ratio',
+        },
+        modeLabels: {
+          plus: 'plus',
+          markup: 'markup',
+          off: 'off',
+        },
+        marginHintPlus: 'Plus mode: the parameter is a fixed multiplier delta. Enter 0.1 to use account multiplier + 0.1x, for example 0.4x becomes about 0.5x.',
+        marginHintMarkup: 'Markup mode: the parameter is a markup ratio. Enter 0.1 to use account multiplier × 1.1, for example 0.4x becomes about 0.44x.',
+        previewPlus: 'account multiplier + {margin}x',
+        previewMarkup: 'account multiplier × {multiplier}',
+        previewMin: 'min {value}x',
+        previewMax: 'max {value}x',
+        previewWithBounds: '{base}, {bounds}',
+        previewSeparator: ', ',
+      },
       exclusiveHint: 'Exclusive group, manually assign to specific users',
       exclusiveTooltip: {
         title: 'What is an exclusive group?',

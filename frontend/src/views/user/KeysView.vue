@@ -112,6 +112,7 @@
                   :subscription-type="row.group.subscription_type"
                   :rate-multiplier="row.group.rate_multiplier"
                   :user-rate-multiplier="userGroupRates[row.group.id]"
+                  :dynamic-rate="row.group.dynamic_rate_enabled"
                 />
                 <span v-else class="text-sm text-gray-400 dark:text-dark-500">{{
                   t('keys.noGroup')
@@ -422,6 +423,7 @@
                 :subscription-type="(option as unknown as GroupOption).subscriptionType"
                 :rate-multiplier="(option as unknown as GroupOption).rate"
                 :user-rate-multiplier="(option as unknown as GroupOption).userRate"
+                :dynamic-rate="(option as unknown as GroupOption).dynamicRate"
               />
               <span v-else class="text-gray-400">{{ t('keys.selectGroup') }}</span>
             </template>
@@ -432,6 +434,7 @@
                 :subscription-type="(option as unknown as GroupOption).subscriptionType"
                 :rate-multiplier="(option as unknown as GroupOption).rate"
                 :user-rate-multiplier="(option as unknown as GroupOption).userRate"
+                :dynamic-rate="(option as unknown as GroupOption).dynamicRate"
                 :description="(option as unknown as GroupOption).description"
                 :selected="selected"
               />
@@ -1027,6 +1030,7 @@
               :subscription-type="option.subscriptionType"
               :rate-multiplier="option.rate"
               :user-rate-multiplier="option.userRate"
+              :dynamic-rate="option.dynamicRate"
               :description="option.description"
               :selected="
                 selectedKeyForGroup?.group_id === option.value ||
@@ -1091,6 +1095,7 @@ interface GroupOption {
   description: string | null
   rate: number
   userRate: number | null
+  dynamicRate: boolean
   subscriptionType: SubscriptionType
   platform: GroupPlatform
 }
@@ -1249,6 +1254,7 @@ const groupOptions = computed(() =>
     description: group.description,
     rate: group.rate_multiplier,
     userRate: userGroupRates.value[group.id] ?? null,
+    dynamicRate: group.dynamic_rate_enabled,
     subscriptionType: group.subscription_type,
     platform: group.platform
   }))

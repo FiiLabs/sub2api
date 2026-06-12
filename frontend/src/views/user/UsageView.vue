@@ -583,7 +583,7 @@
           <div class="flex items-center justify-between gap-6">
             <span class="text-gray-400">{{ t('usage.rate') }}</span>
             <span class="font-semibold text-blue-400"
-              >{{ formatMultiplier(tooltipData?.rate_multiplier || 1) }}x</span
+              >{{ usageRateDisplay(tooltipData) }}</span
             >
           </div>
           <div class="flex items-center justify-between gap-6">
@@ -796,6 +796,11 @@ const getRequestTypeExportText = (log: UsageLog): string => {
   return 'Unknown'
 }
 
+const usageRateDisplay = (log: UsageLog | null | undefined): string => {
+  if (log?.group?.dynamic_rate_enabled) return t('groups.dynamicRate')
+  return `${formatMultiplier(log?.rate_multiplier || 1)}x`
+}
+
 const formatUsageEndpoints = (log: UsageLog): string => {
   const inbound = log.inbound_endpoint?.trim()
   return inbound || '-'
@@ -1003,7 +1008,7 @@ const exportToCSV = async () => {
         log.output_tokens,
         log.cache_read_tokens,
         log.cache_creation_tokens,
-        log.rate_multiplier,
+        usageRateDisplay(log),
         (log.actual_cost ?? 0).toFixed(8),
         (log.total_cost ?? 0).toFixed(8),
         log.first_token_ms ?? '',

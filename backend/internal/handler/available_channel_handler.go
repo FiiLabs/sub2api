@@ -58,6 +58,7 @@ type userAvailableGroup struct {
 	Platform         string  `json:"platform"`
 	SubscriptionType string  `json:"subscription_type"`
 	RateMultiplier   float64 `json:"rate_multiplier"`
+	DynamicRate      bool    `json:"dynamic_rate_enabled"`
 	IsExclusive      bool    `json:"is_exclusive"`
 }
 
@@ -218,6 +219,7 @@ func filterUserVisibleGroups(
 			Platform:         g.Platform,
 			SubscriptionType: g.SubscriptionType,
 			RateMultiplier:   g.RateMultiplier,
+			DynamicRate:      g.DynamicRate,
 			IsExclusive:      g.IsExclusive,
 		})
 	}

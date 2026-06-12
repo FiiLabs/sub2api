@@ -8907,6 +8907,8 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		groupDefault := apiKey.Group.RateMultiplier
 		multiplier = s.getUserGroupRateMultiplier(ctx, user.ID, *apiKey.GroupID, groupDefault)
 	}
+	accountRateMultiplier := account.BillingRateMultiplier()
+	multiplier = ResolveDynamicRateMultiplier(apiKey.Group, multiplier, accountRateMultiplier)
 	imageMultiplier := resolveImageRateMultiplier(apiKey, multiplier)
 
 	// 确定计费模型
@@ -8935,7 +8937,6 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	}
 
 	// 创建使用日志
-	accountRateMultiplier := account.BillingRateMultiplier()
 	usageLog := s.buildRecordUsageLog(ctx, input, result, apiKey, user, account, subscription,
 		requestedModel, multiplier, imageMultiplier, accountRateMultiplier, billingType, cacheTTLOverridden, cost, opts)
 

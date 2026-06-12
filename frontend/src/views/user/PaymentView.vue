@@ -193,7 +193,10 @@
                         <span :class="['shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium', platformBadgeLightClass(sub.group?.platform || '')]">{{ platformLabel(sub.group?.platform || '') }}</span>
                       </div>
                       <div class="flex flex-wrap gap-x-3 text-[11px] text-gray-400 dark:text-gray-500">
-                        <span>{{ t('payment.planCard.rate') }}: ×{{ sub.group?.rate_multiplier ?? 1 }}</span>
+                        <span>
+                          {{ t('payment.planCard.rate') }}:
+                          {{ sub.group?.dynamic_rate_enabled ? t('groups.dynamicRate') : `×${sub.group?.rate_multiplier ?? 1}` }}
+                        </span>
                         <span v-if="sub.group?.daily_limit_usd == null && sub.group?.weekly_limit_usd == null && sub.group?.monthly_limit_usd == null">{{ t('payment.planCard.quota') }}: {{ t('payment.planCard.unlimited') }}</span>
                         <span v-if="sub.expires_at">{{ t('userSubscriptions.daysRemaining', { days: getDaysRemaining(sub.expires_at) }) }}</span>
                         <span v-else>{{ t('userSubscriptions.noExpiration') }}</span>

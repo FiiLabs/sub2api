@@ -504,6 +504,11 @@ export interface Group {
   description: string | null
   platform: GroupPlatform
   rate_multiplier: number
+  dynamic_rate_enabled: boolean
+  dynamic_rate_mode: 'off' | 'account_plus_margin' | 'account_markup'
+  dynamic_rate_margin: number
+  dynamic_rate_min_multiplier: number | null
+  dynamic_rate_max_multiplier: number | null
   rpm_limit?: number // Group-level RPM cap (0 = unlimited); overrides user-level rpm_limit when set
   is_exclusive: boolean
   status: 'active' | 'inactive'
@@ -625,6 +630,11 @@ export interface CreateGroupRequest {
   description?: string | null
   platform?: GroupPlatform
   rate_multiplier?: number
+  dynamic_rate_enabled?: boolean
+  dynamic_rate_mode?: 'off' | 'account_plus_margin' | 'account_markup'
+  dynamic_rate_margin?: number
+  dynamic_rate_min_multiplier?: number | null
+  dynamic_rate_max_multiplier?: number | null
   is_exclusive?: boolean
   subscription_type?: SubscriptionType
   daily_limit_usd?: number | null
@@ -659,6 +669,11 @@ export interface UpdateGroupRequest {
   description?: string | null
   platform?: GroupPlatform
   rate_multiplier?: number
+  dynamic_rate_enabled?: boolean
+  dynamic_rate_mode?: 'off' | 'account_plus_margin' | 'account_markup'
+  dynamic_rate_margin?: number
+  dynamic_rate_min_multiplier?: number | null
+  dynamic_rate_max_multiplier?: number | null
   is_exclusive?: boolean
   status?: 'active' | 'inactive'
   subscription_type?: SubscriptionType

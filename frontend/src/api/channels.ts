@@ -14,6 +14,8 @@ export interface UserAvailableGroup {
   subscription_type: string
   /** 分组默认倍率。用户专属倍率（若有）通过 /groups/rates 获取后在前端 join。 */
   rate_multiplier: number
+  /** true 时用户侧展示为动态倍率，不展示固定倍率。 */
+  dynamic_rate_enabled?: boolean
   /** true = 专属分组（小范围授权）；false = 公开分组。 */
   is_exclusive: boolean
 }

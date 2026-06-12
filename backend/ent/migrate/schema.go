@@ -645,6 +645,11 @@ var (
 		{Name: "rate_multiplier", Type: field.TypeFloat64, Default: 1, SchemaType: map[string]string{"postgres": "decimal(10,4)"}},
 		{Name: "is_exclusive", Type: field.TypeBool, Default: false},
 		{Name: "status", Type: field.TypeString, Size: 20, Default: "active"},
+		{Name: "dynamic_rate_enabled", Type: field.TypeBool, Default: false},
+		{Name: "dynamic_rate_mode", Type: field.TypeString, Size: 20, Default: "off"},
+		{Name: "dynamic_rate_margin", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(10,4)"}},
+		{Name: "dynamic_rate_min_multiplier", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(10,4)"}},
+		{Name: "dynamic_rate_max_multiplier", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(10,4)"}},
 		{Name: "platform", Type: field.TypeString, Size: 50, Default: "anthropic"},
 		{Name: "subscription_type", Type: field.TypeString, Size: 20, Default: "standard"},
 		{Name: "daily_limit_usd", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
@@ -687,12 +692,12 @@ var (
 			{
 				Name:    "group_platform",
 				Unique:  false,
-				Columns: []*schema.Column{GroupsColumns[9]},
+				Columns: []*schema.Column{GroupsColumns[14]},
 			},
 			{
 				Name:    "group_subscription_type",
 				Unique:  false,
-				Columns: []*schema.Column{GroupsColumns[10]},
+				Columns: []*schema.Column{GroupsColumns[15]},
 			},
 			{
 				Name:    "group_is_exclusive",
@@ -707,7 +712,7 @@ var (
 			{
 				Name:    "group_sort_order",
 				Unique:  false,
-				Columns: []*schema.Column{GroupsColumns[28]},
+				Columns: []*schema.Column{GroupsColumns[33]},
 			},
 		},
 	}

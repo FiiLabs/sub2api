@@ -179,10 +179,19 @@
             </div>
           </template>
 
-          <template #cell-rate_multiplier="{ value }">
-            <span class="text-sm text-gray-700 dark:text-gray-300"
-              >{{ value }}x</span
-            >
+          <template #cell-rate_multiplier="{ row, value }">
+            <div class="space-y-0.5 text-sm text-gray-700 dark:text-gray-300">
+              <div>{{ value }}x</div>
+              <div
+                v-if="row.dynamic_rate_enabled"
+                class="text-xs text-amber-600 dark:text-amber-400"
+              >
+                {{ t("admin.groups.dynamicRate.badge", {
+                  mode: dynamicRateModeLabel(row.dynamic_rate_mode),
+                  margin: row.dynamic_rate_margin,
+                }) }}
+              </div>
+            </div>
           </template>
 
           <template #cell-is_exclusive="{ value }">
@@ -496,6 +505,85 @@
             data-tour="group-form-multiplier"
           />
           <p class="input-hint">{{ t("admin.groups.rateMultiplierHint") }}</p>
+        </div>
+        <div class="rounded-lg border border-amber-200 bg-amber-50/60 p-4 dark:border-amber-900/50 dark:bg-amber-900/10">
+          <div class="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <label class="text-sm font-medium text-gray-800 dark:text-gray-200">
+                {{ t("admin.groups.dynamicRate.title") }}
+              </label>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t("admin.groups.dynamicRate.description") }}
+              </p>
+            </div>
+            <button
+              type="button"
+              @click="createForm.dynamic_rate_enabled = !createForm.dynamic_rate_enabled"
+              :class="[
+                'relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors',
+                createForm.dynamic_rate_enabled
+                  ? 'bg-amber-500'
+                  : 'bg-gray-300 dark:bg-dark-600',
+              ]"
+            >
+              <span
+                :class="[
+                  'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                  createForm.dynamic_rate_enabled ? 'translate-x-6' : 'translate-x-1',
+                ]"
+              />
+            </button>
+          </div>
+          <div v-if="createForm.dynamic_rate_enabled" class="grid gap-3 md:grid-cols-2">
+            <div>
+              <label class="input-label">{{ t("admin.groups.dynamicRate.mode") }}</label>
+              <Select
+                v-model="createForm.dynamic_rate_mode"
+                :options="dynamicRateModeOptions"
+              />
+            </div>
+            <div>
+              <label class="input-label">{{ t("admin.groups.dynamicRate.margin") }}</label>
+              <input
+                v-model.number="createForm.dynamic_rate_margin"
+                type="number"
+                step="0.0001"
+                min="0"
+                class="input"
+              />
+              <p class="input-hint">
+                {{ dynamicRateMarginHint(createForm.dynamic_rate_mode) }}
+              </p>
+            </div>
+            <div>
+              <label class="input-label">{{ t("admin.groups.dynamicRate.minMultiplier") }}</label>
+              <input
+                v-model.number="createForm.dynamic_rate_min_multiplier"
+                type="number"
+                step="0.0001"
+                min="0"
+                class="input"
+                :placeholder="t('admin.groups.dynamicRate.noLimit')"
+              />
+            </div>
+            <div>
+              <label class="input-label">{{ t("admin.groups.dynamicRate.maxMultiplier") }}</label>
+              <input
+                v-model.number="createForm.dynamic_rate_max_multiplier"
+                type="number"
+                step="0.0001"
+                min="0"
+                class="input"
+                :placeholder="t('admin.groups.dynamicRate.noLimit')"
+              />
+            </div>
+          </div>
+          <p
+            v-if="createForm.dynamic_rate_enabled"
+            class="mt-3 text-xs text-gray-500 dark:text-gray-400"
+          >
+            {{ t("admin.groups.dynamicRate.currentFormula", { formula: dynamicRatePreview(createForm) }) }}
+          </p>
         </div>
         <div>
           <label class="input-label">{{ t("admin.groups.form.rpmLimit") }}</label>
@@ -1782,6 +1870,85 @@
             class="input"
             data-tour="group-form-multiplier"
           />
+        </div>
+        <div class="rounded-lg border border-amber-200 bg-amber-50/60 p-4 dark:border-amber-900/50 dark:bg-amber-900/10">
+          <div class="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <label class="text-sm font-medium text-gray-800 dark:text-gray-200">
+                {{ t("admin.groups.dynamicRate.title") }}
+              </label>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t("admin.groups.dynamicRate.description") }}
+              </p>
+            </div>
+            <button
+              type="button"
+              @click="editForm.dynamic_rate_enabled = !editForm.dynamic_rate_enabled"
+              :class="[
+                'relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors',
+                editForm.dynamic_rate_enabled
+                  ? 'bg-amber-500'
+                  : 'bg-gray-300 dark:bg-dark-600',
+              ]"
+            >
+              <span
+                :class="[
+                  'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                  editForm.dynamic_rate_enabled ? 'translate-x-6' : 'translate-x-1',
+                ]"
+              />
+            </button>
+          </div>
+          <div v-if="editForm.dynamic_rate_enabled" class="grid gap-3 md:grid-cols-2">
+            <div>
+              <label class="input-label">{{ t("admin.groups.dynamicRate.mode") }}</label>
+              <Select
+                v-model="editForm.dynamic_rate_mode"
+                :options="dynamicRateModeOptions"
+              />
+            </div>
+            <div>
+              <label class="input-label">{{ t("admin.groups.dynamicRate.margin") }}</label>
+              <input
+                v-model.number="editForm.dynamic_rate_margin"
+                type="number"
+                step="0.0001"
+                min="0"
+                class="input"
+              />
+              <p class="input-hint">
+                {{ dynamicRateMarginHint(editForm.dynamic_rate_mode) }}
+              </p>
+            </div>
+            <div>
+              <label class="input-label">{{ t("admin.groups.dynamicRate.minMultiplier") }}</label>
+              <input
+                v-model.number="editForm.dynamic_rate_min_multiplier"
+                type="number"
+                step="0.0001"
+                min="0"
+                class="input"
+                :placeholder="t('admin.groups.dynamicRate.noLimit')"
+              />
+            </div>
+            <div>
+              <label class="input-label">{{ t("admin.groups.dynamicRate.maxMultiplier") }}</label>
+              <input
+                v-model.number="editForm.dynamic_rate_max_multiplier"
+                type="number"
+                step="0.0001"
+                min="0"
+                class="input"
+                :placeholder="t('admin.groups.dynamicRate.noLimit')"
+              />
+            </div>
+          </div>
+          <p
+            v-if="editForm.dynamic_rate_enabled"
+            class="mt-3 text-xs text-gray-500 dark:text-gray-400"
+          >
+            {{ t("admin.groups.dynamicRate.currentFormula", { formula: dynamicRatePreview(editForm) }) }}
+          </p>
         </div>
         <div>
           <label class="input-label">{{ t("admin.groups.form.rpmLimit") }}</label>
@@ -3158,6 +3325,66 @@ const subscriptionTypeOptions = computed(() => [
   { value: "subscription", label: t("admin.groups.subscription.subscription") },
 ]);
 
+type DynamicRateMode = "off" | "account_plus_margin" | "account_markup";
+
+const dynamicRateModeOptions = computed(() => [
+  {
+    value: "account_plus_margin",
+    label: t("admin.groups.dynamicRate.modes.accountPlusMargin"),
+  },
+  {
+    value: "account_markup",
+    label: t("admin.groups.dynamicRate.modes.accountMarkup"),
+  },
+]);
+
+const dynamicRateModeLabel = (mode: DynamicRateMode | string) => {
+  if (mode === "account_markup") return t("admin.groups.dynamicRate.modeLabels.markup");
+  if (mode === "account_plus_margin") return t("admin.groups.dynamicRate.modeLabels.plus");
+  return t("admin.groups.dynamicRate.modeLabels.off");
+};
+
+const dynamicRateMarginHint = (mode: DynamicRateMode | string) => {
+  if (mode === "account_markup") {
+    return t("admin.groups.dynamicRate.marginHintMarkup");
+  }
+  return t("admin.groups.dynamicRate.marginHintPlus");
+};
+
+const dynamicRatePreview = (form: {
+  dynamic_rate_mode: DynamicRateMode;
+  dynamic_rate_margin: number;
+  dynamic_rate_min_multiplier: number | null;
+  dynamic_rate_max_multiplier: number | null;
+}) => {
+  const base =
+    form.dynamic_rate_mode === "account_markup"
+      ? t("admin.groups.dynamicRate.previewMarkup", {
+          multiplier: (1 + Number(form.dynamic_rate_margin || 0)).toFixed(4),
+        })
+      : t("admin.groups.dynamicRate.previewPlus", {
+          margin: Number(form.dynamic_rate_margin || 0).toFixed(4),
+        });
+  const bounds = [
+    form.dynamic_rate_min_multiplier != null
+      ? t("admin.groups.dynamicRate.previewMin", {
+          value: form.dynamic_rate_min_multiplier,
+        })
+      : "",
+    form.dynamic_rate_max_multiplier != null
+      ? t("admin.groups.dynamicRate.previewMax", {
+          value: form.dynamic_rate_max_multiplier,
+        })
+      : "",
+  ].filter(Boolean);
+  return bounds.length
+    ? t("admin.groups.dynamicRate.previewWithBounds", {
+        base,
+        bounds: bounds.join(t("admin.groups.dynamicRate.previewSeparator")),
+      })
+    : base;
+};
+
 // 降级分组选项（创建时）- 仅包含 anthropic 平台且未启用 claude_code_only 的分组
 const fallbackGroupOptions = computed(() => {
   const options: { value: number | null; label: string }[] = [
@@ -3328,6 +3555,11 @@ const createForm = reactive({
   description: "",
   platform: "anthropic" as GroupPlatform,
   rate_multiplier: 1.0,
+  dynamic_rate_enabled: false,
+  dynamic_rate_mode: "account_plus_margin" as DynamicRateMode,
+  dynamic_rate_margin: 0.1,
+  dynamic_rate_min_multiplier: null as number | null,
+  dynamic_rate_max_multiplier: null as number | null,
   is_exclusive: false,
   subscription_type: "standard" as SubscriptionType,
   daily_limit_usd: null as number | null,
@@ -3658,6 +3890,11 @@ const editForm = reactive({
   description: "",
   platform: "anthropic" as GroupPlatform,
   rate_multiplier: 1.0,
+  dynamic_rate_enabled: false,
+  dynamic_rate_mode: "account_plus_margin" as DynamicRateMode,
+  dynamic_rate_margin: 0.1,
+  dynamic_rate_min_multiplier: null as number | null,
+  dynamic_rate_max_multiplier: null as number | null,
   is_exclusive: false,
   status: "active" as "active" | "inactive",
   subscription_type: "standard" as SubscriptionType,
@@ -3911,6 +4148,11 @@ const closeCreateModal = () => {
   createForm.description = "";
   createForm.platform = "anthropic";
   createForm.rate_multiplier = 1.0;
+  createForm.dynamic_rate_enabled = false;
+  createForm.dynamic_rate_mode = "account_plus_margin";
+  createForm.dynamic_rate_margin = 0.1;
+  createForm.dynamic_rate_min_multiplier = null;
+  createForm.dynamic_rate_max_multiplier = null;
   createForm.is_exclusive = false;
   createForm.subscription_type = "standard";
   createForm.daily_limit_usd = null;
@@ -3965,6 +4207,36 @@ const normalizeImageRateMultiplier = (
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 1;
 };
 
+const normalizeOptionalMultiplier = (
+  value: number | string | null | undefined,
+): number | null => {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+};
+
+const normalizeDynamicRatePayload = <T extends {
+  dynamic_rate_enabled: boolean;
+  dynamic_rate_mode: DynamicRateMode;
+  dynamic_rate_margin: number | string;
+  dynamic_rate_min_multiplier: number | string | null;
+  dynamic_rate_max_multiplier: number | string | null;
+}>(payload: T) => {
+  payload.dynamic_rate_mode = payload.dynamic_rate_enabled
+    ? payload.dynamic_rate_mode
+    : "off";
+  payload.dynamic_rate_margin = Number(payload.dynamic_rate_margin || 0);
+  payload.dynamic_rate_min_multiplier = normalizeOptionalMultiplier(
+    payload.dynamic_rate_min_multiplier,
+  );
+  payload.dynamic_rate_max_multiplier = normalizeOptionalMultiplier(
+    payload.dynamic_rate_max_multiplier,
+  );
+  return payload;
+};
+
 const handleCreateGroup = async () => {
   if (!createForm.name.trim()) {
     appStore.showError(t("admin.groups.nameRequired"));
@@ -4011,6 +4283,7 @@ const handleCreateGroup = async () => {
     requestData.image_rate_multiplier = normalizeImageRateMultiplier(
       requestData.image_rate_multiplier,
     );
+    normalizeDynamicRatePayload(requestData);
     await adminAPI.groups.create(requestData);
     appStore.showSuccess(t("admin.groups.groupCreated"));
     closeCreateModal();
@@ -4036,6 +4309,14 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.description = group.description || "";
   editForm.platform = group.platform;
   editForm.rate_multiplier = group.rate_multiplier;
+  editForm.dynamic_rate_enabled = group.dynamic_rate_enabled ?? false;
+  editForm.dynamic_rate_mode =
+    group.dynamic_rate_mode === "account_markup"
+      ? "account_markup"
+      : "account_plus_margin";
+  editForm.dynamic_rate_margin = group.dynamic_rate_margin ?? 0.1;
+  editForm.dynamic_rate_min_multiplier = group.dynamic_rate_min_multiplier ?? null;
+  editForm.dynamic_rate_max_multiplier = group.dynamic_rate_max_multiplier ?? null;
   editForm.is_exclusive = group.is_exclusive;
   editForm.status = group.status;
   editForm.subscription_type = group.subscription_type || "standard";
@@ -4150,6 +4431,7 @@ const handleUpdateGroup = async () => {
     payload.image_rate_multiplier = normalizeImageRateMultiplier(
       payload.image_rate_multiplier,
     );
+    normalizeDynamicRatePayload(payload);
     await adminAPI.groups.update(editingGroup.value.id, payload);
     appStore.showSuccess(t("admin.groups.groupUpdated"));
     closeEditModal();

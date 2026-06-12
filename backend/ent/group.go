@@ -35,6 +35,16 @@ type Group struct {
 	IsExclusive bool `json:"is_exclusive,omitempty"`
 	// Status holds the value of the "status" field.
 	Status string `json:"status,omitempty"`
+	// 是否启用按最终承接账号倍率动态计算用户侧倍率
+	DynamicRateEnabled bool `json:"dynamic_rate_enabled,omitempty"`
+	// 动态倍率模式：off/account_plus_margin/account_markup
+	DynamicRateMode string `json:"dynamic_rate_mode,omitempty"`
+	// 动态倍率加价：plus 模式为倍率差值，markup 模式为乘法加价比例
+	DynamicRateMargin float64 `json:"dynamic_rate_margin,omitempty"`
+	// 动态倍率下限；NULL 表示不限制
+	DynamicRateMinMultiplier *float64 `json:"dynamic_rate_min_multiplier,omitempty"`
+	// 动态倍率上限；NULL 表示不限制
+	DynamicRateMaxMultiplier *float64 `json:"dynamic_rate_max_multiplier,omitempty"`
 	// Platform holds the value of the "platform" field.
 	Platform string `json:"platform,omitempty"`
 	// SubscriptionType holds the value of the "subscription_type" field.
@@ -197,13 +207,13 @@ func (*Group) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case group.FieldModelRouting, group.FieldSupportedModelScopes, group.FieldMessagesDispatchModelConfig, group.FieldModelsListConfig:
 			values[i] = new([]byte)
-		case group.FieldIsExclusive, group.FieldAllowImageGeneration, group.FieldImageRateIndependent, group.FieldClaudeCodeOnly, group.FieldModelRoutingEnabled, group.FieldMcpXMLInject, group.FieldAllowMessagesDispatch, group.FieldRequireOauthOnly, group.FieldRequirePrivacySet:
+		case group.FieldIsExclusive, group.FieldDynamicRateEnabled, group.FieldAllowImageGeneration, group.FieldImageRateIndependent, group.FieldClaudeCodeOnly, group.FieldModelRoutingEnabled, group.FieldMcpXMLInject, group.FieldAllowMessagesDispatch, group.FieldRequireOauthOnly, group.FieldRequirePrivacySet:
 			values[i] = new(sql.NullBool)
-		case group.FieldRateMultiplier, group.FieldDailyLimitUsd, group.FieldWeeklyLimitUsd, group.FieldMonthlyLimitUsd, group.FieldImageRateMultiplier, group.FieldImagePrice1k, group.FieldImagePrice2k, group.FieldImagePrice4k:
+		case group.FieldRateMultiplier, group.FieldDynamicRateMargin, group.FieldDynamicRateMinMultiplier, group.FieldDynamicRateMaxMultiplier, group.FieldDailyLimitUsd, group.FieldWeeklyLimitUsd, group.FieldMonthlyLimitUsd, group.FieldImageRateMultiplier, group.FieldImagePrice1k, group.FieldImagePrice2k, group.FieldImagePrice4k:
 			values[i] = new(sql.NullFloat64)
 		case group.FieldID, group.FieldDefaultValidityDays, group.FieldFallbackGroupID, group.FieldFallbackGroupIDOnInvalidRequest, group.FieldSortOrder, group.FieldRpmLimit:
 			values[i] = new(sql.NullInt64)
-		case group.FieldName, group.FieldDescription, group.FieldStatus, group.FieldPlatform, group.FieldSubscriptionType, group.FieldDefaultMappedModel:
+		case group.FieldName, group.FieldDescription, group.FieldStatus, group.FieldDynamicRateMode, group.FieldPlatform, group.FieldSubscriptionType, group.FieldDefaultMappedModel:
 			values[i] = new(sql.NullString)
 		case group.FieldCreatedAt, group.FieldUpdatedAt, group.FieldDeletedAt:
 			values[i] = new(sql.NullTime)
@@ -277,6 +287,38 @@ func (_m *Group) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field status", values[i])
 			} else if value.Valid {
 				_m.Status = value.String
+			}
+		case group.FieldDynamicRateEnabled:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field dynamic_rate_enabled", values[i])
+			} else if value.Valid {
+				_m.DynamicRateEnabled = value.Bool
+			}
+		case group.FieldDynamicRateMode:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field dynamic_rate_mode", values[i])
+			} else if value.Valid {
+				_m.DynamicRateMode = value.String
+			}
+		case group.FieldDynamicRateMargin:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field dynamic_rate_margin", values[i])
+			} else if value.Valid {
+				_m.DynamicRateMargin = value.Float64
+			}
+		case group.FieldDynamicRateMinMultiplier:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field dynamic_rate_min_multiplier", values[i])
+			} else if value.Valid {
+				_m.DynamicRateMinMultiplier = new(float64)
+				*_m.DynamicRateMinMultiplier = value.Float64
+			}
+		case group.FieldDynamicRateMaxMultiplier:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field dynamic_rate_max_multiplier", values[i])
+			} else if value.Valid {
+				_m.DynamicRateMaxMultiplier = new(float64)
+				*_m.DynamicRateMaxMultiplier = value.Float64
 			}
 		case group.FieldPlatform:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -559,6 +601,25 @@ func (_m *Group) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("status=")
 	builder.WriteString(_m.Status)
+	builder.WriteString(", ")
+	builder.WriteString("dynamic_rate_enabled=")
+	builder.WriteString(fmt.Sprintf("%v", _m.DynamicRateEnabled))
+	builder.WriteString(", ")
+	builder.WriteString("dynamic_rate_mode=")
+	builder.WriteString(_m.DynamicRateMode)
+	builder.WriteString(", ")
+	builder.WriteString("dynamic_rate_margin=")
+	builder.WriteString(fmt.Sprintf("%v", _m.DynamicRateMargin))
+	builder.WriteString(", ")
+	if v := _m.DynamicRateMinMultiplier; v != nil {
+		builder.WriteString("dynamic_rate_min_multiplier=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.DynamicRateMaxMultiplier; v != nil {
+		builder.WriteString("dynamic_rate_max_multiplier=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	builder.WriteString("platform=")
 	builder.WriteString(_m.Platform)

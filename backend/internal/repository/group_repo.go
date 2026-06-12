@@ -42,6 +42,11 @@ func (r *groupRepository) Create(ctx context.Context, groupIn *service.Group) er
 		SetDescription(groupIn.Description).
 		SetPlatform(groupIn.Platform).
 		SetRateMultiplier(groupIn.RateMultiplier).
+		SetDynamicRateEnabled(groupIn.DynamicRateEnabled).
+		SetDynamicRateMode(groupIn.DynamicRateMode).
+		SetDynamicRateMargin(groupIn.DynamicRateMargin).
+		SetNillableDynamicRateMinMultiplier(groupIn.DynamicRateMinMultiplier).
+		SetNillableDynamicRateMaxMultiplier(groupIn.DynamicRateMaxMultiplier).
 		SetSortOrder(groupIn.SortOrder).
 		SetIsExclusive(groupIn.IsExclusive).
 		SetStatus(groupIn.Status).
@@ -121,6 +126,9 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 		SetDescription(groupIn.Description).
 		SetPlatform(groupIn.Platform).
 		SetRateMultiplier(groupIn.RateMultiplier).
+		SetDynamicRateEnabled(groupIn.DynamicRateEnabled).
+		SetDynamicRateMode(groupIn.DynamicRateMode).
+		SetDynamicRateMargin(groupIn.DynamicRateMargin).
 		SetIsExclusive(groupIn.IsExclusive).
 		SetStatus(groupIn.Status).
 		SetSubscriptionType(groupIn.SubscriptionType).
@@ -160,6 +168,16 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 		builder = builder.SetMonthlyLimitUsd(*groupIn.MonthlyLimitUSD)
 	} else {
 		builder = builder.ClearMonthlyLimitUsd()
+	}
+	if groupIn.DynamicRateMinMultiplier != nil {
+		builder = builder.SetDynamicRateMinMultiplier(*groupIn.DynamicRateMinMultiplier)
+	} else {
+		builder = builder.ClearDynamicRateMinMultiplier()
+	}
+	if groupIn.DynamicRateMaxMultiplier != nil {
+		builder = builder.SetDynamicRateMaxMultiplier(*groupIn.DynamicRateMaxMultiplier)
+	} else {
+		builder = builder.ClearDynamicRateMaxMultiplier()
 	}
 	if groupIn.ImagePrice1K != nil {
 		builder = builder.SetImagePrice1k(*groupIn.ImagePrice1K)

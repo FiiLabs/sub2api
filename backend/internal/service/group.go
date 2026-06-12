@@ -20,6 +20,13 @@ type Group struct {
 	Status         string
 	Hydrated       bool // indicates the group was loaded from a trusted repository source
 
+	// 动态倍率配置。默认关闭；开启后用户侧倍率可按最终承接账号倍率计算。
+	DynamicRateEnabled       bool
+	DynamicRateMode          string
+	DynamicRateMargin        float64
+	DynamicRateMinMultiplier *float64
+	DynamicRateMaxMultiplier *float64
+
 	SubscriptionType    string
 	DailyLimitUSD       *float64
 	WeeklyLimitUSD      *float64

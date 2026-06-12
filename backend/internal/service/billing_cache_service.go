@@ -722,14 +722,14 @@ func (s *BillingCacheService) CheckBillingEligibility(ctx context.Context, user 
 			return err
 		}
 	} else {
-		if err := s.checkBalanceEligibility(ctx, user.ID); err != nil {
+		if err := s.checkBalanceEligibility(ctx, user.ID, group); err != nil {
 			return err
 		}
 	}
 
 	// user × platform quota 仅在 standard（余额）模式生效；订阅模式豁免
 	if !isSubscriptionMode {
-		if err := s.checkUserPlatformQuotaEligibility(ctx, user.ID, platform); err != nil {
+		if err := s.checkUserPlatformQuotaEligibility(ctx, user.ID, platform, group); err != nil {
 			return err
 		}
 	}
@@ -834,7 +834,7 @@ func (s *BillingCacheService) checkRPM(ctx context.Context, user *User, group *G
 }
 
 // checkBalanceEligibility 检查余额模式资格
-func (s *BillingCacheService) checkBalanceEligibility(ctx context.Context, userID int64) error {
+func (s *BillingCacheService) checkBalanceEligibility(ctx context.Context, userID int64, group *Group) error {
 	balance, err := s.GetUserBalance(ctx, userID)
 	if err != nil {
 		if s.circuitBreaker != nil {
@@ -847,7 +847,7 @@ func (s *BillingCacheService) checkBalanceEligibility(ctx context.Context, userI
 		s.circuitBreaker.OnSuccess()
 	}
 
-	if balance <= 0 {
+	if balance < precheckMinimumCost(group, groupRateMultiplier(group)) {
 		return ErrInsufficientBalance
 	}
 
@@ -880,15 +880,16 @@ func (s *BillingCacheService) checkSubscriptionEligibility(ctx context.Context, 
 	}
 
 	// 检查限额（使用传入的Group限额配置）
-	if group.HasDailyLimit() && subData.DailyUsage >= *group.DailyLimitUSD {
+	precheckCost := precheckMinimumCost(group, groupRateMultiplier(group))
+	if group.HasDailyLimit() && subData.DailyUsage+precheckCost > *group.DailyLimitUSD {
 		return ErrDailyLimitExceeded
 	}
 
-	if group.HasWeeklyLimit() && subData.WeeklyUsage >= *group.WeeklyLimitUSD {
+	if group.HasWeeklyLimit() && subData.WeeklyUsage+precheckCost > *group.WeeklyLimitUSD {
 		return ErrWeeklyLimitExceeded
 	}
 
-	if group.HasMonthlyLimit() && subData.MonthlyUsage >= *group.MonthlyLimitUSD {
+	if group.HasMonthlyLimit() && subData.MonthlyUsage+precheckCost > *group.MonthlyLimitUSD {
 		return ErrMonthlyLimitExceeded
 	}
 
@@ -1039,6 +1040,7 @@ func (s *BillingCacheService) checkUserPlatformQuotaEligibility(
 	ctx context.Context,
 	userID int64,
 	platform string,
+	group *Group,
 ) error {
 	if platform == "" || s.userPlatformQuotaRepo == nil {
 		return nil
@@ -1124,13 +1126,14 @@ func (s *BillingCacheService) checkUserPlatformQuotaEligibility(
 			}
 			setCancel()
 		}
-		if entry.DailyLimitUSD != nil && dailyUsage >= *entry.DailyLimitUSD {
+		precheckCost := precheckMinimumCost(group, groupRateMultiplier(group))
+		if entry.DailyLimitUSD != nil && dailyUsage+precheckCost > *entry.DailyLimitUSD {
 			return withWindowResetsMetadata(ErrUserPlatformDailyQuotaExhausted, nextDailyReset(now))
 		}
-		if entry.WeeklyLimitUSD != nil && weeklyUsage >= *entry.WeeklyLimitUSD {
+		if entry.WeeklyLimitUSD != nil && weeklyUsage+precheckCost > *entry.WeeklyLimitUSD {
 			return withWindowResetsMetadata(ErrUserPlatformWeeklyQuotaExhausted, nextWeeklyReset(now))
 		}
-		if entry.MonthlyLimitUSD != nil && monthlyUsage >= *entry.MonthlyLimitUSD {
+		if entry.MonthlyLimitUSD != nil && monthlyUsage+precheckCost > *entry.MonthlyLimitUSD {
 			return withWindowResetsMetadata(ErrUserPlatformMonthlyQuotaExhausted, nextMonthlyResetFrom(entry.MonthlyWindowStart, now))
 		}
 		return nil
@@ -1211,13 +1214,14 @@ func (s *BillingCacheService) checkUserPlatformQuotaEligibility(
 
 	// Redis 故障时 fail-open：不回填，直接用 DB 数据做一次性检查
 	if cacheErr != nil {
-		if rec.DailyLimitUSD != nil && dailyUsage >= *rec.DailyLimitUSD {
+		precheckCost := precheckMinimumCost(group, groupRateMultiplier(group))
+		if rec.DailyLimitUSD != nil && dailyUsage+precheckCost > *rec.DailyLimitUSD {
 			return withWindowResetsMetadata(ErrUserPlatformDailyQuotaExhausted, nextDailyReset(now))
 		}
-		if rec.WeeklyLimitUSD != nil && weeklyUsage >= *rec.WeeklyLimitUSD {
+		if rec.WeeklyLimitUSD != nil && weeklyUsage+precheckCost > *rec.WeeklyLimitUSD {
 			return withWindowResetsMetadata(ErrUserPlatformWeeklyQuotaExhausted, nextWeeklyReset(now))
 		}
-		if rec.MonthlyLimitUSD != nil && monthlyUsage >= *rec.MonthlyLimitUSD {
+		if rec.MonthlyLimitUSD != nil && monthlyUsage+precheckCost > *rec.MonthlyLimitUSD {
 			return withWindowResetsMetadata(ErrUserPlatformMonthlyQuotaExhausted, nextMonthlyResetFrom(rec.MonthlyWindowStart, now))
 		}
 		return nil
@@ -1248,13 +1252,14 @@ func (s *BillingCacheService) checkUserPlatformQuotaEligibility(
 		setCancel()
 	}
 
-	if rec.DailyLimitUSD != nil && dailyUsage >= *rec.DailyLimitUSD {
+	precheckCost := precheckMinimumCost(group, groupRateMultiplier(group))
+	if rec.DailyLimitUSD != nil && dailyUsage+precheckCost > *rec.DailyLimitUSD {
 		return withWindowResetsMetadata(ErrUserPlatformDailyQuotaExhausted, nextDailyReset(now))
 	}
-	if rec.WeeklyLimitUSD != nil && weeklyUsage >= *rec.WeeklyLimitUSD {
+	if rec.WeeklyLimitUSD != nil && weeklyUsage+precheckCost > *rec.WeeklyLimitUSD {
 		return withWindowResetsMetadata(ErrUserPlatformWeeklyQuotaExhausted, nextWeeklyReset(now))
 	}
-	if rec.MonthlyLimitUSD != nil && monthlyUsage >= *rec.MonthlyLimitUSD {
+	if rec.MonthlyLimitUSD != nil && monthlyUsage+precheckCost > *rec.MonthlyLimitUSD {
 		return withWindowResetsMetadata(ErrUserPlatformMonthlyQuotaExhausted, nextMonthlyResetFrom(rec.MonthlyWindowStart, now))
 	}
 	return nil

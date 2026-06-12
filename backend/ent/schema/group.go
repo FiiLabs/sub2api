@@ -50,6 +50,27 @@ func (Group) Fields() []ent.Field {
 		field.String("status").
 			MaxLen(20).
 			Default(domain.StatusActive),
+		field.Bool("dynamic_rate_enabled").
+			Default(false).
+			Comment("是否启用按最终承接账号倍率动态计算用户侧倍率"),
+		field.String("dynamic_rate_mode").
+			MaxLen(20).
+			Default("off").
+			Comment("动态倍率模式：off/account_plus_margin/account_markup"),
+		field.Float("dynamic_rate_margin").
+			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}).
+			Default(0).
+			Comment("动态倍率加价：plus 模式为倍率差值，markup 模式为乘法加价比例"),
+		field.Float("dynamic_rate_min_multiplier").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}).
+			Comment("动态倍率下限；NULL 表示不限制"),
+		field.Float("dynamic_rate_max_multiplier").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}).
+			Comment("动态倍率上限；NULL 表示不限制"),
 
 		// Subscription-related fields (added by migration 003)
 		field.String("platform").

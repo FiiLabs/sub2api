@@ -32,6 +32,16 @@ const (
 	FieldIsExclusive = "is_exclusive"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
+	// FieldDynamicRateEnabled holds the string denoting the dynamic_rate_enabled field in the database.
+	FieldDynamicRateEnabled = "dynamic_rate_enabled"
+	// FieldDynamicRateMode holds the string denoting the dynamic_rate_mode field in the database.
+	FieldDynamicRateMode = "dynamic_rate_mode"
+	// FieldDynamicRateMargin holds the string denoting the dynamic_rate_margin field in the database.
+	FieldDynamicRateMargin = "dynamic_rate_margin"
+	// FieldDynamicRateMinMultiplier holds the string denoting the dynamic_rate_min_multiplier field in the database.
+	FieldDynamicRateMinMultiplier = "dynamic_rate_min_multiplier"
+	// FieldDynamicRateMaxMultiplier holds the string denoting the dynamic_rate_max_multiplier field in the database.
+	FieldDynamicRateMaxMultiplier = "dynamic_rate_max_multiplier"
 	// FieldPlatform holds the string denoting the platform field in the database.
 	FieldPlatform = "platform"
 	// FieldSubscriptionType holds the string denoting the subscription_type field in the database.
@@ -169,6 +179,11 @@ var Columns = []string{
 	FieldRateMultiplier,
 	FieldIsExclusive,
 	FieldStatus,
+	FieldDynamicRateEnabled,
+	FieldDynamicRateMode,
+	FieldDynamicRateMargin,
+	FieldDynamicRateMinMultiplier,
+	FieldDynamicRateMaxMultiplier,
 	FieldPlatform,
 	FieldSubscriptionType,
 	FieldDailyLimitUsd,
@@ -241,6 +256,14 @@ var (
 	DefaultStatus string
 	// StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	StatusValidator func(string) error
+	// DefaultDynamicRateEnabled holds the default value on creation for the "dynamic_rate_enabled" field.
+	DefaultDynamicRateEnabled bool
+	// DefaultDynamicRateMode holds the default value on creation for the "dynamic_rate_mode" field.
+	DefaultDynamicRateMode string
+	// DynamicRateModeValidator is a validator for the "dynamic_rate_mode" field. It is called by the builders before save.
+	DynamicRateModeValidator func(string) error
+	// DefaultDynamicRateMargin holds the default value on creation for the "dynamic_rate_margin" field.
+	DefaultDynamicRateMargin float64
 	// DefaultPlatform holds the default value on creation for the "platform" field.
 	DefaultPlatform string
 	// PlatformValidator is a validator for the "platform" field. It is called by the builders before save.
@@ -331,6 +354,31 @@ func ByIsExclusive(opts ...sql.OrderTermOption) OrderOption {
 // ByStatus orders the results by the status field.
 func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldStatus, opts...).ToFunc()
+}
+
+// ByDynamicRateEnabled orders the results by the dynamic_rate_enabled field.
+func ByDynamicRateEnabled(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDynamicRateEnabled, opts...).ToFunc()
+}
+
+// ByDynamicRateMode orders the results by the dynamic_rate_mode field.
+func ByDynamicRateMode(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDynamicRateMode, opts...).ToFunc()
+}
+
+// ByDynamicRateMargin orders the results by the dynamic_rate_margin field.
+func ByDynamicRateMargin(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDynamicRateMargin, opts...).ToFunc()
+}
+
+// ByDynamicRateMinMultiplier orders the results by the dynamic_rate_min_multiplier field.
+func ByDynamicRateMinMultiplier(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDynamicRateMinMultiplier, opts...).ToFunc()
+}
+
+// ByDynamicRateMaxMultiplier orders the results by the dynamic_rate_max_multiplier field.
+func ByDynamicRateMaxMultiplier(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDynamicRateMaxMultiplier, opts...).ToFunc()
 }
 
 // ByPlatform orders the results by the platform field.

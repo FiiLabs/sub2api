@@ -781,7 +781,8 @@ export default {
 
   // Groups (shared)
   groups: {
-    subscription: '订阅'
+    subscription: '订阅',
+    dynamicRate: '动态倍率'
   },
 
   // API Keys
@@ -2309,6 +2310,34 @@ export default {
           '公开分组费率 0.8，您可以创建一个费率 0.7 的专属分组，手动分配给 VIP 用户，让他们享受更优惠的价格。'
       },
       rateMultiplierHint: '1.0 = 标准费率，0.5 = 半价，2.0 = 双倍',
+      dynamicRate: {
+        title: '动态倍率',
+        description: '开启后按最终承接账号倍率计算本次用户扣费倍率；固定倍率仍作为关闭时的价格。',
+        badge: '动态 {mode} +{margin}x',
+        mode: '动态模式',
+        margin: '加价参数',
+        minMultiplier: '最低倍率',
+        maxMultiplier: '最高倍率',
+        noLimit: '不限制',
+        currentFormula: '当前公式：{formula}',
+        modes: {
+          accountPlusMargin: '账号倍率 + 固定加价',
+          accountMarkup: '账号倍率 × 加价比例',
+        },
+        modeLabels: {
+          plus: '加法',
+          markup: '乘法',
+          off: '关闭',
+        },
+        marginHintPlus: '加法模式：参数是固定倍率差值。填 0.1 表示账号倍率 + 0.1x，例如账号 0.4x 时用户侧约 0.5x。',
+        marginHintMarkup: '乘法模式：参数是加价比例。填 0.1 表示账号倍率 × 1.1，例如账号 0.4x 时用户侧约 0.44x。',
+        previewPlus: '账号倍率 + {margin}x',
+        previewMarkup: '账号倍率 × {multiplier}',
+        previewMin: '最低 {value}x',
+        previewMax: '最高 {value}x',
+        previewWithBounds: '{base}，{bounds}',
+        previewSeparator: '，',
+      },
       platforms: {
         all: '全部平台',
         anthropic: 'Anthropic',

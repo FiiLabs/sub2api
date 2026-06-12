@@ -192,15 +192,20 @@ type AdminBoundAuthIdentityChannel struct {
 }
 
 type CreateGroupInput struct {
-	Name             string
-	Description      string
-	Platform         string
-	RateMultiplier   float64
-	IsExclusive      bool
-	SubscriptionType string   // standard/subscription
-	DailyLimitUSD    *float64 // 日限额 (USD)
-	WeeklyLimitUSD   *float64 // 周限额 (USD)
-	MonthlyLimitUSD  *float64 // 月限额 (USD)
+	Name                     string
+	Description              string
+	Platform                 string
+	RateMultiplier           float64
+	DynamicRateEnabled       bool
+	DynamicRateMode          string
+	DynamicRateMargin        float64
+	DynamicRateMinMultiplier *float64
+	DynamicRateMaxMultiplier *float64
+	IsExclusive              bool
+	SubscriptionType         string   // standard/subscription
+	DailyLimitUSD            *float64 // 日限额 (USD)
+	WeeklyLimitUSD           *float64 // 周限额 (USD)
+	MonthlyLimitUSD          *float64 // 月限额 (USD)
 	// 图片生成计费配置（仅 antigravity 平台使用）
 	AllowImageGeneration bool
 	ImageRateIndependent bool
@@ -232,16 +237,21 @@ type CreateGroupInput struct {
 }
 
 type UpdateGroupInput struct {
-	Name             string
-	Description      *string
-	Platform         string
-	RateMultiplier   *float64 // 使用指针以支持设置为0
-	IsExclusive      *bool
-	Status           string
-	SubscriptionType string   // standard/subscription
-	DailyLimitUSD    *float64 // 日限额 (USD)
-	WeeklyLimitUSD   *float64 // 周限额 (USD)
-	MonthlyLimitUSD  *float64 // 月限额 (USD)
+	Name                     string
+	Description              *string
+	Platform                 string
+	RateMultiplier           *float64 // 使用指针以支持设置为0
+	DynamicRateEnabled       *bool
+	DynamicRateMode          *string
+	DynamicRateMargin        *float64
+	DynamicRateMinMultiplier *float64
+	DynamicRateMaxMultiplier *float64
+	IsExclusive              *bool
+	Status                   string
+	SubscriptionType         string   // standard/subscription
+	DailyLimitUSD            *float64 // 日限额 (USD)
+	WeeklyLimitUSD           *float64 // 周限额 (USD)
+	MonthlyLimitUSD          *float64 // 月限额 (USD)
 	// 图片生成计费配置（仅 antigravity 平台使用）
 	AllowImageGeneration *bool
 	ImageRateIndependent *bool
@@ -1810,6 +1820,18 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		}
 		imageRateMultiplier = *input.ImageRateMultiplier
 	}
+	dynamicRateMin := normalizeDynamicRateBound(input.DynamicRateMinMultiplier)
+	dynamicRateMax := normalizeDynamicRateBound(input.DynamicRateMaxMultiplier)
+	dynamicRateMode, err := validateDynamicRateConfig(
+		input.DynamicRateEnabled,
+		input.DynamicRateMode,
+		input.DynamicRateMargin,
+		dynamicRateMin,
+		dynamicRateMax,
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	// 校验降级分组
 	if input.FallbackGroupID != nil {
@@ -1871,6 +1893,11 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		Description:                     input.Description,
 		Platform:                        platform,
 		RateMultiplier:                  input.RateMultiplier,
+		DynamicRateEnabled:              input.DynamicRateEnabled,
+		DynamicRateMode:                 dynamicRateMode,
+		DynamicRateMargin:               input.DynamicRateMargin,
+		DynamicRateMinMultiplier:        dynamicRateMin,
+		DynamicRateMaxMultiplier:        dynamicRateMax,
 		IsExclusive:                     input.IsExclusive,
 		Status:                          StatusActive,
 		SubscriptionType:                subscriptionType,
@@ -1948,6 +1975,42 @@ func normalizePrice(price *float64) *float64 {
 		return nil
 	}
 	return price
+}
+
+func normalizeDynamicRateBound(bound *float64) *float64 {
+	if bound == nil || *bound < 0 {
+		return nil
+	}
+	return bound
+}
+
+func validateDynamicRateConfig(enabled bool, mode string, margin float64, minMultiplier, maxMultiplier *float64) (string, error) {
+	if margin < 0 {
+		return "", errors.New("dynamic_rate_margin must be >= 0")
+	}
+	if minMultiplier != nil && *minMultiplier < 0 {
+		return "", errors.New("dynamic_rate_min_multiplier must be >= 0")
+	}
+	if maxMultiplier != nil && *maxMultiplier < 0 {
+		return "", errors.New("dynamic_rate_max_multiplier must be >= 0")
+	}
+	if minMultiplier != nil && maxMultiplier != nil && *minMultiplier > *maxMultiplier {
+		return "", errors.New("dynamic_rate_min_multiplier must be <= dynamic_rate_max_multiplier")
+	}
+	if !enabled {
+		if mode == "" {
+			return DynamicRateModeOff, nil
+		}
+		return normalizeDynamicRateMode(mode), nil
+	}
+	if mode == "" {
+		return DynamicRateModeAccountPlusMargin, nil
+	}
+	normalizedMode := normalizeDynamicRateMode(mode)
+	if normalizedMode == DynamicRateModeOff {
+		return "", errors.New("dynamic_rate_mode must be account_plus_margin or account_markup when dynamic rate is enabled")
+	}
+	return normalizedMode, nil
 }
 
 // validateFallbackGroup 校验降级分组的有效性
@@ -2040,6 +2103,32 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 		}
 		group.RateMultiplier = *input.RateMultiplier
 	}
+	if input.DynamicRateEnabled != nil {
+		group.DynamicRateEnabled = *input.DynamicRateEnabled
+	}
+	if input.DynamicRateMode != nil {
+		group.DynamicRateMode = *input.DynamicRateMode
+	}
+	if input.DynamicRateMargin != nil {
+		group.DynamicRateMargin = *input.DynamicRateMargin
+	}
+	if input.DynamicRateMinMultiplier != nil {
+		group.DynamicRateMinMultiplier = normalizeDynamicRateBound(input.DynamicRateMinMultiplier)
+	}
+	if input.DynamicRateMaxMultiplier != nil {
+		group.DynamicRateMaxMultiplier = normalizeDynamicRateBound(input.DynamicRateMaxMultiplier)
+	}
+	dynamicRateMode, err := validateDynamicRateConfig(
+		group.DynamicRateEnabled,
+		group.DynamicRateMode,
+		group.DynamicRateMargin,
+		group.DynamicRateMinMultiplier,
+		group.DynamicRateMaxMultiplier,
+	)
+	if err != nil {
+		return nil, err
+	}
+	group.DynamicRateMode = dynamicRateMode
 	if input.IsExclusive != nil {
 		group.IsExclusive = *input.IsExclusive
 	}

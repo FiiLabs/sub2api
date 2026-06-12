@@ -93,6 +93,7 @@
                   :subscription-type="(g.subscription_type || 'standard') as SubscriptionType"
                   :rate-multiplier="g.rate_multiplier"
                   :user-rate-multiplier="userGroupRates[g.id] ?? null"
+                  :dynamic-rate="g.dynamic_rate_enabled"
                   always-show-rate
                 />
               </div>
@@ -115,6 +116,7 @@
                   :subscription-type="(g.subscription_type || 'standard') as SubscriptionType"
                   :rate-multiplier="g.rate_multiplier"
                   :user-rate-multiplier="userGroupRates[g.id] ?? null"
+                  :dynamic-rate="g.dynamic_rate_enabled"
                   always-show-rate
                 />
               </div>

@@ -145,6 +145,109 @@ func (_u *GroupUpdate) SetNillableStatus(v *string) *GroupUpdate {
 	return _u
 }
 
+// SetDynamicRateEnabled sets the "dynamic_rate_enabled" field.
+func (_u *GroupUpdate) SetDynamicRateEnabled(v bool) *GroupUpdate {
+	_u.mutation.SetDynamicRateEnabled(v)
+	return _u
+}
+
+// SetNillableDynamicRateEnabled sets the "dynamic_rate_enabled" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableDynamicRateEnabled(v *bool) *GroupUpdate {
+	if v != nil {
+		_u.SetDynamicRateEnabled(*v)
+	}
+	return _u
+}
+
+// SetDynamicRateMode sets the "dynamic_rate_mode" field.
+func (_u *GroupUpdate) SetDynamicRateMode(v string) *GroupUpdate {
+	_u.mutation.SetDynamicRateMode(v)
+	return _u
+}
+
+// SetNillableDynamicRateMode sets the "dynamic_rate_mode" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableDynamicRateMode(v *string) *GroupUpdate {
+	if v != nil {
+		_u.SetDynamicRateMode(*v)
+	}
+	return _u
+}
+
+// SetDynamicRateMargin sets the "dynamic_rate_margin" field.
+func (_u *GroupUpdate) SetDynamicRateMargin(v float64) *GroupUpdate {
+	_u.mutation.ResetDynamicRateMargin()
+	_u.mutation.SetDynamicRateMargin(v)
+	return _u
+}
+
+// SetNillableDynamicRateMargin sets the "dynamic_rate_margin" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableDynamicRateMargin(v *float64) *GroupUpdate {
+	if v != nil {
+		_u.SetDynamicRateMargin(*v)
+	}
+	return _u
+}
+
+// AddDynamicRateMargin adds value to the "dynamic_rate_margin" field.
+func (_u *GroupUpdate) AddDynamicRateMargin(v float64) *GroupUpdate {
+	_u.mutation.AddDynamicRateMargin(v)
+	return _u
+}
+
+// SetDynamicRateMinMultiplier sets the "dynamic_rate_min_multiplier" field.
+func (_u *GroupUpdate) SetDynamicRateMinMultiplier(v float64) *GroupUpdate {
+	_u.mutation.ResetDynamicRateMinMultiplier()
+	_u.mutation.SetDynamicRateMinMultiplier(v)
+	return _u
+}
+
+// SetNillableDynamicRateMinMultiplier sets the "dynamic_rate_min_multiplier" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableDynamicRateMinMultiplier(v *float64) *GroupUpdate {
+	if v != nil {
+		_u.SetDynamicRateMinMultiplier(*v)
+	}
+	return _u
+}
+
+// AddDynamicRateMinMultiplier adds value to the "dynamic_rate_min_multiplier" field.
+func (_u *GroupUpdate) AddDynamicRateMinMultiplier(v float64) *GroupUpdate {
+	_u.mutation.AddDynamicRateMinMultiplier(v)
+	return _u
+}
+
+// ClearDynamicRateMinMultiplier clears the value of the "dynamic_rate_min_multiplier" field.
+func (_u *GroupUpdate) ClearDynamicRateMinMultiplier() *GroupUpdate {
+	_u.mutation.ClearDynamicRateMinMultiplier()
+	return _u
+}
+
+// SetDynamicRateMaxMultiplier sets the "dynamic_rate_max_multiplier" field.
+func (_u *GroupUpdate) SetDynamicRateMaxMultiplier(v float64) *GroupUpdate {
+	_u.mutation.ResetDynamicRateMaxMultiplier()
+	_u.mutation.SetDynamicRateMaxMultiplier(v)
+	return _u
+}
+
+// SetNillableDynamicRateMaxMultiplier sets the "dynamic_rate_max_multiplier" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableDynamicRateMaxMultiplier(v *float64) *GroupUpdate {
+	if v != nil {
+		_u.SetDynamicRateMaxMultiplier(*v)
+	}
+	return _u
+}
+
+// AddDynamicRateMaxMultiplier adds value to the "dynamic_rate_max_multiplier" field.
+func (_u *GroupUpdate) AddDynamicRateMaxMultiplier(v float64) *GroupUpdate {
+	_u.mutation.AddDynamicRateMaxMultiplier(v)
+	return _u
+}
+
+// ClearDynamicRateMaxMultiplier clears the value of the "dynamic_rate_max_multiplier" field.
+func (_u *GroupUpdate) ClearDynamicRateMaxMultiplier() *GroupUpdate {
+	_u.mutation.ClearDynamicRateMaxMultiplier()
+	return _u
+}
+
 // SetPlatform sets the "platform" field.
 func (_u *GroupUpdate) SetPlatform(v string) *GroupUpdate {
 	_u.mutation.SetPlatform(v)
@@ -926,6 +1029,11 @@ func (_u *GroupUpdate) check() error {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "Group.status": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.DynamicRateMode(); ok {
+		if err := group.DynamicRateModeValidator(v); err != nil {
+			return &ValidationError{Name: "dynamic_rate_mode", err: fmt.Errorf(`ent: validator failed for field "Group.dynamic_rate_mode": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Platform(); ok {
 		if err := group.PlatformValidator(v); err != nil {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "Group.platform": %w`, err)}
@@ -985,6 +1093,36 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(group.FieldStatus, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.DynamicRateEnabled(); ok {
+		_spec.SetField(group.FieldDynamicRateEnabled, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.DynamicRateMode(); ok {
+		_spec.SetField(group.FieldDynamicRateMode, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.DynamicRateMargin(); ok {
+		_spec.SetField(group.FieldDynamicRateMargin, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedDynamicRateMargin(); ok {
+		_spec.AddField(group.FieldDynamicRateMargin, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.DynamicRateMinMultiplier(); ok {
+		_spec.SetField(group.FieldDynamicRateMinMultiplier, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedDynamicRateMinMultiplier(); ok {
+		_spec.AddField(group.FieldDynamicRateMinMultiplier, field.TypeFloat64, value)
+	}
+	if _u.mutation.DynamicRateMinMultiplierCleared() {
+		_spec.ClearField(group.FieldDynamicRateMinMultiplier, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.DynamicRateMaxMultiplier(); ok {
+		_spec.SetField(group.FieldDynamicRateMaxMultiplier, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedDynamicRateMaxMultiplier(); ok {
+		_spec.AddField(group.FieldDynamicRateMaxMultiplier, field.TypeFloat64, value)
+	}
+	if _u.mutation.DynamicRateMaxMultiplierCleared() {
+		_spec.ClearField(group.FieldDynamicRateMaxMultiplier, field.TypeFloat64)
 	}
 	if value, ok := _u.mutation.Platform(); ok {
 		_spec.SetField(group.FieldPlatform, field.TypeString, value)
@@ -1555,6 +1693,109 @@ func (_u *GroupUpdateOne) SetNillableStatus(v *string) *GroupUpdateOne {
 	if v != nil {
 		_u.SetStatus(*v)
 	}
+	return _u
+}
+
+// SetDynamicRateEnabled sets the "dynamic_rate_enabled" field.
+func (_u *GroupUpdateOne) SetDynamicRateEnabled(v bool) *GroupUpdateOne {
+	_u.mutation.SetDynamicRateEnabled(v)
+	return _u
+}
+
+// SetNillableDynamicRateEnabled sets the "dynamic_rate_enabled" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableDynamicRateEnabled(v *bool) *GroupUpdateOne {
+	if v != nil {
+		_u.SetDynamicRateEnabled(*v)
+	}
+	return _u
+}
+
+// SetDynamicRateMode sets the "dynamic_rate_mode" field.
+func (_u *GroupUpdateOne) SetDynamicRateMode(v string) *GroupUpdateOne {
+	_u.mutation.SetDynamicRateMode(v)
+	return _u
+}
+
+// SetNillableDynamicRateMode sets the "dynamic_rate_mode" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableDynamicRateMode(v *string) *GroupUpdateOne {
+	if v != nil {
+		_u.SetDynamicRateMode(*v)
+	}
+	return _u
+}
+
+// SetDynamicRateMargin sets the "dynamic_rate_margin" field.
+func (_u *GroupUpdateOne) SetDynamicRateMargin(v float64) *GroupUpdateOne {
+	_u.mutation.ResetDynamicRateMargin()
+	_u.mutation.SetDynamicRateMargin(v)
+	return _u
+}
+
+// SetNillableDynamicRateMargin sets the "dynamic_rate_margin" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableDynamicRateMargin(v *float64) *GroupUpdateOne {
+	if v != nil {
+		_u.SetDynamicRateMargin(*v)
+	}
+	return _u
+}
+
+// AddDynamicRateMargin adds value to the "dynamic_rate_margin" field.
+func (_u *GroupUpdateOne) AddDynamicRateMargin(v float64) *GroupUpdateOne {
+	_u.mutation.AddDynamicRateMargin(v)
+	return _u
+}
+
+// SetDynamicRateMinMultiplier sets the "dynamic_rate_min_multiplier" field.
+func (_u *GroupUpdateOne) SetDynamicRateMinMultiplier(v float64) *GroupUpdateOne {
+	_u.mutation.ResetDynamicRateMinMultiplier()
+	_u.mutation.SetDynamicRateMinMultiplier(v)
+	return _u
+}
+
+// SetNillableDynamicRateMinMultiplier sets the "dynamic_rate_min_multiplier" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableDynamicRateMinMultiplier(v *float64) *GroupUpdateOne {
+	if v != nil {
+		_u.SetDynamicRateMinMultiplier(*v)
+	}
+	return _u
+}
+
+// AddDynamicRateMinMultiplier adds value to the "dynamic_rate_min_multiplier" field.
+func (_u *GroupUpdateOne) AddDynamicRateMinMultiplier(v float64) *GroupUpdateOne {
+	_u.mutation.AddDynamicRateMinMultiplier(v)
+	return _u
+}
+
+// ClearDynamicRateMinMultiplier clears the value of the "dynamic_rate_min_multiplier" field.
+func (_u *GroupUpdateOne) ClearDynamicRateMinMultiplier() *GroupUpdateOne {
+	_u.mutation.ClearDynamicRateMinMultiplier()
+	return _u
+}
+
+// SetDynamicRateMaxMultiplier sets the "dynamic_rate_max_multiplier" field.
+func (_u *GroupUpdateOne) SetDynamicRateMaxMultiplier(v float64) *GroupUpdateOne {
+	_u.mutation.ResetDynamicRateMaxMultiplier()
+	_u.mutation.SetDynamicRateMaxMultiplier(v)
+	return _u
+}
+
+// SetNillableDynamicRateMaxMultiplier sets the "dynamic_rate_max_multiplier" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableDynamicRateMaxMultiplier(v *float64) *GroupUpdateOne {
+	if v != nil {
+		_u.SetDynamicRateMaxMultiplier(*v)
+	}
+	return _u
+}
+
+// AddDynamicRateMaxMultiplier adds value to the "dynamic_rate_max_multiplier" field.
+func (_u *GroupUpdateOne) AddDynamicRateMaxMultiplier(v float64) *GroupUpdateOne {
+	_u.mutation.AddDynamicRateMaxMultiplier(v)
+	return _u
+}
+
+// ClearDynamicRateMaxMultiplier clears the value of the "dynamic_rate_max_multiplier" field.
+func (_u *GroupUpdateOne) ClearDynamicRateMaxMultiplier() *GroupUpdateOne {
+	_u.mutation.ClearDynamicRateMaxMultiplier()
 	return _u
 }
 
@@ -2352,6 +2593,11 @@ func (_u *GroupUpdateOne) check() error {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "Group.status": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.DynamicRateMode(); ok {
+		if err := group.DynamicRateModeValidator(v); err != nil {
+			return &ValidationError{Name: "dynamic_rate_mode", err: fmt.Errorf(`ent: validator failed for field "Group.dynamic_rate_mode": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Platform(); ok {
 		if err := group.PlatformValidator(v); err != nil {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "Group.platform": %w`, err)}
@@ -2428,6 +2674,36 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(group.FieldStatus, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.DynamicRateEnabled(); ok {
+		_spec.SetField(group.FieldDynamicRateEnabled, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.DynamicRateMode(); ok {
+		_spec.SetField(group.FieldDynamicRateMode, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.DynamicRateMargin(); ok {
+		_spec.SetField(group.FieldDynamicRateMargin, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedDynamicRateMargin(); ok {
+		_spec.AddField(group.FieldDynamicRateMargin, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.DynamicRateMinMultiplier(); ok {
+		_spec.SetField(group.FieldDynamicRateMinMultiplier, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedDynamicRateMinMultiplier(); ok {
+		_spec.AddField(group.FieldDynamicRateMinMultiplier, field.TypeFloat64, value)
+	}
+	if _u.mutation.DynamicRateMinMultiplierCleared() {
+		_spec.ClearField(group.FieldDynamicRateMinMultiplier, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.DynamicRateMaxMultiplier(); ok {
+		_spec.SetField(group.FieldDynamicRateMaxMultiplier, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedDynamicRateMaxMultiplier(); ok {
+		_spec.AddField(group.FieldDynamicRateMaxMultiplier, field.TypeFloat64, value)
+	}
+	if _u.mutation.DynamicRateMaxMultiplierCleared() {
+		_spec.ClearField(group.FieldDynamicRateMaxMultiplier, field.TypeFloat64)
 	}
 	if value, ok := _u.mutation.Platform(); ok {
 		_spec.SetField(group.FieldPlatform, field.TypeString, value)
