@@ -42,7 +42,7 @@
 
           <!-- Right: Terminal Animation -->
           <div class="flex flex-1 justify-center lg:justify-end">
-            <img class="w-full h-auto rounded-xl" src="/publicai-gateway.jpeg"
+            <img class="w-full h-auto rounded-xl" src="/publicai_hero_cascade.svg"
               alt="PublicAI Gateway routing requests from a developer node to Claude, GPT, and more LLMs">
           </div>
         </div>
@@ -89,9 +89,6 @@
             :style="{ transitionDelay: `${index * 80}ms` }"
           >
             <div :class="feature.reversed ? 'lg:order-2' : ''">
-              <div class="font-mono text-sm font-bold tracking-wider text-primary-600 dark:text-primary-400">
-                {{ feature.number }}
-              </div>
               <h3 class="mt-3 text-2xl font-semibold leading-tight text-gray-900 dark:text-white md:text-3xl">
                 {{ feature.title }}
               </h3>
@@ -169,6 +166,84 @@
                   {{ t('home.landing.costs.spendHint') }}
                 </div>
               </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Pricing Comparison -->
+        <section class="py-14">
+          <div v-reveal class="reveal-item mx-auto mb-10 max-w-3xl text-center">
+            <span
+              class="font-mono text-xs font-medium uppercase tracking-[0.12em] text-primary-600 dark:text-primary-400">
+              {{ t('home.landing.pricing.eyebrow') }}
+            </span>
+            <h2 class="mt-3 text-3xl font-bold leading-tight text-gray-900 dark:text-white md:text-4xl">
+              {{ t('home.landing.pricing.title') }}
+            </h2>
+            <p class="mx-auto mt-4 max-w-2xl text-base leading-7 text-gray-600 dark:text-dark-300">
+              {{ t('home.landing.pricing.subtitle') }}
+            </p>
+          </div>
+
+          <div v-reveal class="reveal-item mx-auto max-w-4xl">
+            <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white/80 shadow-card backdrop-blur-sm dark:border-dark-700 dark:bg-dark-800/80">
+              <table class="w-full min-w-[520px] text-left">
+                <thead>
+                  <tr class="border-b border-gray-200 dark:border-dark-700">
+                    <th class="px-5 py-4 text-sm font-semibold text-gray-500 dark:text-dark-400">
+                      {{ t('home.landing.pricing.col.provider') }}
+                    </th>
+                    <th class="px-5 py-4 text-sm font-semibold text-gray-500 dark:text-dark-400">
+                      {{ t('home.landing.pricing.col.input') }}
+                    </th>
+                    <th class="px-5 py-4 text-sm font-semibold text-gray-500 dark:text-dark-400">
+                      {{ t('home.landing.pricing.col.output') }}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template v-for="group in pricingData" :key="group.model">
+                    <!-- Model header -->
+                    <tr class="border-b border-gray-100 bg-gray-50/60 dark:border-dark-700/50 dark:bg-dark-900/40">
+                      <td colspan="3" class="px-5 py-3 text-sm font-bold text-gray-900 dark:text-white">
+                        {{ group.model }}
+                      </td>
+                    </tr>
+                    <!-- Provider rows -->
+                    <tr v-for="row in group.rows" :key="row.provider"
+                      class="border-b border-gray-100 last:border-0 dark:border-dark-700/50"
+                      :class="row.highlight ? 'bg-primary-50/50 dark:bg-primary-900/10' : ''">
+                      <td class="px-5 py-3.5">
+                        <div class="flex items-center gap-2">
+                          <span class="text-sm font-medium"
+                            :class="row.highlight ? 'text-primary-600 dark:text-primary-400' : 'text-gray-700 dark:text-dark-200'">
+                            {{ row.provider }}
+                          </span>
+                          <span v-if="row.highlight"
+                            class="inline-flex items-center rounded-md bg-primary-500/10 px-2 py-0.5 text-[11px] font-bold text-primary-600 dark:text-primary-400">
+                            {{ t('home.landing.pricing.badge') }}
+                          </span>
+                        </div>
+                      </td>
+                      <td class="px-5 py-3.5 font-mono text-sm"
+                        :class="row.highlight ? 'font-bold text-primary-600 dark:text-primary-400' : 'text-gray-600 dark:text-dark-300'">
+                        {{ row.input }}
+                      </td>
+                      <td class="px-5 py-3.5 font-mono text-sm"
+                        :class="row.highlight ? 'font-bold text-primary-600 dark:text-primary-400' : 'text-gray-600 dark:text-dark-300'">
+                        {{ row.output }}
+                      </td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+            <div class="mt-4 flex justify-center">
+              <span
+                class="inline-flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 font-mono text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                <Icon name="dollar" size="sm" :stroke-width="2" />
+                {{ t('home.landing.pricing.save') }}
+              </span>
             </div>
           </div>
         </section>
@@ -408,7 +483,6 @@ const authStore = useAuthStore()
 
 const featureRows = computed(() => [
   {
-    number: '01',
     title: t('home.landing.features.reliability.title'),
     description: t('home.landing.features.reliability.description'),
     tags: [
@@ -420,7 +494,6 @@ const featureRows = computed(() => [
     reversed: false
   },
   {
-    number: '02',
     title: t('home.landing.features.costs.title'),
     description: t('home.landing.features.costs.description'),
     tags: [
@@ -449,9 +522,28 @@ const costRows = computed(() => [
   },
   {
     label: 'publicai',
-    price: '$0.70',
-    width: '70%',
+    price: '$0.30',
+    width: '30%',
     fillClass: 'bg-gradient-to-r from-primary-500 to-primary-600'
+  }
+])
+
+const pricingData = computed(() => [
+  {
+    model: t('home.landing.pricing.models.sonnet'),
+    rows: [
+      { provider: t('home.landing.pricing.providers.official'), input: '$3.00', output: '$15.00', highlight: false },
+      { provider: t('home.landing.pricing.providers.openrouter'), input: '$3.00', output: '$15.00', highlight: false },
+      { provider: t('home.landing.pricing.providers.publicai'), input: '$0.90', output: '$4.50', highlight: true }
+    ]
+  },
+  {
+    model: t('home.landing.pricing.models.codex'),
+    rows: [
+      { provider: t('home.landing.pricing.providers.official'), input: '$1.75', output: '$14.00', highlight: false },
+      { provider: t('home.landing.pricing.providers.openrouter'), input: '$1.75', output: '$14.00', highlight: false },
+      { provider: t('home.landing.pricing.providers.publicai'), input: '$0.53', output: '$4.20', highlight: true }
+    ]
   }
 ])
 
@@ -474,24 +566,24 @@ const modelCards = [
     available: false,
     iconClass: 'bg-gradient-to-br from-blue-500 to-violet-500'
   },
-  {
-    name: 'DeepSeek',
-    initial: 'D',
-    available: false,
-    iconClass: 'bg-gradient-to-br from-indigo-500 to-blue-700'
-  },
-  {
-    name: 'Qwen',
-    initial: 'Q',
-    available: false,
-    iconClass: 'bg-gradient-to-br from-violet-600 to-purple-800'
-  },
-  {
-    name: 'Grok',
-    initial: 'X',
-    available: false,
-    iconClass: 'bg-gradient-to-br from-gray-700 to-black'
-  }
+  // {
+  //   name: 'DeepSeek',
+  //   initial: 'D',
+  //   available: false,
+  //   iconClass: 'bg-gradient-to-br from-indigo-500 to-blue-700'
+  // },
+  // {
+  //   name: 'Qwen',
+  //   initial: 'Q',
+  //   available: false,
+  //   iconClass: 'bg-gradient-to-br from-violet-600 to-purple-800'
+  // },
+  // {
+  //   name: 'Grok',
+  //   initial: 'X',
+  //   available: false,
+  //   iconClass: 'bg-gradient-to-br from-gray-700 to-black'
+  // }
 ] as const
 
 const productionCapabilities = computed(() => [

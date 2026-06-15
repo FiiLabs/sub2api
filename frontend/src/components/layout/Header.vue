@@ -1,6 +1,6 @@
 <template>
   <header
-    class="fixed inset-x-0 top-0 z-20 h-16 border-b border-[#E7E9F4] bg-[#f4f6fce0] px-4 py-3 backdrop-blur-sm backdrop-saturate-100 md:h-18 md:px-6"
+    class="fixed inset-x-0 top-0 z-20 h-16 border-b border-gray-200/80 bg-white/80 px-4 py-3 backdrop-blur-sm backdrop-saturate-100 dark:border-dark-700/80 dark:bg-dark-900/80 md:h-18 md:px-6"
   >
     <nav class="mx-auto flex max-w-6xl items-center justify-between">
       <div class="flex items-center">
@@ -64,7 +64,7 @@
         <router-link
           v-if="isAuthenticated"
           :to="dashboardPath"
-          class="inline-flex items-center gap-1.5 rounded-xl border-2 border-[#E7E9F4] py-2 pl-2.5 pr-3 transition-colors hover:border-[#0D1426] md:pl-2 md:pr-3.5"
+          class="inline-flex items-center gap-1.5 rounded-xl border-2 border-gray-200 py-2 pl-2.5 pr-3 transition-colors hover:border-gray-400 dark:border-dark-700 dark:hover:border-dark-400 md:pl-2 md:pr-3.5"
         >
           <span
             class="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-primary-400 to-primary-600 text-[10px] font-semibold text-white"
@@ -77,7 +77,7 @@
         <router-link
           v-else
           to="/login"
-          class="inline-flex items-center rounded-xl border-2 border-[#E7E9F4] px-3 py-2 text-sm font-medium transition-colors hover:border-[#0D1426] md:px-4 md:text-base"
+          class="inline-flex items-center rounded-xl border-2 border-gray-200 px-3 py-2 text-sm font-medium transition-colors hover:border-gray-400 dark:border-dark-700 dark:hover:border-dark-400 md:px-4 md:text-base"
         >
           {{ t('home.login') }}
         </router-link>

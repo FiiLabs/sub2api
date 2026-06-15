@@ -114,7 +114,7 @@ export default {
       },
       badges: {
         uptime: '99.99% 可用性',
-        lowerCost: '成本最高降低 30%',
+        lowerCost: '成本最高降低 70%',
         compatible: '兼容 OpenAI'
       },
       statement: {
@@ -151,6 +151,27 @@ export default {
       costs: {
         direct: '直连',
         spendHint: '推理支出最高降低 30%'
+      },
+      pricing: {
+        eyebrow: '// 价格对比',
+        title: '透明定价，更低价格。',
+        subtitle: '与官方及 OpenRouter 价格对比（每百万 Tokens）',
+        col: {
+          provider: '服务商',
+          input: '输入',
+          output: '输出'
+        },
+        badge: '推荐',
+        save: '省 70%',
+        models: {
+          sonnet: 'Claude Sonnet 4.5',
+          codex: 'Codex gpt-5.3-codex'
+        },
+        providers: {
+          official: '官方',
+          openrouter: 'OpenRouter',
+          publicai: 'PublicAI'
+        }
       },
       models: {
         eyebrow: '// 模型',

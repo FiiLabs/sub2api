@@ -137,7 +137,7 @@ export default {
           description:
             'Reduce your AI spending without changing your code. We continuously optimize model access and pricing to help developers and businesses lower inference costs at scale.',
           tags: {
-            save: 'Save up to 30%',
+            save: 'Save up to 70%',
             transparent: 'Transparent Pricing',
             noHiddenFees: 'No Hidden Fees'
           }
@@ -151,6 +151,27 @@ export default {
       costs: {
         direct: 'direct',
         spendHint: 'up to 30% lower inference spend'
+      },
+      pricing: {
+        eyebrow: '// Pricing',
+        title: 'Transparent pricing. Lower costs.',
+        subtitle: 'Price comparison with official & OpenRouter (per 1M tokens)',
+        col: {
+          provider: 'Provider',
+          input: 'Input',
+          output: 'Output'
+        },
+        badge: 'Best Value',
+        save: 'Save 70%',
+        models: {
+          sonnet: 'Claude Sonnet 4.5',
+          codex: 'Codex gpt-5.3-codex'
+        },
+        providers: {
+          official: 'Official',
+          openrouter: 'OpenRouter',
+          publicai: 'PublicAI'
+        }
       },
       models: {
         eyebrow: '// Models',
