@@ -120,6 +120,21 @@ func SubscriptionID(v int64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldSubscriptionID, v))
 }
 
+// BillingSubjectID applies equality check predicate on the "billing_subject_id" field. It's identical to BillingSubjectIDEQ.
+func BillingSubjectID(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldBillingSubjectID, v))
+}
+
+// TeamID applies equality check predicate on the "team_id" field. It's identical to TeamIDEQ.
+func TeamID(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldTeamID, v))
+}
+
+// ActorUserID applies equality check predicate on the "actor_user_id" field. It's identical to ActorUserIDEQ.
+func ActorUserID(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldActorUserID, v))
+}
+
 // InputTokens applies equality check predicate on the "input_tokens" field. It's identical to InputTokensEQ.
 func InputTokens(v int) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldInputTokens, v))
@@ -928,6 +943,96 @@ func SubscriptionIDIsNil() predicate.UsageLog {
 // SubscriptionIDNotNil applies the NotNil predicate on the "subscription_id" field.
 func SubscriptionIDNotNil() predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldNotNull(FieldSubscriptionID))
+}
+
+// BillingSubjectIDEQ applies the EQ predicate on the "billing_subject_id" field.
+func BillingSubjectIDEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldBillingSubjectID, v))
+}
+
+// BillingSubjectIDNEQ applies the NEQ predicate on the "billing_subject_id" field.
+func BillingSubjectIDNEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldBillingSubjectID, v))
+}
+
+// BillingSubjectIDIn applies the In predicate on the "billing_subject_id" field.
+func BillingSubjectIDIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldBillingSubjectID, vs...))
+}
+
+// BillingSubjectIDNotIn applies the NotIn predicate on the "billing_subject_id" field.
+func BillingSubjectIDNotIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldBillingSubjectID, vs...))
+}
+
+// BillingSubjectIDIsNil applies the IsNil predicate on the "billing_subject_id" field.
+func BillingSubjectIDIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldBillingSubjectID))
+}
+
+// BillingSubjectIDNotNil applies the NotNil predicate on the "billing_subject_id" field.
+func BillingSubjectIDNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldBillingSubjectID))
+}
+
+// TeamIDEQ applies the EQ predicate on the "team_id" field.
+func TeamIDEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldTeamID, v))
+}
+
+// TeamIDNEQ applies the NEQ predicate on the "team_id" field.
+func TeamIDNEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldTeamID, v))
+}
+
+// TeamIDIn applies the In predicate on the "team_id" field.
+func TeamIDIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldTeamID, vs...))
+}
+
+// TeamIDNotIn applies the NotIn predicate on the "team_id" field.
+func TeamIDNotIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldTeamID, vs...))
+}
+
+// TeamIDIsNil applies the IsNil predicate on the "team_id" field.
+func TeamIDIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldTeamID))
+}
+
+// TeamIDNotNil applies the NotNil predicate on the "team_id" field.
+func TeamIDNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldTeamID))
+}
+
+// ActorUserIDEQ applies the EQ predicate on the "actor_user_id" field.
+func ActorUserIDEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldActorUserID, v))
+}
+
+// ActorUserIDNEQ applies the NEQ predicate on the "actor_user_id" field.
+func ActorUserIDNEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldActorUserID, v))
+}
+
+// ActorUserIDIn applies the In predicate on the "actor_user_id" field.
+func ActorUserIDIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldActorUserID, vs...))
+}
+
+// ActorUserIDNotIn applies the NotIn predicate on the "actor_user_id" field.
+func ActorUserIDNotIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldActorUserID, vs...))
+}
+
+// ActorUserIDIsNil applies the IsNil predicate on the "actor_user_id" field.
+func ActorUserIDIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldActorUserID))
+}
+
+// ActorUserIDNotNil applies the NotNil predicate on the "actor_user_id" field.
+func ActorUserIDNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldActorUserID))
 }
 
 // InputTokensEQ applies the EQ predicate on the "input_tokens" field.
@@ -2307,6 +2412,75 @@ func HasSubscription() predicate.UsageLog {
 func HasSubscriptionWith(preds ...predicate.UserSubscription) predicate.UsageLog {
 	return predicate.UsageLog(func(s *sql.Selector) {
 		step := newSubscriptionStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasBillingSubject applies the HasEdge predicate on the "billing_subject" edge.
+func HasBillingSubject() predicate.UsageLog {
+	return predicate.UsageLog(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, BillingSubjectTable, BillingSubjectColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasBillingSubjectWith applies the HasEdge predicate on the "billing_subject" edge with a given conditions (other predicates).
+func HasBillingSubjectWith(preds ...predicate.BillingSubject) predicate.UsageLog {
+	return predicate.UsageLog(func(s *sql.Selector) {
+		step := newBillingSubjectStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasTeam applies the HasEdge predicate on the "team" edge.
+func HasTeam() predicate.UsageLog {
+	return predicate.UsageLog(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, TeamTable, TeamColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasTeamWith applies the HasEdge predicate on the "team" edge with a given conditions (other predicates).
+func HasTeamWith(preds ...predicate.Team) predicate.UsageLog {
+	return predicate.UsageLog(func(s *sql.Selector) {
+		step := newTeamStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasActor applies the HasEdge predicate on the "actor" edge.
+func HasActor() predicate.UsageLog {
+	return predicate.UsageLog(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, ActorTable, ActorColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasActorWith applies the HasEdge predicate on the "actor" edge with a given conditions (other predicates).
+func HasActorWith(preds ...predicate.User) predicate.UsageLog {
+	return predicate.UsageLog(func(s *sql.Selector) {
+		step := newActorStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

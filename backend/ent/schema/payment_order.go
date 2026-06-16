@@ -41,6 +41,15 @@ func (PaymentOrder) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "text"}),
+		field.Int64("billing_subject_id").
+			Optional().
+			Nillable(),
+		field.Int64("team_id").
+			Optional().
+			Nillable(),
+		field.Int64("created_by_user_id").
+			Optional().
+			Nillable(),
 
 		// 金额信息
 		field.Float("amount").
@@ -180,6 +189,18 @@ func (PaymentOrder) Edges() []ent.Edge {
 			Field("user_id").
 			Unique().
 			Required(),
+		edge.From("billing_subject", BillingSubject.Type).
+			Ref("payment_orders").
+			Field("billing_subject_id").
+			Unique(),
+		edge.From("team", Team.Type).
+			Ref("payment_orders").
+			Field("team_id").
+			Unique(),
+		edge.From("created_by", User.Type).
+			Ref("created_payment_orders").
+			Field("created_by_user_id").
+			Unique(),
 	}
 }
 
@@ -189,6 +210,9 @@ func (PaymentOrder) Indexes() []ent.Index {
 			Unique().
 			Annotations(entsql.IndexWhere("out_trade_no <> ''")),
 		index.Fields("user_id"),
+		index.Fields("billing_subject_id"),
+		index.Fields("team_id"),
+		index.Fields("created_by_user_id"),
 		index.Fields("status"),
 		index.Fields("expires_at"),
 		index.Fields("created_at"),

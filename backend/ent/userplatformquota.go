@@ -9,6 +9,7 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/Wei-Shaw/sub2api/ent/billingsubject"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userplatformquota"
 )
@@ -26,6 +27,8 @@ type UserPlatformQuota struct {
 	DeletedAt *time.Time `json:"deleted_at,omitempty"`
 	// UserID holds the value of the "user_id" field.
 	UserID int64 `json:"user_id,omitempty"`
+	// BillingSubjectID holds the value of the "billing_subject_id" field.
+	BillingSubjectID *int64 `json:"billing_subject_id,omitempty"`
 	// Platform holds the value of the "platform" field.
 	Platform string `json:"platform,omitempty"`
 	// DailyLimitUsd holds the value of the "daily_limit_usd" field.
@@ -56,9 +59,11 @@ type UserPlatformQuota struct {
 type UserPlatformQuotaEdges struct {
 	// User holds the value of the user edge.
 	User *User `json:"user,omitempty"`
+	// BillingSubject holds the value of the billing_subject edge.
+	BillingSubject *BillingSubject `json:"billing_subject,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [1]bool
+	loadedTypes [2]bool
 }
 
 // UserOrErr returns the User value or an error if the edge
@@ -72,6 +77,17 @@ func (e UserPlatformQuotaEdges) UserOrErr() (*User, error) {
 	return nil, &NotLoadedError{edge: "user"}
 }
 
+// BillingSubjectOrErr returns the BillingSubject value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e UserPlatformQuotaEdges) BillingSubjectOrErr() (*BillingSubject, error) {
+	if e.BillingSubject != nil {
+		return e.BillingSubject, nil
+	} else if e.loadedTypes[1] {
+		return nil, &NotFoundError{label: billingsubject.Label}
+	}
+	return nil, &NotLoadedError{edge: "billing_subject"}
+}
+
 // scanValues returns the types for scanning values from sql.Rows.
 func (*UserPlatformQuota) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
@@ -79,7 +95,7 @@ func (*UserPlatformQuota) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case userplatformquota.FieldDailyLimitUsd, userplatformquota.FieldWeeklyLimitUsd, userplatformquota.FieldMonthlyLimitUsd, userplatformquota.FieldDailyUsageUsd, userplatformquota.FieldWeeklyUsageUsd, userplatformquota.FieldMonthlyUsageUsd:
 			values[i] = new(sql.NullFloat64)
-		case userplatformquota.FieldID, userplatformquota.FieldUserID:
+		case userplatformquota.FieldID, userplatformquota.FieldUserID, userplatformquota.FieldBillingSubjectID:
 			values[i] = new(sql.NullInt64)
 		case userplatformquota.FieldPlatform:
 			values[i] = new(sql.NullString)
@@ -130,6 +146,13 @@ func (_m *UserPlatformQuota) assignValues(columns []string, values []any) error 
 				return fmt.Errorf("unexpected type %T for field user_id", values[i])
 			} else if value.Valid {
 				_m.UserID = value.Int64
+			}
+		case userplatformquota.FieldBillingSubjectID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field billing_subject_id", values[i])
+			} else if value.Valid {
+				_m.BillingSubjectID = new(int64)
+				*_m.BillingSubjectID = value.Int64
 			}
 		case userplatformquota.FieldPlatform:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -215,6 +238,11 @@ func (_m *UserPlatformQuota) QueryUser() *UserQuery {
 	return NewUserPlatformQuotaClient(_m.config).QueryUser(_m)
 }
 
+// QueryBillingSubject queries the "billing_subject" edge of the UserPlatformQuota entity.
+func (_m *UserPlatformQuota) QueryBillingSubject() *BillingSubjectQuery {
+	return NewUserPlatformQuotaClient(_m.config).QueryBillingSubject(_m)
+}
+
 // Update returns a builder for updating this UserPlatformQuota.
 // Note that you need to call UserPlatformQuota.Unwrap() before calling this method if this UserPlatformQuota
 // was returned from a transaction, and the transaction was committed or rolled back.
@@ -251,6 +279,11 @@ func (_m *UserPlatformQuota) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("user_id=")
 	builder.WriteString(fmt.Sprintf("%v", _m.UserID))
+	builder.WriteString(", ")
+	if v := _m.BillingSubjectID; v != nil {
+		builder.WriteString("billing_subject_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	builder.WriteString("platform=")
 	builder.WriteString(_m.Platform)

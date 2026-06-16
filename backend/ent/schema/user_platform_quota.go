@@ -34,6 +34,9 @@ func (UserPlatformQuota) Mixin() []ent.Mixin {
 func (UserPlatformQuota) Fields() []ent.Field {
 	return []ent.Field{
 		field.Int64("user_id"),
+		field.Int64("billing_subject_id").
+			Optional().
+			Nillable(),
 		field.String("platform").
 			MaxLen(32).
 			NotEmpty().
@@ -99,6 +102,10 @@ func (UserPlatformQuota) Edges() []ent.Edge {
 			Field("user_id").
 			Unique().
 			Required(),
+		edge.From("billing_subject", BillingSubject.Type).
+			Ref("platform_quotas").
+			Field("billing_subject_id").
+			Unique(),
 	}
 }
 
@@ -109,5 +116,6 @@ func (UserPlatformQuota) Indexes() []ent.Index {
 			Unique().
 			Annotations(entsql.IndexWhere("deleted_at IS NULL")),
 		index.Fields("user_id"),
+		index.Fields("billing_subject_id", "platform"),
 	}
 }

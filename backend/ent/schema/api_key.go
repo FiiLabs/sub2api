@@ -44,6 +44,18 @@ func (APIKey) Fields() []ent.Field {
 		field.Int64("group_id").
 			Optional().
 			Nillable(),
+		field.Int64("billing_subject_id").
+			Optional().
+			Nillable(),
+		field.Int64("team_id").
+			Optional().
+			Nillable(),
+		field.Int64("created_by_user_id").
+			Optional().
+			Nillable(),
+		field.Int64("updated_by_user_id").
+			Optional().
+			Nillable(),
 		field.String("status").
 			MaxLen(20).
 			Default(domain.StatusActive),
@@ -129,6 +141,22 @@ func (APIKey) Edges() []ent.Edge {
 			Ref("api_keys").
 			Field("group_id").
 			Unique(),
+		edge.From("billing_subject", BillingSubject.Type).
+			Ref("api_keys").
+			Field("billing_subject_id").
+			Unique(),
+		edge.From("team", Team.Type).
+			Ref("api_keys").
+			Field("team_id").
+			Unique(),
+		edge.From("created_by", User.Type).
+			Ref("created_api_keys").
+			Field("created_by_user_id").
+			Unique(),
+		edge.From("updated_by", User.Type).
+			Ref("updated_api_keys").
+			Field("updated_by_user_id").
+			Unique(),
 		edge.To("usage_logs", UsageLog.Type),
 	}
 }
@@ -138,6 +166,9 @@ func (APIKey) Indexes() []ent.Index {
 		// key 字段已在 Fields() 中声明 Unique()，无需重复索引
 		index.Fields("user_id"),
 		index.Fields("group_id"),
+		index.Fields("billing_subject_id"),
+		index.Fields("team_id"),
+		index.Fields("created_by_user_id"),
 		index.Fields("status"),
 		index.Fields("deleted_at"),
 		index.Fields("last_used_at"),

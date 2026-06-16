@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/Wei-Shaw/sub2api/ent/billingsubject"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userplatformquota"
@@ -20,12 +21,13 @@ import (
 // UserPlatformQuotaQuery is the builder for querying UserPlatformQuota entities.
 type UserPlatformQuotaQuery struct {
 	config
-	ctx        *QueryContext
-	order      []userplatformquota.OrderOption
-	inters     []Interceptor
-	predicates []predicate.UserPlatformQuota
-	withUser   *UserQuery
-	modifiers  []func(*sql.Selector)
+	ctx                *QueryContext
+	order              []userplatformquota.OrderOption
+	inters             []Interceptor
+	predicates         []predicate.UserPlatformQuota
+	withUser           *UserQuery
+	withBillingSubject *BillingSubjectQuery
+	modifiers          []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -77,6 +79,28 @@ func (_q *UserPlatformQuotaQuery) QueryUser() *UserQuery {
 			sqlgraph.From(userplatformquota.Table, userplatformquota.FieldID, selector),
 			sqlgraph.To(user.Table, user.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, userplatformquota.UserTable, userplatformquota.UserColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryBillingSubject chains the current query on the "billing_subject" edge.
+func (_q *UserPlatformQuotaQuery) QueryBillingSubject() *BillingSubjectQuery {
+	query := (&BillingSubjectClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(userplatformquota.Table, userplatformquota.FieldID, selector),
+			sqlgraph.To(billingsubject.Table, billingsubject.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, userplatformquota.BillingSubjectTable, userplatformquota.BillingSubjectColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -271,12 +295,13 @@ func (_q *UserPlatformQuotaQuery) Clone() *UserPlatformQuotaQuery {
 		return nil
 	}
 	return &UserPlatformQuotaQuery{
-		config:     _q.config,
-		ctx:        _q.ctx.Clone(),
-		order:      append([]userplatformquota.OrderOption{}, _q.order...),
-		inters:     append([]Interceptor{}, _q.inters...),
-		predicates: append([]predicate.UserPlatformQuota{}, _q.predicates...),
-		withUser:   _q.withUser.Clone(),
+		config:             _q.config,
+		ctx:                _q.ctx.Clone(),
+		order:              append([]userplatformquota.OrderOption{}, _q.order...),
+		inters:             append([]Interceptor{}, _q.inters...),
+		predicates:         append([]predicate.UserPlatformQuota{}, _q.predicates...),
+		withUser:           _q.withUser.Clone(),
+		withBillingSubject: _q.withBillingSubject.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
@@ -291,6 +316,17 @@ func (_q *UserPlatformQuotaQuery) WithUser(opts ...func(*UserQuery)) *UserPlatfo
 		opt(query)
 	}
 	_q.withUser = query
+	return _q
+}
+
+// WithBillingSubject tells the query-builder to eager-load the nodes that are connected to
+// the "billing_subject" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserPlatformQuotaQuery) WithBillingSubject(opts ...func(*BillingSubjectQuery)) *UserPlatformQuotaQuery {
+	query := (&BillingSubjectClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withBillingSubject = query
 	return _q
 }
 
@@ -372,8 +408,9 @@ func (_q *UserPlatformQuotaQuery) sqlAll(ctx context.Context, hooks ...queryHook
 	var (
 		nodes       = []*UserPlatformQuota{}
 		_spec       = _q.querySpec()
-		loadedTypes = [1]bool{
+		loadedTypes = [2]bool{
 			_q.withUser != nil,
+			_q.withBillingSubject != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -403,6 +440,12 @@ func (_q *UserPlatformQuotaQuery) sqlAll(ctx context.Context, hooks ...queryHook
 			return nil, err
 		}
 	}
+	if query := _q.withBillingSubject; query != nil {
+		if err := _q.loadBillingSubject(ctx, query, nodes, nil,
+			func(n *UserPlatformQuota, e *BillingSubject) { n.Edges.BillingSubject = e }); err != nil {
+			return nil, err
+		}
+	}
 	return nodes, nil
 }
 
@@ -428,6 +471,38 @@ func (_q *UserPlatformQuotaQuery) loadUser(ctx context.Context, query *UserQuery
 		nodes, ok := nodeids[n.ID]
 		if !ok {
 			return fmt.Errorf(`unexpected foreign-key "user_id" returned %v`, n.ID)
+		}
+		for i := range nodes {
+			assign(nodes[i], n)
+		}
+	}
+	return nil
+}
+func (_q *UserPlatformQuotaQuery) loadBillingSubject(ctx context.Context, query *BillingSubjectQuery, nodes []*UserPlatformQuota, init func(*UserPlatformQuota), assign func(*UserPlatformQuota, *BillingSubject)) error {
+	ids := make([]int64, 0, len(nodes))
+	nodeids := make(map[int64][]*UserPlatformQuota)
+	for i := range nodes {
+		if nodes[i].BillingSubjectID == nil {
+			continue
+		}
+		fk := *nodes[i].BillingSubjectID
+		if _, ok := nodeids[fk]; !ok {
+			ids = append(ids, fk)
+		}
+		nodeids[fk] = append(nodeids[fk], nodes[i])
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	query.Where(billingsubject.IDIn(ids...))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		nodes, ok := nodeids[n.ID]
+		if !ok {
+			return fmt.Errorf(`unexpected foreign-key "billing_subject_id" returned %v`, n.ID)
 		}
 		for i := range nodes {
 			assign(nodes[i], n)
@@ -466,6 +541,9 @@ func (_q *UserPlatformQuotaQuery) querySpec() *sqlgraph.QuerySpec {
 		}
 		if _q.withUser != nil {
 			_spec.Node.AddColumnOnce(userplatformquota.FieldUserID)
+		}
+		if _q.withBillingSubject != nil {
+			_spec.Node.AddColumnOnce(userplatformquota.FieldBillingSubjectID)
 		}
 	}
 	if ps := _q.predicates; len(ps) > 0 {

@@ -75,6 +75,11 @@ func UserID(v int64) predicate.UserPlatformQuota {
 	return predicate.UserPlatformQuota(sql.FieldEQ(FieldUserID, v))
 }
 
+// BillingSubjectID applies equality check predicate on the "billing_subject_id" field. It's identical to BillingSubjectIDEQ.
+func BillingSubjectID(v int64) predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldEQ(FieldBillingSubjectID, v))
+}
+
 // Platform applies equality check predicate on the "platform" field. It's identical to PlatformEQ.
 func Platform(v string) predicate.UserPlatformQuota {
 	return predicate.UserPlatformQuota(sql.FieldEQ(FieldPlatform, v))
@@ -273,6 +278,36 @@ func UserIDIn(vs ...int64) predicate.UserPlatformQuota {
 // UserIDNotIn applies the NotIn predicate on the "user_id" field.
 func UserIDNotIn(vs ...int64) predicate.UserPlatformQuota {
 	return predicate.UserPlatformQuota(sql.FieldNotIn(FieldUserID, vs...))
+}
+
+// BillingSubjectIDEQ applies the EQ predicate on the "billing_subject_id" field.
+func BillingSubjectIDEQ(v int64) predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldEQ(FieldBillingSubjectID, v))
+}
+
+// BillingSubjectIDNEQ applies the NEQ predicate on the "billing_subject_id" field.
+func BillingSubjectIDNEQ(v int64) predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldNEQ(FieldBillingSubjectID, v))
+}
+
+// BillingSubjectIDIn applies the In predicate on the "billing_subject_id" field.
+func BillingSubjectIDIn(vs ...int64) predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldIn(FieldBillingSubjectID, vs...))
+}
+
+// BillingSubjectIDNotIn applies the NotIn predicate on the "billing_subject_id" field.
+func BillingSubjectIDNotIn(vs ...int64) predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldNotIn(FieldBillingSubjectID, vs...))
+}
+
+// BillingSubjectIDIsNil applies the IsNil predicate on the "billing_subject_id" field.
+func BillingSubjectIDIsNil() predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldIsNull(FieldBillingSubjectID))
+}
+
+// BillingSubjectIDNotNil applies the NotNil predicate on the "billing_subject_id" field.
+func BillingSubjectIDNotNil() predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldNotNull(FieldBillingSubjectID))
 }
 
 // PlatformEQ applies the EQ predicate on the "platform" field.
@@ -775,6 +810,29 @@ func HasUser() predicate.UserPlatformQuota {
 func HasUserWith(preds ...predicate.User) predicate.UserPlatformQuota {
 	return predicate.UserPlatformQuota(func(s *sql.Selector) {
 		step := newUserStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasBillingSubject applies the HasEdge predicate on the "billing_subject" edge.
+func HasBillingSubject() predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, BillingSubjectTable, BillingSubjectColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasBillingSubjectWith applies the HasEdge predicate on the "billing_subject" edge with a given conditions (other predicates).
+func HasBillingSubjectWith(preds ...predicate.BillingSubject) predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(func(s *sql.Selector) {
+		step := newBillingSubjectStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

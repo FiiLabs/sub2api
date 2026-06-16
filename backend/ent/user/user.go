@@ -81,12 +81,34 @@ const (
 	EdgePromoCodeUsages = "promo_code_usages"
 	// EdgePaymentOrders holds the string denoting the payment_orders edge name in mutations.
 	EdgePaymentOrders = "payment_orders"
+	// EdgeCreatedPaymentOrders holds the string denoting the created_payment_orders edge name in mutations.
+	EdgeCreatedPaymentOrders = "created_payment_orders"
 	// EdgeAuthIdentities holds the string denoting the auth_identities edge name in mutations.
 	EdgeAuthIdentities = "auth_identities"
 	// EdgePendingAuthSessions holds the string denoting the pending_auth_sessions edge name in mutations.
 	EdgePendingAuthSessions = "pending_auth_sessions"
 	// EdgePlatformQuotas holds the string denoting the platform_quotas edge name in mutations.
 	EdgePlatformQuotas = "platform_quotas"
+	// EdgeBillingSubjects holds the string denoting the billing_subjects edge name in mutations.
+	EdgeBillingSubjects = "billing_subjects"
+	// EdgeOwnedTeams holds the string denoting the owned_teams edge name in mutations.
+	EdgeOwnedTeams = "owned_teams"
+	// EdgeCreatedTeams holds the string denoting the created_teams edge name in mutations.
+	EdgeCreatedTeams = "created_teams"
+	// EdgeTeamMemberships holds the string denoting the team_memberships edge name in mutations.
+	EdgeTeamMemberships = "team_memberships"
+	// EdgeTeamMemberInvites holds the string denoting the team_member_invites edge name in mutations.
+	EdgeTeamMemberInvites = "team_member_invites"
+	// EdgeSentTeamInvitations holds the string denoting the sent_team_invitations edge name in mutations.
+	EdgeSentTeamInvitations = "sent_team_invitations"
+	// EdgeAcceptedTeamInvitations holds the string denoting the accepted_team_invitations edge name in mutations.
+	EdgeAcceptedTeamInvitations = "accepted_team_invitations"
+	// EdgeCreatedAPIKeys holds the string denoting the created_api_keys edge name in mutations.
+	EdgeCreatedAPIKeys = "created_api_keys"
+	// EdgeUpdatedAPIKeys holds the string denoting the updated_api_keys edge name in mutations.
+	EdgeUpdatedAPIKeys = "updated_api_keys"
+	// EdgeActedUsageLogs holds the string denoting the acted_usage_logs edge name in mutations.
+	EdgeActedUsageLogs = "acted_usage_logs"
 	// EdgeUserAllowedGroups holds the string denoting the user_allowed_groups edge name in mutations.
 	EdgeUserAllowedGroups = "user_allowed_groups"
 	// Table holds the table name of the user in the database.
@@ -159,6 +181,13 @@ const (
 	PaymentOrdersInverseTable = "payment_orders"
 	// PaymentOrdersColumn is the table column denoting the payment_orders relation/edge.
 	PaymentOrdersColumn = "user_id"
+	// CreatedPaymentOrdersTable is the table that holds the created_payment_orders relation/edge.
+	CreatedPaymentOrdersTable = "payment_orders"
+	// CreatedPaymentOrdersInverseTable is the table name for the PaymentOrder entity.
+	// It exists in this package in order to avoid circular dependency with the "paymentorder" package.
+	CreatedPaymentOrdersInverseTable = "payment_orders"
+	// CreatedPaymentOrdersColumn is the table column denoting the created_payment_orders relation/edge.
+	CreatedPaymentOrdersColumn = "created_by_user_id"
 	// AuthIdentitiesTable is the table that holds the auth_identities relation/edge.
 	AuthIdentitiesTable = "auth_identities"
 	// AuthIdentitiesInverseTable is the table name for the AuthIdentity entity.
@@ -180,6 +209,76 @@ const (
 	PlatformQuotasInverseTable = "user_platform_quotas"
 	// PlatformQuotasColumn is the table column denoting the platform_quotas relation/edge.
 	PlatformQuotasColumn = "user_id"
+	// BillingSubjectsTable is the table that holds the billing_subjects relation/edge.
+	BillingSubjectsTable = "billing_subjects"
+	// BillingSubjectsInverseTable is the table name for the BillingSubject entity.
+	// It exists in this package in order to avoid circular dependency with the "billingsubject" package.
+	BillingSubjectsInverseTable = "billing_subjects"
+	// BillingSubjectsColumn is the table column denoting the billing_subjects relation/edge.
+	BillingSubjectsColumn = "user_id"
+	// OwnedTeamsTable is the table that holds the owned_teams relation/edge.
+	OwnedTeamsTable = "teams"
+	// OwnedTeamsInverseTable is the table name for the Team entity.
+	// It exists in this package in order to avoid circular dependency with the "team" package.
+	OwnedTeamsInverseTable = "teams"
+	// OwnedTeamsColumn is the table column denoting the owned_teams relation/edge.
+	OwnedTeamsColumn = "owner_user_id"
+	// CreatedTeamsTable is the table that holds the created_teams relation/edge.
+	CreatedTeamsTable = "teams"
+	// CreatedTeamsInverseTable is the table name for the Team entity.
+	// It exists in this package in order to avoid circular dependency with the "team" package.
+	CreatedTeamsInverseTable = "teams"
+	// CreatedTeamsColumn is the table column denoting the created_teams relation/edge.
+	CreatedTeamsColumn = "created_by_user_id"
+	// TeamMembershipsTable is the table that holds the team_memberships relation/edge.
+	TeamMembershipsTable = "team_members"
+	// TeamMembershipsInverseTable is the table name for the TeamMember entity.
+	// It exists in this package in order to avoid circular dependency with the "teammember" package.
+	TeamMembershipsInverseTable = "team_members"
+	// TeamMembershipsColumn is the table column denoting the team_memberships relation/edge.
+	TeamMembershipsColumn = "user_id"
+	// TeamMemberInvitesTable is the table that holds the team_member_invites relation/edge.
+	TeamMemberInvitesTable = "team_members"
+	// TeamMemberInvitesInverseTable is the table name for the TeamMember entity.
+	// It exists in this package in order to avoid circular dependency with the "teammember" package.
+	TeamMemberInvitesInverseTable = "team_members"
+	// TeamMemberInvitesColumn is the table column denoting the team_member_invites relation/edge.
+	TeamMemberInvitesColumn = "invited_by_user_id"
+	// SentTeamInvitationsTable is the table that holds the sent_team_invitations relation/edge.
+	SentTeamInvitationsTable = "team_invitations"
+	// SentTeamInvitationsInverseTable is the table name for the TeamInvitation entity.
+	// It exists in this package in order to avoid circular dependency with the "teaminvitation" package.
+	SentTeamInvitationsInverseTable = "team_invitations"
+	// SentTeamInvitationsColumn is the table column denoting the sent_team_invitations relation/edge.
+	SentTeamInvitationsColumn = "invited_by_user_id"
+	// AcceptedTeamInvitationsTable is the table that holds the accepted_team_invitations relation/edge.
+	AcceptedTeamInvitationsTable = "team_invitations"
+	// AcceptedTeamInvitationsInverseTable is the table name for the TeamInvitation entity.
+	// It exists in this package in order to avoid circular dependency with the "teaminvitation" package.
+	AcceptedTeamInvitationsInverseTable = "team_invitations"
+	// AcceptedTeamInvitationsColumn is the table column denoting the accepted_team_invitations relation/edge.
+	AcceptedTeamInvitationsColumn = "accepted_by_user_id"
+	// CreatedAPIKeysTable is the table that holds the created_api_keys relation/edge.
+	CreatedAPIKeysTable = "api_keys"
+	// CreatedAPIKeysInverseTable is the table name for the APIKey entity.
+	// It exists in this package in order to avoid circular dependency with the "apikey" package.
+	CreatedAPIKeysInverseTable = "api_keys"
+	// CreatedAPIKeysColumn is the table column denoting the created_api_keys relation/edge.
+	CreatedAPIKeysColumn = "created_by_user_id"
+	// UpdatedAPIKeysTable is the table that holds the updated_api_keys relation/edge.
+	UpdatedAPIKeysTable = "api_keys"
+	// UpdatedAPIKeysInverseTable is the table name for the APIKey entity.
+	// It exists in this package in order to avoid circular dependency with the "apikey" package.
+	UpdatedAPIKeysInverseTable = "api_keys"
+	// UpdatedAPIKeysColumn is the table column denoting the updated_api_keys relation/edge.
+	UpdatedAPIKeysColumn = "updated_by_user_id"
+	// ActedUsageLogsTable is the table that holds the acted_usage_logs relation/edge.
+	ActedUsageLogsTable = "usage_logs"
+	// ActedUsageLogsInverseTable is the table name for the UsageLog entity.
+	// It exists in this package in order to avoid circular dependency with the "usagelog" package.
+	ActedUsageLogsInverseTable = "usage_logs"
+	// ActedUsageLogsColumn is the table column denoting the acted_usage_logs relation/edge.
+	ActedUsageLogsColumn = "actor_user_id"
 	// UserAllowedGroupsTable is the table that holds the user_allowed_groups relation/edge.
 	UserAllowedGroupsTable = "user_allowed_groups"
 	// UserAllowedGroupsInverseTable is the table name for the UserAllowedGroup entity.
@@ -550,6 +649,20 @@ func ByPaymentOrders(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	}
 }
 
+// ByCreatedPaymentOrdersCount orders the results by created_payment_orders count.
+func ByCreatedPaymentOrdersCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newCreatedPaymentOrdersStep(), opts...)
+	}
+}
+
+// ByCreatedPaymentOrders orders the results by created_payment_orders terms.
+func ByCreatedPaymentOrders(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newCreatedPaymentOrdersStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
 // ByAuthIdentitiesCount orders the results by auth_identities count.
 func ByAuthIdentitiesCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -589,6 +702,146 @@ func ByPlatformQuotasCount(opts ...sql.OrderTermOption) OrderOption {
 func ByPlatformQuotas(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	return func(s *sql.Selector) {
 		sqlgraph.OrderByNeighborTerms(s, newPlatformQuotasStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByBillingSubjectsCount orders the results by billing_subjects count.
+func ByBillingSubjectsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newBillingSubjectsStep(), opts...)
+	}
+}
+
+// ByBillingSubjects orders the results by billing_subjects terms.
+func ByBillingSubjects(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newBillingSubjectsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByOwnedTeamsCount orders the results by owned_teams count.
+func ByOwnedTeamsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newOwnedTeamsStep(), opts...)
+	}
+}
+
+// ByOwnedTeams orders the results by owned_teams terms.
+func ByOwnedTeams(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newOwnedTeamsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByCreatedTeamsCount orders the results by created_teams count.
+func ByCreatedTeamsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newCreatedTeamsStep(), opts...)
+	}
+}
+
+// ByCreatedTeams orders the results by created_teams terms.
+func ByCreatedTeams(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newCreatedTeamsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByTeamMembershipsCount orders the results by team_memberships count.
+func ByTeamMembershipsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newTeamMembershipsStep(), opts...)
+	}
+}
+
+// ByTeamMemberships orders the results by team_memberships terms.
+func ByTeamMemberships(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newTeamMembershipsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByTeamMemberInvitesCount orders the results by team_member_invites count.
+func ByTeamMemberInvitesCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newTeamMemberInvitesStep(), opts...)
+	}
+}
+
+// ByTeamMemberInvites orders the results by team_member_invites terms.
+func ByTeamMemberInvites(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newTeamMemberInvitesStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// BySentTeamInvitationsCount orders the results by sent_team_invitations count.
+func BySentTeamInvitationsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newSentTeamInvitationsStep(), opts...)
+	}
+}
+
+// BySentTeamInvitations orders the results by sent_team_invitations terms.
+func BySentTeamInvitations(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newSentTeamInvitationsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByAcceptedTeamInvitationsCount orders the results by accepted_team_invitations count.
+func ByAcceptedTeamInvitationsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newAcceptedTeamInvitationsStep(), opts...)
+	}
+}
+
+// ByAcceptedTeamInvitations orders the results by accepted_team_invitations terms.
+func ByAcceptedTeamInvitations(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newAcceptedTeamInvitationsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByCreatedAPIKeysCount orders the results by created_api_keys count.
+func ByCreatedAPIKeysCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newCreatedAPIKeysStep(), opts...)
+	}
+}
+
+// ByCreatedAPIKeys orders the results by created_api_keys terms.
+func ByCreatedAPIKeys(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newCreatedAPIKeysStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByUpdatedAPIKeysCount orders the results by updated_api_keys count.
+func ByUpdatedAPIKeysCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newUpdatedAPIKeysStep(), opts...)
+	}
+}
+
+// ByUpdatedAPIKeys orders the results by updated_api_keys terms.
+func ByUpdatedAPIKeys(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newUpdatedAPIKeysStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByActedUsageLogsCount orders the results by acted_usage_logs count.
+func ByActedUsageLogsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newActedUsageLogsStep(), opts...)
+	}
+}
+
+// ByActedUsageLogs orders the results by acted_usage_logs terms.
+func ByActedUsageLogs(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newActedUsageLogsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
 
@@ -675,6 +928,13 @@ func newPaymentOrdersStep() *sqlgraph.Step {
 		sqlgraph.Edge(sqlgraph.O2M, false, PaymentOrdersTable, PaymentOrdersColumn),
 	)
 }
+func newCreatedPaymentOrdersStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(CreatedPaymentOrdersInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, CreatedPaymentOrdersTable, CreatedPaymentOrdersColumn),
+	)
+}
 func newAuthIdentitiesStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -694,6 +954,76 @@ func newPlatformQuotasStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(PlatformQuotasInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, PlatformQuotasTable, PlatformQuotasColumn),
+	)
+}
+func newBillingSubjectsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(BillingSubjectsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, BillingSubjectsTable, BillingSubjectsColumn),
+	)
+}
+func newOwnedTeamsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(OwnedTeamsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, OwnedTeamsTable, OwnedTeamsColumn),
+	)
+}
+func newCreatedTeamsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(CreatedTeamsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, CreatedTeamsTable, CreatedTeamsColumn),
+	)
+}
+func newTeamMembershipsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(TeamMembershipsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, TeamMembershipsTable, TeamMembershipsColumn),
+	)
+}
+func newTeamMemberInvitesStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(TeamMemberInvitesInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, TeamMemberInvitesTable, TeamMemberInvitesColumn),
+	)
+}
+func newSentTeamInvitationsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(SentTeamInvitationsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, SentTeamInvitationsTable, SentTeamInvitationsColumn),
+	)
+}
+func newAcceptedTeamInvitationsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(AcceptedTeamInvitationsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, AcceptedTeamInvitationsTable, AcceptedTeamInvitationsColumn),
+	)
+}
+func newCreatedAPIKeysStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(CreatedAPIKeysInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, CreatedAPIKeysTable, CreatedAPIKeysColumn),
+	)
+}
+func newUpdatedAPIKeysStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(UpdatedAPIKeysInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, UpdatedAPIKeysTable, UpdatedAPIKeysColumn),
+	)
+}
+func newActedUsageLogsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(ActedUsageLogsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, ActedUsageLogsTable, ActedUsageLogsColumn),
 	)
 }
 func newUserAllowedGroupsStep() *sqlgraph.Step {

@@ -16,12 +16,16 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
+	"github.com/Wei-Shaw/sub2api/ent/billingsubject"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/pendingauthsession"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
+	"github.com/Wei-Shaw/sub2api/ent/team"
+	"github.com/Wei-Shaw/sub2api/ent/teaminvitation"
+	"github.com/Wei-Shaw/sub2api/ent/teammember"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
@@ -33,25 +37,36 @@ import (
 // UserQuery is the builder for querying User entities.
 type UserQuery struct {
 	config
-	ctx                       *QueryContext
-	order                     []user.OrderOption
-	inters                    []Interceptor
-	predicates                []predicate.User
-	withAPIKeys               *APIKeyQuery
-	withRedeemCodes           *RedeemCodeQuery
-	withSubscriptions         *UserSubscriptionQuery
-	withAssignedSubscriptions *UserSubscriptionQuery
-	withAnnouncementReads     *AnnouncementReadQuery
-	withAllowedGroups         *GroupQuery
-	withUsageLogs             *UsageLogQuery
-	withAttributeValues       *UserAttributeValueQuery
-	withPromoCodeUsages       *PromoCodeUsageQuery
-	withPaymentOrders         *PaymentOrderQuery
-	withAuthIdentities        *AuthIdentityQuery
-	withPendingAuthSessions   *PendingAuthSessionQuery
-	withPlatformQuotas        *UserPlatformQuotaQuery
-	withUserAllowedGroups     *UserAllowedGroupQuery
-	modifiers                 []func(*sql.Selector)
+	ctx                         *QueryContext
+	order                       []user.OrderOption
+	inters                      []Interceptor
+	predicates                  []predicate.User
+	withAPIKeys                 *APIKeyQuery
+	withRedeemCodes             *RedeemCodeQuery
+	withSubscriptions           *UserSubscriptionQuery
+	withAssignedSubscriptions   *UserSubscriptionQuery
+	withAnnouncementReads       *AnnouncementReadQuery
+	withAllowedGroups           *GroupQuery
+	withUsageLogs               *UsageLogQuery
+	withAttributeValues         *UserAttributeValueQuery
+	withPromoCodeUsages         *PromoCodeUsageQuery
+	withPaymentOrders           *PaymentOrderQuery
+	withCreatedPaymentOrders    *PaymentOrderQuery
+	withAuthIdentities          *AuthIdentityQuery
+	withPendingAuthSessions     *PendingAuthSessionQuery
+	withPlatformQuotas          *UserPlatformQuotaQuery
+	withBillingSubjects         *BillingSubjectQuery
+	withOwnedTeams              *TeamQuery
+	withCreatedTeams            *TeamQuery
+	withTeamMemberships         *TeamMemberQuery
+	withTeamMemberInvites       *TeamMemberQuery
+	withSentTeamInvitations     *TeamInvitationQuery
+	withAcceptedTeamInvitations *TeamInvitationQuery
+	withCreatedAPIKeys          *APIKeyQuery
+	withUpdatedAPIKeys          *APIKeyQuery
+	withActedUsageLogs          *UsageLogQuery
+	withUserAllowedGroups       *UserAllowedGroupQuery
+	modifiers                   []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -308,6 +323,28 @@ func (_q *UserQuery) QueryPaymentOrders() *PaymentOrderQuery {
 	return query
 }
 
+// QueryCreatedPaymentOrders chains the current query on the "created_payment_orders" edge.
+func (_q *UserQuery) QueryCreatedPaymentOrders() *PaymentOrderQuery {
+	query := (&PaymentOrderClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(paymentorder.Table, paymentorder.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.CreatedPaymentOrdersTable, user.CreatedPaymentOrdersColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
 // QueryAuthIdentities chains the current query on the "auth_identities" edge.
 func (_q *UserQuery) QueryAuthIdentities() *AuthIdentityQuery {
 	query := (&AuthIdentityClient{config: _q.config}).Query()
@@ -367,6 +404,226 @@ func (_q *UserQuery) QueryPlatformQuotas() *UserPlatformQuotaQuery {
 			sqlgraph.From(user.Table, user.FieldID, selector),
 			sqlgraph.To(userplatformquota.Table, userplatformquota.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, user.PlatformQuotasTable, user.PlatformQuotasColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryBillingSubjects chains the current query on the "billing_subjects" edge.
+func (_q *UserQuery) QueryBillingSubjects() *BillingSubjectQuery {
+	query := (&BillingSubjectClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(billingsubject.Table, billingsubject.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.BillingSubjectsTable, user.BillingSubjectsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryOwnedTeams chains the current query on the "owned_teams" edge.
+func (_q *UserQuery) QueryOwnedTeams() *TeamQuery {
+	query := (&TeamClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(team.Table, team.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.OwnedTeamsTable, user.OwnedTeamsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryCreatedTeams chains the current query on the "created_teams" edge.
+func (_q *UserQuery) QueryCreatedTeams() *TeamQuery {
+	query := (&TeamClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(team.Table, team.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.CreatedTeamsTable, user.CreatedTeamsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryTeamMemberships chains the current query on the "team_memberships" edge.
+func (_q *UserQuery) QueryTeamMemberships() *TeamMemberQuery {
+	query := (&TeamMemberClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(teammember.Table, teammember.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.TeamMembershipsTable, user.TeamMembershipsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryTeamMemberInvites chains the current query on the "team_member_invites" edge.
+func (_q *UserQuery) QueryTeamMemberInvites() *TeamMemberQuery {
+	query := (&TeamMemberClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(teammember.Table, teammember.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.TeamMemberInvitesTable, user.TeamMemberInvitesColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QuerySentTeamInvitations chains the current query on the "sent_team_invitations" edge.
+func (_q *UserQuery) QuerySentTeamInvitations() *TeamInvitationQuery {
+	query := (&TeamInvitationClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(teaminvitation.Table, teaminvitation.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.SentTeamInvitationsTable, user.SentTeamInvitationsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryAcceptedTeamInvitations chains the current query on the "accepted_team_invitations" edge.
+func (_q *UserQuery) QueryAcceptedTeamInvitations() *TeamInvitationQuery {
+	query := (&TeamInvitationClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(teaminvitation.Table, teaminvitation.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.AcceptedTeamInvitationsTable, user.AcceptedTeamInvitationsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryCreatedAPIKeys chains the current query on the "created_api_keys" edge.
+func (_q *UserQuery) QueryCreatedAPIKeys() *APIKeyQuery {
+	query := (&APIKeyClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(apikey.Table, apikey.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.CreatedAPIKeysTable, user.CreatedAPIKeysColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryUpdatedAPIKeys chains the current query on the "updated_api_keys" edge.
+func (_q *UserQuery) QueryUpdatedAPIKeys() *APIKeyQuery {
+	query := (&APIKeyClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(apikey.Table, apikey.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.UpdatedAPIKeysTable, user.UpdatedAPIKeysColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryActedUsageLogs chains the current query on the "acted_usage_logs" edge.
+func (_q *UserQuery) QueryActedUsageLogs() *UsageLogQuery {
+	query := (&UsageLogClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(usagelog.Table, usagelog.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.ActedUsageLogsTable, user.ActedUsageLogsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -583,25 +840,36 @@ func (_q *UserQuery) Clone() *UserQuery {
 		return nil
 	}
 	return &UserQuery{
-		config:                    _q.config,
-		ctx:                       _q.ctx.Clone(),
-		order:                     append([]user.OrderOption{}, _q.order...),
-		inters:                    append([]Interceptor{}, _q.inters...),
-		predicates:                append([]predicate.User{}, _q.predicates...),
-		withAPIKeys:               _q.withAPIKeys.Clone(),
-		withRedeemCodes:           _q.withRedeemCodes.Clone(),
-		withSubscriptions:         _q.withSubscriptions.Clone(),
-		withAssignedSubscriptions: _q.withAssignedSubscriptions.Clone(),
-		withAnnouncementReads:     _q.withAnnouncementReads.Clone(),
-		withAllowedGroups:         _q.withAllowedGroups.Clone(),
-		withUsageLogs:             _q.withUsageLogs.Clone(),
-		withAttributeValues:       _q.withAttributeValues.Clone(),
-		withPromoCodeUsages:       _q.withPromoCodeUsages.Clone(),
-		withPaymentOrders:         _q.withPaymentOrders.Clone(),
-		withAuthIdentities:        _q.withAuthIdentities.Clone(),
-		withPendingAuthSessions:   _q.withPendingAuthSessions.Clone(),
-		withPlatformQuotas:        _q.withPlatformQuotas.Clone(),
-		withUserAllowedGroups:     _q.withUserAllowedGroups.Clone(),
+		config:                      _q.config,
+		ctx:                         _q.ctx.Clone(),
+		order:                       append([]user.OrderOption{}, _q.order...),
+		inters:                      append([]Interceptor{}, _q.inters...),
+		predicates:                  append([]predicate.User{}, _q.predicates...),
+		withAPIKeys:                 _q.withAPIKeys.Clone(),
+		withRedeemCodes:             _q.withRedeemCodes.Clone(),
+		withSubscriptions:           _q.withSubscriptions.Clone(),
+		withAssignedSubscriptions:   _q.withAssignedSubscriptions.Clone(),
+		withAnnouncementReads:       _q.withAnnouncementReads.Clone(),
+		withAllowedGroups:           _q.withAllowedGroups.Clone(),
+		withUsageLogs:               _q.withUsageLogs.Clone(),
+		withAttributeValues:         _q.withAttributeValues.Clone(),
+		withPromoCodeUsages:         _q.withPromoCodeUsages.Clone(),
+		withPaymentOrders:           _q.withPaymentOrders.Clone(),
+		withCreatedPaymentOrders:    _q.withCreatedPaymentOrders.Clone(),
+		withAuthIdentities:          _q.withAuthIdentities.Clone(),
+		withPendingAuthSessions:     _q.withPendingAuthSessions.Clone(),
+		withPlatformQuotas:          _q.withPlatformQuotas.Clone(),
+		withBillingSubjects:         _q.withBillingSubjects.Clone(),
+		withOwnedTeams:              _q.withOwnedTeams.Clone(),
+		withCreatedTeams:            _q.withCreatedTeams.Clone(),
+		withTeamMemberships:         _q.withTeamMemberships.Clone(),
+		withTeamMemberInvites:       _q.withTeamMemberInvites.Clone(),
+		withSentTeamInvitations:     _q.withSentTeamInvitations.Clone(),
+		withAcceptedTeamInvitations: _q.withAcceptedTeamInvitations.Clone(),
+		withCreatedAPIKeys:          _q.withCreatedAPIKeys.Clone(),
+		withUpdatedAPIKeys:          _q.withUpdatedAPIKeys.Clone(),
+		withActedUsageLogs:          _q.withActedUsageLogs.Clone(),
+		withUserAllowedGroups:       _q.withUserAllowedGroups.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
@@ -718,6 +986,17 @@ func (_q *UserQuery) WithPaymentOrders(opts ...func(*PaymentOrderQuery)) *UserQu
 	return _q
 }
 
+// WithCreatedPaymentOrders tells the query-builder to eager-load the nodes that are connected to
+// the "created_payment_orders" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithCreatedPaymentOrders(opts ...func(*PaymentOrderQuery)) *UserQuery {
+	query := (&PaymentOrderClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withCreatedPaymentOrders = query
+	return _q
+}
+
 // WithAuthIdentities tells the query-builder to eager-load the nodes that are connected to
 // the "auth_identities" edge. The optional arguments are used to configure the query builder of the edge.
 func (_q *UserQuery) WithAuthIdentities(opts ...func(*AuthIdentityQuery)) *UserQuery {
@@ -748,6 +1027,116 @@ func (_q *UserQuery) WithPlatformQuotas(opts ...func(*UserPlatformQuotaQuery)) *
 		opt(query)
 	}
 	_q.withPlatformQuotas = query
+	return _q
+}
+
+// WithBillingSubjects tells the query-builder to eager-load the nodes that are connected to
+// the "billing_subjects" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithBillingSubjects(opts ...func(*BillingSubjectQuery)) *UserQuery {
+	query := (&BillingSubjectClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withBillingSubjects = query
+	return _q
+}
+
+// WithOwnedTeams tells the query-builder to eager-load the nodes that are connected to
+// the "owned_teams" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithOwnedTeams(opts ...func(*TeamQuery)) *UserQuery {
+	query := (&TeamClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withOwnedTeams = query
+	return _q
+}
+
+// WithCreatedTeams tells the query-builder to eager-load the nodes that are connected to
+// the "created_teams" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithCreatedTeams(opts ...func(*TeamQuery)) *UserQuery {
+	query := (&TeamClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withCreatedTeams = query
+	return _q
+}
+
+// WithTeamMemberships tells the query-builder to eager-load the nodes that are connected to
+// the "team_memberships" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithTeamMemberships(opts ...func(*TeamMemberQuery)) *UserQuery {
+	query := (&TeamMemberClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withTeamMemberships = query
+	return _q
+}
+
+// WithTeamMemberInvites tells the query-builder to eager-load the nodes that are connected to
+// the "team_member_invites" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithTeamMemberInvites(opts ...func(*TeamMemberQuery)) *UserQuery {
+	query := (&TeamMemberClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withTeamMemberInvites = query
+	return _q
+}
+
+// WithSentTeamInvitations tells the query-builder to eager-load the nodes that are connected to
+// the "sent_team_invitations" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithSentTeamInvitations(opts ...func(*TeamInvitationQuery)) *UserQuery {
+	query := (&TeamInvitationClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withSentTeamInvitations = query
+	return _q
+}
+
+// WithAcceptedTeamInvitations tells the query-builder to eager-load the nodes that are connected to
+// the "accepted_team_invitations" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithAcceptedTeamInvitations(opts ...func(*TeamInvitationQuery)) *UserQuery {
+	query := (&TeamInvitationClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withAcceptedTeamInvitations = query
+	return _q
+}
+
+// WithCreatedAPIKeys tells the query-builder to eager-load the nodes that are connected to
+// the "created_api_keys" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithCreatedAPIKeys(opts ...func(*APIKeyQuery)) *UserQuery {
+	query := (&APIKeyClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withCreatedAPIKeys = query
+	return _q
+}
+
+// WithUpdatedAPIKeys tells the query-builder to eager-load the nodes that are connected to
+// the "updated_api_keys" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithUpdatedAPIKeys(opts ...func(*APIKeyQuery)) *UserQuery {
+	query := (&APIKeyClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withUpdatedAPIKeys = query
+	return _q
+}
+
+// WithActedUsageLogs tells the query-builder to eager-load the nodes that are connected to
+// the "acted_usage_logs" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithActedUsageLogs(opts ...func(*UsageLogQuery)) *UserQuery {
+	query := (&UsageLogClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withActedUsageLogs = query
 	return _q
 }
 
@@ -840,7 +1229,7 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 	var (
 		nodes       = []*User{}
 		_spec       = _q.querySpec()
-		loadedTypes = [14]bool{
+		loadedTypes = [25]bool{
 			_q.withAPIKeys != nil,
 			_q.withRedeemCodes != nil,
 			_q.withSubscriptions != nil,
@@ -851,9 +1240,20 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 			_q.withAttributeValues != nil,
 			_q.withPromoCodeUsages != nil,
 			_q.withPaymentOrders != nil,
+			_q.withCreatedPaymentOrders != nil,
 			_q.withAuthIdentities != nil,
 			_q.withPendingAuthSessions != nil,
 			_q.withPlatformQuotas != nil,
+			_q.withBillingSubjects != nil,
+			_q.withOwnedTeams != nil,
+			_q.withCreatedTeams != nil,
+			_q.withTeamMemberships != nil,
+			_q.withTeamMemberInvites != nil,
+			_q.withSentTeamInvitations != nil,
+			_q.withAcceptedTeamInvitations != nil,
+			_q.withCreatedAPIKeys != nil,
+			_q.withUpdatedAPIKeys != nil,
+			_q.withActedUsageLogs != nil,
 			_q.withUserAllowedGroups != nil,
 		}
 	)
@@ -950,6 +1350,13 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 			return nil, err
 		}
 	}
+	if query := _q.withCreatedPaymentOrders; query != nil {
+		if err := _q.loadCreatedPaymentOrders(ctx, query, nodes,
+			func(n *User) { n.Edges.CreatedPaymentOrders = []*PaymentOrder{} },
+			func(n *User, e *PaymentOrder) { n.Edges.CreatedPaymentOrders = append(n.Edges.CreatedPaymentOrders, e) }); err != nil {
+			return nil, err
+		}
+	}
 	if query := _q.withAuthIdentities; query != nil {
 		if err := _q.loadAuthIdentities(ctx, query, nodes,
 			func(n *User) { n.Edges.AuthIdentities = []*AuthIdentity{} },
@@ -970,6 +1377,78 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 		if err := _q.loadPlatformQuotas(ctx, query, nodes,
 			func(n *User) { n.Edges.PlatformQuotas = []*UserPlatformQuota{} },
 			func(n *User, e *UserPlatformQuota) { n.Edges.PlatformQuotas = append(n.Edges.PlatformQuotas, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withBillingSubjects; query != nil {
+		if err := _q.loadBillingSubjects(ctx, query, nodes,
+			func(n *User) { n.Edges.BillingSubjects = []*BillingSubject{} },
+			func(n *User, e *BillingSubject) { n.Edges.BillingSubjects = append(n.Edges.BillingSubjects, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withOwnedTeams; query != nil {
+		if err := _q.loadOwnedTeams(ctx, query, nodes,
+			func(n *User) { n.Edges.OwnedTeams = []*Team{} },
+			func(n *User, e *Team) { n.Edges.OwnedTeams = append(n.Edges.OwnedTeams, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withCreatedTeams; query != nil {
+		if err := _q.loadCreatedTeams(ctx, query, nodes,
+			func(n *User) { n.Edges.CreatedTeams = []*Team{} },
+			func(n *User, e *Team) { n.Edges.CreatedTeams = append(n.Edges.CreatedTeams, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withTeamMemberships; query != nil {
+		if err := _q.loadTeamMemberships(ctx, query, nodes,
+			func(n *User) { n.Edges.TeamMemberships = []*TeamMember{} },
+			func(n *User, e *TeamMember) { n.Edges.TeamMemberships = append(n.Edges.TeamMemberships, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withTeamMemberInvites; query != nil {
+		if err := _q.loadTeamMemberInvites(ctx, query, nodes,
+			func(n *User) { n.Edges.TeamMemberInvites = []*TeamMember{} },
+			func(n *User, e *TeamMember) { n.Edges.TeamMemberInvites = append(n.Edges.TeamMemberInvites, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withSentTeamInvitations; query != nil {
+		if err := _q.loadSentTeamInvitations(ctx, query, nodes,
+			func(n *User) { n.Edges.SentTeamInvitations = []*TeamInvitation{} },
+			func(n *User, e *TeamInvitation) { n.Edges.SentTeamInvitations = append(n.Edges.SentTeamInvitations, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withAcceptedTeamInvitations; query != nil {
+		if err := _q.loadAcceptedTeamInvitations(ctx, query, nodes,
+			func(n *User) { n.Edges.AcceptedTeamInvitations = []*TeamInvitation{} },
+			func(n *User, e *TeamInvitation) {
+				n.Edges.AcceptedTeamInvitations = append(n.Edges.AcceptedTeamInvitations, e)
+			}); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withCreatedAPIKeys; query != nil {
+		if err := _q.loadCreatedAPIKeys(ctx, query, nodes,
+			func(n *User) { n.Edges.CreatedAPIKeys = []*APIKey{} },
+			func(n *User, e *APIKey) { n.Edges.CreatedAPIKeys = append(n.Edges.CreatedAPIKeys, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withUpdatedAPIKeys; query != nil {
+		if err := _q.loadUpdatedAPIKeys(ctx, query, nodes,
+			func(n *User) { n.Edges.UpdatedAPIKeys = []*APIKey{} },
+			func(n *User, e *APIKey) { n.Edges.UpdatedAPIKeys = append(n.Edges.UpdatedAPIKeys, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withActedUsageLogs; query != nil {
+		if err := _q.loadActedUsageLogs(ctx, query, nodes,
+			func(n *User) { n.Edges.ActedUsageLogs = []*UsageLog{} },
+			func(n *User, e *UsageLog) { n.Edges.ActedUsageLogs = append(n.Edges.ActedUsageLogs, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -1320,6 +1799,39 @@ func (_q *UserQuery) loadPaymentOrders(ctx context.Context, query *PaymentOrderQ
 	}
 	return nil
 }
+func (_q *UserQuery) loadCreatedPaymentOrders(ctx context.Context, query *PaymentOrderQuery, nodes []*User, init func(*User), assign func(*User, *PaymentOrder)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(paymentorder.FieldCreatedByUserID)
+	}
+	query.Where(predicate.PaymentOrder(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.CreatedPaymentOrdersColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.CreatedByUserID
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "created_by_user_id" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "created_by_user_id" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
 func (_q *UserQuery) loadAuthIdentities(ctx context.Context, query *AuthIdentityQuery, nodes []*User, init func(*User), assign func(*User, *AuthIdentity)) error {
 	fks := make([]driver.Value, 0, len(nodes))
 	nodeids := make(map[int64]*User)
@@ -1408,6 +1920,324 @@ func (_q *UserQuery) loadPlatformQuotas(ctx context.Context, query *UserPlatform
 		node, ok := nodeids[fk]
 		if !ok {
 			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadBillingSubjects(ctx context.Context, query *BillingSubjectQuery, nodes []*User, init func(*User), assign func(*User, *BillingSubject)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(billingsubject.FieldUserID)
+	}
+	query.Where(predicate.BillingSubject(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.BillingSubjectsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "user_id" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadOwnedTeams(ctx context.Context, query *TeamQuery, nodes []*User, init func(*User), assign func(*User, *Team)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(team.FieldOwnerUserID)
+	}
+	query.Where(predicate.Team(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.OwnedTeamsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.OwnerUserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "owner_user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadCreatedTeams(ctx context.Context, query *TeamQuery, nodes []*User, init func(*User), assign func(*User, *Team)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(team.FieldCreatedByUserID)
+	}
+	query.Where(predicate.Team(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.CreatedTeamsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.CreatedByUserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "created_by_user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadTeamMemberships(ctx context.Context, query *TeamMemberQuery, nodes []*User, init func(*User), assign func(*User, *TeamMember)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(teammember.FieldUserID)
+	}
+	query.Where(predicate.TeamMember(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.TeamMembershipsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadTeamMemberInvites(ctx context.Context, query *TeamMemberQuery, nodes []*User, init func(*User), assign func(*User, *TeamMember)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(teammember.FieldInvitedByUserID)
+	}
+	query.Where(predicate.TeamMember(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.TeamMemberInvitesColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.InvitedByUserID
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "invited_by_user_id" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "invited_by_user_id" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadSentTeamInvitations(ctx context.Context, query *TeamInvitationQuery, nodes []*User, init func(*User), assign func(*User, *TeamInvitation)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(teaminvitation.FieldInvitedByUserID)
+	}
+	query.Where(predicate.TeamInvitation(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.SentTeamInvitationsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.InvitedByUserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "invited_by_user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadAcceptedTeamInvitations(ctx context.Context, query *TeamInvitationQuery, nodes []*User, init func(*User), assign func(*User, *TeamInvitation)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(teaminvitation.FieldAcceptedByUserID)
+	}
+	query.Where(predicate.TeamInvitation(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.AcceptedTeamInvitationsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.AcceptedByUserID
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "accepted_by_user_id" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "accepted_by_user_id" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadCreatedAPIKeys(ctx context.Context, query *APIKeyQuery, nodes []*User, init func(*User), assign func(*User, *APIKey)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(apikey.FieldCreatedByUserID)
+	}
+	query.Where(predicate.APIKey(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.CreatedAPIKeysColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.CreatedByUserID
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "created_by_user_id" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "created_by_user_id" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadUpdatedAPIKeys(ctx context.Context, query *APIKeyQuery, nodes []*User, init func(*User), assign func(*User, *APIKey)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(apikey.FieldUpdatedByUserID)
+	}
+	query.Where(predicate.APIKey(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.UpdatedAPIKeysColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UpdatedByUserID
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "updated_by_user_id" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "updated_by_user_id" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadActedUsageLogs(ctx context.Context, query *UsageLogQuery, nodes []*User, init func(*User), assign func(*User, *UsageLog)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(usagelog.FieldActorUserID)
+	}
+	query.Where(predicate.UsageLog(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.ActedUsageLogsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.ActorUserID
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "actor_user_id" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "actor_user_id" returned %v for node %v`, *fk, n.ID)
 		}
 		assign(node, n)
 	}

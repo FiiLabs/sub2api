@@ -14,11 +14,15 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
+	"github.com/Wei-Shaw/sub2api/ent/billingsubject"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/pendingauthsession"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
+	"github.com/Wei-Shaw/sub2api/ent/team"
+	"github.com/Wei-Shaw/sub2api/ent/teaminvitation"
+	"github.com/Wei-Shaw/sub2api/ent/teammember"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userattributevalue"
@@ -490,6 +494,21 @@ func (_c *UserCreate) AddPaymentOrders(v ...*PaymentOrder) *UserCreate {
 	return _c.AddPaymentOrderIDs(ids...)
 }
 
+// AddCreatedPaymentOrderIDs adds the "created_payment_orders" edge to the PaymentOrder entity by IDs.
+func (_c *UserCreate) AddCreatedPaymentOrderIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddCreatedPaymentOrderIDs(ids...)
+	return _c
+}
+
+// AddCreatedPaymentOrders adds the "created_payment_orders" edges to the PaymentOrder entity.
+func (_c *UserCreate) AddCreatedPaymentOrders(v ...*PaymentOrder) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddCreatedPaymentOrderIDs(ids...)
+}
+
 // AddAuthIdentityIDs adds the "auth_identities" edge to the AuthIdentity entity by IDs.
 func (_c *UserCreate) AddAuthIdentityIDs(ids ...int64) *UserCreate {
 	_c.mutation.AddAuthIdentityIDs(ids...)
@@ -533,6 +552,156 @@ func (_c *UserCreate) AddPlatformQuotas(v ...*UserPlatformQuota) *UserCreate {
 		ids[i] = v[i].ID
 	}
 	return _c.AddPlatformQuotaIDs(ids...)
+}
+
+// AddBillingSubjectIDs adds the "billing_subjects" edge to the BillingSubject entity by IDs.
+func (_c *UserCreate) AddBillingSubjectIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddBillingSubjectIDs(ids...)
+	return _c
+}
+
+// AddBillingSubjects adds the "billing_subjects" edges to the BillingSubject entity.
+func (_c *UserCreate) AddBillingSubjects(v ...*BillingSubject) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddBillingSubjectIDs(ids...)
+}
+
+// AddOwnedTeamIDs adds the "owned_teams" edge to the Team entity by IDs.
+func (_c *UserCreate) AddOwnedTeamIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddOwnedTeamIDs(ids...)
+	return _c
+}
+
+// AddOwnedTeams adds the "owned_teams" edges to the Team entity.
+func (_c *UserCreate) AddOwnedTeams(v ...*Team) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddOwnedTeamIDs(ids...)
+}
+
+// AddCreatedTeamIDs adds the "created_teams" edge to the Team entity by IDs.
+func (_c *UserCreate) AddCreatedTeamIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddCreatedTeamIDs(ids...)
+	return _c
+}
+
+// AddCreatedTeams adds the "created_teams" edges to the Team entity.
+func (_c *UserCreate) AddCreatedTeams(v ...*Team) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddCreatedTeamIDs(ids...)
+}
+
+// AddTeamMembershipIDs adds the "team_memberships" edge to the TeamMember entity by IDs.
+func (_c *UserCreate) AddTeamMembershipIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddTeamMembershipIDs(ids...)
+	return _c
+}
+
+// AddTeamMemberships adds the "team_memberships" edges to the TeamMember entity.
+func (_c *UserCreate) AddTeamMemberships(v ...*TeamMember) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddTeamMembershipIDs(ids...)
+}
+
+// AddTeamMemberInviteIDs adds the "team_member_invites" edge to the TeamMember entity by IDs.
+func (_c *UserCreate) AddTeamMemberInviteIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddTeamMemberInviteIDs(ids...)
+	return _c
+}
+
+// AddTeamMemberInvites adds the "team_member_invites" edges to the TeamMember entity.
+func (_c *UserCreate) AddTeamMemberInvites(v ...*TeamMember) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddTeamMemberInviteIDs(ids...)
+}
+
+// AddSentTeamInvitationIDs adds the "sent_team_invitations" edge to the TeamInvitation entity by IDs.
+func (_c *UserCreate) AddSentTeamInvitationIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddSentTeamInvitationIDs(ids...)
+	return _c
+}
+
+// AddSentTeamInvitations adds the "sent_team_invitations" edges to the TeamInvitation entity.
+func (_c *UserCreate) AddSentTeamInvitations(v ...*TeamInvitation) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddSentTeamInvitationIDs(ids...)
+}
+
+// AddAcceptedTeamInvitationIDs adds the "accepted_team_invitations" edge to the TeamInvitation entity by IDs.
+func (_c *UserCreate) AddAcceptedTeamInvitationIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddAcceptedTeamInvitationIDs(ids...)
+	return _c
+}
+
+// AddAcceptedTeamInvitations adds the "accepted_team_invitations" edges to the TeamInvitation entity.
+func (_c *UserCreate) AddAcceptedTeamInvitations(v ...*TeamInvitation) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddAcceptedTeamInvitationIDs(ids...)
+}
+
+// AddCreatedAPIKeyIDs adds the "created_api_keys" edge to the APIKey entity by IDs.
+func (_c *UserCreate) AddCreatedAPIKeyIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddCreatedAPIKeyIDs(ids...)
+	return _c
+}
+
+// AddCreatedAPIKeys adds the "created_api_keys" edges to the APIKey entity.
+func (_c *UserCreate) AddCreatedAPIKeys(v ...*APIKey) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddCreatedAPIKeyIDs(ids...)
+}
+
+// AddUpdatedAPIKeyIDs adds the "updated_api_keys" edge to the APIKey entity by IDs.
+func (_c *UserCreate) AddUpdatedAPIKeyIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddUpdatedAPIKeyIDs(ids...)
+	return _c
+}
+
+// AddUpdatedAPIKeys adds the "updated_api_keys" edges to the APIKey entity.
+func (_c *UserCreate) AddUpdatedAPIKeys(v ...*APIKey) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddUpdatedAPIKeyIDs(ids...)
+}
+
+// AddActedUsageLogIDs adds the "acted_usage_logs" edge to the UsageLog entity by IDs.
+func (_c *UserCreate) AddActedUsageLogIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddActedUsageLogIDs(ids...)
+	return _c
+}
+
+// AddActedUsageLogs adds the "acted_usage_logs" edges to the UsageLog entity.
+func (_c *UserCreate) AddActedUsageLogs(v ...*UsageLog) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddActedUsageLogIDs(ids...)
 }
 
 // Mutation returns the UserMutation object of the builder.
@@ -1007,6 +1176,22 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 		}
 		_spec.Edges = append(_spec.Edges, edge)
 	}
+	if nodes := _c.mutation.CreatedPaymentOrdersIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CreatedPaymentOrdersTable,
+			Columns: []string{user.CreatedPaymentOrdersColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(paymentorder.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
 	if nodes := _c.mutation.AuthIdentitiesIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -1048,6 +1233,166 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(userplatformquota.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.BillingSubjectsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.BillingSubjectsTable,
+			Columns: []string{user.BillingSubjectsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.OwnedTeamsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.OwnedTeamsTable,
+			Columns: []string{user.OwnedTeamsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.CreatedTeamsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CreatedTeamsTable,
+			Columns: []string{user.CreatedTeamsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.TeamMembershipsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TeamMembershipsTable,
+			Columns: []string{user.TeamMembershipsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(teammember.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.TeamMemberInvitesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TeamMemberInvitesTable,
+			Columns: []string{user.TeamMemberInvitesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(teammember.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.SentTeamInvitationsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.SentTeamInvitationsTable,
+			Columns: []string{user.SentTeamInvitationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(teaminvitation.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.AcceptedTeamInvitationsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AcceptedTeamInvitationsTable,
+			Columns: []string{user.AcceptedTeamInvitationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(teaminvitation.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.CreatedAPIKeysIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CreatedAPIKeysTable,
+			Columns: []string{user.CreatedAPIKeysColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(apikey.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.UpdatedAPIKeysIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.UpdatedAPIKeysTable,
+			Columns: []string{user.UpdatedAPIKeysColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(apikey.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.ActedUsageLogsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ActedUsageLogsTable,
+			Columns: []string{user.ActedUsageLogsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(usagelog.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

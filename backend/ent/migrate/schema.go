@@ -33,8 +33,12 @@ var (
 		{Name: "window_5h_start", Type: field.TypeTime, Nullable: true},
 		{Name: "window_1d_start", Type: field.TypeTime, Nullable: true},
 		{Name: "window_7d_start", Type: field.TypeTime, Nullable: true},
+		{Name: "billing_subject_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "group_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "team_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "created_by_user_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "updated_by_user_id", Type: field.TypeInt64, Nullable: true},
 	}
 	// APIKeysTable holds the schema information for the "api_keys" table.
 	APIKeysTable = &schema.Table{
@@ -43,28 +47,67 @@ var (
 		PrimaryKey: []*schema.Column{APIKeysColumns[0]},
 		ForeignKeys: []*schema.ForeignKey{
 			{
-				Symbol:     "api_keys_groups_api_keys",
+				Symbol:     "api_keys_billing_subjects_api_keys",
 				Columns:    []*schema.Column{APIKeysColumns[22]},
+				RefColumns: []*schema.Column{BillingSubjectsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "api_keys_groups_api_keys",
+				Columns:    []*schema.Column{APIKeysColumns[23]},
 				RefColumns: []*schema.Column{GroupsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 			{
+				Symbol:     "api_keys_teams_api_keys",
+				Columns:    []*schema.Column{APIKeysColumns[24]},
+				RefColumns: []*schema.Column{TeamsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
 				Symbol:     "api_keys_users_api_keys",
-				Columns:    []*schema.Column{APIKeysColumns[23]},
+				Columns:    []*schema.Column{APIKeysColumns[25]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "api_keys_users_created_api_keys",
+				Columns:    []*schema.Column{APIKeysColumns[26]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "api_keys_users_updated_api_keys",
+				Columns:    []*schema.Column{APIKeysColumns[27]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.SetNull,
 			},
 		},
 		Indexes: []*schema.Index{
 			{
 				Name:    "apikey_user_id",
 				Unique:  false,
-				Columns: []*schema.Column{APIKeysColumns[23]},
+				Columns: []*schema.Column{APIKeysColumns[25]},
 			},
 			{
 				Name:    "apikey_group_id",
 				Unique:  false,
+				Columns: []*schema.Column{APIKeysColumns[23]},
+			},
+			{
+				Name:    "apikey_billing_subject_id",
+				Unique:  false,
 				Columns: []*schema.Column{APIKeysColumns[22]},
+			},
+			{
+				Name:    "apikey_team_id",
+				Unique:  false,
+				Columns: []*schema.Column{APIKeysColumns[24]},
+			},
+			{
+				Name:    "apikey_created_by_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{APIKeysColumns[26]},
 			},
 			{
 				Name:    "apikey_status",
@@ -419,6 +462,73 @@ var (
 				Name:    "authidentitychannel_identity_id",
 				Unique:  false,
 				Columns: []*schema.Column{AuthIdentityChannelsColumns[9]},
+			},
+		},
+	}
+	// BillingSubjectsColumns holds the columns for the "billing_subjects" table.
+	BillingSubjectsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "type", Type: field.TypeString, Size: 20},
+		{Name: "status", Type: field.TypeString, Size: 20, Default: "active"},
+		{Name: "balance", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "total_recharged", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "concurrency", Type: field.TypeInt, Default: 5},
+		{Name: "rpm_limit", Type: field.TypeInt, Default: 0},
+		{Name: "balance_notify_enabled", Type: field.TypeBool, Default: true},
+		{Name: "balance_notify_threshold_type", Type: field.TypeString, Default: "fixed"},
+		{Name: "balance_notify_threshold", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "balance_notify_extra_emails", Type: field.TypeString, Default: "[]", SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "team_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "user_id", Type: field.TypeInt64, Nullable: true},
+	}
+	// BillingSubjectsTable holds the schema information for the "billing_subjects" table.
+	BillingSubjectsTable = &schema.Table{
+		Name:       "billing_subjects",
+		Columns:    BillingSubjectsColumns,
+		PrimaryKey: []*schema.Column{BillingSubjectsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "billing_subjects_teams_team_subject",
+				Columns:    []*schema.Column{BillingSubjectsColumns[14]},
+				RefColumns: []*schema.Column{TeamsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "billing_subjects_users_billing_subjects",
+				Columns:    []*schema.Column{BillingSubjectsColumns[15]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "billingsubject_user_id",
+				Unique:  true,
+				Columns: []*schema.Column{BillingSubjectsColumns[15]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "type = 'user' AND deleted_at IS NULL",
+				},
+			},
+			{
+				Name:    "billingsubject_team_id",
+				Unique:  true,
+				Columns: []*schema.Column{BillingSubjectsColumns[14]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "type = 'team' AND deleted_at IS NULL",
+				},
+			},
+			{
+				Name:    "billingsubject_status",
+				Unique:  false,
+				Columns: []*schema.Column{BillingSubjectsColumns[5]},
+			},
+			{
+				Name:    "billingsubject_deleted_at",
+				Unique:  false,
+				Columns: []*schema.Column{BillingSubjectsColumns[3]},
 			},
 		},
 	}
@@ -860,7 +970,10 @@ var (
 		{Name: "src_url", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "billing_subject_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "team_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "created_by_user_id", Type: field.TypeInt64, Nullable: true},
 	}
 	// PaymentOrdersTable holds the schema information for the "payment_orders" table.
 	PaymentOrdersTable = &schema.Table{
@@ -869,10 +982,28 @@ var (
 		PrimaryKey: []*schema.Column{PaymentOrdersColumns[0]},
 		ForeignKeys: []*schema.ForeignKey{
 			{
-				Symbol:     "payment_orders_users_payment_orders",
+				Symbol:     "payment_orders_billing_subjects_payment_orders",
 				Columns:    []*schema.Column{PaymentOrdersColumns[39]},
+				RefColumns: []*schema.Column{BillingSubjectsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "payment_orders_teams_payment_orders",
+				Columns:    []*schema.Column{PaymentOrdersColumns[40]},
+				RefColumns: []*schema.Column{TeamsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "payment_orders_users_payment_orders",
+				Columns:    []*schema.Column{PaymentOrdersColumns[41]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "payment_orders_users_created_payment_orders",
+				Columns:    []*schema.Column{PaymentOrdersColumns[42]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.SetNull,
 			},
 		},
 		Indexes: []*schema.Index{
@@ -887,7 +1018,22 @@ var (
 			{
 				Name:    "paymentorder_user_id",
 				Unique:  false,
+				Columns: []*schema.Column{PaymentOrdersColumns[41]},
+			},
+			{
+				Name:    "paymentorder_billing_subject_id",
+				Unique:  false,
 				Columns: []*schema.Column{PaymentOrdersColumns[39]},
+			},
+			{
+				Name:    "paymentorder_team_id",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentOrdersColumns[40]},
+			},
+			{
+				Name:    "paymentorder_created_by_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentOrdersColumns[42]},
 			},
 			{
 				Name:    "paymentorder_status",
@@ -1294,6 +1440,207 @@ var (
 		Columns:    TLSFingerprintProfilesColumns,
 		PrimaryKey: []*schema.Column{TLSFingerprintProfilesColumns[0]},
 	}
+	// TeamsColumns holds the columns for the "teams" table.
+	TeamsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "name", Type: field.TypeString, Size: 120},
+		{Name: "slug", Type: field.TypeString, Size: 120},
+		{Name: "status", Type: field.TypeString, Size: 20, Default: "active"},
+		{Name: "avatar_url", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "billing_subject_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "owner_user_id", Type: field.TypeInt64},
+		{Name: "created_by_user_id", Type: field.TypeInt64},
+	}
+	// TeamsTable holds the schema information for the "teams" table.
+	TeamsTable = &schema.Table{
+		Name:       "teams",
+		Columns:    TeamsColumns,
+		PrimaryKey: []*schema.Column{TeamsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "teams_billing_subjects_teams",
+				Columns:    []*schema.Column{TeamsColumns[8]},
+				RefColumns: []*schema.Column{BillingSubjectsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "teams_users_owned_teams",
+				Columns:    []*schema.Column{TeamsColumns[9]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "teams_users_created_teams",
+				Columns:    []*schema.Column{TeamsColumns[10]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "team_slug",
+				Unique:  true,
+				Columns: []*schema.Column{TeamsColumns[5]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "deleted_at IS NULL",
+				},
+			},
+			{
+				Name:    "team_owner_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{TeamsColumns[9]},
+			},
+			{
+				Name:    "team_billing_subject_id",
+				Unique:  false,
+				Columns: []*schema.Column{TeamsColumns[8]},
+			},
+			{
+				Name:    "team_status",
+				Unique:  false,
+				Columns: []*schema.Column{TeamsColumns[6]},
+			},
+			{
+				Name:    "team_deleted_at",
+				Unique:  false,
+				Columns: []*schema.Column{TeamsColumns[3]},
+			},
+		},
+	}
+	// TeamInvitationsColumns holds the columns for the "team_invitations" table.
+	TeamInvitationsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "email", Type: field.TypeString, Size: 255},
+		{Name: "role", Type: field.TypeString, Size: 20},
+		{Name: "token_hash", Type: field.TypeString, Size: 128},
+		{Name: "status", Type: field.TypeString, Size: 20, Default: "pending"},
+		{Name: "expires_at", Type: field.TypeTime},
+		{Name: "team_id", Type: field.TypeInt64},
+		{Name: "invited_by_user_id", Type: field.TypeInt64},
+		{Name: "accepted_by_user_id", Type: field.TypeInt64, Nullable: true},
+	}
+	// TeamInvitationsTable holds the schema information for the "team_invitations" table.
+	TeamInvitationsTable = &schema.Table{
+		Name:       "team_invitations",
+		Columns:    TeamInvitationsColumns,
+		PrimaryKey: []*schema.Column{TeamInvitationsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "team_invitations_teams_invitations",
+				Columns:    []*schema.Column{TeamInvitationsColumns[9]},
+				RefColumns: []*schema.Column{TeamsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "team_invitations_users_sent_team_invitations",
+				Columns:    []*schema.Column{TeamInvitationsColumns[10]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "team_invitations_users_accepted_team_invitations",
+				Columns:    []*schema.Column{TeamInvitationsColumns[11]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "teaminvitation_token_hash",
+				Unique:  true,
+				Columns: []*schema.Column{TeamInvitationsColumns[6]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "deleted_at IS NULL",
+				},
+			},
+			{
+				Name:    "teaminvitation_team_id_status",
+				Unique:  false,
+				Columns: []*schema.Column{TeamInvitationsColumns[9], TeamInvitationsColumns[7]},
+			},
+			{
+				Name:    "teaminvitation_email_status",
+				Unique:  false,
+				Columns: []*schema.Column{TeamInvitationsColumns[4], TeamInvitationsColumns[7]},
+			},
+			{
+				Name:    "teaminvitation_deleted_at",
+				Unique:  false,
+				Columns: []*schema.Column{TeamInvitationsColumns[3]},
+			},
+		},
+	}
+	// TeamMembersColumns holds the columns for the "team_members" table.
+	TeamMembersColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "role", Type: field.TypeString, Size: 20},
+		{Name: "status", Type: field.TypeString, Size: 20, Default: "active"},
+		{Name: "joined_at", Type: field.TypeTime, Nullable: true},
+		{Name: "last_active_at", Type: field.TypeTime, Nullable: true},
+		{Name: "team_id", Type: field.TypeInt64},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "invited_by_user_id", Type: field.TypeInt64, Nullable: true},
+	}
+	// TeamMembersTable holds the schema information for the "team_members" table.
+	TeamMembersTable = &schema.Table{
+		Name:       "team_members",
+		Columns:    TeamMembersColumns,
+		PrimaryKey: []*schema.Column{TeamMembersColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "team_members_teams_members",
+				Columns:    []*schema.Column{TeamMembersColumns[8]},
+				RefColumns: []*schema.Column{TeamsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "team_members_users_team_memberships",
+				Columns:    []*schema.Column{TeamMembersColumns[9]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "team_members_users_team_member_invites",
+				Columns:    []*schema.Column{TeamMembersColumns[10]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "teammember_team_id_user_id",
+				Unique:  true,
+				Columns: []*schema.Column{TeamMembersColumns[8], TeamMembersColumns[9]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "deleted_at IS NULL",
+				},
+			},
+			{
+				Name:    "teammember_user_id_status",
+				Unique:  false,
+				Columns: []*schema.Column{TeamMembersColumns[9], TeamMembersColumns[5]},
+			},
+			{
+				Name:    "teammember_team_id_status",
+				Unique:  false,
+				Columns: []*schema.Column{TeamMembersColumns[8], TeamMembersColumns[5]},
+			},
+			{
+				Name:    "teammember_deleted_at",
+				Unique:  false,
+				Columns: []*schema.Column{TeamMembersColumns[3]},
+			},
+		},
+	}
 	// UsageCleanupTasksColumns holds the columns for the "usage_cleanup_tasks" table.
 	UsageCleanupTasksColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -1373,8 +1720,11 @@ var (
 		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "api_key_id", Type: field.TypeInt64},
 		{Name: "account_id", Type: field.TypeInt64},
+		{Name: "billing_subject_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "group_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "team_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "actor_user_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "subscription_id", Type: field.TypeInt64, Nullable: true},
 	}
 	// UsageLogsTable holds the schema information for the "usage_logs" table.
@@ -1396,20 +1746,38 @@ var (
 				OnDelete:   schema.NoAction,
 			},
 			{
-				Symbol:     "usage_logs_groups_usage_logs",
+				Symbol:     "usage_logs_billing_subjects_usage_logs",
 				Columns:    []*schema.Column{UsageLogsColumns[39]},
+				RefColumns: []*schema.Column{BillingSubjectsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "usage_logs_groups_usage_logs",
+				Columns:    []*schema.Column{UsageLogsColumns[40]},
 				RefColumns: []*schema.Column{GroupsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 			{
+				Symbol:     "usage_logs_teams_usage_logs",
+				Columns:    []*schema.Column{UsageLogsColumns[41]},
+				RefColumns: []*schema.Column{TeamsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
 				Symbol:     "usage_logs_users_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[40]},
+				Columns:    []*schema.Column{UsageLogsColumns[42]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
 			{
+				Symbol:     "usage_logs_users_acted_usage_logs",
+				Columns:    []*schema.Column{UsageLogsColumns[43]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
 				Symbol:     "usage_logs_user_subscriptions_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[41]},
+				Columns:    []*schema.Column{UsageLogsColumns[44]},
 				RefColumns: []*schema.Column{UserSubscriptionsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
@@ -1418,7 +1786,7 @@ var (
 			{
 				Name:    "usagelog_user_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[40]},
+				Columns: []*schema.Column{UsageLogsColumns[42]},
 			},
 			{
 				Name:    "usagelog_api_key_id",
@@ -1433,12 +1801,12 @@ var (
 			{
 				Name:    "usagelog_group_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[39]},
+				Columns: []*schema.Column{UsageLogsColumns[40]},
 			},
 			{
 				Name:    "usagelog_subscription_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[41]},
+				Columns: []*schema.Column{UsageLogsColumns[44]},
 			},
 			{
 				Name:    "usagelog_created_at",
@@ -1463,7 +1831,7 @@ var (
 			{
 				Name:    "usagelog_user_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[40], UsageLogsColumns[36]},
+				Columns: []*schema.Column{UsageLogsColumns[42], UsageLogsColumns[36]},
 			},
 			{
 				Name:    "usagelog_api_key_id_created_at",
@@ -1473,7 +1841,22 @@ var (
 			{
 				Name:    "usagelog_group_id_created_at",
 				Unique:  false,
+				Columns: []*schema.Column{UsageLogsColumns[40], UsageLogsColumns[36]},
+			},
+			{
+				Name:    "usagelog_billing_subject_id_created_at",
+				Unique:  false,
 				Columns: []*schema.Column{UsageLogsColumns[39], UsageLogsColumns[36]},
+			},
+			{
+				Name:    "usagelog_team_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{UsageLogsColumns[41], UsageLogsColumns[36]},
+			},
+			{
+				Name:    "usagelog_actor_user_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{UsageLogsColumns[43], UsageLogsColumns[36]},
 			},
 		},
 	}
@@ -1657,6 +2040,7 @@ var (
 		{Name: "daily_window_start", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "weekly_window_start", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "monthly_window_start", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "billing_subject_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "user_id", Type: field.TypeInt64},
 	}
 	// UserPlatformQuotasTable holds the schema information for the "user_platform_quotas" table.
@@ -1666,8 +2050,14 @@ var (
 		PrimaryKey: []*schema.Column{UserPlatformQuotasColumns[0]},
 		ForeignKeys: []*schema.ForeignKey{
 			{
-				Symbol:     "user_platform_quotas_users_platform_quotas",
+				Symbol:     "user_platform_quotas_billing_subjects_platform_quotas",
 				Columns:    []*schema.Column{UserPlatformQuotasColumns[14]},
+				RefColumns: []*schema.Column{BillingSubjectsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "user_platform_quotas_users_platform_quotas",
+				Columns:    []*schema.Column{UserPlatformQuotasColumns[15]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -1676,7 +2066,7 @@ var (
 			{
 				Name:    "userplatformquota_user_id_platform",
 				Unique:  true,
-				Columns: []*schema.Column{UserPlatformQuotasColumns[14], UserPlatformQuotasColumns[4]},
+				Columns: []*schema.Column{UserPlatformQuotasColumns[15], UserPlatformQuotasColumns[4]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "deleted_at IS NULL",
 				},
@@ -1684,7 +2074,12 @@ var (
 			{
 				Name:    "userplatformquota_user_id",
 				Unique:  false,
-				Columns: []*schema.Column{UserPlatformQuotasColumns[14]},
+				Columns: []*schema.Column{UserPlatformQuotasColumns[15]},
+			},
+			{
+				Name:    "userplatformquota_billing_subject_id_platform",
+				Unique:  false,
+				Columns: []*schema.Column{UserPlatformQuotasColumns[14], UserPlatformQuotasColumns[4]},
 			},
 		},
 	}
@@ -1705,6 +2100,7 @@ var (
 		{Name: "monthly_usage_usd", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,10)"}},
 		{Name: "assigned_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "notes", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "billing_subject_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "group_id", Type: field.TypeInt64},
 		{Name: "user_id", Type: field.TypeInt64},
 		{Name: "assigned_by", Type: field.TypeInt64, Nullable: true},
@@ -1716,20 +2112,26 @@ var (
 		PrimaryKey: []*schema.Column{UserSubscriptionsColumns[0]},
 		ForeignKeys: []*schema.ForeignKey{
 			{
-				Symbol:     "user_subscriptions_groups_subscriptions",
+				Symbol:     "user_subscriptions_billing_subjects_subscriptions",
 				Columns:    []*schema.Column{UserSubscriptionsColumns[15]},
+				RefColumns: []*schema.Column{BillingSubjectsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "user_subscriptions_groups_subscriptions",
+				Columns:    []*schema.Column{UserSubscriptionsColumns[16]},
 				RefColumns: []*schema.Column{GroupsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
 			{
 				Symbol:     "user_subscriptions_users_subscriptions",
-				Columns:    []*schema.Column{UserSubscriptionsColumns[16]},
+				Columns:    []*schema.Column{UserSubscriptionsColumns[17]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
 			{
 				Symbol:     "user_subscriptions_users_assigned_subscriptions",
-				Columns:    []*schema.Column{UserSubscriptionsColumns[17]},
+				Columns:    []*schema.Column{UserSubscriptionsColumns[18]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
@@ -1738,12 +2140,12 @@ var (
 			{
 				Name:    "usersubscription_user_id",
 				Unique:  false,
-				Columns: []*schema.Column{UserSubscriptionsColumns[16]},
+				Columns: []*schema.Column{UserSubscriptionsColumns[17]},
 			},
 			{
 				Name:    "usersubscription_group_id",
 				Unique:  false,
-				Columns: []*schema.Column{UserSubscriptionsColumns[15]},
+				Columns: []*schema.Column{UserSubscriptionsColumns[16]},
 			},
 			{
 				Name:    "usersubscription_status",
@@ -1758,17 +2160,22 @@ var (
 			{
 				Name:    "usersubscription_user_id_status_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{UserSubscriptionsColumns[16], UserSubscriptionsColumns[6], UserSubscriptionsColumns[5]},
+				Columns: []*schema.Column{UserSubscriptionsColumns[17], UserSubscriptionsColumns[6], UserSubscriptionsColumns[5]},
 			},
 			{
 				Name:    "usersubscription_assigned_by",
 				Unique:  false,
-				Columns: []*schema.Column{UserSubscriptionsColumns[17]},
+				Columns: []*schema.Column{UserSubscriptionsColumns[18]},
 			},
 			{
 				Name:    "usersubscription_user_id_group_id",
 				Unique:  false,
-				Columns: []*schema.Column{UserSubscriptionsColumns[16], UserSubscriptionsColumns[15]},
+				Columns: []*schema.Column{UserSubscriptionsColumns[17], UserSubscriptionsColumns[16]},
+			},
+			{
+				Name:    "usersubscription_billing_subject_id_group_id",
+				Unique:  false,
+				Columns: []*schema.Column{UserSubscriptionsColumns[15], UserSubscriptionsColumns[16]},
 			},
 			{
 				Name:    "usersubscription_deleted_at",
@@ -1786,6 +2193,7 @@ var (
 		AnnouncementReadsTable,
 		AuthIdentitiesTable,
 		AuthIdentityChannelsTable,
+		BillingSubjectsTable,
 		ChannelMonitorsTable,
 		ChannelMonitorDailyRollupsTable,
 		ChannelMonitorHistoriesTable,
@@ -1806,6 +2214,9 @@ var (
 		SettingsTable,
 		SubscriptionPlansTable,
 		TLSFingerprintProfilesTable,
+		TeamsTable,
+		TeamInvitationsTable,
+		TeamMembersTable,
 		UsageCleanupTasksTable,
 		UsageLogsTable,
 		UsersTable,
@@ -1818,8 +2229,12 @@ var (
 )
 
 func init() {
-	APIKeysTable.ForeignKeys[0].RefTable = GroupsTable
-	APIKeysTable.ForeignKeys[1].RefTable = UsersTable
+	APIKeysTable.ForeignKeys[0].RefTable = BillingSubjectsTable
+	APIKeysTable.ForeignKeys[1].RefTable = GroupsTable
+	APIKeysTable.ForeignKeys[2].RefTable = TeamsTable
+	APIKeysTable.ForeignKeys[3].RefTable = UsersTable
+	APIKeysTable.ForeignKeys[4].RefTable = UsersTable
+	APIKeysTable.ForeignKeys[5].RefTable = UsersTable
 	APIKeysTable.Annotation = &entsql.Annotation{
 		Table: "api_keys",
 	}
@@ -1847,6 +2262,11 @@ func init() {
 	AuthIdentityChannelsTable.ForeignKeys[0].RefTable = AuthIdentitiesTable
 	AuthIdentityChannelsTable.Annotation = &entsql.Annotation{
 		Table: "auth_identity_channels",
+	}
+	BillingSubjectsTable.ForeignKeys[0].RefTable = TeamsTable
+	BillingSubjectsTable.ForeignKeys[1].RefTable = UsersTable
+	BillingSubjectsTable.Annotation = &entsql.Annotation{
+		Table: "billing_subjects",
 	}
 	ChannelMonitorsTable.ForeignKeys[0].RefTable = ChannelMonitorRequestTemplatesTable
 	ChannelMonitorsTable.Annotation = &entsql.Annotation{
@@ -1880,7 +2300,10 @@ func init() {
 	PaymentAuditLogsTable.Annotation = &entsql.Annotation{
 		Table: "payment_audit_logs",
 	}
-	PaymentOrdersTable.ForeignKeys[0].RefTable = UsersTable
+	PaymentOrdersTable.ForeignKeys[0].RefTable = BillingSubjectsTable
+	PaymentOrdersTable.ForeignKeys[1].RefTable = TeamsTable
+	PaymentOrdersTable.ForeignKeys[2].RefTable = UsersTable
+	PaymentOrdersTable.ForeignKeys[3].RefTable = UsersTable
 	PaymentOrdersTable.Annotation = &entsql.Annotation{
 		Table: "payment_orders",
 	}
@@ -1920,14 +2343,35 @@ func init() {
 	TLSFingerprintProfilesTable.Annotation = &entsql.Annotation{
 		Table: "tls_fingerprint_profiles",
 	}
+	TeamsTable.ForeignKeys[0].RefTable = BillingSubjectsTable
+	TeamsTable.ForeignKeys[1].RefTable = UsersTable
+	TeamsTable.ForeignKeys[2].RefTable = UsersTable
+	TeamsTable.Annotation = &entsql.Annotation{
+		Table: "teams",
+	}
+	TeamInvitationsTable.ForeignKeys[0].RefTable = TeamsTable
+	TeamInvitationsTable.ForeignKeys[1].RefTable = UsersTable
+	TeamInvitationsTable.ForeignKeys[2].RefTable = UsersTable
+	TeamInvitationsTable.Annotation = &entsql.Annotation{
+		Table: "team_invitations",
+	}
+	TeamMembersTable.ForeignKeys[0].RefTable = TeamsTable
+	TeamMembersTable.ForeignKeys[1].RefTable = UsersTable
+	TeamMembersTable.ForeignKeys[2].RefTable = UsersTable
+	TeamMembersTable.Annotation = &entsql.Annotation{
+		Table: "team_members",
+	}
 	UsageCleanupTasksTable.Annotation = &entsql.Annotation{
 		Table: "usage_cleanup_tasks",
 	}
 	UsageLogsTable.ForeignKeys[0].RefTable = APIKeysTable
 	UsageLogsTable.ForeignKeys[1].RefTable = AccountsTable
-	UsageLogsTable.ForeignKeys[2].RefTable = GroupsTable
-	UsageLogsTable.ForeignKeys[3].RefTable = UsersTable
-	UsageLogsTable.ForeignKeys[4].RefTable = UserSubscriptionsTable
+	UsageLogsTable.ForeignKeys[2].RefTable = BillingSubjectsTable
+	UsageLogsTable.ForeignKeys[3].RefTable = GroupsTable
+	UsageLogsTable.ForeignKeys[4].RefTable = TeamsTable
+	UsageLogsTable.ForeignKeys[5].RefTable = UsersTable
+	UsageLogsTable.ForeignKeys[6].RefTable = UsersTable
+	UsageLogsTable.ForeignKeys[7].RefTable = UserSubscriptionsTable
 	UsageLogsTable.Annotation = &entsql.Annotation{
 		Table: "usage_logs",
 	}
@@ -1947,13 +2391,15 @@ func init() {
 	UserAttributeValuesTable.Annotation = &entsql.Annotation{
 		Table: "user_attribute_values",
 	}
-	UserPlatformQuotasTable.ForeignKeys[0].RefTable = UsersTable
+	UserPlatformQuotasTable.ForeignKeys[0].RefTable = BillingSubjectsTable
+	UserPlatformQuotasTable.ForeignKeys[1].RefTable = UsersTable
 	UserPlatformQuotasTable.Annotation = &entsql.Annotation{
 		Table: "user_platform_quotas",
 	}
-	UserSubscriptionsTable.ForeignKeys[0].RefTable = GroupsTable
-	UserSubscriptionsTable.ForeignKeys[1].RefTable = UsersTable
+	UserSubscriptionsTable.ForeignKeys[0].RefTable = BillingSubjectsTable
+	UserSubscriptionsTable.ForeignKeys[1].RefTable = GroupsTable
 	UserSubscriptionsTable.ForeignKeys[2].RefTable = UsersTable
+	UserSubscriptionsTable.ForeignKeys[3].RefTable = UsersTable
 	UserSubscriptionsTable.Annotation = &entsql.Annotation{
 		Table: "user_subscriptions",
 	}

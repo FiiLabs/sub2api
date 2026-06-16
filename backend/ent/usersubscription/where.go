@@ -80,6 +80,11 @@ func GroupID(v int64) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldEQ(FieldGroupID, v))
 }
 
+// BillingSubjectID applies equality check predicate on the "billing_subject_id" field. It's identical to BillingSubjectIDEQ.
+func BillingSubjectID(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldBillingSubjectID, v))
+}
+
 // StartsAt applies equality check predicate on the "starts_at" field. It's identical to StartsAtEQ.
 func StartsAt(v time.Time) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldEQ(FieldStartsAt, v))
@@ -308,6 +313,36 @@ func GroupIDIn(vs ...int64) predicate.UserSubscription {
 // GroupIDNotIn applies the NotIn predicate on the "group_id" field.
 func GroupIDNotIn(vs ...int64) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldNotIn(FieldGroupID, vs...))
+}
+
+// BillingSubjectIDEQ applies the EQ predicate on the "billing_subject_id" field.
+func BillingSubjectIDEQ(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldBillingSubjectID, v))
+}
+
+// BillingSubjectIDNEQ applies the NEQ predicate on the "billing_subject_id" field.
+func BillingSubjectIDNEQ(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNEQ(FieldBillingSubjectID, v))
+}
+
+// BillingSubjectIDIn applies the In predicate on the "billing_subject_id" field.
+func BillingSubjectIDIn(vs ...int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldIn(FieldBillingSubjectID, vs...))
+}
+
+// BillingSubjectIDNotIn applies the NotIn predicate on the "billing_subject_id" field.
+func BillingSubjectIDNotIn(vs ...int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNotIn(FieldBillingSubjectID, vs...))
+}
+
+// BillingSubjectIDIsNil applies the IsNil predicate on the "billing_subject_id" field.
+func BillingSubjectIDIsNil() predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldIsNull(FieldBillingSubjectID))
+}
+
+// BillingSubjectIDNotNil applies the NotNil predicate on the "billing_subject_id" field.
+func BillingSubjectIDNotNil() predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNotNull(FieldBillingSubjectID))
 }
 
 // StartsAtEQ applies the EQ predicate on the "starts_at" field.
@@ -931,6 +966,29 @@ func HasAssignedByUser() predicate.UserSubscription {
 func HasAssignedByUserWith(preds ...predicate.User) predicate.UserSubscription {
 	return predicate.UserSubscription(func(s *sql.Selector) {
 		step := newAssignedByUserStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasBillingSubject applies the HasEdge predicate on the "billing_subject" edge.
+func HasBillingSubject() predicate.UserSubscription {
+	return predicate.UserSubscription(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, BillingSubjectTable, BillingSubjectColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasBillingSubjectWith applies the HasEdge predicate on the "billing_subject" edge with a given conditions (other predicates).
+func HasBillingSubjectWith(preds ...predicate.BillingSubject) predicate.UserSubscription {
+	return predicate.UserSubscription(func(s *sql.Selector) {
+		step := newBillingSubjectStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

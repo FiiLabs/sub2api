@@ -14,12 +14,16 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
+	"github.com/Wei-Shaw/sub2api/ent/billingsubject"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/pendingauthsession"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
+	"github.com/Wei-Shaw/sub2api/ent/team"
+	"github.com/Wei-Shaw/sub2api/ent/teaminvitation"
+	"github.com/Wei-Shaw/sub2api/ent/teammember"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userattributevalue"
@@ -561,6 +565,21 @@ func (_u *UserUpdate) AddPaymentOrders(v ...*PaymentOrder) *UserUpdate {
 	return _u.AddPaymentOrderIDs(ids...)
 }
 
+// AddCreatedPaymentOrderIDs adds the "created_payment_orders" edge to the PaymentOrder entity by IDs.
+func (_u *UserUpdate) AddCreatedPaymentOrderIDs(ids ...int64) *UserUpdate {
+	_u.mutation.AddCreatedPaymentOrderIDs(ids...)
+	return _u
+}
+
+// AddCreatedPaymentOrders adds the "created_payment_orders" edges to the PaymentOrder entity.
+func (_u *UserUpdate) AddCreatedPaymentOrders(v ...*PaymentOrder) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddCreatedPaymentOrderIDs(ids...)
+}
+
 // AddAuthIdentityIDs adds the "auth_identities" edge to the AuthIdentity entity by IDs.
 func (_u *UserUpdate) AddAuthIdentityIDs(ids ...int64) *UserUpdate {
 	_u.mutation.AddAuthIdentityIDs(ids...)
@@ -604,6 +623,156 @@ func (_u *UserUpdate) AddPlatformQuotas(v ...*UserPlatformQuota) *UserUpdate {
 		ids[i] = v[i].ID
 	}
 	return _u.AddPlatformQuotaIDs(ids...)
+}
+
+// AddBillingSubjectIDs adds the "billing_subjects" edge to the BillingSubject entity by IDs.
+func (_u *UserUpdate) AddBillingSubjectIDs(ids ...int64) *UserUpdate {
+	_u.mutation.AddBillingSubjectIDs(ids...)
+	return _u
+}
+
+// AddBillingSubjects adds the "billing_subjects" edges to the BillingSubject entity.
+func (_u *UserUpdate) AddBillingSubjects(v ...*BillingSubject) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddBillingSubjectIDs(ids...)
+}
+
+// AddOwnedTeamIDs adds the "owned_teams" edge to the Team entity by IDs.
+func (_u *UserUpdate) AddOwnedTeamIDs(ids ...int64) *UserUpdate {
+	_u.mutation.AddOwnedTeamIDs(ids...)
+	return _u
+}
+
+// AddOwnedTeams adds the "owned_teams" edges to the Team entity.
+func (_u *UserUpdate) AddOwnedTeams(v ...*Team) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddOwnedTeamIDs(ids...)
+}
+
+// AddCreatedTeamIDs adds the "created_teams" edge to the Team entity by IDs.
+func (_u *UserUpdate) AddCreatedTeamIDs(ids ...int64) *UserUpdate {
+	_u.mutation.AddCreatedTeamIDs(ids...)
+	return _u
+}
+
+// AddCreatedTeams adds the "created_teams" edges to the Team entity.
+func (_u *UserUpdate) AddCreatedTeams(v ...*Team) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddCreatedTeamIDs(ids...)
+}
+
+// AddTeamMembershipIDs adds the "team_memberships" edge to the TeamMember entity by IDs.
+func (_u *UserUpdate) AddTeamMembershipIDs(ids ...int64) *UserUpdate {
+	_u.mutation.AddTeamMembershipIDs(ids...)
+	return _u
+}
+
+// AddTeamMemberships adds the "team_memberships" edges to the TeamMember entity.
+func (_u *UserUpdate) AddTeamMemberships(v ...*TeamMember) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddTeamMembershipIDs(ids...)
+}
+
+// AddTeamMemberInviteIDs adds the "team_member_invites" edge to the TeamMember entity by IDs.
+func (_u *UserUpdate) AddTeamMemberInviteIDs(ids ...int64) *UserUpdate {
+	_u.mutation.AddTeamMemberInviteIDs(ids...)
+	return _u
+}
+
+// AddTeamMemberInvites adds the "team_member_invites" edges to the TeamMember entity.
+func (_u *UserUpdate) AddTeamMemberInvites(v ...*TeamMember) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddTeamMemberInviteIDs(ids...)
+}
+
+// AddSentTeamInvitationIDs adds the "sent_team_invitations" edge to the TeamInvitation entity by IDs.
+func (_u *UserUpdate) AddSentTeamInvitationIDs(ids ...int64) *UserUpdate {
+	_u.mutation.AddSentTeamInvitationIDs(ids...)
+	return _u
+}
+
+// AddSentTeamInvitations adds the "sent_team_invitations" edges to the TeamInvitation entity.
+func (_u *UserUpdate) AddSentTeamInvitations(v ...*TeamInvitation) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddSentTeamInvitationIDs(ids...)
+}
+
+// AddAcceptedTeamInvitationIDs adds the "accepted_team_invitations" edge to the TeamInvitation entity by IDs.
+func (_u *UserUpdate) AddAcceptedTeamInvitationIDs(ids ...int64) *UserUpdate {
+	_u.mutation.AddAcceptedTeamInvitationIDs(ids...)
+	return _u
+}
+
+// AddAcceptedTeamInvitations adds the "accepted_team_invitations" edges to the TeamInvitation entity.
+func (_u *UserUpdate) AddAcceptedTeamInvitations(v ...*TeamInvitation) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddAcceptedTeamInvitationIDs(ids...)
+}
+
+// AddCreatedAPIKeyIDs adds the "created_api_keys" edge to the APIKey entity by IDs.
+func (_u *UserUpdate) AddCreatedAPIKeyIDs(ids ...int64) *UserUpdate {
+	_u.mutation.AddCreatedAPIKeyIDs(ids...)
+	return _u
+}
+
+// AddCreatedAPIKeys adds the "created_api_keys" edges to the APIKey entity.
+func (_u *UserUpdate) AddCreatedAPIKeys(v ...*APIKey) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddCreatedAPIKeyIDs(ids...)
+}
+
+// AddUpdatedAPIKeyIDs adds the "updated_api_keys" edge to the APIKey entity by IDs.
+func (_u *UserUpdate) AddUpdatedAPIKeyIDs(ids ...int64) *UserUpdate {
+	_u.mutation.AddUpdatedAPIKeyIDs(ids...)
+	return _u
+}
+
+// AddUpdatedAPIKeys adds the "updated_api_keys" edges to the APIKey entity.
+func (_u *UserUpdate) AddUpdatedAPIKeys(v ...*APIKey) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddUpdatedAPIKeyIDs(ids...)
+}
+
+// AddActedUsageLogIDs adds the "acted_usage_logs" edge to the UsageLog entity by IDs.
+func (_u *UserUpdate) AddActedUsageLogIDs(ids ...int64) *UserUpdate {
+	_u.mutation.AddActedUsageLogIDs(ids...)
+	return _u
+}
+
+// AddActedUsageLogs adds the "acted_usage_logs" edges to the UsageLog entity.
+func (_u *UserUpdate) AddActedUsageLogs(v ...*UsageLog) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddActedUsageLogIDs(ids...)
 }
 
 // Mutation returns the UserMutation object of the builder.
@@ -821,6 +990,27 @@ func (_u *UserUpdate) RemovePaymentOrders(v ...*PaymentOrder) *UserUpdate {
 	return _u.RemovePaymentOrderIDs(ids...)
 }
 
+// ClearCreatedPaymentOrders clears all "created_payment_orders" edges to the PaymentOrder entity.
+func (_u *UserUpdate) ClearCreatedPaymentOrders() *UserUpdate {
+	_u.mutation.ClearCreatedPaymentOrders()
+	return _u
+}
+
+// RemoveCreatedPaymentOrderIDs removes the "created_payment_orders" edge to PaymentOrder entities by IDs.
+func (_u *UserUpdate) RemoveCreatedPaymentOrderIDs(ids ...int64) *UserUpdate {
+	_u.mutation.RemoveCreatedPaymentOrderIDs(ids...)
+	return _u
+}
+
+// RemoveCreatedPaymentOrders removes "created_payment_orders" edges to PaymentOrder entities.
+func (_u *UserUpdate) RemoveCreatedPaymentOrders(v ...*PaymentOrder) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveCreatedPaymentOrderIDs(ids...)
+}
+
 // ClearAuthIdentities clears all "auth_identities" edges to the AuthIdentity entity.
 func (_u *UserUpdate) ClearAuthIdentities() *UserUpdate {
 	_u.mutation.ClearAuthIdentities()
@@ -882,6 +1072,216 @@ func (_u *UserUpdate) RemovePlatformQuotas(v ...*UserPlatformQuota) *UserUpdate 
 		ids[i] = v[i].ID
 	}
 	return _u.RemovePlatformQuotaIDs(ids...)
+}
+
+// ClearBillingSubjects clears all "billing_subjects" edges to the BillingSubject entity.
+func (_u *UserUpdate) ClearBillingSubjects() *UserUpdate {
+	_u.mutation.ClearBillingSubjects()
+	return _u
+}
+
+// RemoveBillingSubjectIDs removes the "billing_subjects" edge to BillingSubject entities by IDs.
+func (_u *UserUpdate) RemoveBillingSubjectIDs(ids ...int64) *UserUpdate {
+	_u.mutation.RemoveBillingSubjectIDs(ids...)
+	return _u
+}
+
+// RemoveBillingSubjects removes "billing_subjects" edges to BillingSubject entities.
+func (_u *UserUpdate) RemoveBillingSubjects(v ...*BillingSubject) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveBillingSubjectIDs(ids...)
+}
+
+// ClearOwnedTeams clears all "owned_teams" edges to the Team entity.
+func (_u *UserUpdate) ClearOwnedTeams() *UserUpdate {
+	_u.mutation.ClearOwnedTeams()
+	return _u
+}
+
+// RemoveOwnedTeamIDs removes the "owned_teams" edge to Team entities by IDs.
+func (_u *UserUpdate) RemoveOwnedTeamIDs(ids ...int64) *UserUpdate {
+	_u.mutation.RemoveOwnedTeamIDs(ids...)
+	return _u
+}
+
+// RemoveOwnedTeams removes "owned_teams" edges to Team entities.
+func (_u *UserUpdate) RemoveOwnedTeams(v ...*Team) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveOwnedTeamIDs(ids...)
+}
+
+// ClearCreatedTeams clears all "created_teams" edges to the Team entity.
+func (_u *UserUpdate) ClearCreatedTeams() *UserUpdate {
+	_u.mutation.ClearCreatedTeams()
+	return _u
+}
+
+// RemoveCreatedTeamIDs removes the "created_teams" edge to Team entities by IDs.
+func (_u *UserUpdate) RemoveCreatedTeamIDs(ids ...int64) *UserUpdate {
+	_u.mutation.RemoveCreatedTeamIDs(ids...)
+	return _u
+}
+
+// RemoveCreatedTeams removes "created_teams" edges to Team entities.
+func (_u *UserUpdate) RemoveCreatedTeams(v ...*Team) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveCreatedTeamIDs(ids...)
+}
+
+// ClearTeamMemberships clears all "team_memberships" edges to the TeamMember entity.
+func (_u *UserUpdate) ClearTeamMemberships() *UserUpdate {
+	_u.mutation.ClearTeamMemberships()
+	return _u
+}
+
+// RemoveTeamMembershipIDs removes the "team_memberships" edge to TeamMember entities by IDs.
+func (_u *UserUpdate) RemoveTeamMembershipIDs(ids ...int64) *UserUpdate {
+	_u.mutation.RemoveTeamMembershipIDs(ids...)
+	return _u
+}
+
+// RemoveTeamMemberships removes "team_memberships" edges to TeamMember entities.
+func (_u *UserUpdate) RemoveTeamMemberships(v ...*TeamMember) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveTeamMembershipIDs(ids...)
+}
+
+// ClearTeamMemberInvites clears all "team_member_invites" edges to the TeamMember entity.
+func (_u *UserUpdate) ClearTeamMemberInvites() *UserUpdate {
+	_u.mutation.ClearTeamMemberInvites()
+	return _u
+}
+
+// RemoveTeamMemberInviteIDs removes the "team_member_invites" edge to TeamMember entities by IDs.
+func (_u *UserUpdate) RemoveTeamMemberInviteIDs(ids ...int64) *UserUpdate {
+	_u.mutation.RemoveTeamMemberInviteIDs(ids...)
+	return _u
+}
+
+// RemoveTeamMemberInvites removes "team_member_invites" edges to TeamMember entities.
+func (_u *UserUpdate) RemoveTeamMemberInvites(v ...*TeamMember) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveTeamMemberInviteIDs(ids...)
+}
+
+// ClearSentTeamInvitations clears all "sent_team_invitations" edges to the TeamInvitation entity.
+func (_u *UserUpdate) ClearSentTeamInvitations() *UserUpdate {
+	_u.mutation.ClearSentTeamInvitations()
+	return _u
+}
+
+// RemoveSentTeamInvitationIDs removes the "sent_team_invitations" edge to TeamInvitation entities by IDs.
+func (_u *UserUpdate) RemoveSentTeamInvitationIDs(ids ...int64) *UserUpdate {
+	_u.mutation.RemoveSentTeamInvitationIDs(ids...)
+	return _u
+}
+
+// RemoveSentTeamInvitations removes "sent_team_invitations" edges to TeamInvitation entities.
+func (_u *UserUpdate) RemoveSentTeamInvitations(v ...*TeamInvitation) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveSentTeamInvitationIDs(ids...)
+}
+
+// ClearAcceptedTeamInvitations clears all "accepted_team_invitations" edges to the TeamInvitation entity.
+func (_u *UserUpdate) ClearAcceptedTeamInvitations() *UserUpdate {
+	_u.mutation.ClearAcceptedTeamInvitations()
+	return _u
+}
+
+// RemoveAcceptedTeamInvitationIDs removes the "accepted_team_invitations" edge to TeamInvitation entities by IDs.
+func (_u *UserUpdate) RemoveAcceptedTeamInvitationIDs(ids ...int64) *UserUpdate {
+	_u.mutation.RemoveAcceptedTeamInvitationIDs(ids...)
+	return _u
+}
+
+// RemoveAcceptedTeamInvitations removes "accepted_team_invitations" edges to TeamInvitation entities.
+func (_u *UserUpdate) RemoveAcceptedTeamInvitations(v ...*TeamInvitation) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveAcceptedTeamInvitationIDs(ids...)
+}
+
+// ClearCreatedAPIKeys clears all "created_api_keys" edges to the APIKey entity.
+func (_u *UserUpdate) ClearCreatedAPIKeys() *UserUpdate {
+	_u.mutation.ClearCreatedAPIKeys()
+	return _u
+}
+
+// RemoveCreatedAPIKeyIDs removes the "created_api_keys" edge to APIKey entities by IDs.
+func (_u *UserUpdate) RemoveCreatedAPIKeyIDs(ids ...int64) *UserUpdate {
+	_u.mutation.RemoveCreatedAPIKeyIDs(ids...)
+	return _u
+}
+
+// RemoveCreatedAPIKeys removes "created_api_keys" edges to APIKey entities.
+func (_u *UserUpdate) RemoveCreatedAPIKeys(v ...*APIKey) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveCreatedAPIKeyIDs(ids...)
+}
+
+// ClearUpdatedAPIKeys clears all "updated_api_keys" edges to the APIKey entity.
+func (_u *UserUpdate) ClearUpdatedAPIKeys() *UserUpdate {
+	_u.mutation.ClearUpdatedAPIKeys()
+	return _u
+}
+
+// RemoveUpdatedAPIKeyIDs removes the "updated_api_keys" edge to APIKey entities by IDs.
+func (_u *UserUpdate) RemoveUpdatedAPIKeyIDs(ids ...int64) *UserUpdate {
+	_u.mutation.RemoveUpdatedAPIKeyIDs(ids...)
+	return _u
+}
+
+// RemoveUpdatedAPIKeys removes "updated_api_keys" edges to APIKey entities.
+func (_u *UserUpdate) RemoveUpdatedAPIKeys(v ...*APIKey) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveUpdatedAPIKeyIDs(ids...)
+}
+
+// ClearActedUsageLogs clears all "acted_usage_logs" edges to the UsageLog entity.
+func (_u *UserUpdate) ClearActedUsageLogs() *UserUpdate {
+	_u.mutation.ClearActedUsageLogs()
+	return _u
+}
+
+// RemoveActedUsageLogIDs removes the "acted_usage_logs" edge to UsageLog entities by IDs.
+func (_u *UserUpdate) RemoveActedUsageLogIDs(ids ...int64) *UserUpdate {
+	_u.mutation.RemoveActedUsageLogIDs(ids...)
+	return _u
+}
+
+// RemoveActedUsageLogs removes "acted_usage_logs" edges to UsageLog entities.
+func (_u *UserUpdate) RemoveActedUsageLogs(v ...*UsageLog) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveActedUsageLogIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -1534,6 +1934,51 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.CreatedPaymentOrdersCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CreatedPaymentOrdersTable,
+			Columns: []string{user.CreatedPaymentOrdersColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(paymentorder.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedCreatedPaymentOrdersIDs(); len(nodes) > 0 && !_u.mutation.CreatedPaymentOrdersCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CreatedPaymentOrdersTable,
+			Columns: []string{user.CreatedPaymentOrdersColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(paymentorder.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.CreatedPaymentOrdersIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CreatedPaymentOrdersTable,
+			Columns: []string{user.CreatedPaymentOrdersColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(paymentorder.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _u.mutation.AuthIdentitiesCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -1662,6 +2107,456 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(userplatformquota.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.BillingSubjectsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.BillingSubjectsTable,
+			Columns: []string{user.BillingSubjectsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedBillingSubjectsIDs(); len(nodes) > 0 && !_u.mutation.BillingSubjectsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.BillingSubjectsTable,
+			Columns: []string{user.BillingSubjectsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.BillingSubjectsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.BillingSubjectsTable,
+			Columns: []string{user.BillingSubjectsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.OwnedTeamsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.OwnedTeamsTable,
+			Columns: []string{user.OwnedTeamsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedOwnedTeamsIDs(); len(nodes) > 0 && !_u.mutation.OwnedTeamsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.OwnedTeamsTable,
+			Columns: []string{user.OwnedTeamsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.OwnedTeamsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.OwnedTeamsTable,
+			Columns: []string{user.OwnedTeamsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.CreatedTeamsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CreatedTeamsTable,
+			Columns: []string{user.CreatedTeamsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedCreatedTeamsIDs(); len(nodes) > 0 && !_u.mutation.CreatedTeamsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CreatedTeamsTable,
+			Columns: []string{user.CreatedTeamsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.CreatedTeamsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CreatedTeamsTable,
+			Columns: []string{user.CreatedTeamsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.TeamMembershipsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TeamMembershipsTable,
+			Columns: []string{user.TeamMembershipsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(teammember.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedTeamMembershipsIDs(); len(nodes) > 0 && !_u.mutation.TeamMembershipsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TeamMembershipsTable,
+			Columns: []string{user.TeamMembershipsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(teammember.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.TeamMembershipsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TeamMembershipsTable,
+			Columns: []string{user.TeamMembershipsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(teammember.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.TeamMemberInvitesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TeamMemberInvitesTable,
+			Columns: []string{user.TeamMemberInvitesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(teammember.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedTeamMemberInvitesIDs(); len(nodes) > 0 && !_u.mutation.TeamMemberInvitesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TeamMemberInvitesTable,
+			Columns: []string{user.TeamMemberInvitesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(teammember.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.TeamMemberInvitesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TeamMemberInvitesTable,
+			Columns: []string{user.TeamMemberInvitesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(teammember.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.SentTeamInvitationsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.SentTeamInvitationsTable,
+			Columns: []string{user.SentTeamInvitationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(teaminvitation.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedSentTeamInvitationsIDs(); len(nodes) > 0 && !_u.mutation.SentTeamInvitationsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.SentTeamInvitationsTable,
+			Columns: []string{user.SentTeamInvitationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(teaminvitation.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.SentTeamInvitationsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.SentTeamInvitationsTable,
+			Columns: []string{user.SentTeamInvitationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(teaminvitation.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.AcceptedTeamInvitationsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AcceptedTeamInvitationsTable,
+			Columns: []string{user.AcceptedTeamInvitationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(teaminvitation.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedAcceptedTeamInvitationsIDs(); len(nodes) > 0 && !_u.mutation.AcceptedTeamInvitationsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AcceptedTeamInvitationsTable,
+			Columns: []string{user.AcceptedTeamInvitationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(teaminvitation.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.AcceptedTeamInvitationsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AcceptedTeamInvitationsTable,
+			Columns: []string{user.AcceptedTeamInvitationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(teaminvitation.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.CreatedAPIKeysCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CreatedAPIKeysTable,
+			Columns: []string{user.CreatedAPIKeysColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(apikey.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedCreatedAPIKeysIDs(); len(nodes) > 0 && !_u.mutation.CreatedAPIKeysCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CreatedAPIKeysTable,
+			Columns: []string{user.CreatedAPIKeysColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(apikey.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.CreatedAPIKeysIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CreatedAPIKeysTable,
+			Columns: []string{user.CreatedAPIKeysColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(apikey.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.UpdatedAPIKeysCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.UpdatedAPIKeysTable,
+			Columns: []string{user.UpdatedAPIKeysColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(apikey.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedUpdatedAPIKeysIDs(); len(nodes) > 0 && !_u.mutation.UpdatedAPIKeysCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.UpdatedAPIKeysTable,
+			Columns: []string{user.UpdatedAPIKeysColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(apikey.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.UpdatedAPIKeysIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.UpdatedAPIKeysTable,
+			Columns: []string{user.UpdatedAPIKeysColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(apikey.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ActedUsageLogsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ActedUsageLogsTable,
+			Columns: []string{user.ActedUsageLogsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(usagelog.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedActedUsageLogsIDs(); len(nodes) > 0 && !_u.mutation.ActedUsageLogsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ActedUsageLogsTable,
+			Columns: []string{user.ActedUsageLogsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(usagelog.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ActedUsageLogsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ActedUsageLogsTable,
+			Columns: []string{user.ActedUsageLogsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(usagelog.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -2210,6 +3105,21 @@ func (_u *UserUpdateOne) AddPaymentOrders(v ...*PaymentOrder) *UserUpdateOne {
 	return _u.AddPaymentOrderIDs(ids...)
 }
 
+// AddCreatedPaymentOrderIDs adds the "created_payment_orders" edge to the PaymentOrder entity by IDs.
+func (_u *UserUpdateOne) AddCreatedPaymentOrderIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.AddCreatedPaymentOrderIDs(ids...)
+	return _u
+}
+
+// AddCreatedPaymentOrders adds the "created_payment_orders" edges to the PaymentOrder entity.
+func (_u *UserUpdateOne) AddCreatedPaymentOrders(v ...*PaymentOrder) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddCreatedPaymentOrderIDs(ids...)
+}
+
 // AddAuthIdentityIDs adds the "auth_identities" edge to the AuthIdentity entity by IDs.
 func (_u *UserUpdateOne) AddAuthIdentityIDs(ids ...int64) *UserUpdateOne {
 	_u.mutation.AddAuthIdentityIDs(ids...)
@@ -2253,6 +3163,156 @@ func (_u *UserUpdateOne) AddPlatformQuotas(v ...*UserPlatformQuota) *UserUpdateO
 		ids[i] = v[i].ID
 	}
 	return _u.AddPlatformQuotaIDs(ids...)
+}
+
+// AddBillingSubjectIDs adds the "billing_subjects" edge to the BillingSubject entity by IDs.
+func (_u *UserUpdateOne) AddBillingSubjectIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.AddBillingSubjectIDs(ids...)
+	return _u
+}
+
+// AddBillingSubjects adds the "billing_subjects" edges to the BillingSubject entity.
+func (_u *UserUpdateOne) AddBillingSubjects(v ...*BillingSubject) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddBillingSubjectIDs(ids...)
+}
+
+// AddOwnedTeamIDs adds the "owned_teams" edge to the Team entity by IDs.
+func (_u *UserUpdateOne) AddOwnedTeamIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.AddOwnedTeamIDs(ids...)
+	return _u
+}
+
+// AddOwnedTeams adds the "owned_teams" edges to the Team entity.
+func (_u *UserUpdateOne) AddOwnedTeams(v ...*Team) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddOwnedTeamIDs(ids...)
+}
+
+// AddCreatedTeamIDs adds the "created_teams" edge to the Team entity by IDs.
+func (_u *UserUpdateOne) AddCreatedTeamIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.AddCreatedTeamIDs(ids...)
+	return _u
+}
+
+// AddCreatedTeams adds the "created_teams" edges to the Team entity.
+func (_u *UserUpdateOne) AddCreatedTeams(v ...*Team) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddCreatedTeamIDs(ids...)
+}
+
+// AddTeamMembershipIDs adds the "team_memberships" edge to the TeamMember entity by IDs.
+func (_u *UserUpdateOne) AddTeamMembershipIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.AddTeamMembershipIDs(ids...)
+	return _u
+}
+
+// AddTeamMemberships adds the "team_memberships" edges to the TeamMember entity.
+func (_u *UserUpdateOne) AddTeamMemberships(v ...*TeamMember) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddTeamMembershipIDs(ids...)
+}
+
+// AddTeamMemberInviteIDs adds the "team_member_invites" edge to the TeamMember entity by IDs.
+func (_u *UserUpdateOne) AddTeamMemberInviteIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.AddTeamMemberInviteIDs(ids...)
+	return _u
+}
+
+// AddTeamMemberInvites adds the "team_member_invites" edges to the TeamMember entity.
+func (_u *UserUpdateOne) AddTeamMemberInvites(v ...*TeamMember) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddTeamMemberInviteIDs(ids...)
+}
+
+// AddSentTeamInvitationIDs adds the "sent_team_invitations" edge to the TeamInvitation entity by IDs.
+func (_u *UserUpdateOne) AddSentTeamInvitationIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.AddSentTeamInvitationIDs(ids...)
+	return _u
+}
+
+// AddSentTeamInvitations adds the "sent_team_invitations" edges to the TeamInvitation entity.
+func (_u *UserUpdateOne) AddSentTeamInvitations(v ...*TeamInvitation) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddSentTeamInvitationIDs(ids...)
+}
+
+// AddAcceptedTeamInvitationIDs adds the "accepted_team_invitations" edge to the TeamInvitation entity by IDs.
+func (_u *UserUpdateOne) AddAcceptedTeamInvitationIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.AddAcceptedTeamInvitationIDs(ids...)
+	return _u
+}
+
+// AddAcceptedTeamInvitations adds the "accepted_team_invitations" edges to the TeamInvitation entity.
+func (_u *UserUpdateOne) AddAcceptedTeamInvitations(v ...*TeamInvitation) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddAcceptedTeamInvitationIDs(ids...)
+}
+
+// AddCreatedAPIKeyIDs adds the "created_api_keys" edge to the APIKey entity by IDs.
+func (_u *UserUpdateOne) AddCreatedAPIKeyIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.AddCreatedAPIKeyIDs(ids...)
+	return _u
+}
+
+// AddCreatedAPIKeys adds the "created_api_keys" edges to the APIKey entity.
+func (_u *UserUpdateOne) AddCreatedAPIKeys(v ...*APIKey) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddCreatedAPIKeyIDs(ids...)
+}
+
+// AddUpdatedAPIKeyIDs adds the "updated_api_keys" edge to the APIKey entity by IDs.
+func (_u *UserUpdateOne) AddUpdatedAPIKeyIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.AddUpdatedAPIKeyIDs(ids...)
+	return _u
+}
+
+// AddUpdatedAPIKeys adds the "updated_api_keys" edges to the APIKey entity.
+func (_u *UserUpdateOne) AddUpdatedAPIKeys(v ...*APIKey) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddUpdatedAPIKeyIDs(ids...)
+}
+
+// AddActedUsageLogIDs adds the "acted_usage_logs" edge to the UsageLog entity by IDs.
+func (_u *UserUpdateOne) AddActedUsageLogIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.AddActedUsageLogIDs(ids...)
+	return _u
+}
+
+// AddActedUsageLogs adds the "acted_usage_logs" edges to the UsageLog entity.
+func (_u *UserUpdateOne) AddActedUsageLogs(v ...*UsageLog) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddActedUsageLogIDs(ids...)
 }
 
 // Mutation returns the UserMutation object of the builder.
@@ -2470,6 +3530,27 @@ func (_u *UserUpdateOne) RemovePaymentOrders(v ...*PaymentOrder) *UserUpdateOne 
 	return _u.RemovePaymentOrderIDs(ids...)
 }
 
+// ClearCreatedPaymentOrders clears all "created_payment_orders" edges to the PaymentOrder entity.
+func (_u *UserUpdateOne) ClearCreatedPaymentOrders() *UserUpdateOne {
+	_u.mutation.ClearCreatedPaymentOrders()
+	return _u
+}
+
+// RemoveCreatedPaymentOrderIDs removes the "created_payment_orders" edge to PaymentOrder entities by IDs.
+func (_u *UserUpdateOne) RemoveCreatedPaymentOrderIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.RemoveCreatedPaymentOrderIDs(ids...)
+	return _u
+}
+
+// RemoveCreatedPaymentOrders removes "created_payment_orders" edges to PaymentOrder entities.
+func (_u *UserUpdateOne) RemoveCreatedPaymentOrders(v ...*PaymentOrder) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveCreatedPaymentOrderIDs(ids...)
+}
+
 // ClearAuthIdentities clears all "auth_identities" edges to the AuthIdentity entity.
 func (_u *UserUpdateOne) ClearAuthIdentities() *UserUpdateOne {
 	_u.mutation.ClearAuthIdentities()
@@ -2531,6 +3612,216 @@ func (_u *UserUpdateOne) RemovePlatformQuotas(v ...*UserPlatformQuota) *UserUpda
 		ids[i] = v[i].ID
 	}
 	return _u.RemovePlatformQuotaIDs(ids...)
+}
+
+// ClearBillingSubjects clears all "billing_subjects" edges to the BillingSubject entity.
+func (_u *UserUpdateOne) ClearBillingSubjects() *UserUpdateOne {
+	_u.mutation.ClearBillingSubjects()
+	return _u
+}
+
+// RemoveBillingSubjectIDs removes the "billing_subjects" edge to BillingSubject entities by IDs.
+func (_u *UserUpdateOne) RemoveBillingSubjectIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.RemoveBillingSubjectIDs(ids...)
+	return _u
+}
+
+// RemoveBillingSubjects removes "billing_subjects" edges to BillingSubject entities.
+func (_u *UserUpdateOne) RemoveBillingSubjects(v ...*BillingSubject) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveBillingSubjectIDs(ids...)
+}
+
+// ClearOwnedTeams clears all "owned_teams" edges to the Team entity.
+func (_u *UserUpdateOne) ClearOwnedTeams() *UserUpdateOne {
+	_u.mutation.ClearOwnedTeams()
+	return _u
+}
+
+// RemoveOwnedTeamIDs removes the "owned_teams" edge to Team entities by IDs.
+func (_u *UserUpdateOne) RemoveOwnedTeamIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.RemoveOwnedTeamIDs(ids...)
+	return _u
+}
+
+// RemoveOwnedTeams removes "owned_teams" edges to Team entities.
+func (_u *UserUpdateOne) RemoveOwnedTeams(v ...*Team) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveOwnedTeamIDs(ids...)
+}
+
+// ClearCreatedTeams clears all "created_teams" edges to the Team entity.
+func (_u *UserUpdateOne) ClearCreatedTeams() *UserUpdateOne {
+	_u.mutation.ClearCreatedTeams()
+	return _u
+}
+
+// RemoveCreatedTeamIDs removes the "created_teams" edge to Team entities by IDs.
+func (_u *UserUpdateOne) RemoveCreatedTeamIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.RemoveCreatedTeamIDs(ids...)
+	return _u
+}
+
+// RemoveCreatedTeams removes "created_teams" edges to Team entities.
+func (_u *UserUpdateOne) RemoveCreatedTeams(v ...*Team) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveCreatedTeamIDs(ids...)
+}
+
+// ClearTeamMemberships clears all "team_memberships" edges to the TeamMember entity.
+func (_u *UserUpdateOne) ClearTeamMemberships() *UserUpdateOne {
+	_u.mutation.ClearTeamMemberships()
+	return _u
+}
+
+// RemoveTeamMembershipIDs removes the "team_memberships" edge to TeamMember entities by IDs.
+func (_u *UserUpdateOne) RemoveTeamMembershipIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.RemoveTeamMembershipIDs(ids...)
+	return _u
+}
+
+// RemoveTeamMemberships removes "team_memberships" edges to TeamMember entities.
+func (_u *UserUpdateOne) RemoveTeamMemberships(v ...*TeamMember) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveTeamMembershipIDs(ids...)
+}
+
+// ClearTeamMemberInvites clears all "team_member_invites" edges to the TeamMember entity.
+func (_u *UserUpdateOne) ClearTeamMemberInvites() *UserUpdateOne {
+	_u.mutation.ClearTeamMemberInvites()
+	return _u
+}
+
+// RemoveTeamMemberInviteIDs removes the "team_member_invites" edge to TeamMember entities by IDs.
+func (_u *UserUpdateOne) RemoveTeamMemberInviteIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.RemoveTeamMemberInviteIDs(ids...)
+	return _u
+}
+
+// RemoveTeamMemberInvites removes "team_member_invites" edges to TeamMember entities.
+func (_u *UserUpdateOne) RemoveTeamMemberInvites(v ...*TeamMember) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveTeamMemberInviteIDs(ids...)
+}
+
+// ClearSentTeamInvitations clears all "sent_team_invitations" edges to the TeamInvitation entity.
+func (_u *UserUpdateOne) ClearSentTeamInvitations() *UserUpdateOne {
+	_u.mutation.ClearSentTeamInvitations()
+	return _u
+}
+
+// RemoveSentTeamInvitationIDs removes the "sent_team_invitations" edge to TeamInvitation entities by IDs.
+func (_u *UserUpdateOne) RemoveSentTeamInvitationIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.RemoveSentTeamInvitationIDs(ids...)
+	return _u
+}
+
+// RemoveSentTeamInvitations removes "sent_team_invitations" edges to TeamInvitation entities.
+func (_u *UserUpdateOne) RemoveSentTeamInvitations(v ...*TeamInvitation) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveSentTeamInvitationIDs(ids...)
+}
+
+// ClearAcceptedTeamInvitations clears all "accepted_team_invitations" edges to the TeamInvitation entity.
+func (_u *UserUpdateOne) ClearAcceptedTeamInvitations() *UserUpdateOne {
+	_u.mutation.ClearAcceptedTeamInvitations()
+	return _u
+}
+
+// RemoveAcceptedTeamInvitationIDs removes the "accepted_team_invitations" edge to TeamInvitation entities by IDs.
+func (_u *UserUpdateOne) RemoveAcceptedTeamInvitationIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.RemoveAcceptedTeamInvitationIDs(ids...)
+	return _u
+}
+
+// RemoveAcceptedTeamInvitations removes "accepted_team_invitations" edges to TeamInvitation entities.
+func (_u *UserUpdateOne) RemoveAcceptedTeamInvitations(v ...*TeamInvitation) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveAcceptedTeamInvitationIDs(ids...)
+}
+
+// ClearCreatedAPIKeys clears all "created_api_keys" edges to the APIKey entity.
+func (_u *UserUpdateOne) ClearCreatedAPIKeys() *UserUpdateOne {
+	_u.mutation.ClearCreatedAPIKeys()
+	return _u
+}
+
+// RemoveCreatedAPIKeyIDs removes the "created_api_keys" edge to APIKey entities by IDs.
+func (_u *UserUpdateOne) RemoveCreatedAPIKeyIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.RemoveCreatedAPIKeyIDs(ids...)
+	return _u
+}
+
+// RemoveCreatedAPIKeys removes "created_api_keys" edges to APIKey entities.
+func (_u *UserUpdateOne) RemoveCreatedAPIKeys(v ...*APIKey) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveCreatedAPIKeyIDs(ids...)
+}
+
+// ClearUpdatedAPIKeys clears all "updated_api_keys" edges to the APIKey entity.
+func (_u *UserUpdateOne) ClearUpdatedAPIKeys() *UserUpdateOne {
+	_u.mutation.ClearUpdatedAPIKeys()
+	return _u
+}
+
+// RemoveUpdatedAPIKeyIDs removes the "updated_api_keys" edge to APIKey entities by IDs.
+func (_u *UserUpdateOne) RemoveUpdatedAPIKeyIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.RemoveUpdatedAPIKeyIDs(ids...)
+	return _u
+}
+
+// RemoveUpdatedAPIKeys removes "updated_api_keys" edges to APIKey entities.
+func (_u *UserUpdateOne) RemoveUpdatedAPIKeys(v ...*APIKey) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveUpdatedAPIKeyIDs(ids...)
+}
+
+// ClearActedUsageLogs clears all "acted_usage_logs" edges to the UsageLog entity.
+func (_u *UserUpdateOne) ClearActedUsageLogs() *UserUpdateOne {
+	_u.mutation.ClearActedUsageLogs()
+	return _u
+}
+
+// RemoveActedUsageLogIDs removes the "acted_usage_logs" edge to UsageLog entities by IDs.
+func (_u *UserUpdateOne) RemoveActedUsageLogIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.RemoveActedUsageLogIDs(ids...)
+	return _u
+}
+
+// RemoveActedUsageLogs removes "acted_usage_logs" edges to UsageLog entities.
+func (_u *UserUpdateOne) RemoveActedUsageLogs(v ...*UsageLog) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveActedUsageLogIDs(ids...)
 }
 
 // Where appends a list predicates to the UserUpdate builder.
@@ -3213,6 +4504,51 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.CreatedPaymentOrdersCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CreatedPaymentOrdersTable,
+			Columns: []string{user.CreatedPaymentOrdersColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(paymentorder.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedCreatedPaymentOrdersIDs(); len(nodes) > 0 && !_u.mutation.CreatedPaymentOrdersCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CreatedPaymentOrdersTable,
+			Columns: []string{user.CreatedPaymentOrdersColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(paymentorder.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.CreatedPaymentOrdersIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CreatedPaymentOrdersTable,
+			Columns: []string{user.CreatedPaymentOrdersColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(paymentorder.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _u.mutation.AuthIdentitiesCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -3341,6 +4677,456 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(userplatformquota.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.BillingSubjectsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.BillingSubjectsTable,
+			Columns: []string{user.BillingSubjectsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedBillingSubjectsIDs(); len(nodes) > 0 && !_u.mutation.BillingSubjectsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.BillingSubjectsTable,
+			Columns: []string{user.BillingSubjectsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.BillingSubjectsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.BillingSubjectsTable,
+			Columns: []string{user.BillingSubjectsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.OwnedTeamsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.OwnedTeamsTable,
+			Columns: []string{user.OwnedTeamsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedOwnedTeamsIDs(); len(nodes) > 0 && !_u.mutation.OwnedTeamsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.OwnedTeamsTable,
+			Columns: []string{user.OwnedTeamsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.OwnedTeamsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.OwnedTeamsTable,
+			Columns: []string{user.OwnedTeamsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.CreatedTeamsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CreatedTeamsTable,
+			Columns: []string{user.CreatedTeamsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedCreatedTeamsIDs(); len(nodes) > 0 && !_u.mutation.CreatedTeamsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CreatedTeamsTable,
+			Columns: []string{user.CreatedTeamsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.CreatedTeamsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CreatedTeamsTable,
+			Columns: []string{user.CreatedTeamsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.TeamMembershipsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TeamMembershipsTable,
+			Columns: []string{user.TeamMembershipsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(teammember.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedTeamMembershipsIDs(); len(nodes) > 0 && !_u.mutation.TeamMembershipsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TeamMembershipsTable,
+			Columns: []string{user.TeamMembershipsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(teammember.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.TeamMembershipsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TeamMembershipsTable,
+			Columns: []string{user.TeamMembershipsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(teammember.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.TeamMemberInvitesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TeamMemberInvitesTable,
+			Columns: []string{user.TeamMemberInvitesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(teammember.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedTeamMemberInvitesIDs(); len(nodes) > 0 && !_u.mutation.TeamMemberInvitesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TeamMemberInvitesTable,
+			Columns: []string{user.TeamMemberInvitesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(teammember.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.TeamMemberInvitesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TeamMemberInvitesTable,
+			Columns: []string{user.TeamMemberInvitesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(teammember.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.SentTeamInvitationsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.SentTeamInvitationsTable,
+			Columns: []string{user.SentTeamInvitationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(teaminvitation.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedSentTeamInvitationsIDs(); len(nodes) > 0 && !_u.mutation.SentTeamInvitationsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.SentTeamInvitationsTable,
+			Columns: []string{user.SentTeamInvitationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(teaminvitation.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.SentTeamInvitationsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.SentTeamInvitationsTable,
+			Columns: []string{user.SentTeamInvitationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(teaminvitation.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.AcceptedTeamInvitationsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AcceptedTeamInvitationsTable,
+			Columns: []string{user.AcceptedTeamInvitationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(teaminvitation.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedAcceptedTeamInvitationsIDs(); len(nodes) > 0 && !_u.mutation.AcceptedTeamInvitationsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AcceptedTeamInvitationsTable,
+			Columns: []string{user.AcceptedTeamInvitationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(teaminvitation.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.AcceptedTeamInvitationsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AcceptedTeamInvitationsTable,
+			Columns: []string{user.AcceptedTeamInvitationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(teaminvitation.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.CreatedAPIKeysCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CreatedAPIKeysTable,
+			Columns: []string{user.CreatedAPIKeysColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(apikey.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedCreatedAPIKeysIDs(); len(nodes) > 0 && !_u.mutation.CreatedAPIKeysCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CreatedAPIKeysTable,
+			Columns: []string{user.CreatedAPIKeysColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(apikey.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.CreatedAPIKeysIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CreatedAPIKeysTable,
+			Columns: []string{user.CreatedAPIKeysColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(apikey.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.UpdatedAPIKeysCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.UpdatedAPIKeysTable,
+			Columns: []string{user.UpdatedAPIKeysColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(apikey.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedUpdatedAPIKeysIDs(); len(nodes) > 0 && !_u.mutation.UpdatedAPIKeysCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.UpdatedAPIKeysTable,
+			Columns: []string{user.UpdatedAPIKeysColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(apikey.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.UpdatedAPIKeysIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.UpdatedAPIKeysTable,
+			Columns: []string{user.UpdatedAPIKeysColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(apikey.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ActedUsageLogsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ActedUsageLogsTable,
+			Columns: []string{user.ActedUsageLogsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(usagelog.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedActedUsageLogsIDs(); len(nodes) > 0 && !_u.mutation.ActedUsageLogsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ActedUsageLogsTable,
+			Columns: []string{user.ActedUsageLogsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(usagelog.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ActedUsageLogsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ActedUsageLogsTable,
+			Columns: []string{user.ActedUsageLogsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(usagelog.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

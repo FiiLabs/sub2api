@@ -91,17 +91,39 @@ type UserEdges struct {
 	PromoCodeUsages []*PromoCodeUsage `json:"promo_code_usages,omitempty"`
 	// PaymentOrders holds the value of the payment_orders edge.
 	PaymentOrders []*PaymentOrder `json:"payment_orders,omitempty"`
+	// CreatedPaymentOrders holds the value of the created_payment_orders edge.
+	CreatedPaymentOrders []*PaymentOrder `json:"created_payment_orders,omitempty"`
 	// AuthIdentities holds the value of the auth_identities edge.
 	AuthIdentities []*AuthIdentity `json:"auth_identities,omitempty"`
 	// PendingAuthSessions holds the value of the pending_auth_sessions edge.
 	PendingAuthSessions []*PendingAuthSession `json:"pending_auth_sessions,omitempty"`
 	// PlatformQuotas holds the value of the platform_quotas edge.
 	PlatformQuotas []*UserPlatformQuota `json:"platform_quotas,omitempty"`
+	// BillingSubjects holds the value of the billing_subjects edge.
+	BillingSubjects []*BillingSubject `json:"billing_subjects,omitempty"`
+	// OwnedTeams holds the value of the owned_teams edge.
+	OwnedTeams []*Team `json:"owned_teams,omitempty"`
+	// CreatedTeams holds the value of the created_teams edge.
+	CreatedTeams []*Team `json:"created_teams,omitempty"`
+	// TeamMemberships holds the value of the team_memberships edge.
+	TeamMemberships []*TeamMember `json:"team_memberships,omitempty"`
+	// TeamMemberInvites holds the value of the team_member_invites edge.
+	TeamMemberInvites []*TeamMember `json:"team_member_invites,omitempty"`
+	// SentTeamInvitations holds the value of the sent_team_invitations edge.
+	SentTeamInvitations []*TeamInvitation `json:"sent_team_invitations,omitempty"`
+	// AcceptedTeamInvitations holds the value of the accepted_team_invitations edge.
+	AcceptedTeamInvitations []*TeamInvitation `json:"accepted_team_invitations,omitempty"`
+	// CreatedAPIKeys holds the value of the created_api_keys edge.
+	CreatedAPIKeys []*APIKey `json:"created_api_keys,omitempty"`
+	// UpdatedAPIKeys holds the value of the updated_api_keys edge.
+	UpdatedAPIKeys []*APIKey `json:"updated_api_keys,omitempty"`
+	// ActedUsageLogs holds the value of the acted_usage_logs edge.
+	ActedUsageLogs []*UsageLog `json:"acted_usage_logs,omitempty"`
 	// UserAllowedGroups holds the value of the user_allowed_groups edge.
 	UserAllowedGroups []*UserAllowedGroup `json:"user_allowed_groups,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [14]bool
+	loadedTypes [25]bool
 }
 
 // APIKeysOrErr returns the APIKeys value or an error if the edge
@@ -194,10 +216,19 @@ func (e UserEdges) PaymentOrdersOrErr() ([]*PaymentOrder, error) {
 	return nil, &NotLoadedError{edge: "payment_orders"}
 }
 
+// CreatedPaymentOrdersOrErr returns the CreatedPaymentOrders value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) CreatedPaymentOrdersOrErr() ([]*PaymentOrder, error) {
+	if e.loadedTypes[10] {
+		return e.CreatedPaymentOrders, nil
+	}
+	return nil, &NotLoadedError{edge: "created_payment_orders"}
+}
+
 // AuthIdentitiesOrErr returns the AuthIdentities value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) AuthIdentitiesOrErr() ([]*AuthIdentity, error) {
-	if e.loadedTypes[10] {
+	if e.loadedTypes[11] {
 		return e.AuthIdentities, nil
 	}
 	return nil, &NotLoadedError{edge: "auth_identities"}
@@ -206,7 +237,7 @@ func (e UserEdges) AuthIdentitiesOrErr() ([]*AuthIdentity, error) {
 // PendingAuthSessionsOrErr returns the PendingAuthSessions value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) PendingAuthSessionsOrErr() ([]*PendingAuthSession, error) {
-	if e.loadedTypes[11] {
+	if e.loadedTypes[12] {
 		return e.PendingAuthSessions, nil
 	}
 	return nil, &NotLoadedError{edge: "pending_auth_sessions"}
@@ -215,16 +246,106 @@ func (e UserEdges) PendingAuthSessionsOrErr() ([]*PendingAuthSession, error) {
 // PlatformQuotasOrErr returns the PlatformQuotas value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) PlatformQuotasOrErr() ([]*UserPlatformQuota, error) {
-	if e.loadedTypes[12] {
+	if e.loadedTypes[13] {
 		return e.PlatformQuotas, nil
 	}
 	return nil, &NotLoadedError{edge: "platform_quotas"}
 }
 
+// BillingSubjectsOrErr returns the BillingSubjects value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) BillingSubjectsOrErr() ([]*BillingSubject, error) {
+	if e.loadedTypes[14] {
+		return e.BillingSubjects, nil
+	}
+	return nil, &NotLoadedError{edge: "billing_subjects"}
+}
+
+// OwnedTeamsOrErr returns the OwnedTeams value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) OwnedTeamsOrErr() ([]*Team, error) {
+	if e.loadedTypes[15] {
+		return e.OwnedTeams, nil
+	}
+	return nil, &NotLoadedError{edge: "owned_teams"}
+}
+
+// CreatedTeamsOrErr returns the CreatedTeams value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) CreatedTeamsOrErr() ([]*Team, error) {
+	if e.loadedTypes[16] {
+		return e.CreatedTeams, nil
+	}
+	return nil, &NotLoadedError{edge: "created_teams"}
+}
+
+// TeamMembershipsOrErr returns the TeamMemberships value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) TeamMembershipsOrErr() ([]*TeamMember, error) {
+	if e.loadedTypes[17] {
+		return e.TeamMemberships, nil
+	}
+	return nil, &NotLoadedError{edge: "team_memberships"}
+}
+
+// TeamMemberInvitesOrErr returns the TeamMemberInvites value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) TeamMemberInvitesOrErr() ([]*TeamMember, error) {
+	if e.loadedTypes[18] {
+		return e.TeamMemberInvites, nil
+	}
+	return nil, &NotLoadedError{edge: "team_member_invites"}
+}
+
+// SentTeamInvitationsOrErr returns the SentTeamInvitations value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) SentTeamInvitationsOrErr() ([]*TeamInvitation, error) {
+	if e.loadedTypes[19] {
+		return e.SentTeamInvitations, nil
+	}
+	return nil, &NotLoadedError{edge: "sent_team_invitations"}
+}
+
+// AcceptedTeamInvitationsOrErr returns the AcceptedTeamInvitations value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) AcceptedTeamInvitationsOrErr() ([]*TeamInvitation, error) {
+	if e.loadedTypes[20] {
+		return e.AcceptedTeamInvitations, nil
+	}
+	return nil, &NotLoadedError{edge: "accepted_team_invitations"}
+}
+
+// CreatedAPIKeysOrErr returns the CreatedAPIKeys value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) CreatedAPIKeysOrErr() ([]*APIKey, error) {
+	if e.loadedTypes[21] {
+		return e.CreatedAPIKeys, nil
+	}
+	return nil, &NotLoadedError{edge: "created_api_keys"}
+}
+
+// UpdatedAPIKeysOrErr returns the UpdatedAPIKeys value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) UpdatedAPIKeysOrErr() ([]*APIKey, error) {
+	if e.loadedTypes[22] {
+		return e.UpdatedAPIKeys, nil
+	}
+	return nil, &NotLoadedError{edge: "updated_api_keys"}
+}
+
+// ActedUsageLogsOrErr returns the ActedUsageLogs value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) ActedUsageLogsOrErr() ([]*UsageLog, error) {
+	if e.loadedTypes[23] {
+		return e.ActedUsageLogs, nil
+	}
+	return nil, &NotLoadedError{edge: "acted_usage_logs"}
+}
+
 // UserAllowedGroupsOrErr returns the UserAllowedGroups value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) UserAllowedGroupsOrErr() ([]*UserAllowedGroup, error) {
-	if e.loadedTypes[13] {
+	if e.loadedTypes[24] {
 		return e.UserAllowedGroups, nil
 	}
 	return nil, &NotLoadedError{edge: "user_allowed_groups"}
@@ -473,6 +594,11 @@ func (_m *User) QueryPaymentOrders() *PaymentOrderQuery {
 	return NewUserClient(_m.config).QueryPaymentOrders(_m)
 }
 
+// QueryCreatedPaymentOrders queries the "created_payment_orders" edge of the User entity.
+func (_m *User) QueryCreatedPaymentOrders() *PaymentOrderQuery {
+	return NewUserClient(_m.config).QueryCreatedPaymentOrders(_m)
+}
+
 // QueryAuthIdentities queries the "auth_identities" edge of the User entity.
 func (_m *User) QueryAuthIdentities() *AuthIdentityQuery {
 	return NewUserClient(_m.config).QueryAuthIdentities(_m)
@@ -486,6 +612,56 @@ func (_m *User) QueryPendingAuthSessions() *PendingAuthSessionQuery {
 // QueryPlatformQuotas queries the "platform_quotas" edge of the User entity.
 func (_m *User) QueryPlatformQuotas() *UserPlatformQuotaQuery {
 	return NewUserClient(_m.config).QueryPlatformQuotas(_m)
+}
+
+// QueryBillingSubjects queries the "billing_subjects" edge of the User entity.
+func (_m *User) QueryBillingSubjects() *BillingSubjectQuery {
+	return NewUserClient(_m.config).QueryBillingSubjects(_m)
+}
+
+// QueryOwnedTeams queries the "owned_teams" edge of the User entity.
+func (_m *User) QueryOwnedTeams() *TeamQuery {
+	return NewUserClient(_m.config).QueryOwnedTeams(_m)
+}
+
+// QueryCreatedTeams queries the "created_teams" edge of the User entity.
+func (_m *User) QueryCreatedTeams() *TeamQuery {
+	return NewUserClient(_m.config).QueryCreatedTeams(_m)
+}
+
+// QueryTeamMemberships queries the "team_memberships" edge of the User entity.
+func (_m *User) QueryTeamMemberships() *TeamMemberQuery {
+	return NewUserClient(_m.config).QueryTeamMemberships(_m)
+}
+
+// QueryTeamMemberInvites queries the "team_member_invites" edge of the User entity.
+func (_m *User) QueryTeamMemberInvites() *TeamMemberQuery {
+	return NewUserClient(_m.config).QueryTeamMemberInvites(_m)
+}
+
+// QuerySentTeamInvitations queries the "sent_team_invitations" edge of the User entity.
+func (_m *User) QuerySentTeamInvitations() *TeamInvitationQuery {
+	return NewUserClient(_m.config).QuerySentTeamInvitations(_m)
+}
+
+// QueryAcceptedTeamInvitations queries the "accepted_team_invitations" edge of the User entity.
+func (_m *User) QueryAcceptedTeamInvitations() *TeamInvitationQuery {
+	return NewUserClient(_m.config).QueryAcceptedTeamInvitations(_m)
+}
+
+// QueryCreatedAPIKeys queries the "created_api_keys" edge of the User entity.
+func (_m *User) QueryCreatedAPIKeys() *APIKeyQuery {
+	return NewUserClient(_m.config).QueryCreatedAPIKeys(_m)
+}
+
+// QueryUpdatedAPIKeys queries the "updated_api_keys" edge of the User entity.
+func (_m *User) QueryUpdatedAPIKeys() *APIKeyQuery {
+	return NewUserClient(_m.config).QueryUpdatedAPIKeys(_m)
+}
+
+// QueryActedUsageLogs queries the "acted_usage_logs" edge of the User entity.
+func (_m *User) QueryActedUsageLogs() *UsageLogQuery {
+	return NewUserClient(_m.config).QueryActedUsageLogs(_m)
 }
 
 // QueryUserAllowedGroups queries the "user_allowed_groups" edge of the User entity.

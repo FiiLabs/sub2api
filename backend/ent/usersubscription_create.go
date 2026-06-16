@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/Wei-Shaw/sub2api/ent/billingsubject"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
@@ -76,6 +77,20 @@ func (_c *UserSubscriptionCreate) SetUserID(v int64) *UserSubscriptionCreate {
 // SetGroupID sets the "group_id" field.
 func (_c *UserSubscriptionCreate) SetGroupID(v int64) *UserSubscriptionCreate {
 	_c.mutation.SetGroupID(v)
+	return _c
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (_c *UserSubscriptionCreate) SetBillingSubjectID(v int64) *UserSubscriptionCreate {
+	_c.mutation.SetBillingSubjectID(v)
+	return _c
+}
+
+// SetNillableBillingSubjectID sets the "billing_subject_id" field if the given value is not nil.
+func (_c *UserSubscriptionCreate) SetNillableBillingSubjectID(v *int64) *UserSubscriptionCreate {
+	if v != nil {
+		_c.SetBillingSubjectID(*v)
+	}
 	return _c
 }
 
@@ -258,6 +273,11 @@ func (_c *UserSubscriptionCreate) SetNillableAssignedByUserID(id *int64) *UserSu
 // SetAssignedByUser sets the "assigned_by_user" edge to the User entity.
 func (_c *UserSubscriptionCreate) SetAssignedByUser(v *User) *UserSubscriptionCreate {
 	return _c.SetAssignedByUserID(v.ID)
+}
+
+// SetBillingSubject sets the "billing_subject" edge to the BillingSubject entity.
+func (_c *UserSubscriptionCreate) SetBillingSubject(v *BillingSubject) *UserSubscriptionCreate {
+	return _c.SetBillingSubjectID(v.ID)
 }
 
 // AddUsageLogIDs adds the "usage_logs" edge to the UsageLog entity by IDs.
@@ -532,6 +552,23 @@ func (_c *UserSubscriptionCreate) createSpec() (*UserSubscription, *sqlgraph.Cre
 		_node.AssignedBy = &nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
+	if nodes := _c.mutation.BillingSubjectIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   usersubscription.BillingSubjectTable,
+			Columns: []string{usersubscription.BillingSubjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.BillingSubjectID = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
 	if nodes := _c.mutation.UsageLogsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -651,6 +688,24 @@ func (u *UserSubscriptionUpsert) SetGroupID(v int64) *UserSubscriptionUpsert {
 // UpdateGroupID sets the "group_id" field to the value that was provided on create.
 func (u *UserSubscriptionUpsert) UpdateGroupID() *UserSubscriptionUpsert {
 	u.SetExcluded(usersubscription.FieldGroupID)
+	return u
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (u *UserSubscriptionUpsert) SetBillingSubjectID(v int64) *UserSubscriptionUpsert {
+	u.Set(usersubscription.FieldBillingSubjectID, v)
+	return u
+}
+
+// UpdateBillingSubjectID sets the "billing_subject_id" field to the value that was provided on create.
+func (u *UserSubscriptionUpsert) UpdateBillingSubjectID() *UserSubscriptionUpsert {
+	u.SetExcluded(usersubscription.FieldBillingSubjectID)
+	return u
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (u *UserSubscriptionUpsert) ClearBillingSubjectID() *UserSubscriptionUpsert {
+	u.SetNull(usersubscription.FieldBillingSubjectID)
 	return u
 }
 
@@ -951,6 +1006,27 @@ func (u *UserSubscriptionUpsertOne) SetGroupID(v int64) *UserSubscriptionUpsertO
 func (u *UserSubscriptionUpsertOne) UpdateGroupID() *UserSubscriptionUpsertOne {
 	return u.Update(func(s *UserSubscriptionUpsert) {
 		s.UpdateGroupID()
+	})
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (u *UserSubscriptionUpsertOne) SetBillingSubjectID(v int64) *UserSubscriptionUpsertOne {
+	return u.Update(func(s *UserSubscriptionUpsert) {
+		s.SetBillingSubjectID(v)
+	})
+}
+
+// UpdateBillingSubjectID sets the "billing_subject_id" field to the value that was provided on create.
+func (u *UserSubscriptionUpsertOne) UpdateBillingSubjectID() *UserSubscriptionUpsertOne {
+	return u.Update(func(s *UserSubscriptionUpsert) {
+		s.UpdateBillingSubjectID()
+	})
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (u *UserSubscriptionUpsertOne) ClearBillingSubjectID() *UserSubscriptionUpsertOne {
+	return u.Update(func(s *UserSubscriptionUpsert) {
+		s.ClearBillingSubjectID()
 	})
 }
 
@@ -1449,6 +1525,27 @@ func (u *UserSubscriptionUpsertBulk) SetGroupID(v int64) *UserSubscriptionUpsert
 func (u *UserSubscriptionUpsertBulk) UpdateGroupID() *UserSubscriptionUpsertBulk {
 	return u.Update(func(s *UserSubscriptionUpsert) {
 		s.UpdateGroupID()
+	})
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (u *UserSubscriptionUpsertBulk) SetBillingSubjectID(v int64) *UserSubscriptionUpsertBulk {
+	return u.Update(func(s *UserSubscriptionUpsert) {
+		s.SetBillingSubjectID(v)
+	})
+}
+
+// UpdateBillingSubjectID sets the "billing_subject_id" field to the value that was provided on create.
+func (u *UserSubscriptionUpsertBulk) UpdateBillingSubjectID() *UserSubscriptionUpsertBulk {
+	return u.Update(func(s *UserSubscriptionUpsert) {
+		s.UpdateBillingSubjectID()
+	})
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (u *UserSubscriptionUpsertBulk) ClearBillingSubjectID() *UserSubscriptionUpsertBulk {
+	return u.Update(func(s *UserSubscriptionUpsert) {
+		s.ClearBillingSubjectID()
 	})
 }
 

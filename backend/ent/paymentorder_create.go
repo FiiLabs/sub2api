@@ -11,7 +11,9 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/Wei-Shaw/sub2api/ent/billingsubject"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
+	"github.com/Wei-Shaw/sub2api/ent/team"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 )
 
@@ -51,6 +53,48 @@ func (_c *PaymentOrderCreate) SetUserNotes(v string) *PaymentOrderCreate {
 func (_c *PaymentOrderCreate) SetNillableUserNotes(v *string) *PaymentOrderCreate {
 	if v != nil {
 		_c.SetUserNotes(*v)
+	}
+	return _c
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (_c *PaymentOrderCreate) SetBillingSubjectID(v int64) *PaymentOrderCreate {
+	_c.mutation.SetBillingSubjectID(v)
+	return _c
+}
+
+// SetNillableBillingSubjectID sets the "billing_subject_id" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableBillingSubjectID(v *int64) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetBillingSubjectID(*v)
+	}
+	return _c
+}
+
+// SetTeamID sets the "team_id" field.
+func (_c *PaymentOrderCreate) SetTeamID(v int64) *PaymentOrderCreate {
+	_c.mutation.SetTeamID(v)
+	return _c
+}
+
+// SetNillableTeamID sets the "team_id" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableTeamID(v *int64) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetTeamID(*v)
+	}
+	return _c
+}
+
+// SetCreatedByUserID sets the "created_by_user_id" field.
+func (_c *PaymentOrderCreate) SetCreatedByUserID(v int64) *PaymentOrderCreate {
+	_c.mutation.SetCreatedByUserID(v)
+	return _c
+}
+
+// SetNillableCreatedByUserID sets the "created_by_user_id" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableCreatedByUserID(v *int64) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetCreatedByUserID(*v)
 	}
 	return _c
 }
@@ -478,6 +522,35 @@ func (_c *PaymentOrderCreate) SetUser(v *User) *PaymentOrderCreate {
 	return _c.SetUserID(v.ID)
 }
 
+// SetBillingSubject sets the "billing_subject" edge to the BillingSubject entity.
+func (_c *PaymentOrderCreate) SetBillingSubject(v *BillingSubject) *PaymentOrderCreate {
+	return _c.SetBillingSubjectID(v.ID)
+}
+
+// SetTeam sets the "team" edge to the Team entity.
+func (_c *PaymentOrderCreate) SetTeam(v *Team) *PaymentOrderCreate {
+	return _c.SetTeamID(v.ID)
+}
+
+// SetCreatedByID sets the "created_by" edge to the User entity by ID.
+func (_c *PaymentOrderCreate) SetCreatedByID(id int64) *PaymentOrderCreate {
+	_c.mutation.SetCreatedByID(id)
+	return _c
+}
+
+// SetNillableCreatedByID sets the "created_by" edge to the User entity by ID if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableCreatedByID(id *int64) *PaymentOrderCreate {
+	if id != nil {
+		_c = _c.SetCreatedByID(*id)
+	}
+	return _c
+}
+
+// SetCreatedBy sets the "created_by" edge to the User entity.
+func (_c *PaymentOrderCreate) SetCreatedBy(v *User) *PaymentOrderCreate {
+	return _c.SetCreatedByID(v.ID)
+}
+
 // Mutation returns the PaymentOrderMutation object of the builder.
 func (_c *PaymentOrderCreate) Mutation() *PaymentOrderMutation {
 	return _c.mutation
@@ -870,6 +943,57 @@ func (_c *PaymentOrderCreate) createSpec() (*PaymentOrder, *sqlgraph.CreateSpec)
 		_node.UserID = nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
+	if nodes := _c.mutation.BillingSubjectIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   paymentorder.BillingSubjectTable,
+			Columns: []string{paymentorder.BillingSubjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.BillingSubjectID = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.TeamIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   paymentorder.TeamTable,
+			Columns: []string{paymentorder.TeamColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.TeamID = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.CreatedByIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   paymentorder.CreatedByTable,
+			Columns: []string{paymentorder.CreatedByColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.CreatedByUserID = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
 	return _node, _spec
 }
 
@@ -973,6 +1097,60 @@ func (u *PaymentOrderUpsert) UpdateUserNotes() *PaymentOrderUpsert {
 // ClearUserNotes clears the value of the "user_notes" field.
 func (u *PaymentOrderUpsert) ClearUserNotes() *PaymentOrderUpsert {
 	u.SetNull(paymentorder.FieldUserNotes)
+	return u
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (u *PaymentOrderUpsert) SetBillingSubjectID(v int64) *PaymentOrderUpsert {
+	u.Set(paymentorder.FieldBillingSubjectID, v)
+	return u
+}
+
+// UpdateBillingSubjectID sets the "billing_subject_id" field to the value that was provided on create.
+func (u *PaymentOrderUpsert) UpdateBillingSubjectID() *PaymentOrderUpsert {
+	u.SetExcluded(paymentorder.FieldBillingSubjectID)
+	return u
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (u *PaymentOrderUpsert) ClearBillingSubjectID() *PaymentOrderUpsert {
+	u.SetNull(paymentorder.FieldBillingSubjectID)
+	return u
+}
+
+// SetTeamID sets the "team_id" field.
+func (u *PaymentOrderUpsert) SetTeamID(v int64) *PaymentOrderUpsert {
+	u.Set(paymentorder.FieldTeamID, v)
+	return u
+}
+
+// UpdateTeamID sets the "team_id" field to the value that was provided on create.
+func (u *PaymentOrderUpsert) UpdateTeamID() *PaymentOrderUpsert {
+	u.SetExcluded(paymentorder.FieldTeamID)
+	return u
+}
+
+// ClearTeamID clears the value of the "team_id" field.
+func (u *PaymentOrderUpsert) ClearTeamID() *PaymentOrderUpsert {
+	u.SetNull(paymentorder.FieldTeamID)
+	return u
+}
+
+// SetCreatedByUserID sets the "created_by_user_id" field.
+func (u *PaymentOrderUpsert) SetCreatedByUserID(v int64) *PaymentOrderUpsert {
+	u.Set(paymentorder.FieldCreatedByUserID, v)
+	return u
+}
+
+// UpdateCreatedByUserID sets the "created_by_user_id" field to the value that was provided on create.
+func (u *PaymentOrderUpsert) UpdateCreatedByUserID() *PaymentOrderUpsert {
+	u.SetExcluded(paymentorder.FieldCreatedByUserID)
+	return u
+}
+
+// ClearCreatedByUserID clears the value of the "created_by_user_id" field.
+func (u *PaymentOrderUpsert) ClearCreatedByUserID() *PaymentOrderUpsert {
+	u.SetNull(paymentorder.FieldCreatedByUserID)
 	return u
 }
 
@@ -1645,6 +1823,69 @@ func (u *PaymentOrderUpsertOne) UpdateUserNotes() *PaymentOrderUpsertOne {
 func (u *PaymentOrderUpsertOne) ClearUserNotes() *PaymentOrderUpsertOne {
 	return u.Update(func(s *PaymentOrderUpsert) {
 		s.ClearUserNotes()
+	})
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (u *PaymentOrderUpsertOne) SetBillingSubjectID(v int64) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetBillingSubjectID(v)
+	})
+}
+
+// UpdateBillingSubjectID sets the "billing_subject_id" field to the value that was provided on create.
+func (u *PaymentOrderUpsertOne) UpdateBillingSubjectID() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateBillingSubjectID()
+	})
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (u *PaymentOrderUpsertOne) ClearBillingSubjectID() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearBillingSubjectID()
+	})
+}
+
+// SetTeamID sets the "team_id" field.
+func (u *PaymentOrderUpsertOne) SetTeamID(v int64) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetTeamID(v)
+	})
+}
+
+// UpdateTeamID sets the "team_id" field to the value that was provided on create.
+func (u *PaymentOrderUpsertOne) UpdateTeamID() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateTeamID()
+	})
+}
+
+// ClearTeamID clears the value of the "team_id" field.
+func (u *PaymentOrderUpsertOne) ClearTeamID() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearTeamID()
+	})
+}
+
+// SetCreatedByUserID sets the "created_by_user_id" field.
+func (u *PaymentOrderUpsertOne) SetCreatedByUserID(v int64) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetCreatedByUserID(v)
+	})
+}
+
+// UpdateCreatedByUserID sets the "created_by_user_id" field to the value that was provided on create.
+func (u *PaymentOrderUpsertOne) UpdateCreatedByUserID() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateCreatedByUserID()
+	})
+}
+
+// ClearCreatedByUserID clears the value of the "created_by_user_id" field.
+func (u *PaymentOrderUpsertOne) ClearCreatedByUserID() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearCreatedByUserID()
 	})
 }
 
@@ -2577,6 +2818,69 @@ func (u *PaymentOrderUpsertBulk) UpdateUserNotes() *PaymentOrderUpsertBulk {
 func (u *PaymentOrderUpsertBulk) ClearUserNotes() *PaymentOrderUpsertBulk {
 	return u.Update(func(s *PaymentOrderUpsert) {
 		s.ClearUserNotes()
+	})
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (u *PaymentOrderUpsertBulk) SetBillingSubjectID(v int64) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetBillingSubjectID(v)
+	})
+}
+
+// UpdateBillingSubjectID sets the "billing_subject_id" field to the value that was provided on create.
+func (u *PaymentOrderUpsertBulk) UpdateBillingSubjectID() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateBillingSubjectID()
+	})
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (u *PaymentOrderUpsertBulk) ClearBillingSubjectID() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearBillingSubjectID()
+	})
+}
+
+// SetTeamID sets the "team_id" field.
+func (u *PaymentOrderUpsertBulk) SetTeamID(v int64) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetTeamID(v)
+	})
+}
+
+// UpdateTeamID sets the "team_id" field to the value that was provided on create.
+func (u *PaymentOrderUpsertBulk) UpdateTeamID() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateTeamID()
+	})
+}
+
+// ClearTeamID clears the value of the "team_id" field.
+func (u *PaymentOrderUpsertBulk) ClearTeamID() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearTeamID()
+	})
+}
+
+// SetCreatedByUserID sets the "created_by_user_id" field.
+func (u *PaymentOrderUpsertBulk) SetCreatedByUserID(v int64) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetCreatedByUserID(v)
+	})
+}
+
+// UpdateCreatedByUserID sets the "created_by_user_id" field to the value that was provided on create.
+func (u *PaymentOrderUpsertBulk) UpdateCreatedByUserID() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateCreatedByUserID()
+	})
+}
+
+// ClearCreatedByUserID clears the value of the "created_by_user_id" field.
+func (u *PaymentOrderUpsertBulk) ClearCreatedByUserID() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearCreatedByUserID()
 	})
 }
 

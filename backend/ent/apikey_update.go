@@ -13,8 +13,10 @@ import (
 	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
+	"github.com/Wei-Shaw/sub2api/ent/billingsubject"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
+	"github.com/Wei-Shaw/sub2api/ent/team"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 )
@@ -117,6 +119,86 @@ func (_u *APIKeyUpdate) SetNillableGroupID(v *int64) *APIKeyUpdate {
 // ClearGroupID clears the value of the "group_id" field.
 func (_u *APIKeyUpdate) ClearGroupID() *APIKeyUpdate {
 	_u.mutation.ClearGroupID()
+	return _u
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (_u *APIKeyUpdate) SetBillingSubjectID(v int64) *APIKeyUpdate {
+	_u.mutation.SetBillingSubjectID(v)
+	return _u
+}
+
+// SetNillableBillingSubjectID sets the "billing_subject_id" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableBillingSubjectID(v *int64) *APIKeyUpdate {
+	if v != nil {
+		_u.SetBillingSubjectID(*v)
+	}
+	return _u
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (_u *APIKeyUpdate) ClearBillingSubjectID() *APIKeyUpdate {
+	_u.mutation.ClearBillingSubjectID()
+	return _u
+}
+
+// SetTeamID sets the "team_id" field.
+func (_u *APIKeyUpdate) SetTeamID(v int64) *APIKeyUpdate {
+	_u.mutation.SetTeamID(v)
+	return _u
+}
+
+// SetNillableTeamID sets the "team_id" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableTeamID(v *int64) *APIKeyUpdate {
+	if v != nil {
+		_u.SetTeamID(*v)
+	}
+	return _u
+}
+
+// ClearTeamID clears the value of the "team_id" field.
+func (_u *APIKeyUpdate) ClearTeamID() *APIKeyUpdate {
+	_u.mutation.ClearTeamID()
+	return _u
+}
+
+// SetCreatedByUserID sets the "created_by_user_id" field.
+func (_u *APIKeyUpdate) SetCreatedByUserID(v int64) *APIKeyUpdate {
+	_u.mutation.SetCreatedByUserID(v)
+	return _u
+}
+
+// SetNillableCreatedByUserID sets the "created_by_user_id" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableCreatedByUserID(v *int64) *APIKeyUpdate {
+	if v != nil {
+		_u.SetCreatedByUserID(*v)
+	}
+	return _u
+}
+
+// ClearCreatedByUserID clears the value of the "created_by_user_id" field.
+func (_u *APIKeyUpdate) ClearCreatedByUserID() *APIKeyUpdate {
+	_u.mutation.ClearCreatedByUserID()
+	return _u
+}
+
+// SetUpdatedByUserID sets the "updated_by_user_id" field.
+func (_u *APIKeyUpdate) SetUpdatedByUserID(v int64) *APIKeyUpdate {
+	_u.mutation.SetUpdatedByUserID(v)
+	return _u
+}
+
+// SetNillableUpdatedByUserID sets the "updated_by_user_id" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableUpdatedByUserID(v *int64) *APIKeyUpdate {
+	if v != nil {
+		_u.SetUpdatedByUserID(*v)
+	}
+	return _u
+}
+
+// ClearUpdatedByUserID clears the value of the "updated_by_user_id" field.
+func (_u *APIKeyUpdate) ClearUpdatedByUserID() *APIKeyUpdate {
+	_u.mutation.ClearUpdatedByUserID()
 	return _u
 }
 
@@ -448,6 +530,54 @@ func (_u *APIKeyUpdate) SetGroup(v *Group) *APIKeyUpdate {
 	return _u.SetGroupID(v.ID)
 }
 
+// SetBillingSubject sets the "billing_subject" edge to the BillingSubject entity.
+func (_u *APIKeyUpdate) SetBillingSubject(v *BillingSubject) *APIKeyUpdate {
+	return _u.SetBillingSubjectID(v.ID)
+}
+
+// SetTeam sets the "team" edge to the Team entity.
+func (_u *APIKeyUpdate) SetTeam(v *Team) *APIKeyUpdate {
+	return _u.SetTeamID(v.ID)
+}
+
+// SetCreatedByID sets the "created_by" edge to the User entity by ID.
+func (_u *APIKeyUpdate) SetCreatedByID(id int64) *APIKeyUpdate {
+	_u.mutation.SetCreatedByID(id)
+	return _u
+}
+
+// SetNillableCreatedByID sets the "created_by" edge to the User entity by ID if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableCreatedByID(id *int64) *APIKeyUpdate {
+	if id != nil {
+		_u = _u.SetCreatedByID(*id)
+	}
+	return _u
+}
+
+// SetCreatedBy sets the "created_by" edge to the User entity.
+func (_u *APIKeyUpdate) SetCreatedBy(v *User) *APIKeyUpdate {
+	return _u.SetCreatedByID(v.ID)
+}
+
+// SetUpdatedByID sets the "updated_by" edge to the User entity by ID.
+func (_u *APIKeyUpdate) SetUpdatedByID(id int64) *APIKeyUpdate {
+	_u.mutation.SetUpdatedByID(id)
+	return _u
+}
+
+// SetNillableUpdatedByID sets the "updated_by" edge to the User entity by ID if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableUpdatedByID(id *int64) *APIKeyUpdate {
+	if id != nil {
+		_u = _u.SetUpdatedByID(*id)
+	}
+	return _u
+}
+
+// SetUpdatedBy sets the "updated_by" edge to the User entity.
+func (_u *APIKeyUpdate) SetUpdatedBy(v *User) *APIKeyUpdate {
+	return _u.SetUpdatedByID(v.ID)
+}
+
 // AddUsageLogIDs adds the "usage_logs" edge to the UsageLog entity by IDs.
 func (_u *APIKeyUpdate) AddUsageLogIDs(ids ...int64) *APIKeyUpdate {
 	_u.mutation.AddUsageLogIDs(ids...)
@@ -477,6 +607,30 @@ func (_u *APIKeyUpdate) ClearUser() *APIKeyUpdate {
 // ClearGroup clears the "group" edge to the Group entity.
 func (_u *APIKeyUpdate) ClearGroup() *APIKeyUpdate {
 	_u.mutation.ClearGroup()
+	return _u
+}
+
+// ClearBillingSubject clears the "billing_subject" edge to the BillingSubject entity.
+func (_u *APIKeyUpdate) ClearBillingSubject() *APIKeyUpdate {
+	_u.mutation.ClearBillingSubject()
+	return _u
+}
+
+// ClearTeam clears the "team" edge to the Team entity.
+func (_u *APIKeyUpdate) ClearTeam() *APIKeyUpdate {
+	_u.mutation.ClearTeam()
+	return _u
+}
+
+// ClearCreatedBy clears the "created_by" edge to the User entity.
+func (_u *APIKeyUpdate) ClearCreatedBy() *APIKeyUpdate {
+	_u.mutation.ClearCreatedBy()
+	return _u
+}
+
+// ClearUpdatedBy clears the "updated_by" edge to the User entity.
+func (_u *APIKeyUpdate) ClearUpdatedBy() *APIKeyUpdate {
+	_u.mutation.ClearUpdatedBy()
 	return _u
 }
 
@@ -754,6 +908,122 @@ func (_u *APIKeyUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.BillingSubjectCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.BillingSubjectTable,
+			Columns: []string{apikey.BillingSubjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.BillingSubjectIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.BillingSubjectTable,
+			Columns: []string{apikey.BillingSubjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.TeamCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.TeamTable,
+			Columns: []string{apikey.TeamColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.TeamIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.TeamTable,
+			Columns: []string{apikey.TeamColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.CreatedByCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.CreatedByTable,
+			Columns: []string{apikey.CreatedByColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.CreatedByIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.CreatedByTable,
+			Columns: []string{apikey.CreatedByColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.UpdatedByCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.UpdatedByTable,
+			Columns: []string{apikey.UpdatedByColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.UpdatedByIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.UpdatedByTable,
+			Columns: []string{apikey.UpdatedByColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _u.mutation.UsageLogsCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -904,6 +1174,86 @@ func (_u *APIKeyUpdateOne) SetNillableGroupID(v *int64) *APIKeyUpdateOne {
 // ClearGroupID clears the value of the "group_id" field.
 func (_u *APIKeyUpdateOne) ClearGroupID() *APIKeyUpdateOne {
 	_u.mutation.ClearGroupID()
+	return _u
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (_u *APIKeyUpdateOne) SetBillingSubjectID(v int64) *APIKeyUpdateOne {
+	_u.mutation.SetBillingSubjectID(v)
+	return _u
+}
+
+// SetNillableBillingSubjectID sets the "billing_subject_id" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableBillingSubjectID(v *int64) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetBillingSubjectID(*v)
+	}
+	return _u
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (_u *APIKeyUpdateOne) ClearBillingSubjectID() *APIKeyUpdateOne {
+	_u.mutation.ClearBillingSubjectID()
+	return _u
+}
+
+// SetTeamID sets the "team_id" field.
+func (_u *APIKeyUpdateOne) SetTeamID(v int64) *APIKeyUpdateOne {
+	_u.mutation.SetTeamID(v)
+	return _u
+}
+
+// SetNillableTeamID sets the "team_id" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableTeamID(v *int64) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetTeamID(*v)
+	}
+	return _u
+}
+
+// ClearTeamID clears the value of the "team_id" field.
+func (_u *APIKeyUpdateOne) ClearTeamID() *APIKeyUpdateOne {
+	_u.mutation.ClearTeamID()
+	return _u
+}
+
+// SetCreatedByUserID sets the "created_by_user_id" field.
+func (_u *APIKeyUpdateOne) SetCreatedByUserID(v int64) *APIKeyUpdateOne {
+	_u.mutation.SetCreatedByUserID(v)
+	return _u
+}
+
+// SetNillableCreatedByUserID sets the "created_by_user_id" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableCreatedByUserID(v *int64) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetCreatedByUserID(*v)
+	}
+	return _u
+}
+
+// ClearCreatedByUserID clears the value of the "created_by_user_id" field.
+func (_u *APIKeyUpdateOne) ClearCreatedByUserID() *APIKeyUpdateOne {
+	_u.mutation.ClearCreatedByUserID()
+	return _u
+}
+
+// SetUpdatedByUserID sets the "updated_by_user_id" field.
+func (_u *APIKeyUpdateOne) SetUpdatedByUserID(v int64) *APIKeyUpdateOne {
+	_u.mutation.SetUpdatedByUserID(v)
+	return _u
+}
+
+// SetNillableUpdatedByUserID sets the "updated_by_user_id" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableUpdatedByUserID(v *int64) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetUpdatedByUserID(*v)
+	}
+	return _u
+}
+
+// ClearUpdatedByUserID clears the value of the "updated_by_user_id" field.
+func (_u *APIKeyUpdateOne) ClearUpdatedByUserID() *APIKeyUpdateOne {
+	_u.mutation.ClearUpdatedByUserID()
 	return _u
 }
 
@@ -1235,6 +1585,54 @@ func (_u *APIKeyUpdateOne) SetGroup(v *Group) *APIKeyUpdateOne {
 	return _u.SetGroupID(v.ID)
 }
 
+// SetBillingSubject sets the "billing_subject" edge to the BillingSubject entity.
+func (_u *APIKeyUpdateOne) SetBillingSubject(v *BillingSubject) *APIKeyUpdateOne {
+	return _u.SetBillingSubjectID(v.ID)
+}
+
+// SetTeam sets the "team" edge to the Team entity.
+func (_u *APIKeyUpdateOne) SetTeam(v *Team) *APIKeyUpdateOne {
+	return _u.SetTeamID(v.ID)
+}
+
+// SetCreatedByID sets the "created_by" edge to the User entity by ID.
+func (_u *APIKeyUpdateOne) SetCreatedByID(id int64) *APIKeyUpdateOne {
+	_u.mutation.SetCreatedByID(id)
+	return _u
+}
+
+// SetNillableCreatedByID sets the "created_by" edge to the User entity by ID if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableCreatedByID(id *int64) *APIKeyUpdateOne {
+	if id != nil {
+		_u = _u.SetCreatedByID(*id)
+	}
+	return _u
+}
+
+// SetCreatedBy sets the "created_by" edge to the User entity.
+func (_u *APIKeyUpdateOne) SetCreatedBy(v *User) *APIKeyUpdateOne {
+	return _u.SetCreatedByID(v.ID)
+}
+
+// SetUpdatedByID sets the "updated_by" edge to the User entity by ID.
+func (_u *APIKeyUpdateOne) SetUpdatedByID(id int64) *APIKeyUpdateOne {
+	_u.mutation.SetUpdatedByID(id)
+	return _u
+}
+
+// SetNillableUpdatedByID sets the "updated_by" edge to the User entity by ID if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableUpdatedByID(id *int64) *APIKeyUpdateOne {
+	if id != nil {
+		_u = _u.SetUpdatedByID(*id)
+	}
+	return _u
+}
+
+// SetUpdatedBy sets the "updated_by" edge to the User entity.
+func (_u *APIKeyUpdateOne) SetUpdatedBy(v *User) *APIKeyUpdateOne {
+	return _u.SetUpdatedByID(v.ID)
+}
+
 // AddUsageLogIDs adds the "usage_logs" edge to the UsageLog entity by IDs.
 func (_u *APIKeyUpdateOne) AddUsageLogIDs(ids ...int64) *APIKeyUpdateOne {
 	_u.mutation.AddUsageLogIDs(ids...)
@@ -1264,6 +1662,30 @@ func (_u *APIKeyUpdateOne) ClearUser() *APIKeyUpdateOne {
 // ClearGroup clears the "group" edge to the Group entity.
 func (_u *APIKeyUpdateOne) ClearGroup() *APIKeyUpdateOne {
 	_u.mutation.ClearGroup()
+	return _u
+}
+
+// ClearBillingSubject clears the "billing_subject" edge to the BillingSubject entity.
+func (_u *APIKeyUpdateOne) ClearBillingSubject() *APIKeyUpdateOne {
+	_u.mutation.ClearBillingSubject()
+	return _u
+}
+
+// ClearTeam clears the "team" edge to the Team entity.
+func (_u *APIKeyUpdateOne) ClearTeam() *APIKeyUpdateOne {
+	_u.mutation.ClearTeam()
+	return _u
+}
+
+// ClearCreatedBy clears the "created_by" edge to the User entity.
+func (_u *APIKeyUpdateOne) ClearCreatedBy() *APIKeyUpdateOne {
+	_u.mutation.ClearCreatedBy()
+	return _u
+}
+
+// ClearUpdatedBy clears the "updated_by" edge to the User entity.
+func (_u *APIKeyUpdateOne) ClearUpdatedBy() *APIKeyUpdateOne {
+	_u.mutation.ClearUpdatedBy()
 	return _u
 }
 
@@ -1564,6 +1986,122 @@ func (_u *APIKeyUpdateOne) sqlSave(ctx context.Context) (_node *APIKey, err erro
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(group.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.BillingSubjectCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.BillingSubjectTable,
+			Columns: []string{apikey.BillingSubjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.BillingSubjectIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.BillingSubjectTable,
+			Columns: []string{apikey.BillingSubjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.TeamCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.TeamTable,
+			Columns: []string{apikey.TeamColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.TeamIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.TeamTable,
+			Columns: []string{apikey.TeamColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.CreatedByCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.CreatedByTable,
+			Columns: []string{apikey.CreatedByColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.CreatedByIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.CreatedByTable,
+			Columns: []string{apikey.CreatedByColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.UpdatedByCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.UpdatedByTable,
+			Columns: []string{apikey.UpdatedByColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.UpdatedByIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.UpdatedByTable,
+			Columns: []string{apikey.UpdatedByColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

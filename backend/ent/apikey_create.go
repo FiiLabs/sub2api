@@ -12,7 +12,9 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
+	"github.com/Wei-Shaw/sub2api/ent/billingsubject"
 	"github.com/Wei-Shaw/sub2api/ent/group"
+	"github.com/Wei-Shaw/sub2api/ent/team"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 )
@@ -95,6 +97,62 @@ func (_c *APIKeyCreate) SetGroupID(v int64) *APIKeyCreate {
 func (_c *APIKeyCreate) SetNillableGroupID(v *int64) *APIKeyCreate {
 	if v != nil {
 		_c.SetGroupID(*v)
+	}
+	return _c
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (_c *APIKeyCreate) SetBillingSubjectID(v int64) *APIKeyCreate {
+	_c.mutation.SetBillingSubjectID(v)
+	return _c
+}
+
+// SetNillableBillingSubjectID sets the "billing_subject_id" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableBillingSubjectID(v *int64) *APIKeyCreate {
+	if v != nil {
+		_c.SetBillingSubjectID(*v)
+	}
+	return _c
+}
+
+// SetTeamID sets the "team_id" field.
+func (_c *APIKeyCreate) SetTeamID(v int64) *APIKeyCreate {
+	_c.mutation.SetTeamID(v)
+	return _c
+}
+
+// SetNillableTeamID sets the "team_id" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableTeamID(v *int64) *APIKeyCreate {
+	if v != nil {
+		_c.SetTeamID(*v)
+	}
+	return _c
+}
+
+// SetCreatedByUserID sets the "created_by_user_id" field.
+func (_c *APIKeyCreate) SetCreatedByUserID(v int64) *APIKeyCreate {
+	_c.mutation.SetCreatedByUserID(v)
+	return _c
+}
+
+// SetNillableCreatedByUserID sets the "created_by_user_id" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableCreatedByUserID(v *int64) *APIKeyCreate {
+	if v != nil {
+		_c.SetCreatedByUserID(*v)
+	}
+	return _c
+}
+
+// SetUpdatedByUserID sets the "updated_by_user_id" field.
+func (_c *APIKeyCreate) SetUpdatedByUserID(v int64) *APIKeyCreate {
+	_c.mutation.SetUpdatedByUserID(v)
+	return _c
+}
+
+// SetNillableUpdatedByUserID sets the "updated_by_user_id" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableUpdatedByUserID(v *int64) *APIKeyCreate {
+	if v != nil {
+		_c.SetUpdatedByUserID(*v)
 	}
 	return _c
 }
@@ -315,6 +373,54 @@ func (_c *APIKeyCreate) SetUser(v *User) *APIKeyCreate {
 // SetGroup sets the "group" edge to the Group entity.
 func (_c *APIKeyCreate) SetGroup(v *Group) *APIKeyCreate {
 	return _c.SetGroupID(v.ID)
+}
+
+// SetBillingSubject sets the "billing_subject" edge to the BillingSubject entity.
+func (_c *APIKeyCreate) SetBillingSubject(v *BillingSubject) *APIKeyCreate {
+	return _c.SetBillingSubjectID(v.ID)
+}
+
+// SetTeam sets the "team" edge to the Team entity.
+func (_c *APIKeyCreate) SetTeam(v *Team) *APIKeyCreate {
+	return _c.SetTeamID(v.ID)
+}
+
+// SetCreatedByID sets the "created_by" edge to the User entity by ID.
+func (_c *APIKeyCreate) SetCreatedByID(id int64) *APIKeyCreate {
+	_c.mutation.SetCreatedByID(id)
+	return _c
+}
+
+// SetNillableCreatedByID sets the "created_by" edge to the User entity by ID if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableCreatedByID(id *int64) *APIKeyCreate {
+	if id != nil {
+		_c = _c.SetCreatedByID(*id)
+	}
+	return _c
+}
+
+// SetCreatedBy sets the "created_by" edge to the User entity.
+func (_c *APIKeyCreate) SetCreatedBy(v *User) *APIKeyCreate {
+	return _c.SetCreatedByID(v.ID)
+}
+
+// SetUpdatedByID sets the "updated_by" edge to the User entity by ID.
+func (_c *APIKeyCreate) SetUpdatedByID(id int64) *APIKeyCreate {
+	_c.mutation.SetUpdatedByID(id)
+	return _c
+}
+
+// SetNillableUpdatedByID sets the "updated_by" edge to the User entity by ID if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableUpdatedByID(id *int64) *APIKeyCreate {
+	if id != nil {
+		_c = _c.SetUpdatedByID(*id)
+	}
+	return _c
+}
+
+// SetUpdatedBy sets the "updated_by" edge to the User entity.
+func (_c *APIKeyCreate) SetUpdatedBy(v *User) *APIKeyCreate {
+	return _c.SetUpdatedByID(v.ID)
 }
 
 // AddUsageLogIDs adds the "usage_logs" edge to the UsageLog entity by IDs.
@@ -629,6 +735,74 @@ func (_c *APIKeyCreate) createSpec() (*APIKey, *sqlgraph.CreateSpec) {
 		_node.GroupID = &nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
+	if nodes := _c.mutation.BillingSubjectIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.BillingSubjectTable,
+			Columns: []string{apikey.BillingSubjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.BillingSubjectID = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.TeamIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.TeamTable,
+			Columns: []string{apikey.TeamColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.TeamID = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.CreatedByIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.CreatedByTable,
+			Columns: []string{apikey.CreatedByColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.CreatedByUserID = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.UpdatedByIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.UpdatedByTable,
+			Columns: []string{apikey.UpdatedByColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.UpdatedByUserID = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
 	if nodes := _c.mutation.UsageLogsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -778,6 +952,78 @@ func (u *APIKeyUpsert) UpdateGroupID() *APIKeyUpsert {
 // ClearGroupID clears the value of the "group_id" field.
 func (u *APIKeyUpsert) ClearGroupID() *APIKeyUpsert {
 	u.SetNull(apikey.FieldGroupID)
+	return u
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (u *APIKeyUpsert) SetBillingSubjectID(v int64) *APIKeyUpsert {
+	u.Set(apikey.FieldBillingSubjectID, v)
+	return u
+}
+
+// UpdateBillingSubjectID sets the "billing_subject_id" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateBillingSubjectID() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldBillingSubjectID)
+	return u
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (u *APIKeyUpsert) ClearBillingSubjectID() *APIKeyUpsert {
+	u.SetNull(apikey.FieldBillingSubjectID)
+	return u
+}
+
+// SetTeamID sets the "team_id" field.
+func (u *APIKeyUpsert) SetTeamID(v int64) *APIKeyUpsert {
+	u.Set(apikey.FieldTeamID, v)
+	return u
+}
+
+// UpdateTeamID sets the "team_id" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateTeamID() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldTeamID)
+	return u
+}
+
+// ClearTeamID clears the value of the "team_id" field.
+func (u *APIKeyUpsert) ClearTeamID() *APIKeyUpsert {
+	u.SetNull(apikey.FieldTeamID)
+	return u
+}
+
+// SetCreatedByUserID sets the "created_by_user_id" field.
+func (u *APIKeyUpsert) SetCreatedByUserID(v int64) *APIKeyUpsert {
+	u.Set(apikey.FieldCreatedByUserID, v)
+	return u
+}
+
+// UpdateCreatedByUserID sets the "created_by_user_id" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateCreatedByUserID() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldCreatedByUserID)
+	return u
+}
+
+// ClearCreatedByUserID clears the value of the "created_by_user_id" field.
+func (u *APIKeyUpsert) ClearCreatedByUserID() *APIKeyUpsert {
+	u.SetNull(apikey.FieldCreatedByUserID)
+	return u
+}
+
+// SetUpdatedByUserID sets the "updated_by_user_id" field.
+func (u *APIKeyUpsert) SetUpdatedByUserID(v int64) *APIKeyUpsert {
+	u.Set(apikey.FieldUpdatedByUserID, v)
+	return u
+}
+
+// UpdateUpdatedByUserID sets the "updated_by_user_id" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateUpdatedByUserID() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldUpdatedByUserID)
+	return u
+}
+
+// ClearUpdatedByUserID clears the value of the "updated_by_user_id" field.
+func (u *APIKeyUpsert) ClearUpdatedByUserID() *APIKeyUpsert {
+	u.SetNull(apikey.FieldUpdatedByUserID)
 	return u
 }
 
@@ -1203,6 +1449,90 @@ func (u *APIKeyUpsertOne) UpdateGroupID() *APIKeyUpsertOne {
 func (u *APIKeyUpsertOne) ClearGroupID() *APIKeyUpsertOne {
 	return u.Update(func(s *APIKeyUpsert) {
 		s.ClearGroupID()
+	})
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (u *APIKeyUpsertOne) SetBillingSubjectID(v int64) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetBillingSubjectID(v)
+	})
+}
+
+// UpdateBillingSubjectID sets the "billing_subject_id" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateBillingSubjectID() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateBillingSubjectID()
+	})
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (u *APIKeyUpsertOne) ClearBillingSubjectID() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearBillingSubjectID()
+	})
+}
+
+// SetTeamID sets the "team_id" field.
+func (u *APIKeyUpsertOne) SetTeamID(v int64) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetTeamID(v)
+	})
+}
+
+// UpdateTeamID sets the "team_id" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateTeamID() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateTeamID()
+	})
+}
+
+// ClearTeamID clears the value of the "team_id" field.
+func (u *APIKeyUpsertOne) ClearTeamID() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearTeamID()
+	})
+}
+
+// SetCreatedByUserID sets the "created_by_user_id" field.
+func (u *APIKeyUpsertOne) SetCreatedByUserID(v int64) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetCreatedByUserID(v)
+	})
+}
+
+// UpdateCreatedByUserID sets the "created_by_user_id" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateCreatedByUserID() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateCreatedByUserID()
+	})
+}
+
+// ClearCreatedByUserID clears the value of the "created_by_user_id" field.
+func (u *APIKeyUpsertOne) ClearCreatedByUserID() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearCreatedByUserID()
+	})
+}
+
+// SetUpdatedByUserID sets the "updated_by_user_id" field.
+func (u *APIKeyUpsertOne) SetUpdatedByUserID(v int64) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetUpdatedByUserID(v)
+	})
+}
+
+// UpdateUpdatedByUserID sets the "updated_by_user_id" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateUpdatedByUserID() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateUpdatedByUserID()
+	})
+}
+
+// ClearUpdatedByUserID clears the value of the "updated_by_user_id" field.
+func (u *APIKeyUpsertOne) ClearUpdatedByUserID() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearUpdatedByUserID()
 	})
 }
 
@@ -1841,6 +2171,90 @@ func (u *APIKeyUpsertBulk) UpdateGroupID() *APIKeyUpsertBulk {
 func (u *APIKeyUpsertBulk) ClearGroupID() *APIKeyUpsertBulk {
 	return u.Update(func(s *APIKeyUpsert) {
 		s.ClearGroupID()
+	})
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (u *APIKeyUpsertBulk) SetBillingSubjectID(v int64) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetBillingSubjectID(v)
+	})
+}
+
+// UpdateBillingSubjectID sets the "billing_subject_id" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateBillingSubjectID() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateBillingSubjectID()
+	})
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (u *APIKeyUpsertBulk) ClearBillingSubjectID() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearBillingSubjectID()
+	})
+}
+
+// SetTeamID sets the "team_id" field.
+func (u *APIKeyUpsertBulk) SetTeamID(v int64) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetTeamID(v)
+	})
+}
+
+// UpdateTeamID sets the "team_id" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateTeamID() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateTeamID()
+	})
+}
+
+// ClearTeamID clears the value of the "team_id" field.
+func (u *APIKeyUpsertBulk) ClearTeamID() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearTeamID()
+	})
+}
+
+// SetCreatedByUserID sets the "created_by_user_id" field.
+func (u *APIKeyUpsertBulk) SetCreatedByUserID(v int64) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetCreatedByUserID(v)
+	})
+}
+
+// UpdateCreatedByUserID sets the "created_by_user_id" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateCreatedByUserID() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateCreatedByUserID()
+	})
+}
+
+// ClearCreatedByUserID clears the value of the "created_by_user_id" field.
+func (u *APIKeyUpsertBulk) ClearCreatedByUserID() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearCreatedByUserID()
+	})
+}
+
+// SetUpdatedByUserID sets the "updated_by_user_id" field.
+func (u *APIKeyUpsertBulk) SetUpdatedByUserID(v int64) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetUpdatedByUserID(v)
+	})
+}
+
+// UpdateUpdatedByUserID sets the "updated_by_user_id" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateUpdatedByUserID() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateUpdatedByUserID()
+	})
+}
+
+// ClearUpdatedByUserID clears the value of the "updated_by_user_id" field.
+func (u *APIKeyUpsertBulk) ClearUpdatedByUserID() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearUpdatedByUserID()
 	})
 }
 

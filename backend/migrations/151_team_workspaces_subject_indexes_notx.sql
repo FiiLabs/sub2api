@@ -1,0 +1,11 @@
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_api_keys_billing_subject_id ON api_keys(billing_subject_id);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_api_keys_team_id ON api_keys(team_id);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_api_keys_created_by_user_id ON api_keys(created_by_user_id);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_usage_logs_billing_subject_created_at ON usage_logs(billing_subject_id, created_at);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_usage_logs_team_created_at ON usage_logs(team_id, created_at);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_usage_logs_actor_created_at ON usage_logs(actor_user_id, created_at);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_payment_orders_billing_subject_id ON payment_orders(billing_subject_id);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_payment_orders_team_id ON payment_orders(team_id);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_payment_orders_created_by_user_id ON payment_orders(created_by_user_id);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_user_subscriptions_billing_subject_group ON user_subscriptions(billing_subject_id, group_id);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_user_platform_quotas_billing_subject_platform ON user_platform_quotas(billing_subject_id, platform);

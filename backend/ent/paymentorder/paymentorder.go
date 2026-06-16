@@ -22,6 +22,12 @@ const (
 	FieldUserName = "user_name"
 	// FieldUserNotes holds the string denoting the user_notes field in the database.
 	FieldUserNotes = "user_notes"
+	// FieldBillingSubjectID holds the string denoting the billing_subject_id field in the database.
+	FieldBillingSubjectID = "billing_subject_id"
+	// FieldTeamID holds the string denoting the team_id field in the database.
+	FieldTeamID = "team_id"
+	// FieldCreatedByUserID holds the string denoting the created_by_user_id field in the database.
+	FieldCreatedByUserID = "created_by_user_id"
 	// FieldAmount holds the string denoting the amount field in the database.
 	FieldAmount = "amount"
 	// FieldPayAmount holds the string denoting the pay_amount field in the database.
@@ -94,6 +100,12 @@ const (
 	FieldUpdatedAt = "updated_at"
 	// EdgeUser holds the string denoting the user edge name in mutations.
 	EdgeUser = "user"
+	// EdgeBillingSubject holds the string denoting the billing_subject edge name in mutations.
+	EdgeBillingSubject = "billing_subject"
+	// EdgeTeam holds the string denoting the team edge name in mutations.
+	EdgeTeam = "team"
+	// EdgeCreatedBy holds the string denoting the created_by edge name in mutations.
+	EdgeCreatedBy = "created_by"
 	// Table holds the table name of the paymentorder in the database.
 	Table = "payment_orders"
 	// UserTable is the table that holds the user relation/edge.
@@ -103,6 +115,27 @@ const (
 	UserInverseTable = "users"
 	// UserColumn is the table column denoting the user relation/edge.
 	UserColumn = "user_id"
+	// BillingSubjectTable is the table that holds the billing_subject relation/edge.
+	BillingSubjectTable = "payment_orders"
+	// BillingSubjectInverseTable is the table name for the BillingSubject entity.
+	// It exists in this package in order to avoid circular dependency with the "billingsubject" package.
+	BillingSubjectInverseTable = "billing_subjects"
+	// BillingSubjectColumn is the table column denoting the billing_subject relation/edge.
+	BillingSubjectColumn = "billing_subject_id"
+	// TeamTable is the table that holds the team relation/edge.
+	TeamTable = "payment_orders"
+	// TeamInverseTable is the table name for the Team entity.
+	// It exists in this package in order to avoid circular dependency with the "team" package.
+	TeamInverseTable = "teams"
+	// TeamColumn is the table column denoting the team relation/edge.
+	TeamColumn = "team_id"
+	// CreatedByTable is the table that holds the created_by relation/edge.
+	CreatedByTable = "payment_orders"
+	// CreatedByInverseTable is the table name for the User entity.
+	// It exists in this package in order to avoid circular dependency with the "user" package.
+	CreatedByInverseTable = "users"
+	// CreatedByColumn is the table column denoting the created_by relation/edge.
+	CreatedByColumn = "created_by_user_id"
 )
 
 // Columns holds all SQL columns for paymentorder fields.
@@ -112,6 +145,9 @@ var Columns = []string{
 	FieldUserEmail,
 	FieldUserName,
 	FieldUserNotes,
+	FieldBillingSubjectID,
+	FieldTeamID,
+	FieldCreatedByUserID,
 	FieldAmount,
 	FieldPayAmount,
 	FieldFeeRate,
@@ -232,6 +268,21 @@ func ByUserName(opts ...sql.OrderTermOption) OrderOption {
 // ByUserNotes orders the results by the user_notes field.
 func ByUserNotes(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUserNotes, opts...).ToFunc()
+}
+
+// ByBillingSubjectID orders the results by the billing_subject_id field.
+func ByBillingSubjectID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBillingSubjectID, opts...).ToFunc()
+}
+
+// ByTeamID orders the results by the team_id field.
+func ByTeamID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTeamID, opts...).ToFunc()
+}
+
+// ByCreatedByUserID orders the results by the created_by_user_id field.
+func ByCreatedByUserID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCreatedByUserID, opts...).ToFunc()
 }
 
 // ByAmount orders the results by the amount field.
@@ -410,10 +461,52 @@ func ByUserField(field string, opts ...sql.OrderTermOption) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newUserStep(), sql.OrderByField(field, opts...))
 	}
 }
+
+// ByBillingSubjectField orders the results by billing_subject field.
+func ByBillingSubjectField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newBillingSubjectStep(), sql.OrderByField(field, opts...))
+	}
+}
+
+// ByTeamField orders the results by team field.
+func ByTeamField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newTeamStep(), sql.OrderByField(field, opts...))
+	}
+}
+
+// ByCreatedByField orders the results by created_by field.
+func ByCreatedByField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newCreatedByStep(), sql.OrderByField(field, opts...))
+	}
+}
 func newUserStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(UserInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, UserTable, UserColumn),
+	)
+}
+func newBillingSubjectStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(BillingSubjectInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, BillingSubjectTable, BillingSubjectColumn),
+	)
+}
+func newTeamStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(TeamInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, TeamTable, TeamColumn),
+	)
+}
+func newCreatedByStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(CreatedByInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, CreatedByTable, CreatedByColumn),
 	)
 }

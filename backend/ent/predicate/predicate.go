@@ -27,6 +27,9 @@ type AuthIdentity func(*sql.Selector)
 // AuthIdentityChannel is the predicate function for authidentitychannel builders.
 type AuthIdentityChannel func(*sql.Selector)
 
+// BillingSubject is the predicate function for billingsubject builders.
+type BillingSubject func(*sql.Selector)
+
 // ChannelMonitor is the predicate function for channelmonitor builders.
 type ChannelMonitor func(*sql.Selector)
 
@@ -86,6 +89,15 @@ type SubscriptionPlan func(*sql.Selector)
 
 // TLSFingerprintProfile is the predicate function for tlsfingerprintprofile builders.
 type TLSFingerprintProfile func(*sql.Selector)
+
+// Team is the predicate function for team builders.
+type Team func(*sql.Selector)
+
+// TeamInvitation is the predicate function for teaminvitation builders.
+type TeamInvitation func(*sql.Selector)
+
+// TeamMember is the predicate function for teammember builders.
+type TeamMember func(*sql.Selector)
 
 // UsageCleanupTask is the predicate function for usagecleanuptask builders.
 type UsageCleanupTask func(*sql.Selector)

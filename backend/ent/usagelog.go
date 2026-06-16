@@ -12,7 +12,9 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"github.com/Wei-Shaw/sub2api/ent/account"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
+	"github.com/Wei-Shaw/sub2api/ent/billingsubject"
 	"github.com/Wei-Shaw/sub2api/ent/group"
+	"github.com/Wei-Shaw/sub2api/ent/team"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
@@ -49,6 +51,12 @@ type UsageLog struct {
 	GroupID *int64 `json:"group_id,omitempty"`
 	// SubscriptionID holds the value of the "subscription_id" field.
 	SubscriptionID *int64 `json:"subscription_id,omitempty"`
+	// BillingSubjectID holds the value of the "billing_subject_id" field.
+	BillingSubjectID *int64 `json:"billing_subject_id,omitempty"`
+	// TeamID holds the value of the "team_id" field.
+	TeamID *int64 `json:"team_id,omitempty"`
+	// ActorUserID holds the value of the "actor_user_id" field.
+	ActorUserID *int64 `json:"actor_user_id,omitempty"`
 	// InputTokens holds the value of the "input_tokens" field.
 	InputTokens int `json:"input_tokens,omitempty"`
 	// OutputTokens holds the value of the "output_tokens" field.
@@ -123,9 +131,15 @@ type UsageLogEdges struct {
 	Group *Group `json:"group,omitempty"`
 	// Subscription holds the value of the subscription edge.
 	Subscription *UserSubscription `json:"subscription,omitempty"`
+	// BillingSubject holds the value of the billing_subject edge.
+	BillingSubject *BillingSubject `json:"billing_subject,omitempty"`
+	// Team holds the value of the team edge.
+	Team *Team `json:"team,omitempty"`
+	// Actor holds the value of the actor edge.
+	Actor *User `json:"actor,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [5]bool
+	loadedTypes [8]bool
 }
 
 // UserOrErr returns the User value or an error if the edge
@@ -183,6 +197,39 @@ func (e UsageLogEdges) SubscriptionOrErr() (*UserSubscription, error) {
 	return nil, &NotLoadedError{edge: "subscription"}
 }
 
+// BillingSubjectOrErr returns the BillingSubject value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e UsageLogEdges) BillingSubjectOrErr() (*BillingSubject, error) {
+	if e.BillingSubject != nil {
+		return e.BillingSubject, nil
+	} else if e.loadedTypes[5] {
+		return nil, &NotFoundError{label: billingsubject.Label}
+	}
+	return nil, &NotLoadedError{edge: "billing_subject"}
+}
+
+// TeamOrErr returns the Team value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e UsageLogEdges) TeamOrErr() (*Team, error) {
+	if e.Team != nil {
+		return e.Team, nil
+	} else if e.loadedTypes[6] {
+		return nil, &NotFoundError{label: team.Label}
+	}
+	return nil, &NotLoadedError{edge: "team"}
+}
+
+// ActorOrErr returns the Actor value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e UsageLogEdges) ActorOrErr() (*User, error) {
+	if e.Actor != nil {
+		return e.Actor, nil
+	} else if e.loadedTypes[7] {
+		return nil, &NotFoundError{label: user.Label}
+	}
+	return nil, &NotLoadedError{edge: "actor"}
+}
+
 // scanValues returns the types for scanning values from sql.Rows.
 func (*UsageLog) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
@@ -194,7 +241,7 @@ func (*UsageLog) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case usagelog.FieldInputCost, usagelog.FieldOutputCost, usagelog.FieldCacheCreationCost, usagelog.FieldCacheReadCost, usagelog.FieldTotalCost, usagelog.FieldActualCost, usagelog.FieldRateMultiplier, usagelog.FieldAccountRateMultiplier:
 			values[i] = new(sql.NullFloat64)
-		case usagelog.FieldID, usagelog.FieldUserID, usagelog.FieldAPIKeyID, usagelog.FieldAccountID, usagelog.FieldChannelID, usagelog.FieldGroupID, usagelog.FieldSubscriptionID, usagelog.FieldInputTokens, usagelog.FieldOutputTokens, usagelog.FieldCacheCreationTokens, usagelog.FieldCacheReadTokens, usagelog.FieldCacheCreation5mTokens, usagelog.FieldCacheCreation1hTokens, usagelog.FieldBillingType, usagelog.FieldDurationMs, usagelog.FieldFirstTokenMs, usagelog.FieldImageCount:
+		case usagelog.FieldID, usagelog.FieldUserID, usagelog.FieldAPIKeyID, usagelog.FieldAccountID, usagelog.FieldChannelID, usagelog.FieldGroupID, usagelog.FieldSubscriptionID, usagelog.FieldBillingSubjectID, usagelog.FieldTeamID, usagelog.FieldActorUserID, usagelog.FieldInputTokens, usagelog.FieldOutputTokens, usagelog.FieldCacheCreationTokens, usagelog.FieldCacheReadTokens, usagelog.FieldCacheCreation5mTokens, usagelog.FieldCacheCreation1hTokens, usagelog.FieldBillingType, usagelog.FieldDurationMs, usagelog.FieldFirstTokenMs, usagelog.FieldImageCount:
 			values[i] = new(sql.NullInt64)
 		case usagelog.FieldRequestID, usagelog.FieldModel, usagelog.FieldRequestedModel, usagelog.FieldUpstreamModel, usagelog.FieldModelMappingChain, usagelog.FieldBillingTier, usagelog.FieldBillingMode, usagelog.FieldUserAgent, usagelog.FieldIPAddress, usagelog.FieldImageSize, usagelog.FieldImageInputSize, usagelog.FieldImageOutputSize, usagelog.FieldImageSizeSource:
 			values[i] = new(sql.NullString)
@@ -306,6 +353,27 @@ func (_m *UsageLog) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.SubscriptionID = new(int64)
 				*_m.SubscriptionID = value.Int64
+			}
+		case usagelog.FieldBillingSubjectID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field billing_subject_id", values[i])
+			} else if value.Valid {
+				_m.BillingSubjectID = new(int64)
+				*_m.BillingSubjectID = value.Int64
+			}
+		case usagelog.FieldTeamID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field team_id", values[i])
+			} else if value.Valid {
+				_m.TeamID = new(int64)
+				*_m.TeamID = value.Int64
+			}
+		case usagelog.FieldActorUserID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field actor_user_id", values[i])
+			} else if value.Valid {
+				_m.ActorUserID = new(int64)
+				*_m.ActorUserID = value.Int64
 			}
 		case usagelog.FieldInputTokens:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -524,6 +592,21 @@ func (_m *UsageLog) QuerySubscription() *UserSubscriptionQuery {
 	return NewUsageLogClient(_m.config).QuerySubscription(_m)
 }
 
+// QueryBillingSubject queries the "billing_subject" edge of the UsageLog entity.
+func (_m *UsageLog) QueryBillingSubject() *BillingSubjectQuery {
+	return NewUsageLogClient(_m.config).QueryBillingSubject(_m)
+}
+
+// QueryTeam queries the "team" edge of the UsageLog entity.
+func (_m *UsageLog) QueryTeam() *TeamQuery {
+	return NewUsageLogClient(_m.config).QueryTeam(_m)
+}
+
+// QueryActor queries the "actor" edge of the UsageLog entity.
+func (_m *UsageLog) QueryActor() *UserQuery {
+	return NewUsageLogClient(_m.config).QueryActor(_m)
+}
+
 // Update returns a builder for updating this UsageLog.
 // Note that you need to call UsageLog.Unwrap() before calling this method if this UsageLog
 // was returned from a transaction, and the transaction was committed or rolled back.
@@ -599,6 +682,21 @@ func (_m *UsageLog) String() string {
 	builder.WriteString(", ")
 	if v := _m.SubscriptionID; v != nil {
 		builder.WriteString("subscription_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.BillingSubjectID; v != nil {
+		builder.WriteString("billing_subject_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.TeamID; v != nil {
+		builder.WriteString("team_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.ActorUserID; v != nil {
+		builder.WriteString("actor_user_id=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")

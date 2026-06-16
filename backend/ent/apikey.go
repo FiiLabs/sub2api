@@ -11,7 +11,9 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
+	"github.com/Wei-Shaw/sub2api/ent/billingsubject"
 	"github.com/Wei-Shaw/sub2api/ent/group"
+	"github.com/Wei-Shaw/sub2api/ent/team"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 )
 
@@ -34,6 +36,14 @@ type APIKey struct {
 	Name string `json:"name,omitempty"`
 	// GroupID holds the value of the "group_id" field.
 	GroupID *int64 `json:"group_id,omitempty"`
+	// BillingSubjectID holds the value of the "billing_subject_id" field.
+	BillingSubjectID *int64 `json:"billing_subject_id,omitempty"`
+	// TeamID holds the value of the "team_id" field.
+	TeamID *int64 `json:"team_id,omitempty"`
+	// CreatedByUserID holds the value of the "created_by_user_id" field.
+	CreatedByUserID *int64 `json:"created_by_user_id,omitempty"`
+	// UpdatedByUserID holds the value of the "updated_by_user_id" field.
+	UpdatedByUserID *int64 `json:"updated_by_user_id,omitempty"`
 	// Status holds the value of the "status" field.
 	Status string `json:"status,omitempty"`
 	// Last usage time of this API key
@@ -78,11 +88,19 @@ type APIKeyEdges struct {
 	User *User `json:"user,omitempty"`
 	// Group holds the value of the group edge.
 	Group *Group `json:"group,omitempty"`
+	// BillingSubject holds the value of the billing_subject edge.
+	BillingSubject *BillingSubject `json:"billing_subject,omitempty"`
+	// Team holds the value of the team edge.
+	Team *Team `json:"team,omitempty"`
+	// CreatedBy holds the value of the created_by edge.
+	CreatedBy *User `json:"created_by,omitempty"`
+	// UpdatedBy holds the value of the updated_by edge.
+	UpdatedBy *User `json:"updated_by,omitempty"`
 	// UsageLogs holds the value of the usage_logs edge.
 	UsageLogs []*UsageLog `json:"usage_logs,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [3]bool
+	loadedTypes [7]bool
 }
 
 // UserOrErr returns the User value or an error if the edge
@@ -107,10 +125,54 @@ func (e APIKeyEdges) GroupOrErr() (*Group, error) {
 	return nil, &NotLoadedError{edge: "group"}
 }
 
+// BillingSubjectOrErr returns the BillingSubject value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e APIKeyEdges) BillingSubjectOrErr() (*BillingSubject, error) {
+	if e.BillingSubject != nil {
+		return e.BillingSubject, nil
+	} else if e.loadedTypes[2] {
+		return nil, &NotFoundError{label: billingsubject.Label}
+	}
+	return nil, &NotLoadedError{edge: "billing_subject"}
+}
+
+// TeamOrErr returns the Team value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e APIKeyEdges) TeamOrErr() (*Team, error) {
+	if e.Team != nil {
+		return e.Team, nil
+	} else if e.loadedTypes[3] {
+		return nil, &NotFoundError{label: team.Label}
+	}
+	return nil, &NotLoadedError{edge: "team"}
+}
+
+// CreatedByOrErr returns the CreatedBy value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e APIKeyEdges) CreatedByOrErr() (*User, error) {
+	if e.CreatedBy != nil {
+		return e.CreatedBy, nil
+	} else if e.loadedTypes[4] {
+		return nil, &NotFoundError{label: user.Label}
+	}
+	return nil, &NotLoadedError{edge: "created_by"}
+}
+
+// UpdatedByOrErr returns the UpdatedBy value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e APIKeyEdges) UpdatedByOrErr() (*User, error) {
+	if e.UpdatedBy != nil {
+		return e.UpdatedBy, nil
+	} else if e.loadedTypes[5] {
+		return nil, &NotFoundError{label: user.Label}
+	}
+	return nil, &NotLoadedError{edge: "updated_by"}
+}
+
 // UsageLogsOrErr returns the UsageLogs value or an error if the edge
 // was not loaded in eager-loading.
 func (e APIKeyEdges) UsageLogsOrErr() ([]*UsageLog, error) {
-	if e.loadedTypes[2] {
+	if e.loadedTypes[6] {
 		return e.UsageLogs, nil
 	}
 	return nil, &NotLoadedError{edge: "usage_logs"}
@@ -125,7 +187,7 @@ func (*APIKey) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case apikey.FieldQuota, apikey.FieldQuotaUsed, apikey.FieldRateLimit5h, apikey.FieldRateLimit1d, apikey.FieldRateLimit7d, apikey.FieldUsage5h, apikey.FieldUsage1d, apikey.FieldUsage7d:
 			values[i] = new(sql.NullFloat64)
-		case apikey.FieldID, apikey.FieldUserID, apikey.FieldGroupID:
+		case apikey.FieldID, apikey.FieldUserID, apikey.FieldGroupID, apikey.FieldBillingSubjectID, apikey.FieldTeamID, apikey.FieldCreatedByUserID, apikey.FieldUpdatedByUserID:
 			values[i] = new(sql.NullInt64)
 		case apikey.FieldKey, apikey.FieldName, apikey.FieldStatus:
 			values[i] = new(sql.NullString)
@@ -195,6 +257,34 @@ func (_m *APIKey) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.GroupID = new(int64)
 				*_m.GroupID = value.Int64
+			}
+		case apikey.FieldBillingSubjectID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field billing_subject_id", values[i])
+			} else if value.Valid {
+				_m.BillingSubjectID = new(int64)
+				*_m.BillingSubjectID = value.Int64
+			}
+		case apikey.FieldTeamID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field team_id", values[i])
+			} else if value.Valid {
+				_m.TeamID = new(int64)
+				*_m.TeamID = value.Int64
+			}
+		case apikey.FieldCreatedByUserID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field created_by_user_id", values[i])
+			} else if value.Valid {
+				_m.CreatedByUserID = new(int64)
+				*_m.CreatedByUserID = value.Int64
+			}
+		case apikey.FieldUpdatedByUserID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field updated_by_user_id", values[i])
+			} else if value.Valid {
+				_m.UpdatedByUserID = new(int64)
+				*_m.UpdatedByUserID = value.Int64
 			}
 		case apikey.FieldStatus:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -324,6 +414,26 @@ func (_m *APIKey) QueryGroup() *GroupQuery {
 	return NewAPIKeyClient(_m.config).QueryGroup(_m)
 }
 
+// QueryBillingSubject queries the "billing_subject" edge of the APIKey entity.
+func (_m *APIKey) QueryBillingSubject() *BillingSubjectQuery {
+	return NewAPIKeyClient(_m.config).QueryBillingSubject(_m)
+}
+
+// QueryTeam queries the "team" edge of the APIKey entity.
+func (_m *APIKey) QueryTeam() *TeamQuery {
+	return NewAPIKeyClient(_m.config).QueryTeam(_m)
+}
+
+// QueryCreatedBy queries the "created_by" edge of the APIKey entity.
+func (_m *APIKey) QueryCreatedBy() *UserQuery {
+	return NewAPIKeyClient(_m.config).QueryCreatedBy(_m)
+}
+
+// QueryUpdatedBy queries the "updated_by" edge of the APIKey entity.
+func (_m *APIKey) QueryUpdatedBy() *UserQuery {
+	return NewAPIKeyClient(_m.config).QueryUpdatedBy(_m)
+}
+
 // QueryUsageLogs queries the "usage_logs" edge of the APIKey entity.
 func (_m *APIKey) QueryUsageLogs() *UsageLogQuery {
 	return NewAPIKeyClient(_m.config).QueryUsageLogs(_m)
@@ -374,6 +484,26 @@ func (_m *APIKey) String() string {
 	builder.WriteString(", ")
 	if v := _m.GroupID; v != nil {
 		builder.WriteString("group_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.BillingSubjectID; v != nil {
+		builder.WriteString("billing_subject_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.TeamID; v != nil {
+		builder.WriteString("team_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.CreatedByUserID; v != nil {
+		builder.WriteString("created_by_user_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.UpdatedByUserID; v != nil {
+		builder.WriteString("updated_by_user_id=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")

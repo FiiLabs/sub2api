@@ -75,6 +75,21 @@ func UserNotes(v string) predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldEQ(FieldUserNotes, v))
 }
 
+// BillingSubjectID applies equality check predicate on the "billing_subject_id" field. It's identical to BillingSubjectIDEQ.
+func BillingSubjectID(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldBillingSubjectID, v))
+}
+
+// TeamID applies equality check predicate on the "team_id" field. It's identical to TeamIDEQ.
+func TeamID(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldTeamID, v))
+}
+
+// CreatedByUserID applies equality check predicate on the "created_by_user_id" field. It's identical to CreatedByUserIDEQ.
+func CreatedByUserID(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldCreatedByUserID, v))
+}
+
 // Amount applies equality check predicate on the "amount" field. It's identical to AmountEQ.
 func Amount(v float64) predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldEQ(FieldAmount, v))
@@ -468,6 +483,96 @@ func UserNotesEqualFold(v string) predicate.PaymentOrder {
 // UserNotesContainsFold applies the ContainsFold predicate on the "user_notes" field.
 func UserNotesContainsFold(v string) predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldContainsFold(FieldUserNotes, v))
+}
+
+// BillingSubjectIDEQ applies the EQ predicate on the "billing_subject_id" field.
+func BillingSubjectIDEQ(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldBillingSubjectID, v))
+}
+
+// BillingSubjectIDNEQ applies the NEQ predicate on the "billing_subject_id" field.
+func BillingSubjectIDNEQ(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldBillingSubjectID, v))
+}
+
+// BillingSubjectIDIn applies the In predicate on the "billing_subject_id" field.
+func BillingSubjectIDIn(vs ...int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldBillingSubjectID, vs...))
+}
+
+// BillingSubjectIDNotIn applies the NotIn predicate on the "billing_subject_id" field.
+func BillingSubjectIDNotIn(vs ...int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldBillingSubjectID, vs...))
+}
+
+// BillingSubjectIDIsNil applies the IsNil predicate on the "billing_subject_id" field.
+func BillingSubjectIDIsNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIsNull(FieldBillingSubjectID))
+}
+
+// BillingSubjectIDNotNil applies the NotNil predicate on the "billing_subject_id" field.
+func BillingSubjectIDNotNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotNull(FieldBillingSubjectID))
+}
+
+// TeamIDEQ applies the EQ predicate on the "team_id" field.
+func TeamIDEQ(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldTeamID, v))
+}
+
+// TeamIDNEQ applies the NEQ predicate on the "team_id" field.
+func TeamIDNEQ(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldTeamID, v))
+}
+
+// TeamIDIn applies the In predicate on the "team_id" field.
+func TeamIDIn(vs ...int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldTeamID, vs...))
+}
+
+// TeamIDNotIn applies the NotIn predicate on the "team_id" field.
+func TeamIDNotIn(vs ...int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldTeamID, vs...))
+}
+
+// TeamIDIsNil applies the IsNil predicate on the "team_id" field.
+func TeamIDIsNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIsNull(FieldTeamID))
+}
+
+// TeamIDNotNil applies the NotNil predicate on the "team_id" field.
+func TeamIDNotNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotNull(FieldTeamID))
+}
+
+// CreatedByUserIDEQ applies the EQ predicate on the "created_by_user_id" field.
+func CreatedByUserIDEQ(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldCreatedByUserID, v))
+}
+
+// CreatedByUserIDNEQ applies the NEQ predicate on the "created_by_user_id" field.
+func CreatedByUserIDNEQ(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldCreatedByUserID, v))
+}
+
+// CreatedByUserIDIn applies the In predicate on the "created_by_user_id" field.
+func CreatedByUserIDIn(vs ...int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldCreatedByUserID, vs...))
+}
+
+// CreatedByUserIDNotIn applies the NotIn predicate on the "created_by_user_id" field.
+func CreatedByUserIDNotIn(vs ...int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldCreatedByUserID, vs...))
+}
+
+// CreatedByUserIDIsNil applies the IsNil predicate on the "created_by_user_id" field.
+func CreatedByUserIDIsNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIsNull(FieldCreatedByUserID))
+}
+
+// CreatedByUserIDNotNil applies the NotNil predicate on the "created_by_user_id" field.
+func CreatedByUserIDNotNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotNull(FieldCreatedByUserID))
 }
 
 // AmountEQ applies the EQ predicate on the "amount" field.
@@ -2455,6 +2560,75 @@ func HasUser() predicate.PaymentOrder {
 func HasUserWith(preds ...predicate.User) predicate.PaymentOrder {
 	return predicate.PaymentOrder(func(s *sql.Selector) {
 		step := newUserStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasBillingSubject applies the HasEdge predicate on the "billing_subject" edge.
+func HasBillingSubject() predicate.PaymentOrder {
+	return predicate.PaymentOrder(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, BillingSubjectTable, BillingSubjectColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasBillingSubjectWith applies the HasEdge predicate on the "billing_subject" edge with a given conditions (other predicates).
+func HasBillingSubjectWith(preds ...predicate.BillingSubject) predicate.PaymentOrder {
+	return predicate.PaymentOrder(func(s *sql.Selector) {
+		step := newBillingSubjectStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasTeam applies the HasEdge predicate on the "team" edge.
+func HasTeam() predicate.PaymentOrder {
+	return predicate.PaymentOrder(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, TeamTable, TeamColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasTeamWith applies the HasEdge predicate on the "team" edge with a given conditions (other predicates).
+func HasTeamWith(preds ...predicate.Team) predicate.PaymentOrder {
+	return predicate.PaymentOrder(func(s *sql.Selector) {
+		step := newTeamStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasCreatedBy applies the HasEdge predicate on the "created_by" edge.
+func HasCreatedBy() predicate.PaymentOrder {
+	return predicate.PaymentOrder(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, CreatedByTable, CreatedByColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasCreatedByWith applies the HasEdge predicate on the "created_by" edge with a given conditions (other predicates).
+func HasCreatedByWith(preds ...predicate.User) predicate.PaymentOrder {
+	return predicate.PaymentOrder(func(s *sql.Selector) {
+		step := newCreatedByStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

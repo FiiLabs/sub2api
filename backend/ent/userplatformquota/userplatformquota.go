@@ -23,6 +23,8 @@ const (
 	FieldDeletedAt = "deleted_at"
 	// FieldUserID holds the string denoting the user_id field in the database.
 	FieldUserID = "user_id"
+	// FieldBillingSubjectID holds the string denoting the billing_subject_id field in the database.
+	FieldBillingSubjectID = "billing_subject_id"
 	// FieldPlatform holds the string denoting the platform field in the database.
 	FieldPlatform = "platform"
 	// FieldDailyLimitUsd holds the string denoting the daily_limit_usd field in the database.
@@ -45,6 +47,8 @@ const (
 	FieldMonthlyWindowStart = "monthly_window_start"
 	// EdgeUser holds the string denoting the user edge name in mutations.
 	EdgeUser = "user"
+	// EdgeBillingSubject holds the string denoting the billing_subject edge name in mutations.
+	EdgeBillingSubject = "billing_subject"
 	// Table holds the table name of the userplatformquota in the database.
 	Table = "user_platform_quotas"
 	// UserTable is the table that holds the user relation/edge.
@@ -54,6 +58,13 @@ const (
 	UserInverseTable = "users"
 	// UserColumn is the table column denoting the user relation/edge.
 	UserColumn = "user_id"
+	// BillingSubjectTable is the table that holds the billing_subject relation/edge.
+	BillingSubjectTable = "user_platform_quotas"
+	// BillingSubjectInverseTable is the table name for the BillingSubject entity.
+	// It exists in this package in order to avoid circular dependency with the "billingsubject" package.
+	BillingSubjectInverseTable = "billing_subjects"
+	// BillingSubjectColumn is the table column denoting the billing_subject relation/edge.
+	BillingSubjectColumn = "billing_subject_id"
 )
 
 // Columns holds all SQL columns for userplatformquota fields.
@@ -63,6 +74,7 @@ var Columns = []string{
 	FieldUpdatedAt,
 	FieldDeletedAt,
 	FieldUserID,
+	FieldBillingSubjectID,
 	FieldPlatform,
 	FieldDailyLimitUsd,
 	FieldWeeklyLimitUsd,
@@ -137,6 +149,11 @@ func ByUserID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUserID, opts...).ToFunc()
 }
 
+// ByBillingSubjectID orders the results by the billing_subject_id field.
+func ByBillingSubjectID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBillingSubjectID, opts...).ToFunc()
+}
+
 // ByPlatform orders the results by the platform field.
 func ByPlatform(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPlatform, opts...).ToFunc()
@@ -193,10 +210,24 @@ func ByUserField(field string, opts ...sql.OrderTermOption) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newUserStep(), sql.OrderByField(field, opts...))
 	}
 }
+
+// ByBillingSubjectField orders the results by billing_subject field.
+func ByBillingSubjectField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newBillingSubjectStep(), sql.OrderByField(field, opts...))
+	}
+}
 func newUserStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(UserInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, UserTable, UserColumn),
+	)
+}
+func newBillingSubjectStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(BillingSubjectInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, BillingSubjectTable, BillingSubjectColumn),
 	)
 }

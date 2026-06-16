@@ -10,7 +10,9 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/Wei-Shaw/sub2api/ent/billingsubject"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
+	"github.com/Wei-Shaw/sub2api/ent/team"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 )
 
@@ -27,6 +29,12 @@ type PaymentOrder struct {
 	UserName string `json:"user_name,omitempty"`
 	// UserNotes holds the value of the "user_notes" field.
 	UserNotes *string `json:"user_notes,omitempty"`
+	// BillingSubjectID holds the value of the "billing_subject_id" field.
+	BillingSubjectID *int64 `json:"billing_subject_id,omitempty"`
+	// TeamID holds the value of the "team_id" field.
+	TeamID *int64 `json:"team_id,omitempty"`
+	// CreatedByUserID holds the value of the "created_by_user_id" field.
+	CreatedByUserID *int64 `json:"created_by_user_id,omitempty"`
 	// Amount holds the value of the "amount" field.
 	Amount float64 `json:"amount,omitempty"`
 	// PayAmount holds the value of the "pay_amount" field.
@@ -107,9 +115,15 @@ type PaymentOrder struct {
 type PaymentOrderEdges struct {
 	// User holds the value of the user edge.
 	User *User `json:"user,omitempty"`
+	// BillingSubject holds the value of the billing_subject edge.
+	BillingSubject *BillingSubject `json:"billing_subject,omitempty"`
+	// Team holds the value of the team edge.
+	Team *Team `json:"team,omitempty"`
+	// CreatedBy holds the value of the created_by edge.
+	CreatedBy *User `json:"created_by,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [1]bool
+	loadedTypes [4]bool
 }
 
 // UserOrErr returns the User value or an error if the edge
@@ -123,6 +137,39 @@ func (e PaymentOrderEdges) UserOrErr() (*User, error) {
 	return nil, &NotLoadedError{edge: "user"}
 }
 
+// BillingSubjectOrErr returns the BillingSubject value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e PaymentOrderEdges) BillingSubjectOrErr() (*BillingSubject, error) {
+	if e.BillingSubject != nil {
+		return e.BillingSubject, nil
+	} else if e.loadedTypes[1] {
+		return nil, &NotFoundError{label: billingsubject.Label}
+	}
+	return nil, &NotLoadedError{edge: "billing_subject"}
+}
+
+// TeamOrErr returns the Team value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e PaymentOrderEdges) TeamOrErr() (*Team, error) {
+	if e.Team != nil {
+		return e.Team, nil
+	} else if e.loadedTypes[2] {
+		return nil, &NotFoundError{label: team.Label}
+	}
+	return nil, &NotLoadedError{edge: "team"}
+}
+
+// CreatedByOrErr returns the CreatedBy value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e PaymentOrderEdges) CreatedByOrErr() (*User, error) {
+	if e.CreatedBy != nil {
+		return e.CreatedBy, nil
+	} else if e.loadedTypes[3] {
+		return nil, &NotFoundError{label: user.Label}
+	}
+	return nil, &NotLoadedError{edge: "created_by"}
+}
+
 // scanValues returns the types for scanning values from sql.Rows.
 func (*PaymentOrder) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
@@ -134,7 +181,7 @@ func (*PaymentOrder) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case paymentorder.FieldAmount, paymentorder.FieldPayAmount, paymentorder.FieldFeeRate, paymentorder.FieldRefundAmount:
 			values[i] = new(sql.NullFloat64)
-		case paymentorder.FieldID, paymentorder.FieldUserID, paymentorder.FieldPlanID, paymentorder.FieldSubscriptionGroupID, paymentorder.FieldSubscriptionDays:
+		case paymentorder.FieldID, paymentorder.FieldUserID, paymentorder.FieldBillingSubjectID, paymentorder.FieldTeamID, paymentorder.FieldCreatedByUserID, paymentorder.FieldPlanID, paymentorder.FieldSubscriptionGroupID, paymentorder.FieldSubscriptionDays:
 			values[i] = new(sql.NullInt64)
 		case paymentorder.FieldUserEmail, paymentorder.FieldUserName, paymentorder.FieldUserNotes, paymentorder.FieldRechargeCode, paymentorder.FieldOutTradeNo, paymentorder.FieldPaymentType, paymentorder.FieldPaymentTradeNo, paymentorder.FieldPayURL, paymentorder.FieldQrCode, paymentorder.FieldQrCodeImg, paymentorder.FieldOrderType, paymentorder.FieldProviderInstanceID, paymentorder.FieldProviderKey, paymentorder.FieldStatus, paymentorder.FieldRefundReason, paymentorder.FieldRefundRequestReason, paymentorder.FieldRefundRequestedBy, paymentorder.FieldFailedReason, paymentorder.FieldClientIP, paymentorder.FieldSrcHost, paymentorder.FieldSrcURL:
 			values[i] = new(sql.NullString)
@@ -185,6 +232,27 @@ func (_m *PaymentOrder) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.UserNotes = new(string)
 				*_m.UserNotes = value.String
+			}
+		case paymentorder.FieldBillingSubjectID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field billing_subject_id", values[i])
+			} else if value.Valid {
+				_m.BillingSubjectID = new(int64)
+				*_m.BillingSubjectID = value.Int64
+			}
+		case paymentorder.FieldTeamID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field team_id", values[i])
+			} else if value.Valid {
+				_m.TeamID = new(int64)
+				*_m.TeamID = value.Int64
+			}
+		case paymentorder.FieldCreatedByUserID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field created_by_user_id", values[i])
+			} else if value.Valid {
+				_m.CreatedByUserID = new(int64)
+				*_m.CreatedByUserID = value.Int64
 			}
 		case paymentorder.FieldAmount:
 			if value, ok := values[i].(*sql.NullFloat64); !ok {
@@ -434,6 +502,21 @@ func (_m *PaymentOrder) QueryUser() *UserQuery {
 	return NewPaymentOrderClient(_m.config).QueryUser(_m)
 }
 
+// QueryBillingSubject queries the "billing_subject" edge of the PaymentOrder entity.
+func (_m *PaymentOrder) QueryBillingSubject() *BillingSubjectQuery {
+	return NewPaymentOrderClient(_m.config).QueryBillingSubject(_m)
+}
+
+// QueryTeam queries the "team" edge of the PaymentOrder entity.
+func (_m *PaymentOrder) QueryTeam() *TeamQuery {
+	return NewPaymentOrderClient(_m.config).QueryTeam(_m)
+}
+
+// QueryCreatedBy queries the "created_by" edge of the PaymentOrder entity.
+func (_m *PaymentOrder) QueryCreatedBy() *UserQuery {
+	return NewPaymentOrderClient(_m.config).QueryCreatedBy(_m)
+}
+
 // Update returns a builder for updating this PaymentOrder.
 // Note that you need to call PaymentOrder.Unwrap() before calling this method if this PaymentOrder
 // was returned from a transaction, and the transaction was committed or rolled back.
@@ -469,6 +552,21 @@ func (_m *PaymentOrder) String() string {
 	if v := _m.UserNotes; v != nil {
 		builder.WriteString("user_notes=")
 		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.BillingSubjectID; v != nil {
+		builder.WriteString("billing_subject_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.TeamID; v != nil {
+		builder.WriteString("team_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.CreatedByUserID; v != nil {
+		builder.WriteString("created_by_user_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")
 	builder.WriteString("amount=")

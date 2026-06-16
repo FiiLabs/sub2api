@@ -37,6 +37,9 @@ func (UserSubscription) Fields() []ent.Field {
 	return []ent.Field{
 		field.Int64("user_id"),
 		field.Int64("group_id"),
+		field.Int64("billing_subject_id").
+			Optional().
+			Nillable(),
 
 		field.Time("starts_at").
 			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
@@ -98,6 +101,10 @@ func (UserSubscription) Edges() []ent.Edge {
 			Ref("assigned_subscriptions").
 			Field("assigned_by").
 			Unique(),
+		edge.From("billing_subject", BillingSubject.Type).
+			Ref("subscriptions").
+			Field("billing_subject_id").
+			Unique(),
 		edge.To("usage_logs", UsageLog.Type),
 	}
 }
@@ -114,6 +121,7 @@ func (UserSubscription) Indexes() []ent.Index {
 		// 唯一约束通过部分索引实现（WHERE deleted_at IS NULL），支持软删除后重新订阅
 		// 见迁移文件 016_soft_delete_partial_unique_indexes.sql
 		index.Fields("user_id", "group_id"),
+		index.Fields("billing_subject_id", "group_id"),
 		index.Fields("deleted_at"),
 	}
 }

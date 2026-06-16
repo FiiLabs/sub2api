@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/Wei-Shaw/sub2api/ent/billingsubject"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userplatformquota"
@@ -66,6 +67,26 @@ func (_u *UserPlatformQuotaUpdate) SetNillableUserID(v *int64) *UserPlatformQuot
 	if v != nil {
 		_u.SetUserID(*v)
 	}
+	return _u
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (_u *UserPlatformQuotaUpdate) SetBillingSubjectID(v int64) *UserPlatformQuotaUpdate {
+	_u.mutation.SetBillingSubjectID(v)
+	return _u
+}
+
+// SetNillableBillingSubjectID sets the "billing_subject_id" field if the given value is not nil.
+func (_u *UserPlatformQuotaUpdate) SetNillableBillingSubjectID(v *int64) *UserPlatformQuotaUpdate {
+	if v != nil {
+		_u.SetBillingSubjectID(*v)
+	}
+	return _u
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (_u *UserPlatformQuotaUpdate) ClearBillingSubjectID() *UserPlatformQuotaUpdate {
+	_u.mutation.ClearBillingSubjectID()
 	return _u
 }
 
@@ -292,6 +313,11 @@ func (_u *UserPlatformQuotaUpdate) SetUser(v *User) *UserPlatformQuotaUpdate {
 	return _u.SetUserID(v.ID)
 }
 
+// SetBillingSubject sets the "billing_subject" edge to the BillingSubject entity.
+func (_u *UserPlatformQuotaUpdate) SetBillingSubject(v *BillingSubject) *UserPlatformQuotaUpdate {
+	return _u.SetBillingSubjectID(v.ID)
+}
+
 // Mutation returns the UserPlatformQuotaMutation object of the builder.
 func (_u *UserPlatformQuotaUpdate) Mutation() *UserPlatformQuotaMutation {
 	return _u.mutation
@@ -300,6 +326,12 @@ func (_u *UserPlatformQuotaUpdate) Mutation() *UserPlatformQuotaMutation {
 // ClearUser clears the "user" edge to the User entity.
 func (_u *UserPlatformQuotaUpdate) ClearUser() *UserPlatformQuotaUpdate {
 	_u.mutation.ClearUser()
+	return _u
+}
+
+// ClearBillingSubject clears the "billing_subject" edge to the BillingSubject entity.
+func (_u *UserPlatformQuotaUpdate) ClearBillingSubject() *UserPlatformQuotaUpdate {
+	_u.mutation.ClearBillingSubject()
 	return _u
 }
 
@@ -474,6 +506,35 @@ func (_u *UserPlatformQuotaUpdate) sqlSave(ctx context.Context) (_node int, err 
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.BillingSubjectCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   userplatformquota.BillingSubjectTable,
+			Columns: []string{userplatformquota.BillingSubjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.BillingSubjectIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   userplatformquota.BillingSubjectTable,
+			Columns: []string{userplatformquota.BillingSubjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{userplatformquota.Label}
@@ -531,6 +592,26 @@ func (_u *UserPlatformQuotaUpdateOne) SetNillableUserID(v *int64) *UserPlatformQ
 	if v != nil {
 		_u.SetUserID(*v)
 	}
+	return _u
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (_u *UserPlatformQuotaUpdateOne) SetBillingSubjectID(v int64) *UserPlatformQuotaUpdateOne {
+	_u.mutation.SetBillingSubjectID(v)
+	return _u
+}
+
+// SetNillableBillingSubjectID sets the "billing_subject_id" field if the given value is not nil.
+func (_u *UserPlatformQuotaUpdateOne) SetNillableBillingSubjectID(v *int64) *UserPlatformQuotaUpdateOne {
+	if v != nil {
+		_u.SetBillingSubjectID(*v)
+	}
+	return _u
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (_u *UserPlatformQuotaUpdateOne) ClearBillingSubjectID() *UserPlatformQuotaUpdateOne {
+	_u.mutation.ClearBillingSubjectID()
 	return _u
 }
 
@@ -757,6 +838,11 @@ func (_u *UserPlatformQuotaUpdateOne) SetUser(v *User) *UserPlatformQuotaUpdateO
 	return _u.SetUserID(v.ID)
 }
 
+// SetBillingSubject sets the "billing_subject" edge to the BillingSubject entity.
+func (_u *UserPlatformQuotaUpdateOne) SetBillingSubject(v *BillingSubject) *UserPlatformQuotaUpdateOne {
+	return _u.SetBillingSubjectID(v.ID)
+}
+
 // Mutation returns the UserPlatformQuotaMutation object of the builder.
 func (_u *UserPlatformQuotaUpdateOne) Mutation() *UserPlatformQuotaMutation {
 	return _u.mutation
@@ -765,6 +851,12 @@ func (_u *UserPlatformQuotaUpdateOne) Mutation() *UserPlatformQuotaMutation {
 // ClearUser clears the "user" edge to the User entity.
 func (_u *UserPlatformQuotaUpdateOne) ClearUser() *UserPlatformQuotaUpdateOne {
 	_u.mutation.ClearUser()
+	return _u
+}
+
+// ClearBillingSubject clears the "billing_subject" edge to the BillingSubject entity.
+func (_u *UserPlatformQuotaUpdateOne) ClearBillingSubject() *UserPlatformQuotaUpdateOne {
+	_u.mutation.ClearBillingSubject()
 	return _u
 }
 
@@ -962,6 +1054,35 @@ func (_u *UserPlatformQuotaUpdateOne) sqlSave(ctx context.Context) (_node *UserP
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.BillingSubjectCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   userplatformquota.BillingSubjectTable,
+			Columns: []string{userplatformquota.BillingSubjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.BillingSubjectIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   userplatformquota.BillingSubjectTable,
+			Columns: []string{userplatformquota.BillingSubjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

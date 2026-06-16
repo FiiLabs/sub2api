@@ -9,6 +9,7 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/Wei-Shaw/sub2api/ent/billingsubject"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
@@ -29,6 +30,8 @@ type UserSubscription struct {
 	UserID int64 `json:"user_id,omitempty"`
 	// GroupID holds the value of the "group_id" field.
 	GroupID int64 `json:"group_id,omitempty"`
+	// BillingSubjectID holds the value of the "billing_subject_id" field.
+	BillingSubjectID *int64 `json:"billing_subject_id,omitempty"`
 	// StartsAt holds the value of the "starts_at" field.
 	StartsAt time.Time `json:"starts_at,omitempty"`
 	// ExpiresAt holds the value of the "expires_at" field.
@@ -67,11 +70,13 @@ type UserSubscriptionEdges struct {
 	Group *Group `json:"group,omitempty"`
 	// AssignedByUser holds the value of the assigned_by_user edge.
 	AssignedByUser *User `json:"assigned_by_user,omitempty"`
+	// BillingSubject holds the value of the billing_subject edge.
+	BillingSubject *BillingSubject `json:"billing_subject,omitempty"`
 	// UsageLogs holds the value of the usage_logs edge.
 	UsageLogs []*UsageLog `json:"usage_logs,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [4]bool
+	loadedTypes [5]bool
 }
 
 // UserOrErr returns the User value or an error if the edge
@@ -107,10 +112,21 @@ func (e UserSubscriptionEdges) AssignedByUserOrErr() (*User, error) {
 	return nil, &NotLoadedError{edge: "assigned_by_user"}
 }
 
+// BillingSubjectOrErr returns the BillingSubject value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e UserSubscriptionEdges) BillingSubjectOrErr() (*BillingSubject, error) {
+	if e.BillingSubject != nil {
+		return e.BillingSubject, nil
+	} else if e.loadedTypes[3] {
+		return nil, &NotFoundError{label: billingsubject.Label}
+	}
+	return nil, &NotLoadedError{edge: "billing_subject"}
+}
+
 // UsageLogsOrErr returns the UsageLogs value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserSubscriptionEdges) UsageLogsOrErr() ([]*UsageLog, error) {
-	if e.loadedTypes[3] {
+	if e.loadedTypes[4] {
 		return e.UsageLogs, nil
 	}
 	return nil, &NotLoadedError{edge: "usage_logs"}
@@ -123,7 +139,7 @@ func (*UserSubscription) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case usersubscription.FieldDailyUsageUsd, usersubscription.FieldWeeklyUsageUsd, usersubscription.FieldMonthlyUsageUsd:
 			values[i] = new(sql.NullFloat64)
-		case usersubscription.FieldID, usersubscription.FieldUserID, usersubscription.FieldGroupID, usersubscription.FieldAssignedBy:
+		case usersubscription.FieldID, usersubscription.FieldUserID, usersubscription.FieldGroupID, usersubscription.FieldBillingSubjectID, usersubscription.FieldAssignedBy:
 			values[i] = new(sql.NullInt64)
 		case usersubscription.FieldStatus, usersubscription.FieldNotes:
 			values[i] = new(sql.NullString)
@@ -180,6 +196,13 @@ func (_m *UserSubscription) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field group_id", values[i])
 			} else if value.Valid {
 				_m.GroupID = value.Int64
+			}
+		case usersubscription.FieldBillingSubjectID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field billing_subject_id", values[i])
+			} else if value.Valid {
+				_m.BillingSubjectID = new(int64)
+				*_m.BillingSubjectID = value.Int64
 			}
 		case usersubscription.FieldStartsAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -286,6 +309,11 @@ func (_m *UserSubscription) QueryAssignedByUser() *UserQuery {
 	return NewUserSubscriptionClient(_m.config).QueryAssignedByUser(_m)
 }
 
+// QueryBillingSubject queries the "billing_subject" edge of the UserSubscription entity.
+func (_m *UserSubscription) QueryBillingSubject() *BillingSubjectQuery {
+	return NewUserSubscriptionClient(_m.config).QueryBillingSubject(_m)
+}
+
 // QueryUsageLogs queries the "usage_logs" edge of the UserSubscription entity.
 func (_m *UserSubscription) QueryUsageLogs() *UsageLogQuery {
 	return NewUserSubscriptionClient(_m.config).QueryUsageLogs(_m)
@@ -330,6 +358,11 @@ func (_m *UserSubscription) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("group_id=")
 	builder.WriteString(fmt.Sprintf("%v", _m.GroupID))
+	builder.WriteString(", ")
+	if v := _m.BillingSubjectID; v != nil {
+		builder.WriteString("billing_subject_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	builder.WriteString("starts_at=")
 	builder.WriteString(_m.StartsAt.Format(time.ANSIC))

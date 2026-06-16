@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/Wei-Shaw/sub2api/ent/billingsubject"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userplatformquota"
 )
@@ -68,6 +69,20 @@ func (_c *UserPlatformQuotaCreate) SetNillableDeletedAt(v *time.Time) *UserPlatf
 // SetUserID sets the "user_id" field.
 func (_c *UserPlatformQuotaCreate) SetUserID(v int64) *UserPlatformQuotaCreate {
 	_c.mutation.SetUserID(v)
+	return _c
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (_c *UserPlatformQuotaCreate) SetBillingSubjectID(v int64) *UserPlatformQuotaCreate {
+	_c.mutation.SetBillingSubjectID(v)
+	return _c
+}
+
+// SetNillableBillingSubjectID sets the "billing_subject_id" field if the given value is not nil.
+func (_c *UserPlatformQuotaCreate) SetNillableBillingSubjectID(v *int64) *UserPlatformQuotaCreate {
+	if v != nil {
+		_c.SetBillingSubjectID(*v)
+	}
 	return _c
 }
 
@@ -206,6 +221,11 @@ func (_c *UserPlatformQuotaCreate) SetNillableMonthlyWindowStart(v *time.Time) *
 // SetUser sets the "user" edge to the User entity.
 func (_c *UserPlatformQuotaCreate) SetUser(v *User) *UserPlatformQuotaCreate {
 	return _c.SetUserID(v.ID)
+}
+
+// SetBillingSubject sets the "billing_subject" edge to the BillingSubject entity.
+func (_c *UserPlatformQuotaCreate) SetBillingSubject(v *BillingSubject) *UserPlatformQuotaCreate {
+	return _c.SetBillingSubjectID(v.ID)
 }
 
 // Mutation returns the UserPlatformQuotaMutation object of the builder.
@@ -401,6 +421,23 @@ func (_c *UserPlatformQuotaCreate) createSpec() (*UserPlatformQuota, *sqlgraph.C
 		_node.UserID = nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
+	if nodes := _c.mutation.BillingSubjectIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   userplatformquota.BillingSubjectTable,
+			Columns: []string{userplatformquota.BillingSubjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.BillingSubjectID = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
 	return _node, _spec
 }
 
@@ -492,6 +529,24 @@ func (u *UserPlatformQuotaUpsert) SetUserID(v int64) *UserPlatformQuotaUpsert {
 // UpdateUserID sets the "user_id" field to the value that was provided on create.
 func (u *UserPlatformQuotaUpsert) UpdateUserID() *UserPlatformQuotaUpsert {
 	u.SetExcluded(userplatformquota.FieldUserID)
+	return u
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (u *UserPlatformQuotaUpsert) SetBillingSubjectID(v int64) *UserPlatformQuotaUpsert {
+	u.Set(userplatformquota.FieldBillingSubjectID, v)
+	return u
+}
+
+// UpdateBillingSubjectID sets the "billing_subject_id" field to the value that was provided on create.
+func (u *UserPlatformQuotaUpsert) UpdateBillingSubjectID() *UserPlatformQuotaUpsert {
+	u.SetExcluded(userplatformquota.FieldBillingSubjectID)
+	return u
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (u *UserPlatformQuotaUpsert) ClearBillingSubjectID() *UserPlatformQuotaUpsert {
+	u.SetNull(userplatformquota.FieldBillingSubjectID)
 	return u
 }
 
@@ -778,6 +833,27 @@ func (u *UserPlatformQuotaUpsertOne) SetUserID(v int64) *UserPlatformQuotaUpsert
 func (u *UserPlatformQuotaUpsertOne) UpdateUserID() *UserPlatformQuotaUpsertOne {
 	return u.Update(func(s *UserPlatformQuotaUpsert) {
 		s.UpdateUserID()
+	})
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (u *UserPlatformQuotaUpsertOne) SetBillingSubjectID(v int64) *UserPlatformQuotaUpsertOne {
+	return u.Update(func(s *UserPlatformQuotaUpsert) {
+		s.SetBillingSubjectID(v)
+	})
+}
+
+// UpdateBillingSubjectID sets the "billing_subject_id" field to the value that was provided on create.
+func (u *UserPlatformQuotaUpsertOne) UpdateBillingSubjectID() *UserPlatformQuotaUpsertOne {
+	return u.Update(func(s *UserPlatformQuotaUpsert) {
+		s.UpdateBillingSubjectID()
+	})
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (u *UserPlatformQuotaUpsertOne) ClearBillingSubjectID() *UserPlatformQuotaUpsertOne {
+	return u.Update(func(s *UserPlatformQuotaUpsert) {
+		s.ClearBillingSubjectID()
 	})
 }
 
@@ -1262,6 +1338,27 @@ func (u *UserPlatformQuotaUpsertBulk) SetUserID(v int64) *UserPlatformQuotaUpser
 func (u *UserPlatformQuotaUpsertBulk) UpdateUserID() *UserPlatformQuotaUpsertBulk {
 	return u.Update(func(s *UserPlatformQuotaUpsert) {
 		s.UpdateUserID()
+	})
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (u *UserPlatformQuotaUpsertBulk) SetBillingSubjectID(v int64) *UserPlatformQuotaUpsertBulk {
+	return u.Update(func(s *UserPlatformQuotaUpsert) {
+		s.SetBillingSubjectID(v)
+	})
+}
+
+// UpdateBillingSubjectID sets the "billing_subject_id" field to the value that was provided on create.
+func (u *UserPlatformQuotaUpsertBulk) UpdateBillingSubjectID() *UserPlatformQuotaUpsertBulk {
+	return u.Update(func(s *UserPlatformQuotaUpsert) {
+		s.UpdateBillingSubjectID()
+	})
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (u *UserPlatformQuotaUpsertBulk) ClearBillingSubjectID() *UserPlatformQuotaUpsertBulk {
+	return u.Update(func(s *UserPlatformQuotaUpsert) {
+		s.ClearBillingSubjectID()
 	})
 }
 

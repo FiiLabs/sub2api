@@ -128,10 +128,21 @@ func (User) Edges() []ent.Edge {
 		edge.To("attribute_values", UserAttributeValue.Type),
 		edge.To("promo_code_usages", PromoCodeUsage.Type),
 		edge.To("payment_orders", PaymentOrder.Type),
+		edge.To("created_payment_orders", PaymentOrder.Type),
 		edge.To("auth_identities", AuthIdentity.Type).
 			Annotations(entsql.OnDelete(entsql.Cascade)),
 		edge.To("pending_auth_sessions", PendingAuthSession.Type),
 		edge.To("platform_quotas", UserPlatformQuota.Type),
+		edge.To("billing_subjects", BillingSubject.Type),
+		edge.To("owned_teams", Team.Type),
+		edge.To("created_teams", Team.Type),
+		edge.To("team_memberships", TeamMember.Type),
+		edge.To("team_member_invites", TeamMember.Type),
+		edge.To("sent_team_invitations", TeamInvitation.Type),
+		edge.To("accepted_team_invitations", TeamInvitation.Type),
+		edge.To("created_api_keys", APIKey.Type),
+		edge.To("updated_api_keys", APIKey.Type),
+		edge.To("acted_usage_logs", UsageLog.Type),
 	}
 }
 

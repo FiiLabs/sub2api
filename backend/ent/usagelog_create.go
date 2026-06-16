@@ -13,7 +13,9 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/Wei-Shaw/sub2api/ent/account"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
+	"github.com/Wei-Shaw/sub2api/ent/billingsubject"
 	"github.com/Wei-Shaw/sub2api/ent/group"
+	"github.com/Wei-Shaw/sub2api/ent/team"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
@@ -165,6 +167,48 @@ func (_c *UsageLogCreate) SetSubscriptionID(v int64) *UsageLogCreate {
 func (_c *UsageLogCreate) SetNillableSubscriptionID(v *int64) *UsageLogCreate {
 	if v != nil {
 		_c.SetSubscriptionID(*v)
+	}
+	return _c
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (_c *UsageLogCreate) SetBillingSubjectID(v int64) *UsageLogCreate {
+	_c.mutation.SetBillingSubjectID(v)
+	return _c
+}
+
+// SetNillableBillingSubjectID sets the "billing_subject_id" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableBillingSubjectID(v *int64) *UsageLogCreate {
+	if v != nil {
+		_c.SetBillingSubjectID(*v)
+	}
+	return _c
+}
+
+// SetTeamID sets the "team_id" field.
+func (_c *UsageLogCreate) SetTeamID(v int64) *UsageLogCreate {
+	_c.mutation.SetTeamID(v)
+	return _c
+}
+
+// SetNillableTeamID sets the "team_id" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableTeamID(v *int64) *UsageLogCreate {
+	if v != nil {
+		_c.SetTeamID(*v)
+	}
+	return _c
+}
+
+// SetActorUserID sets the "actor_user_id" field.
+func (_c *UsageLogCreate) SetActorUserID(v int64) *UsageLogCreate {
+	_c.mutation.SetActorUserID(v)
+	return _c
+}
+
+// SetNillableActorUserID sets the "actor_user_id" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableActorUserID(v *int64) *UsageLogCreate {
+	if v != nil {
+		_c.SetActorUserID(*v)
 	}
 	return _c
 }
@@ -576,6 +620,35 @@ func (_c *UsageLogCreate) SetGroup(v *Group) *UsageLogCreate {
 // SetSubscription sets the "subscription" edge to the UserSubscription entity.
 func (_c *UsageLogCreate) SetSubscription(v *UserSubscription) *UsageLogCreate {
 	return _c.SetSubscriptionID(v.ID)
+}
+
+// SetBillingSubject sets the "billing_subject" edge to the BillingSubject entity.
+func (_c *UsageLogCreate) SetBillingSubject(v *BillingSubject) *UsageLogCreate {
+	return _c.SetBillingSubjectID(v.ID)
+}
+
+// SetTeam sets the "team" edge to the Team entity.
+func (_c *UsageLogCreate) SetTeam(v *Team) *UsageLogCreate {
+	return _c.SetTeamID(v.ID)
+}
+
+// SetActorID sets the "actor" edge to the User entity by ID.
+func (_c *UsageLogCreate) SetActorID(id int64) *UsageLogCreate {
+	_c.mutation.SetActorID(id)
+	return _c
+}
+
+// SetNillableActorID sets the "actor" edge to the User entity by ID if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableActorID(id *int64) *UsageLogCreate {
+	if id != nil {
+		_c = _c.SetActorID(*id)
+	}
+	return _c
+}
+
+// SetActor sets the "actor" edge to the User entity.
+func (_c *UsageLogCreate) SetActor(v *User) *UsageLogCreate {
+	return _c.SetActorID(v.ID)
 }
 
 // Mutation returns the UsageLogMutation object of the builder.
@@ -1088,6 +1161,57 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 		_node.SubscriptionID = &nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
+	if nodes := _c.mutation.BillingSubjectIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   usagelog.BillingSubjectTable,
+			Columns: []string{usagelog.BillingSubjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.BillingSubjectID = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.TeamIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   usagelog.TeamTable,
+			Columns: []string{usagelog.TeamColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.TeamID = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.ActorIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   usagelog.ActorTable,
+			Columns: []string{usagelog.ActorColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.ActorUserID = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
 	return _node, _spec
 }
 
@@ -1347,6 +1471,60 @@ func (u *UsageLogUpsert) UpdateSubscriptionID() *UsageLogUpsert {
 // ClearSubscriptionID clears the value of the "subscription_id" field.
 func (u *UsageLogUpsert) ClearSubscriptionID() *UsageLogUpsert {
 	u.SetNull(usagelog.FieldSubscriptionID)
+	return u
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (u *UsageLogUpsert) SetBillingSubjectID(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldBillingSubjectID, v)
+	return u
+}
+
+// UpdateBillingSubjectID sets the "billing_subject_id" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateBillingSubjectID() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldBillingSubjectID)
+	return u
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (u *UsageLogUpsert) ClearBillingSubjectID() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldBillingSubjectID)
+	return u
+}
+
+// SetTeamID sets the "team_id" field.
+func (u *UsageLogUpsert) SetTeamID(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldTeamID, v)
+	return u
+}
+
+// UpdateTeamID sets the "team_id" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateTeamID() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldTeamID)
+	return u
+}
+
+// ClearTeamID clears the value of the "team_id" field.
+func (u *UsageLogUpsert) ClearTeamID() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldTeamID)
+	return u
+}
+
+// SetActorUserID sets the "actor_user_id" field.
+func (u *UsageLogUpsert) SetActorUserID(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldActorUserID, v)
+	return u
+}
+
+// UpdateActorUserID sets the "actor_user_id" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateActorUserID() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldActorUserID)
+	return u
+}
+
+// ClearActorUserID clears the value of the "actor_user_id" field.
+func (u *UsageLogUpsert) ClearActorUserID() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldActorUserID)
 	return u
 }
 
@@ -2129,6 +2307,69 @@ func (u *UsageLogUpsertOne) UpdateSubscriptionID() *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) ClearSubscriptionID() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearSubscriptionID()
+	})
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (u *UsageLogUpsertOne) SetBillingSubjectID(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetBillingSubjectID(v)
+	})
+}
+
+// UpdateBillingSubjectID sets the "billing_subject_id" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateBillingSubjectID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateBillingSubjectID()
+	})
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (u *UsageLogUpsertOne) ClearBillingSubjectID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearBillingSubjectID()
+	})
+}
+
+// SetTeamID sets the "team_id" field.
+func (u *UsageLogUpsertOne) SetTeamID(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetTeamID(v)
+	})
+}
+
+// UpdateTeamID sets the "team_id" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateTeamID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateTeamID()
+	})
+}
+
+// ClearTeamID clears the value of the "team_id" field.
+func (u *UsageLogUpsertOne) ClearTeamID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearTeamID()
+	})
+}
+
+// SetActorUserID sets the "actor_user_id" field.
+func (u *UsageLogUpsertOne) SetActorUserID(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetActorUserID(v)
+	})
+}
+
+// UpdateActorUserID sets the "actor_user_id" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateActorUserID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateActorUserID()
+	})
+}
+
+// ClearActorUserID clears the value of the "actor_user_id" field.
+func (u *UsageLogUpsertOne) ClearActorUserID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearActorUserID()
 	})
 }
 
@@ -3159,6 +3400,69 @@ func (u *UsageLogUpsertBulk) UpdateSubscriptionID() *UsageLogUpsertBulk {
 func (u *UsageLogUpsertBulk) ClearSubscriptionID() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearSubscriptionID()
+	})
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (u *UsageLogUpsertBulk) SetBillingSubjectID(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetBillingSubjectID(v)
+	})
+}
+
+// UpdateBillingSubjectID sets the "billing_subject_id" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateBillingSubjectID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateBillingSubjectID()
+	})
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (u *UsageLogUpsertBulk) ClearBillingSubjectID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearBillingSubjectID()
+	})
+}
+
+// SetTeamID sets the "team_id" field.
+func (u *UsageLogUpsertBulk) SetTeamID(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetTeamID(v)
+	})
+}
+
+// UpdateTeamID sets the "team_id" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateTeamID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateTeamID()
+	})
+}
+
+// ClearTeamID clears the value of the "team_id" field.
+func (u *UsageLogUpsertBulk) ClearTeamID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearTeamID()
+	})
+}
+
+// SetActorUserID sets the "actor_user_id" field.
+func (u *UsageLogUpsertBulk) SetActorUserID(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetActorUserID(v)
+	})
+}
+
+// UpdateActorUserID sets the "actor_user_id" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateActorUserID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateActorUserID()
+	})
+}
+
+// ClearActorUserID clears the value of the "actor_user_id" field.
+func (u *UsageLogUpsertBulk) ClearActorUserID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearActorUserID()
 	})
 }
 

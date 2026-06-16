@@ -40,6 +40,12 @@ const (
 	FieldGroupID = "group_id"
 	// FieldSubscriptionID holds the string denoting the subscription_id field in the database.
 	FieldSubscriptionID = "subscription_id"
+	// FieldBillingSubjectID holds the string denoting the billing_subject_id field in the database.
+	FieldBillingSubjectID = "billing_subject_id"
+	// FieldTeamID holds the string denoting the team_id field in the database.
+	FieldTeamID = "team_id"
+	// FieldActorUserID holds the string denoting the actor_user_id field in the database.
+	FieldActorUserID = "actor_user_id"
 	// FieldInputTokens holds the string denoting the input_tokens field in the database.
 	FieldInputTokens = "input_tokens"
 	// FieldOutputTokens holds the string denoting the output_tokens field in the database.
@@ -106,6 +112,12 @@ const (
 	EdgeGroup = "group"
 	// EdgeSubscription holds the string denoting the subscription edge name in mutations.
 	EdgeSubscription = "subscription"
+	// EdgeBillingSubject holds the string denoting the billing_subject edge name in mutations.
+	EdgeBillingSubject = "billing_subject"
+	// EdgeTeam holds the string denoting the team edge name in mutations.
+	EdgeTeam = "team"
+	// EdgeActor holds the string denoting the actor edge name in mutations.
+	EdgeActor = "actor"
 	// Table holds the table name of the usagelog in the database.
 	Table = "usage_logs"
 	// UserTable is the table that holds the user relation/edge.
@@ -143,6 +155,27 @@ const (
 	SubscriptionInverseTable = "user_subscriptions"
 	// SubscriptionColumn is the table column denoting the subscription relation/edge.
 	SubscriptionColumn = "subscription_id"
+	// BillingSubjectTable is the table that holds the billing_subject relation/edge.
+	BillingSubjectTable = "usage_logs"
+	// BillingSubjectInverseTable is the table name for the BillingSubject entity.
+	// It exists in this package in order to avoid circular dependency with the "billingsubject" package.
+	BillingSubjectInverseTable = "billing_subjects"
+	// BillingSubjectColumn is the table column denoting the billing_subject relation/edge.
+	BillingSubjectColumn = "billing_subject_id"
+	// TeamTable is the table that holds the team relation/edge.
+	TeamTable = "usage_logs"
+	// TeamInverseTable is the table name for the Team entity.
+	// It exists in this package in order to avoid circular dependency with the "team" package.
+	TeamInverseTable = "teams"
+	// TeamColumn is the table column denoting the team relation/edge.
+	TeamColumn = "team_id"
+	// ActorTable is the table that holds the actor relation/edge.
+	ActorTable = "usage_logs"
+	// ActorInverseTable is the table name for the User entity.
+	// It exists in this package in order to avoid circular dependency with the "user" package.
+	ActorInverseTable = "users"
+	// ActorColumn is the table column denoting the actor relation/edge.
+	ActorColumn = "actor_user_id"
 )
 
 // Columns holds all SQL columns for usagelog fields.
@@ -161,6 +194,9 @@ var Columns = []string{
 	FieldBillingMode,
 	FieldGroupID,
 	FieldSubscriptionID,
+	FieldBillingSubjectID,
+	FieldTeamID,
+	FieldActorUserID,
 	FieldInputTokens,
 	FieldOutputTokens,
 	FieldCacheCreationTokens,
@@ -339,6 +375,21 @@ func BySubscriptionID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSubscriptionID, opts...).ToFunc()
 }
 
+// ByBillingSubjectID orders the results by the billing_subject_id field.
+func ByBillingSubjectID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBillingSubjectID, opts...).ToFunc()
+}
+
+// ByTeamID orders the results by the team_id field.
+func ByTeamID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTeamID, opts...).ToFunc()
+}
+
+// ByActorUserID orders the results by the actor_user_id field.
+func ByActorUserID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldActorUserID, opts...).ToFunc()
+}
+
 // ByInputTokens orders the results by the input_tokens field.
 func ByInputTokens(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldInputTokens, opts...).ToFunc()
@@ -508,6 +559,27 @@ func BySubscriptionField(field string, opts ...sql.OrderTermOption) OrderOption 
 		sqlgraph.OrderByNeighborTerms(s, newSubscriptionStep(), sql.OrderByField(field, opts...))
 	}
 }
+
+// ByBillingSubjectField orders the results by billing_subject field.
+func ByBillingSubjectField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newBillingSubjectStep(), sql.OrderByField(field, opts...))
+	}
+}
+
+// ByTeamField orders the results by team field.
+func ByTeamField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newTeamStep(), sql.OrderByField(field, opts...))
+	}
+}
+
+// ByActorField orders the results by actor field.
+func ByActorField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newActorStep(), sql.OrderByField(field, opts...))
+	}
+}
 func newUserStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -541,5 +613,26 @@ func newSubscriptionStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(SubscriptionInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, SubscriptionTable, SubscriptionColumn),
+	)
+}
+func newBillingSubjectStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(BillingSubjectInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, BillingSubjectTable, BillingSubjectColumn),
+	)
+}
+func newTeamStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(TeamInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, TeamTable, TeamColumn),
+	)
+}
+func newActorStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(ActorInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, ActorTable, ActorColumn),
 	)
 }

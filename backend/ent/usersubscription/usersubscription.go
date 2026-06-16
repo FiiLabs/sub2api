@@ -25,6 +25,8 @@ const (
 	FieldUserID = "user_id"
 	// FieldGroupID holds the string denoting the group_id field in the database.
 	FieldGroupID = "group_id"
+	// FieldBillingSubjectID holds the string denoting the billing_subject_id field in the database.
+	FieldBillingSubjectID = "billing_subject_id"
 	// FieldStartsAt holds the string denoting the starts_at field in the database.
 	FieldStartsAt = "starts_at"
 	// FieldExpiresAt holds the string denoting the expires_at field in the database.
@@ -55,6 +57,8 @@ const (
 	EdgeGroup = "group"
 	// EdgeAssignedByUser holds the string denoting the assigned_by_user edge name in mutations.
 	EdgeAssignedByUser = "assigned_by_user"
+	// EdgeBillingSubject holds the string denoting the billing_subject edge name in mutations.
+	EdgeBillingSubject = "billing_subject"
 	// EdgeUsageLogs holds the string denoting the usage_logs edge name in mutations.
 	EdgeUsageLogs = "usage_logs"
 	// Table holds the table name of the usersubscription in the database.
@@ -80,6 +84,13 @@ const (
 	AssignedByUserInverseTable = "users"
 	// AssignedByUserColumn is the table column denoting the assigned_by_user relation/edge.
 	AssignedByUserColumn = "assigned_by"
+	// BillingSubjectTable is the table that holds the billing_subject relation/edge.
+	BillingSubjectTable = "user_subscriptions"
+	// BillingSubjectInverseTable is the table name for the BillingSubject entity.
+	// It exists in this package in order to avoid circular dependency with the "billingsubject" package.
+	BillingSubjectInverseTable = "billing_subjects"
+	// BillingSubjectColumn is the table column denoting the billing_subject relation/edge.
+	BillingSubjectColumn = "billing_subject_id"
 	// UsageLogsTable is the table that holds the usage_logs relation/edge.
 	UsageLogsTable = "usage_logs"
 	// UsageLogsInverseTable is the table name for the UsageLog entity.
@@ -97,6 +108,7 @@ var Columns = []string{
 	FieldDeletedAt,
 	FieldUserID,
 	FieldGroupID,
+	FieldBillingSubjectID,
 	FieldStartsAt,
 	FieldExpiresAt,
 	FieldStatus,
@@ -182,6 +194,11 @@ func ByGroupID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldGroupID, opts...).ToFunc()
 }
 
+// ByBillingSubjectID orders the results by the billing_subject_id field.
+func ByBillingSubjectID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBillingSubjectID, opts...).ToFunc()
+}
+
 // ByStartsAt orders the results by the starts_at field.
 func ByStartsAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldStartsAt, opts...).ToFunc()
@@ -263,6 +280,13 @@ func ByAssignedByUserField(field string, opts ...sql.OrderTermOption) OrderOptio
 	}
 }
 
+// ByBillingSubjectField orders the results by billing_subject field.
+func ByBillingSubjectField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newBillingSubjectStep(), sql.OrderByField(field, opts...))
+	}
+}
+
 // ByUsageLogsCount orders the results by usage_logs count.
 func ByUsageLogsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -295,6 +319,13 @@ func newAssignedByUserStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(AssignedByUserInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, AssignedByUserTable, AssignedByUserColumn),
+	)
+}
+func newBillingSubjectStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(BillingSubjectInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, BillingSubjectTable, BillingSubjectColumn),
 	)
 }
 func newUsageLogsStep() *sqlgraph.Step {

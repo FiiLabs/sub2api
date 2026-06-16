@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/Wei-Shaw/sub2api/ent/billingsubject"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
@@ -82,6 +83,26 @@ func (_u *UserSubscriptionUpdate) SetNillableGroupID(v *int64) *UserSubscription
 	if v != nil {
 		_u.SetGroupID(*v)
 	}
+	return _u
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (_u *UserSubscriptionUpdate) SetBillingSubjectID(v int64) *UserSubscriptionUpdate {
+	_u.mutation.SetBillingSubjectID(v)
+	return _u
+}
+
+// SetNillableBillingSubjectID sets the "billing_subject_id" field if the given value is not nil.
+func (_u *UserSubscriptionUpdate) SetNillableBillingSubjectID(v *int64) *UserSubscriptionUpdate {
+	if v != nil {
+		_u.SetBillingSubjectID(*v)
+	}
+	return _u
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (_u *UserSubscriptionUpdate) ClearBillingSubjectID() *UserSubscriptionUpdate {
+	_u.mutation.ClearBillingSubjectID()
 	return _u
 }
 
@@ -333,6 +354,11 @@ func (_u *UserSubscriptionUpdate) SetAssignedByUser(v *User) *UserSubscriptionUp
 	return _u.SetAssignedByUserID(v.ID)
 }
 
+// SetBillingSubject sets the "billing_subject" edge to the BillingSubject entity.
+func (_u *UserSubscriptionUpdate) SetBillingSubject(v *BillingSubject) *UserSubscriptionUpdate {
+	return _u.SetBillingSubjectID(v.ID)
+}
+
 // AddUsageLogIDs adds the "usage_logs" edge to the UsageLog entity by IDs.
 func (_u *UserSubscriptionUpdate) AddUsageLogIDs(ids ...int64) *UserSubscriptionUpdate {
 	_u.mutation.AddUsageLogIDs(ids...)
@@ -368,6 +394,12 @@ func (_u *UserSubscriptionUpdate) ClearGroup() *UserSubscriptionUpdate {
 // ClearAssignedByUser clears the "assigned_by_user" edge to the User entity.
 func (_u *UserSubscriptionUpdate) ClearAssignedByUser() *UserSubscriptionUpdate {
 	_u.mutation.ClearAssignedByUser()
+	return _u
+}
+
+// ClearBillingSubject clears the "billing_subject" edge to the BillingSubject entity.
+func (_u *UserSubscriptionUpdate) ClearBillingSubject() *UserSubscriptionUpdate {
+	_u.mutation.ClearBillingSubject()
 	return _u
 }
 
@@ -612,6 +644,35 @@ func (_u *UserSubscriptionUpdate) sqlSave(ctx context.Context) (_node int, err e
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.BillingSubjectCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   usersubscription.BillingSubjectTable,
+			Columns: []string{usersubscription.BillingSubjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.BillingSubjectIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   usersubscription.BillingSubjectTable,
+			Columns: []string{usersubscription.BillingSubjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _u.mutation.UsageLogsCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -728,6 +789,26 @@ func (_u *UserSubscriptionUpdateOne) SetNillableGroupID(v *int64) *UserSubscript
 	if v != nil {
 		_u.SetGroupID(*v)
 	}
+	return _u
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (_u *UserSubscriptionUpdateOne) SetBillingSubjectID(v int64) *UserSubscriptionUpdateOne {
+	_u.mutation.SetBillingSubjectID(v)
+	return _u
+}
+
+// SetNillableBillingSubjectID sets the "billing_subject_id" field if the given value is not nil.
+func (_u *UserSubscriptionUpdateOne) SetNillableBillingSubjectID(v *int64) *UserSubscriptionUpdateOne {
+	if v != nil {
+		_u.SetBillingSubjectID(*v)
+	}
+	return _u
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (_u *UserSubscriptionUpdateOne) ClearBillingSubjectID() *UserSubscriptionUpdateOne {
+	_u.mutation.ClearBillingSubjectID()
 	return _u
 }
 
@@ -979,6 +1060,11 @@ func (_u *UserSubscriptionUpdateOne) SetAssignedByUser(v *User) *UserSubscriptio
 	return _u.SetAssignedByUserID(v.ID)
 }
 
+// SetBillingSubject sets the "billing_subject" edge to the BillingSubject entity.
+func (_u *UserSubscriptionUpdateOne) SetBillingSubject(v *BillingSubject) *UserSubscriptionUpdateOne {
+	return _u.SetBillingSubjectID(v.ID)
+}
+
 // AddUsageLogIDs adds the "usage_logs" edge to the UsageLog entity by IDs.
 func (_u *UserSubscriptionUpdateOne) AddUsageLogIDs(ids ...int64) *UserSubscriptionUpdateOne {
 	_u.mutation.AddUsageLogIDs(ids...)
@@ -1014,6 +1100,12 @@ func (_u *UserSubscriptionUpdateOne) ClearGroup() *UserSubscriptionUpdateOne {
 // ClearAssignedByUser clears the "assigned_by_user" edge to the User entity.
 func (_u *UserSubscriptionUpdateOne) ClearAssignedByUser() *UserSubscriptionUpdateOne {
 	_u.mutation.ClearAssignedByUser()
+	return _u
+}
+
+// ClearBillingSubject clears the "billing_subject" edge to the BillingSubject entity.
+func (_u *UserSubscriptionUpdateOne) ClearBillingSubject() *UserSubscriptionUpdateOne {
+	_u.mutation.ClearBillingSubject()
 	return _u
 }
 
@@ -1281,6 +1373,35 @@ func (_u *UserSubscriptionUpdateOne) sqlSave(ctx context.Context) (_node *UserSu
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.BillingSubjectCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   usersubscription.BillingSubjectTable,
+			Columns: []string{usersubscription.BillingSubjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.BillingSubjectIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   usersubscription.BillingSubjectTable,
+			Columns: []string{usersubscription.BillingSubjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

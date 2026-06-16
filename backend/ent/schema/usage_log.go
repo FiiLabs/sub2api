@@ -63,6 +63,15 @@ func (UsageLog) Fields() []ent.Field {
 		field.Int64("subscription_id").
 			Optional().
 			Nillable(),
+		field.Int64("billing_subject_id").
+			Optional().
+			Nillable(),
+		field.Int64("team_id").
+			Optional().
+			Nillable(),
+		field.Int64("actor_user_id").
+			Optional().
+			Nillable(),
 
 		// Token 计数字段
 		field.Int("input_tokens").
@@ -187,6 +196,18 @@ func (UsageLog) Edges() []ent.Edge {
 			Ref("usage_logs").
 			Field("subscription_id").
 			Unique(),
+		edge.From("billing_subject", BillingSubject.Type).
+			Ref("usage_logs").
+			Field("billing_subject_id").
+			Unique(),
+		edge.From("team", Team.Type).
+			Ref("usage_logs").
+			Field("team_id").
+			Unique(),
+		edge.From("actor", User.Type).
+			Ref("acted_usage_logs").
+			Field("actor_user_id").
+			Unique(),
 	}
 }
 
@@ -207,5 +228,8 @@ func (UsageLog) Indexes() []ent.Index {
 		index.Fields("api_key_id", "created_at"),
 		// 分组维度时间范围查询（线上由 SQL 迁移创建 group_id IS NOT NULL 的部分索引）
 		index.Fields("group_id", "created_at"),
+		index.Fields("billing_subject_id", "created_at"),
+		index.Fields("team_id", "created_at"),
+		index.Fields("actor_user_id", "created_at"),
 	}
 }

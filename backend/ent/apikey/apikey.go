@@ -29,6 +29,14 @@ const (
 	FieldName = "name"
 	// FieldGroupID holds the string denoting the group_id field in the database.
 	FieldGroupID = "group_id"
+	// FieldBillingSubjectID holds the string denoting the billing_subject_id field in the database.
+	FieldBillingSubjectID = "billing_subject_id"
+	// FieldTeamID holds the string denoting the team_id field in the database.
+	FieldTeamID = "team_id"
+	// FieldCreatedByUserID holds the string denoting the created_by_user_id field in the database.
+	FieldCreatedByUserID = "created_by_user_id"
+	// FieldUpdatedByUserID holds the string denoting the updated_by_user_id field in the database.
+	FieldUpdatedByUserID = "updated_by_user_id"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
 	// FieldLastUsedAt holds the string denoting the last_used_at field in the database.
@@ -65,6 +73,14 @@ const (
 	EdgeUser = "user"
 	// EdgeGroup holds the string denoting the group edge name in mutations.
 	EdgeGroup = "group"
+	// EdgeBillingSubject holds the string denoting the billing_subject edge name in mutations.
+	EdgeBillingSubject = "billing_subject"
+	// EdgeTeam holds the string denoting the team edge name in mutations.
+	EdgeTeam = "team"
+	// EdgeCreatedBy holds the string denoting the created_by edge name in mutations.
+	EdgeCreatedBy = "created_by"
+	// EdgeUpdatedBy holds the string denoting the updated_by edge name in mutations.
+	EdgeUpdatedBy = "updated_by"
 	// EdgeUsageLogs holds the string denoting the usage_logs edge name in mutations.
 	EdgeUsageLogs = "usage_logs"
 	// Table holds the table name of the apikey in the database.
@@ -83,6 +99,34 @@ const (
 	GroupInverseTable = "groups"
 	// GroupColumn is the table column denoting the group relation/edge.
 	GroupColumn = "group_id"
+	// BillingSubjectTable is the table that holds the billing_subject relation/edge.
+	BillingSubjectTable = "api_keys"
+	// BillingSubjectInverseTable is the table name for the BillingSubject entity.
+	// It exists in this package in order to avoid circular dependency with the "billingsubject" package.
+	BillingSubjectInverseTable = "billing_subjects"
+	// BillingSubjectColumn is the table column denoting the billing_subject relation/edge.
+	BillingSubjectColumn = "billing_subject_id"
+	// TeamTable is the table that holds the team relation/edge.
+	TeamTable = "api_keys"
+	// TeamInverseTable is the table name for the Team entity.
+	// It exists in this package in order to avoid circular dependency with the "team" package.
+	TeamInverseTable = "teams"
+	// TeamColumn is the table column denoting the team relation/edge.
+	TeamColumn = "team_id"
+	// CreatedByTable is the table that holds the created_by relation/edge.
+	CreatedByTable = "api_keys"
+	// CreatedByInverseTable is the table name for the User entity.
+	// It exists in this package in order to avoid circular dependency with the "user" package.
+	CreatedByInverseTable = "users"
+	// CreatedByColumn is the table column denoting the created_by relation/edge.
+	CreatedByColumn = "created_by_user_id"
+	// UpdatedByTable is the table that holds the updated_by relation/edge.
+	UpdatedByTable = "api_keys"
+	// UpdatedByInverseTable is the table name for the User entity.
+	// It exists in this package in order to avoid circular dependency with the "user" package.
+	UpdatedByInverseTable = "users"
+	// UpdatedByColumn is the table column denoting the updated_by relation/edge.
+	UpdatedByColumn = "updated_by_user_id"
 	// UsageLogsTable is the table that holds the usage_logs relation/edge.
 	UsageLogsTable = "usage_logs"
 	// UsageLogsInverseTable is the table name for the UsageLog entity.
@@ -102,6 +146,10 @@ var Columns = []string{
 	FieldKey,
 	FieldName,
 	FieldGroupID,
+	FieldBillingSubjectID,
+	FieldTeamID,
+	FieldCreatedByUserID,
+	FieldUpdatedByUserID,
 	FieldStatus,
 	FieldLastUsedAt,
 	FieldIPWhitelist,
@@ -213,6 +261,26 @@ func ByGroupID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldGroupID, opts...).ToFunc()
 }
 
+// ByBillingSubjectID orders the results by the billing_subject_id field.
+func ByBillingSubjectID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBillingSubjectID, opts...).ToFunc()
+}
+
+// ByTeamID orders the results by the team_id field.
+func ByTeamID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTeamID, opts...).ToFunc()
+}
+
+// ByCreatedByUserID orders the results by the created_by_user_id field.
+func ByCreatedByUserID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCreatedByUserID, opts...).ToFunc()
+}
+
+// ByUpdatedByUserID orders the results by the updated_by_user_id field.
+func ByUpdatedByUserID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUpdatedByUserID, opts...).ToFunc()
+}
+
 // ByStatus orders the results by the status field.
 func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldStatus, opts...).ToFunc()
@@ -297,6 +365,34 @@ func ByGroupField(field string, opts ...sql.OrderTermOption) OrderOption {
 	}
 }
 
+// ByBillingSubjectField orders the results by billing_subject field.
+func ByBillingSubjectField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newBillingSubjectStep(), sql.OrderByField(field, opts...))
+	}
+}
+
+// ByTeamField orders the results by team field.
+func ByTeamField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newTeamStep(), sql.OrderByField(field, opts...))
+	}
+}
+
+// ByCreatedByField orders the results by created_by field.
+func ByCreatedByField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newCreatedByStep(), sql.OrderByField(field, opts...))
+	}
+}
+
+// ByUpdatedByField orders the results by updated_by field.
+func ByUpdatedByField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newUpdatedByStep(), sql.OrderByField(field, opts...))
+	}
+}
+
 // ByUsageLogsCount orders the results by usage_logs count.
 func ByUsageLogsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -322,6 +418,34 @@ func newGroupStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(GroupInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, GroupTable, GroupColumn),
+	)
+}
+func newBillingSubjectStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(BillingSubjectInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, BillingSubjectTable, BillingSubjectColumn),
+	)
+}
+func newTeamStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(TeamInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, TeamTable, TeamColumn),
+	)
+}
+func newCreatedByStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(CreatedByInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, CreatedByTable, CreatedByColumn),
+	)
+}
+func newUpdatedByStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(UpdatedByInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, UpdatedByTable, UpdatedByColumn),
 	)
 }
 func newUsageLogsStep() *sqlgraph.Step {

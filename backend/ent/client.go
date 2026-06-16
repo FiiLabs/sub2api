@@ -22,6 +22,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
 	"github.com/Wei-Shaw/sub2api/ent/authidentitychannel"
+	"github.com/Wei-Shaw/sub2api/ent/billingsubject"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitor"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitordailyrollup"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitorhistory"
@@ -41,6 +42,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
+	"github.com/Wei-Shaw/sub2api/ent/team"
+	"github.com/Wei-Shaw/sub2api/ent/teaminvitation"
+	"github.com/Wei-Shaw/sub2api/ent/teammember"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
@@ -73,6 +77,8 @@ type Client struct {
 	AuthIdentity *AuthIdentityClient
 	// AuthIdentityChannel is the client for interacting with the AuthIdentityChannel builders.
 	AuthIdentityChannel *AuthIdentityChannelClient
+	// BillingSubject is the client for interacting with the BillingSubject builders.
+	BillingSubject *BillingSubjectClient
 	// ChannelMonitor is the client for interacting with the ChannelMonitor builders.
 	ChannelMonitor *ChannelMonitorClient
 	// ChannelMonitorDailyRollup is the client for interacting with the ChannelMonitorDailyRollup builders.
@@ -113,6 +119,12 @@ type Client struct {
 	SubscriptionPlan *SubscriptionPlanClient
 	// TLSFingerprintProfile is the client for interacting with the TLSFingerprintProfile builders.
 	TLSFingerprintProfile *TLSFingerprintProfileClient
+	// Team is the client for interacting with the Team builders.
+	Team *TeamClient
+	// TeamInvitation is the client for interacting with the TeamInvitation builders.
+	TeamInvitation *TeamInvitationClient
+	// TeamMember is the client for interacting with the TeamMember builders.
+	TeamMember *TeamMemberClient
 	// UsageCleanupTask is the client for interacting with the UsageCleanupTask builders.
 	UsageCleanupTask *UsageCleanupTaskClient
 	// UsageLog is the client for interacting with the UsageLog builders.
@@ -147,6 +159,7 @@ func (c *Client) init() {
 	c.AnnouncementRead = NewAnnouncementReadClient(c.config)
 	c.AuthIdentity = NewAuthIdentityClient(c.config)
 	c.AuthIdentityChannel = NewAuthIdentityChannelClient(c.config)
+	c.BillingSubject = NewBillingSubjectClient(c.config)
 	c.ChannelMonitor = NewChannelMonitorClient(c.config)
 	c.ChannelMonitorDailyRollup = NewChannelMonitorDailyRollupClient(c.config)
 	c.ChannelMonitorHistory = NewChannelMonitorHistoryClient(c.config)
@@ -167,6 +180,9 @@ func (c *Client) init() {
 	c.Setting = NewSettingClient(c.config)
 	c.SubscriptionPlan = NewSubscriptionPlanClient(c.config)
 	c.TLSFingerprintProfile = NewTLSFingerprintProfileClient(c.config)
+	c.Team = NewTeamClient(c.config)
+	c.TeamInvitation = NewTeamInvitationClient(c.config)
+	c.TeamMember = NewTeamMemberClient(c.config)
 	c.UsageCleanupTask = NewUsageCleanupTaskClient(c.config)
 	c.UsageLog = NewUsageLogClient(c.config)
 	c.User = NewUserClient(c.config)
@@ -274,6 +290,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		AnnouncementRead:              NewAnnouncementReadClient(cfg),
 		AuthIdentity:                  NewAuthIdentityClient(cfg),
 		AuthIdentityChannel:           NewAuthIdentityChannelClient(cfg),
+		BillingSubject:                NewBillingSubjectClient(cfg),
 		ChannelMonitor:                NewChannelMonitorClient(cfg),
 		ChannelMonitorDailyRollup:     NewChannelMonitorDailyRollupClient(cfg),
 		ChannelMonitorHistory:         NewChannelMonitorHistoryClient(cfg),
@@ -294,6 +311,9 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		Setting:                       NewSettingClient(cfg),
 		SubscriptionPlan:              NewSubscriptionPlanClient(cfg),
 		TLSFingerprintProfile:         NewTLSFingerprintProfileClient(cfg),
+		Team:                          NewTeamClient(cfg),
+		TeamInvitation:                NewTeamInvitationClient(cfg),
+		TeamMember:                    NewTeamMemberClient(cfg),
 		UsageCleanupTask:              NewUsageCleanupTaskClient(cfg),
 		UsageLog:                      NewUsageLogClient(cfg),
 		User:                          NewUserClient(cfg),
@@ -328,6 +348,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		AnnouncementRead:              NewAnnouncementReadClient(cfg),
 		AuthIdentity:                  NewAuthIdentityClient(cfg),
 		AuthIdentityChannel:           NewAuthIdentityChannelClient(cfg),
+		BillingSubject:                NewBillingSubjectClient(cfg),
 		ChannelMonitor:                NewChannelMonitorClient(cfg),
 		ChannelMonitorDailyRollup:     NewChannelMonitorDailyRollupClient(cfg),
 		ChannelMonitorHistory:         NewChannelMonitorHistoryClient(cfg),
@@ -348,6 +369,9 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		Setting:                       NewSettingClient(cfg),
 		SubscriptionPlan:              NewSubscriptionPlanClient(cfg),
 		TLSFingerprintProfile:         NewTLSFingerprintProfileClient(cfg),
+		Team:                          NewTeamClient(cfg),
+		TeamInvitation:                NewTeamInvitationClient(cfg),
+		TeamMember:                    NewTeamMemberClient(cfg),
 		UsageCleanupTask:              NewUsageCleanupTaskClient(cfg),
 		UsageLog:                      NewUsageLogClient(cfg),
 		User:                          NewUserClient(cfg),
@@ -386,15 +410,16 @@ func (c *Client) Close() error {
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.APIKey, c.Account, c.AccountGroup, c.Announcement, c.AnnouncementRead,
-		c.AuthIdentity, c.AuthIdentityChannel, c.ChannelMonitor,
+		c.AuthIdentity, c.AuthIdentityChannel, c.BillingSubject, c.ChannelMonitor,
 		c.ChannelMonitorDailyRollup, c.ChannelMonitorHistory,
 		c.ChannelMonitorRequestTemplate, c.ErrorPassthroughRule, c.Group,
 		c.IdempotencyRecord, c.IdentityAdoptionDecision, c.PaymentAuditLog,
 		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
 		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
-		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
-		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
-		c.UserPlatformQuota, c.UserSubscription,
+		c.SubscriptionPlan, c.TLSFingerprintProfile, c.Team, c.TeamInvitation,
+		c.TeamMember, c.UsageCleanupTask, c.UsageLog, c.User, c.UserAllowedGroup,
+		c.UserAttributeDefinition, c.UserAttributeValue, c.UserPlatformQuota,
+		c.UserSubscription,
 	} {
 		n.Use(hooks...)
 	}
@@ -405,15 +430,16 @@ func (c *Client) Use(hooks ...Hook) {
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.APIKey, c.Account, c.AccountGroup, c.Announcement, c.AnnouncementRead,
-		c.AuthIdentity, c.AuthIdentityChannel, c.ChannelMonitor,
+		c.AuthIdentity, c.AuthIdentityChannel, c.BillingSubject, c.ChannelMonitor,
 		c.ChannelMonitorDailyRollup, c.ChannelMonitorHistory,
 		c.ChannelMonitorRequestTemplate, c.ErrorPassthroughRule, c.Group,
 		c.IdempotencyRecord, c.IdentityAdoptionDecision, c.PaymentAuditLog,
 		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
 		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
-		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
-		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
-		c.UserPlatformQuota, c.UserSubscription,
+		c.SubscriptionPlan, c.TLSFingerprintProfile, c.Team, c.TeamInvitation,
+		c.TeamMember, c.UsageCleanupTask, c.UsageLog, c.User, c.UserAllowedGroup,
+		c.UserAttributeDefinition, c.UserAttributeValue, c.UserPlatformQuota,
+		c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -436,6 +462,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.AuthIdentity.mutate(ctx, m)
 	case *AuthIdentityChannelMutation:
 		return c.AuthIdentityChannel.mutate(ctx, m)
+	case *BillingSubjectMutation:
+		return c.BillingSubject.mutate(ctx, m)
 	case *ChannelMonitorMutation:
 		return c.ChannelMonitor.mutate(ctx, m)
 	case *ChannelMonitorDailyRollupMutation:
@@ -476,6 +504,12 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.SubscriptionPlan.mutate(ctx, m)
 	case *TLSFingerprintProfileMutation:
 		return c.TLSFingerprintProfile.mutate(ctx, m)
+	case *TeamMutation:
+		return c.Team.mutate(ctx, m)
+	case *TeamInvitationMutation:
+		return c.TeamInvitation.mutate(ctx, m)
+	case *TeamMemberMutation:
+		return c.TeamMember.mutate(ctx, m)
 	case *UsageCleanupTaskMutation:
 		return c.UsageCleanupTask.mutate(ctx, m)
 	case *UsageLogMutation:
@@ -630,6 +664,70 @@ func (c *APIKeyClient) QueryGroup(_m *APIKey) *GroupQuery {
 			sqlgraph.From(apikey.Table, apikey.FieldID, id),
 			sqlgraph.To(group.Table, group.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, apikey.GroupTable, apikey.GroupColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryBillingSubject queries the billing_subject edge of a APIKey.
+func (c *APIKeyClient) QueryBillingSubject(_m *APIKey) *BillingSubjectQuery {
+	query := (&BillingSubjectClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(apikey.Table, apikey.FieldID, id),
+			sqlgraph.To(billingsubject.Table, billingsubject.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, apikey.BillingSubjectTable, apikey.BillingSubjectColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryTeam queries the team edge of a APIKey.
+func (c *APIKeyClient) QueryTeam(_m *APIKey) *TeamQuery {
+	query := (&TeamClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(apikey.Table, apikey.FieldID, id),
+			sqlgraph.To(team.Table, team.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, apikey.TeamTable, apikey.TeamColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryCreatedBy queries the created_by edge of a APIKey.
+func (c *APIKeyClient) QueryCreatedBy(_m *APIKey) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(apikey.Table, apikey.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, apikey.CreatedByTable, apikey.CreatedByColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryUpdatedBy queries the updated_by edge of a APIKey.
+func (c *APIKeyClient) QueryUpdatedBy(_m *APIKey) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(apikey.Table, apikey.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, apikey.UpdatedByTable, apikey.UpdatedByColumn),
 		)
 		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
 		return fromV, nil
@@ -1636,6 +1734,269 @@ func (c *AuthIdentityChannelClient) mutate(ctx context.Context, m *AuthIdentityC
 		return (&AuthIdentityChannelDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown AuthIdentityChannel mutation op: %q", m.Op())
+	}
+}
+
+// BillingSubjectClient is a client for the BillingSubject schema.
+type BillingSubjectClient struct {
+	config
+}
+
+// NewBillingSubjectClient returns a client for the BillingSubject from the given config.
+func NewBillingSubjectClient(c config) *BillingSubjectClient {
+	return &BillingSubjectClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `billingsubject.Hooks(f(g(h())))`.
+func (c *BillingSubjectClient) Use(hooks ...Hook) {
+	c.hooks.BillingSubject = append(c.hooks.BillingSubject, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `billingsubject.Intercept(f(g(h())))`.
+func (c *BillingSubjectClient) Intercept(interceptors ...Interceptor) {
+	c.inters.BillingSubject = append(c.inters.BillingSubject, interceptors...)
+}
+
+// Create returns a builder for creating a BillingSubject entity.
+func (c *BillingSubjectClient) Create() *BillingSubjectCreate {
+	mutation := newBillingSubjectMutation(c.config, OpCreate)
+	return &BillingSubjectCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of BillingSubject entities.
+func (c *BillingSubjectClient) CreateBulk(builders ...*BillingSubjectCreate) *BillingSubjectCreateBulk {
+	return &BillingSubjectCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *BillingSubjectClient) MapCreateBulk(slice any, setFunc func(*BillingSubjectCreate, int)) *BillingSubjectCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &BillingSubjectCreateBulk{err: fmt.Errorf("calling to BillingSubjectClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*BillingSubjectCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &BillingSubjectCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for BillingSubject.
+func (c *BillingSubjectClient) Update() *BillingSubjectUpdate {
+	mutation := newBillingSubjectMutation(c.config, OpUpdate)
+	return &BillingSubjectUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *BillingSubjectClient) UpdateOne(_m *BillingSubject) *BillingSubjectUpdateOne {
+	mutation := newBillingSubjectMutation(c.config, OpUpdateOne, withBillingSubject(_m))
+	return &BillingSubjectUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *BillingSubjectClient) UpdateOneID(id int64) *BillingSubjectUpdateOne {
+	mutation := newBillingSubjectMutation(c.config, OpUpdateOne, withBillingSubjectID(id))
+	return &BillingSubjectUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for BillingSubject.
+func (c *BillingSubjectClient) Delete() *BillingSubjectDelete {
+	mutation := newBillingSubjectMutation(c.config, OpDelete)
+	return &BillingSubjectDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *BillingSubjectClient) DeleteOne(_m *BillingSubject) *BillingSubjectDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *BillingSubjectClient) DeleteOneID(id int64) *BillingSubjectDeleteOne {
+	builder := c.Delete().Where(billingsubject.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &BillingSubjectDeleteOne{builder}
+}
+
+// Query returns a query builder for BillingSubject.
+func (c *BillingSubjectClient) Query() *BillingSubjectQuery {
+	return &BillingSubjectQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeBillingSubject},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a BillingSubject entity by its id.
+func (c *BillingSubjectClient) Get(ctx context.Context, id int64) (*BillingSubject, error) {
+	return c.Query().Where(billingsubject.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *BillingSubjectClient) GetX(ctx context.Context, id int64) *BillingSubject {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryUser queries the user edge of a BillingSubject.
+func (c *BillingSubjectClient) QueryUser(_m *BillingSubject) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(billingsubject.Table, billingsubject.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, billingsubject.UserTable, billingsubject.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryTeam queries the team edge of a BillingSubject.
+func (c *BillingSubjectClient) QueryTeam(_m *BillingSubject) *TeamQuery {
+	query := (&TeamClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(billingsubject.Table, billingsubject.FieldID, id),
+			sqlgraph.To(team.Table, team.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, billingsubject.TeamTable, billingsubject.TeamColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryTeams queries the teams edge of a BillingSubject.
+func (c *BillingSubjectClient) QueryTeams(_m *BillingSubject) *TeamQuery {
+	query := (&TeamClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(billingsubject.Table, billingsubject.FieldID, id),
+			sqlgraph.To(team.Table, team.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, billingsubject.TeamsTable, billingsubject.TeamsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryAPIKeys queries the api_keys edge of a BillingSubject.
+func (c *BillingSubjectClient) QueryAPIKeys(_m *BillingSubject) *APIKeyQuery {
+	query := (&APIKeyClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(billingsubject.Table, billingsubject.FieldID, id),
+			sqlgraph.To(apikey.Table, apikey.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, billingsubject.APIKeysTable, billingsubject.APIKeysColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryUsageLogs queries the usage_logs edge of a BillingSubject.
+func (c *BillingSubjectClient) QueryUsageLogs(_m *BillingSubject) *UsageLogQuery {
+	query := (&UsageLogClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(billingsubject.Table, billingsubject.FieldID, id),
+			sqlgraph.To(usagelog.Table, usagelog.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, billingsubject.UsageLogsTable, billingsubject.UsageLogsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryPaymentOrders queries the payment_orders edge of a BillingSubject.
+func (c *BillingSubjectClient) QueryPaymentOrders(_m *BillingSubject) *PaymentOrderQuery {
+	query := (&PaymentOrderClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(billingsubject.Table, billingsubject.FieldID, id),
+			sqlgraph.To(paymentorder.Table, paymentorder.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, billingsubject.PaymentOrdersTable, billingsubject.PaymentOrdersColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QuerySubscriptions queries the subscriptions edge of a BillingSubject.
+func (c *BillingSubjectClient) QuerySubscriptions(_m *BillingSubject) *UserSubscriptionQuery {
+	query := (&UserSubscriptionClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(billingsubject.Table, billingsubject.FieldID, id),
+			sqlgraph.To(usersubscription.Table, usersubscription.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, billingsubject.SubscriptionsTable, billingsubject.SubscriptionsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryPlatformQuotas queries the platform_quotas edge of a BillingSubject.
+func (c *BillingSubjectClient) QueryPlatformQuotas(_m *BillingSubject) *UserPlatformQuotaQuery {
+	query := (&UserPlatformQuotaClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(billingsubject.Table, billingsubject.FieldID, id),
+			sqlgraph.To(userplatformquota.Table, userplatformquota.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, billingsubject.PlatformQuotasTable, billingsubject.PlatformQuotasColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *BillingSubjectClient) Hooks() []Hook {
+	hooks := c.hooks.BillingSubject
+	return append(hooks[:len(hooks):len(hooks)], billingsubject.Hooks[:]...)
+}
+
+// Interceptors returns the client interceptors.
+func (c *BillingSubjectClient) Interceptors() []Interceptor {
+	inters := c.inters.BillingSubject
+	return append(inters[:len(inters):len(inters)], billingsubject.Interceptors[:]...)
+}
+
+func (c *BillingSubjectClient) mutate(ctx context.Context, m *BillingSubjectMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&BillingSubjectCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&BillingSubjectUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&BillingSubjectUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&BillingSubjectDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown BillingSubject mutation op: %q", m.Op())
 	}
 }
 
@@ -3218,6 +3579,54 @@ func (c *PaymentOrderClient) QueryUser(_m *PaymentOrder) *UserQuery {
 	return query
 }
 
+// QueryBillingSubject queries the billing_subject edge of a PaymentOrder.
+func (c *PaymentOrderClient) QueryBillingSubject(_m *PaymentOrder) *BillingSubjectQuery {
+	query := (&BillingSubjectClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(paymentorder.Table, paymentorder.FieldID, id),
+			sqlgraph.To(billingsubject.Table, billingsubject.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, paymentorder.BillingSubjectTable, paymentorder.BillingSubjectColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryTeam queries the team edge of a PaymentOrder.
+func (c *PaymentOrderClient) QueryTeam(_m *PaymentOrder) *TeamQuery {
+	query := (&TeamClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(paymentorder.Table, paymentorder.FieldID, id),
+			sqlgraph.To(team.Table, team.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, paymentorder.TeamTable, paymentorder.TeamColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryCreatedBy queries the created_by edge of a PaymentOrder.
+func (c *PaymentOrderClient) QueryCreatedBy(_m *PaymentOrder) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(paymentorder.Table, paymentorder.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, paymentorder.CreatedByTable, paymentorder.CreatedByColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *PaymentOrderClient) Hooks() []Hook {
 	return c.hooks.PaymentOrder
@@ -4719,6 +5128,651 @@ func (c *TLSFingerprintProfileClient) mutate(ctx context.Context, m *TLSFingerpr
 	}
 }
 
+// TeamClient is a client for the Team schema.
+type TeamClient struct {
+	config
+}
+
+// NewTeamClient returns a client for the Team from the given config.
+func NewTeamClient(c config) *TeamClient {
+	return &TeamClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `team.Hooks(f(g(h())))`.
+func (c *TeamClient) Use(hooks ...Hook) {
+	c.hooks.Team = append(c.hooks.Team, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `team.Intercept(f(g(h())))`.
+func (c *TeamClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Team = append(c.inters.Team, interceptors...)
+}
+
+// Create returns a builder for creating a Team entity.
+func (c *TeamClient) Create() *TeamCreate {
+	mutation := newTeamMutation(c.config, OpCreate)
+	return &TeamCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Team entities.
+func (c *TeamClient) CreateBulk(builders ...*TeamCreate) *TeamCreateBulk {
+	return &TeamCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *TeamClient) MapCreateBulk(slice any, setFunc func(*TeamCreate, int)) *TeamCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &TeamCreateBulk{err: fmt.Errorf("calling to TeamClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*TeamCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &TeamCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Team.
+func (c *TeamClient) Update() *TeamUpdate {
+	mutation := newTeamMutation(c.config, OpUpdate)
+	return &TeamUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *TeamClient) UpdateOne(_m *Team) *TeamUpdateOne {
+	mutation := newTeamMutation(c.config, OpUpdateOne, withTeam(_m))
+	return &TeamUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *TeamClient) UpdateOneID(id int64) *TeamUpdateOne {
+	mutation := newTeamMutation(c.config, OpUpdateOne, withTeamID(id))
+	return &TeamUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Team.
+func (c *TeamClient) Delete() *TeamDelete {
+	mutation := newTeamMutation(c.config, OpDelete)
+	return &TeamDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *TeamClient) DeleteOne(_m *Team) *TeamDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *TeamClient) DeleteOneID(id int64) *TeamDeleteOne {
+	builder := c.Delete().Where(team.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &TeamDeleteOne{builder}
+}
+
+// Query returns a query builder for Team.
+func (c *TeamClient) Query() *TeamQuery {
+	return &TeamQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeTeam},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Team entity by its id.
+func (c *TeamClient) Get(ctx context.Context, id int64) (*Team, error) {
+	return c.Query().Where(team.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *TeamClient) GetX(ctx context.Context, id int64) *Team {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryOwner queries the owner edge of a Team.
+func (c *TeamClient) QueryOwner(_m *Team) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(team.Table, team.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, team.OwnerTable, team.OwnerColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryCreatedBy queries the created_by edge of a Team.
+func (c *TeamClient) QueryCreatedBy(_m *Team) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(team.Table, team.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, team.CreatedByTable, team.CreatedByColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryBillingSubject queries the billing_subject edge of a Team.
+func (c *TeamClient) QueryBillingSubject(_m *Team) *BillingSubjectQuery {
+	query := (&BillingSubjectClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(team.Table, team.FieldID, id),
+			sqlgraph.To(billingsubject.Table, billingsubject.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, team.BillingSubjectTable, team.BillingSubjectColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryTeamSubject queries the team_subject edge of a Team.
+func (c *TeamClient) QueryTeamSubject(_m *Team) *BillingSubjectQuery {
+	query := (&BillingSubjectClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(team.Table, team.FieldID, id),
+			sqlgraph.To(billingsubject.Table, billingsubject.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, team.TeamSubjectTable, team.TeamSubjectColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryMembers queries the members edge of a Team.
+func (c *TeamClient) QueryMembers(_m *Team) *TeamMemberQuery {
+	query := (&TeamMemberClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(team.Table, team.FieldID, id),
+			sqlgraph.To(teammember.Table, teammember.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, team.MembersTable, team.MembersColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryInvitations queries the invitations edge of a Team.
+func (c *TeamClient) QueryInvitations(_m *Team) *TeamInvitationQuery {
+	query := (&TeamInvitationClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(team.Table, team.FieldID, id),
+			sqlgraph.To(teaminvitation.Table, teaminvitation.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, team.InvitationsTable, team.InvitationsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryAPIKeys queries the api_keys edge of a Team.
+func (c *TeamClient) QueryAPIKeys(_m *Team) *APIKeyQuery {
+	query := (&APIKeyClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(team.Table, team.FieldID, id),
+			sqlgraph.To(apikey.Table, apikey.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, team.APIKeysTable, team.APIKeysColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryUsageLogs queries the usage_logs edge of a Team.
+func (c *TeamClient) QueryUsageLogs(_m *Team) *UsageLogQuery {
+	query := (&UsageLogClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(team.Table, team.FieldID, id),
+			sqlgraph.To(usagelog.Table, usagelog.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, team.UsageLogsTable, team.UsageLogsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryPaymentOrders queries the payment_orders edge of a Team.
+func (c *TeamClient) QueryPaymentOrders(_m *Team) *PaymentOrderQuery {
+	query := (&PaymentOrderClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(team.Table, team.FieldID, id),
+			sqlgraph.To(paymentorder.Table, paymentorder.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, team.PaymentOrdersTable, team.PaymentOrdersColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *TeamClient) Hooks() []Hook {
+	hooks := c.hooks.Team
+	return append(hooks[:len(hooks):len(hooks)], team.Hooks[:]...)
+}
+
+// Interceptors returns the client interceptors.
+func (c *TeamClient) Interceptors() []Interceptor {
+	inters := c.inters.Team
+	return append(inters[:len(inters):len(inters)], team.Interceptors[:]...)
+}
+
+func (c *TeamClient) mutate(ctx context.Context, m *TeamMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&TeamCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&TeamUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&TeamUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&TeamDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Team mutation op: %q", m.Op())
+	}
+}
+
+// TeamInvitationClient is a client for the TeamInvitation schema.
+type TeamInvitationClient struct {
+	config
+}
+
+// NewTeamInvitationClient returns a client for the TeamInvitation from the given config.
+func NewTeamInvitationClient(c config) *TeamInvitationClient {
+	return &TeamInvitationClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `teaminvitation.Hooks(f(g(h())))`.
+func (c *TeamInvitationClient) Use(hooks ...Hook) {
+	c.hooks.TeamInvitation = append(c.hooks.TeamInvitation, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `teaminvitation.Intercept(f(g(h())))`.
+func (c *TeamInvitationClient) Intercept(interceptors ...Interceptor) {
+	c.inters.TeamInvitation = append(c.inters.TeamInvitation, interceptors...)
+}
+
+// Create returns a builder for creating a TeamInvitation entity.
+func (c *TeamInvitationClient) Create() *TeamInvitationCreate {
+	mutation := newTeamInvitationMutation(c.config, OpCreate)
+	return &TeamInvitationCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of TeamInvitation entities.
+func (c *TeamInvitationClient) CreateBulk(builders ...*TeamInvitationCreate) *TeamInvitationCreateBulk {
+	return &TeamInvitationCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *TeamInvitationClient) MapCreateBulk(slice any, setFunc func(*TeamInvitationCreate, int)) *TeamInvitationCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &TeamInvitationCreateBulk{err: fmt.Errorf("calling to TeamInvitationClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*TeamInvitationCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &TeamInvitationCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for TeamInvitation.
+func (c *TeamInvitationClient) Update() *TeamInvitationUpdate {
+	mutation := newTeamInvitationMutation(c.config, OpUpdate)
+	return &TeamInvitationUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *TeamInvitationClient) UpdateOne(_m *TeamInvitation) *TeamInvitationUpdateOne {
+	mutation := newTeamInvitationMutation(c.config, OpUpdateOne, withTeamInvitation(_m))
+	return &TeamInvitationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *TeamInvitationClient) UpdateOneID(id int64) *TeamInvitationUpdateOne {
+	mutation := newTeamInvitationMutation(c.config, OpUpdateOne, withTeamInvitationID(id))
+	return &TeamInvitationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for TeamInvitation.
+func (c *TeamInvitationClient) Delete() *TeamInvitationDelete {
+	mutation := newTeamInvitationMutation(c.config, OpDelete)
+	return &TeamInvitationDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *TeamInvitationClient) DeleteOne(_m *TeamInvitation) *TeamInvitationDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *TeamInvitationClient) DeleteOneID(id int64) *TeamInvitationDeleteOne {
+	builder := c.Delete().Where(teaminvitation.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &TeamInvitationDeleteOne{builder}
+}
+
+// Query returns a query builder for TeamInvitation.
+func (c *TeamInvitationClient) Query() *TeamInvitationQuery {
+	return &TeamInvitationQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeTeamInvitation},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a TeamInvitation entity by its id.
+func (c *TeamInvitationClient) Get(ctx context.Context, id int64) (*TeamInvitation, error) {
+	return c.Query().Where(teaminvitation.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *TeamInvitationClient) GetX(ctx context.Context, id int64) *TeamInvitation {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryTeam queries the team edge of a TeamInvitation.
+func (c *TeamInvitationClient) QueryTeam(_m *TeamInvitation) *TeamQuery {
+	query := (&TeamClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(teaminvitation.Table, teaminvitation.FieldID, id),
+			sqlgraph.To(team.Table, team.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, teaminvitation.TeamTable, teaminvitation.TeamColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryInvitedBy queries the invited_by edge of a TeamInvitation.
+func (c *TeamInvitationClient) QueryInvitedBy(_m *TeamInvitation) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(teaminvitation.Table, teaminvitation.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, teaminvitation.InvitedByTable, teaminvitation.InvitedByColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryAcceptedBy queries the accepted_by edge of a TeamInvitation.
+func (c *TeamInvitationClient) QueryAcceptedBy(_m *TeamInvitation) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(teaminvitation.Table, teaminvitation.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, teaminvitation.AcceptedByTable, teaminvitation.AcceptedByColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *TeamInvitationClient) Hooks() []Hook {
+	hooks := c.hooks.TeamInvitation
+	return append(hooks[:len(hooks):len(hooks)], teaminvitation.Hooks[:]...)
+}
+
+// Interceptors returns the client interceptors.
+func (c *TeamInvitationClient) Interceptors() []Interceptor {
+	inters := c.inters.TeamInvitation
+	return append(inters[:len(inters):len(inters)], teaminvitation.Interceptors[:]...)
+}
+
+func (c *TeamInvitationClient) mutate(ctx context.Context, m *TeamInvitationMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&TeamInvitationCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&TeamInvitationUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&TeamInvitationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&TeamInvitationDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown TeamInvitation mutation op: %q", m.Op())
+	}
+}
+
+// TeamMemberClient is a client for the TeamMember schema.
+type TeamMemberClient struct {
+	config
+}
+
+// NewTeamMemberClient returns a client for the TeamMember from the given config.
+func NewTeamMemberClient(c config) *TeamMemberClient {
+	return &TeamMemberClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `teammember.Hooks(f(g(h())))`.
+func (c *TeamMemberClient) Use(hooks ...Hook) {
+	c.hooks.TeamMember = append(c.hooks.TeamMember, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `teammember.Intercept(f(g(h())))`.
+func (c *TeamMemberClient) Intercept(interceptors ...Interceptor) {
+	c.inters.TeamMember = append(c.inters.TeamMember, interceptors...)
+}
+
+// Create returns a builder for creating a TeamMember entity.
+func (c *TeamMemberClient) Create() *TeamMemberCreate {
+	mutation := newTeamMemberMutation(c.config, OpCreate)
+	return &TeamMemberCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of TeamMember entities.
+func (c *TeamMemberClient) CreateBulk(builders ...*TeamMemberCreate) *TeamMemberCreateBulk {
+	return &TeamMemberCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *TeamMemberClient) MapCreateBulk(slice any, setFunc func(*TeamMemberCreate, int)) *TeamMemberCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &TeamMemberCreateBulk{err: fmt.Errorf("calling to TeamMemberClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*TeamMemberCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &TeamMemberCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for TeamMember.
+func (c *TeamMemberClient) Update() *TeamMemberUpdate {
+	mutation := newTeamMemberMutation(c.config, OpUpdate)
+	return &TeamMemberUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *TeamMemberClient) UpdateOne(_m *TeamMember) *TeamMemberUpdateOne {
+	mutation := newTeamMemberMutation(c.config, OpUpdateOne, withTeamMember(_m))
+	return &TeamMemberUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *TeamMemberClient) UpdateOneID(id int64) *TeamMemberUpdateOne {
+	mutation := newTeamMemberMutation(c.config, OpUpdateOne, withTeamMemberID(id))
+	return &TeamMemberUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for TeamMember.
+func (c *TeamMemberClient) Delete() *TeamMemberDelete {
+	mutation := newTeamMemberMutation(c.config, OpDelete)
+	return &TeamMemberDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *TeamMemberClient) DeleteOne(_m *TeamMember) *TeamMemberDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *TeamMemberClient) DeleteOneID(id int64) *TeamMemberDeleteOne {
+	builder := c.Delete().Where(teammember.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &TeamMemberDeleteOne{builder}
+}
+
+// Query returns a query builder for TeamMember.
+func (c *TeamMemberClient) Query() *TeamMemberQuery {
+	return &TeamMemberQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeTeamMember},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a TeamMember entity by its id.
+func (c *TeamMemberClient) Get(ctx context.Context, id int64) (*TeamMember, error) {
+	return c.Query().Where(teammember.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *TeamMemberClient) GetX(ctx context.Context, id int64) *TeamMember {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryTeam queries the team edge of a TeamMember.
+func (c *TeamMemberClient) QueryTeam(_m *TeamMember) *TeamQuery {
+	query := (&TeamClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(teammember.Table, teammember.FieldID, id),
+			sqlgraph.To(team.Table, team.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, teammember.TeamTable, teammember.TeamColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryUser queries the user edge of a TeamMember.
+func (c *TeamMemberClient) QueryUser(_m *TeamMember) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(teammember.Table, teammember.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, teammember.UserTable, teammember.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryInvitedBy queries the invited_by edge of a TeamMember.
+func (c *TeamMemberClient) QueryInvitedBy(_m *TeamMember) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(teammember.Table, teammember.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, teammember.InvitedByTable, teammember.InvitedByColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *TeamMemberClient) Hooks() []Hook {
+	hooks := c.hooks.TeamMember
+	return append(hooks[:len(hooks):len(hooks)], teammember.Hooks[:]...)
+}
+
+// Interceptors returns the client interceptors.
+func (c *TeamMemberClient) Interceptors() []Interceptor {
+	inters := c.inters.TeamMember
+	return append(inters[:len(inters):len(inters)], teammember.Interceptors[:]...)
+}
+
+func (c *TeamMemberClient) mutate(ctx context.Context, m *TeamMemberMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&TeamMemberCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&TeamMemberUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&TeamMemberUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&TeamMemberDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown TeamMember mutation op: %q", m.Op())
+	}
+}
+
 // UsageCleanupTaskClient is a client for the UsageCleanupTask schema.
 type UsageCleanupTaskClient struct {
 	config
@@ -5040,6 +6094,54 @@ func (c *UsageLogClient) QuerySubscription(_m *UsageLog) *UserSubscriptionQuery 
 	return query
 }
 
+// QueryBillingSubject queries the billing_subject edge of a UsageLog.
+func (c *UsageLogClient) QueryBillingSubject(_m *UsageLog) *BillingSubjectQuery {
+	query := (&BillingSubjectClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(usagelog.Table, usagelog.FieldID, id),
+			sqlgraph.To(billingsubject.Table, billingsubject.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, usagelog.BillingSubjectTable, usagelog.BillingSubjectColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryTeam queries the team edge of a UsageLog.
+func (c *UsageLogClient) QueryTeam(_m *UsageLog) *TeamQuery {
+	query := (&TeamClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(usagelog.Table, usagelog.FieldID, id),
+			sqlgraph.To(team.Table, team.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, usagelog.TeamTable, usagelog.TeamColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryActor queries the actor edge of a UsageLog.
+func (c *UsageLogClient) QueryActor(_m *UsageLog) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(usagelog.Table, usagelog.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, usagelog.ActorTable, usagelog.ActorColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *UsageLogClient) Hooks() []Hook {
 	return c.hooks.UsageLog
@@ -5333,6 +6435,22 @@ func (c *UserClient) QueryPaymentOrders(_m *User) *PaymentOrderQuery {
 	return query
 }
 
+// QueryCreatedPaymentOrders queries the created_payment_orders edge of a User.
+func (c *UserClient) QueryCreatedPaymentOrders(_m *User) *PaymentOrderQuery {
+	query := (&PaymentOrderClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(paymentorder.Table, paymentorder.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.CreatedPaymentOrdersTable, user.CreatedPaymentOrdersColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // QueryAuthIdentities queries the auth_identities edge of a User.
 func (c *UserClient) QueryAuthIdentities(_m *User) *AuthIdentityQuery {
 	query := (&AuthIdentityClient{config: c.config}).Query()
@@ -5374,6 +6492,166 @@ func (c *UserClient) QueryPlatformQuotas(_m *User) *UserPlatformQuotaQuery {
 			sqlgraph.From(user.Table, user.FieldID, id),
 			sqlgraph.To(userplatformquota.Table, userplatformquota.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, user.PlatformQuotasTable, user.PlatformQuotasColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryBillingSubjects queries the billing_subjects edge of a User.
+func (c *UserClient) QueryBillingSubjects(_m *User) *BillingSubjectQuery {
+	query := (&BillingSubjectClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(billingsubject.Table, billingsubject.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.BillingSubjectsTable, user.BillingSubjectsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryOwnedTeams queries the owned_teams edge of a User.
+func (c *UserClient) QueryOwnedTeams(_m *User) *TeamQuery {
+	query := (&TeamClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(team.Table, team.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.OwnedTeamsTable, user.OwnedTeamsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryCreatedTeams queries the created_teams edge of a User.
+func (c *UserClient) QueryCreatedTeams(_m *User) *TeamQuery {
+	query := (&TeamClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(team.Table, team.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.CreatedTeamsTable, user.CreatedTeamsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryTeamMemberships queries the team_memberships edge of a User.
+func (c *UserClient) QueryTeamMemberships(_m *User) *TeamMemberQuery {
+	query := (&TeamMemberClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(teammember.Table, teammember.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.TeamMembershipsTable, user.TeamMembershipsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryTeamMemberInvites queries the team_member_invites edge of a User.
+func (c *UserClient) QueryTeamMemberInvites(_m *User) *TeamMemberQuery {
+	query := (&TeamMemberClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(teammember.Table, teammember.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.TeamMemberInvitesTable, user.TeamMemberInvitesColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QuerySentTeamInvitations queries the sent_team_invitations edge of a User.
+func (c *UserClient) QuerySentTeamInvitations(_m *User) *TeamInvitationQuery {
+	query := (&TeamInvitationClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(teaminvitation.Table, teaminvitation.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.SentTeamInvitationsTable, user.SentTeamInvitationsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryAcceptedTeamInvitations queries the accepted_team_invitations edge of a User.
+func (c *UserClient) QueryAcceptedTeamInvitations(_m *User) *TeamInvitationQuery {
+	query := (&TeamInvitationClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(teaminvitation.Table, teaminvitation.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.AcceptedTeamInvitationsTable, user.AcceptedTeamInvitationsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryCreatedAPIKeys queries the created_api_keys edge of a User.
+func (c *UserClient) QueryCreatedAPIKeys(_m *User) *APIKeyQuery {
+	query := (&APIKeyClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(apikey.Table, apikey.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.CreatedAPIKeysTable, user.CreatedAPIKeysColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryUpdatedAPIKeys queries the updated_api_keys edge of a User.
+func (c *UserClient) QueryUpdatedAPIKeys(_m *User) *APIKeyQuery {
+	query := (&APIKeyClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(apikey.Table, apikey.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.UpdatedAPIKeysTable, user.UpdatedAPIKeysColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryActedUsageLogs queries the acted_usage_logs edge of a User.
+func (c *UserClient) QueryActedUsageLogs(_m *User) *UsageLogQuery {
+	query := (&UsageLogClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(usagelog.Table, usagelog.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.ActedUsageLogsTable, user.ActedUsageLogsColumn),
 		)
 		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
 		return fromV, nil
@@ -5980,6 +7258,22 @@ func (c *UserPlatformQuotaClient) QueryUser(_m *UserPlatformQuota) *UserQuery {
 	return query
 }
 
+// QueryBillingSubject queries the billing_subject edge of a UserPlatformQuota.
+func (c *UserPlatformQuotaClient) QueryBillingSubject(_m *UserPlatformQuota) *BillingSubjectQuery {
+	query := (&BillingSubjectClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(userplatformquota.Table, userplatformquota.FieldID, id),
+			sqlgraph.To(billingsubject.Table, billingsubject.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, userplatformquota.BillingSubjectTable, userplatformquota.BillingSubjectColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *UserPlatformQuotaClient) Hooks() []Hook {
 	hooks := c.hooks.UserPlatformQuota
@@ -6163,6 +7457,22 @@ func (c *UserSubscriptionClient) QueryAssignedByUser(_m *UserSubscription) *User
 	return query
 }
 
+// QueryBillingSubject queries the billing_subject edge of a UserSubscription.
+func (c *UserSubscriptionClient) QueryBillingSubject(_m *UserSubscription) *BillingSubjectQuery {
+	query := (&BillingSubjectClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(usersubscription.Table, usersubscription.FieldID, id),
+			sqlgraph.To(billingsubject.Table, billingsubject.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, usersubscription.BillingSubjectTable, usersubscription.BillingSubjectColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // QueryUsageLogs queries the usage_logs edge of a UserSubscription.
 func (c *UserSubscriptionClient) QueryUsageLogs(_m *UserSubscription) *UsageLogQuery {
 	query := (&UsageLogClient{config: c.config}).Query()
@@ -6210,25 +7520,25 @@ func (c *UserSubscriptionClient) mutate(ctx context.Context, m *UserSubscription
 type (
 	hooks struct {
 		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
-		AuthIdentityChannel, ChannelMonitor, ChannelMonitorDailyRollup,
+		AuthIdentityChannel, BillingSubject, ChannelMonitor, ChannelMonitorDailyRollup,
 		ChannelMonitorHistory, ChannelMonitorRequestTemplate, ErrorPassthroughRule,
 		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
 		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
 		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
-		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
-		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
-		UserSubscription []ent.Hook
+		TLSFingerprintProfile, Team, TeamInvitation, TeamMember, UsageCleanupTask,
+		UsageLog, User, UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
+		UserPlatformQuota, UserSubscription []ent.Hook
 	}
 	inters struct {
 		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
-		AuthIdentityChannel, ChannelMonitor, ChannelMonitorDailyRollup,
+		AuthIdentityChannel, BillingSubject, ChannelMonitor, ChannelMonitorDailyRollup,
 		ChannelMonitorHistory, ChannelMonitorRequestTemplate, ErrorPassthroughRule,
 		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
 		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
 		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
-		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
-		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
-		UserSubscription []ent.Interceptor
+		TLSFingerprintProfile, Team, TeamInvitation, TeamMember, UsageCleanupTask,
+		UsageLog, User, UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
+		UserPlatformQuota, UserSubscription []ent.Interceptor
 	}
 )
 

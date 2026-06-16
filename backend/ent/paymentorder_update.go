@@ -11,8 +11,10 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/Wei-Shaw/sub2api/ent/billingsubject"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
+	"github.com/Wei-Shaw/sub2api/ent/team"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 )
 
@@ -88,6 +90,66 @@ func (_u *PaymentOrderUpdate) SetNillableUserNotes(v *string) *PaymentOrderUpdat
 // ClearUserNotes clears the value of the "user_notes" field.
 func (_u *PaymentOrderUpdate) ClearUserNotes() *PaymentOrderUpdate {
 	_u.mutation.ClearUserNotes()
+	return _u
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (_u *PaymentOrderUpdate) SetBillingSubjectID(v int64) *PaymentOrderUpdate {
+	_u.mutation.SetBillingSubjectID(v)
+	return _u
+}
+
+// SetNillableBillingSubjectID sets the "billing_subject_id" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableBillingSubjectID(v *int64) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetBillingSubjectID(*v)
+	}
+	return _u
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (_u *PaymentOrderUpdate) ClearBillingSubjectID() *PaymentOrderUpdate {
+	_u.mutation.ClearBillingSubjectID()
+	return _u
+}
+
+// SetTeamID sets the "team_id" field.
+func (_u *PaymentOrderUpdate) SetTeamID(v int64) *PaymentOrderUpdate {
+	_u.mutation.SetTeamID(v)
+	return _u
+}
+
+// SetNillableTeamID sets the "team_id" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableTeamID(v *int64) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetTeamID(*v)
+	}
+	return _u
+}
+
+// ClearTeamID clears the value of the "team_id" field.
+func (_u *PaymentOrderUpdate) ClearTeamID() *PaymentOrderUpdate {
+	_u.mutation.ClearTeamID()
+	return _u
+}
+
+// SetCreatedByUserID sets the "created_by_user_id" field.
+func (_u *PaymentOrderUpdate) SetCreatedByUserID(v int64) *PaymentOrderUpdate {
+	_u.mutation.SetCreatedByUserID(v)
+	return _u
+}
+
+// SetNillableCreatedByUserID sets the "created_by_user_id" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableCreatedByUserID(v *int64) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetCreatedByUserID(*v)
+	}
+	return _u
+}
+
+// ClearCreatedByUserID clears the value of the "created_by_user_id" field.
+func (_u *PaymentOrderUpdate) ClearCreatedByUserID() *PaymentOrderUpdate {
+	_u.mutation.ClearCreatedByUserID()
 	return _u
 }
 
@@ -719,6 +781,35 @@ func (_u *PaymentOrderUpdate) SetUser(v *User) *PaymentOrderUpdate {
 	return _u.SetUserID(v.ID)
 }
 
+// SetBillingSubject sets the "billing_subject" edge to the BillingSubject entity.
+func (_u *PaymentOrderUpdate) SetBillingSubject(v *BillingSubject) *PaymentOrderUpdate {
+	return _u.SetBillingSubjectID(v.ID)
+}
+
+// SetTeam sets the "team" edge to the Team entity.
+func (_u *PaymentOrderUpdate) SetTeam(v *Team) *PaymentOrderUpdate {
+	return _u.SetTeamID(v.ID)
+}
+
+// SetCreatedByID sets the "created_by" edge to the User entity by ID.
+func (_u *PaymentOrderUpdate) SetCreatedByID(id int64) *PaymentOrderUpdate {
+	_u.mutation.SetCreatedByID(id)
+	return _u
+}
+
+// SetNillableCreatedByID sets the "created_by" edge to the User entity by ID if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableCreatedByID(id *int64) *PaymentOrderUpdate {
+	if id != nil {
+		_u = _u.SetCreatedByID(*id)
+	}
+	return _u
+}
+
+// SetCreatedBy sets the "created_by" edge to the User entity.
+func (_u *PaymentOrderUpdate) SetCreatedBy(v *User) *PaymentOrderUpdate {
+	return _u.SetCreatedByID(v.ID)
+}
+
 // Mutation returns the PaymentOrderMutation object of the builder.
 func (_u *PaymentOrderUpdate) Mutation() *PaymentOrderMutation {
 	return _u.mutation
@@ -727,6 +818,24 @@ func (_u *PaymentOrderUpdate) Mutation() *PaymentOrderMutation {
 // ClearUser clears the "user" edge to the User entity.
 func (_u *PaymentOrderUpdate) ClearUser() *PaymentOrderUpdate {
 	_u.mutation.ClearUser()
+	return _u
+}
+
+// ClearBillingSubject clears the "billing_subject" edge to the BillingSubject entity.
+func (_u *PaymentOrderUpdate) ClearBillingSubject() *PaymentOrderUpdate {
+	_u.mutation.ClearBillingSubject()
+	return _u
+}
+
+// ClearTeam clears the "team" edge to the Team entity.
+func (_u *PaymentOrderUpdate) ClearTeam() *PaymentOrderUpdate {
+	_u.mutation.ClearTeam()
+	return _u
+}
+
+// ClearCreatedBy clears the "created_by" edge to the User entity.
+func (_u *PaymentOrderUpdate) ClearCreatedBy() *PaymentOrderUpdate {
+	_u.mutation.ClearCreatedBy()
 	return _u
 }
 
@@ -1072,6 +1181,93 @@ func (_u *PaymentOrderUpdate) sqlSave(ctx context.Context) (_node int, err error
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.BillingSubjectCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   paymentorder.BillingSubjectTable,
+			Columns: []string{paymentorder.BillingSubjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.BillingSubjectIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   paymentorder.BillingSubjectTable,
+			Columns: []string{paymentorder.BillingSubjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.TeamCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   paymentorder.TeamTable,
+			Columns: []string{paymentorder.TeamColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.TeamIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   paymentorder.TeamTable,
+			Columns: []string{paymentorder.TeamColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.CreatedByCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   paymentorder.CreatedByTable,
+			Columns: []string{paymentorder.CreatedByColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.CreatedByIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   paymentorder.CreatedByTable,
+			Columns: []string{paymentorder.CreatedByColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{paymentorder.Label}
@@ -1151,6 +1347,66 @@ func (_u *PaymentOrderUpdateOne) SetNillableUserNotes(v *string) *PaymentOrderUp
 // ClearUserNotes clears the value of the "user_notes" field.
 func (_u *PaymentOrderUpdateOne) ClearUserNotes() *PaymentOrderUpdateOne {
 	_u.mutation.ClearUserNotes()
+	return _u
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (_u *PaymentOrderUpdateOne) SetBillingSubjectID(v int64) *PaymentOrderUpdateOne {
+	_u.mutation.SetBillingSubjectID(v)
+	return _u
+}
+
+// SetNillableBillingSubjectID sets the "billing_subject_id" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableBillingSubjectID(v *int64) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetBillingSubjectID(*v)
+	}
+	return _u
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (_u *PaymentOrderUpdateOne) ClearBillingSubjectID() *PaymentOrderUpdateOne {
+	_u.mutation.ClearBillingSubjectID()
+	return _u
+}
+
+// SetTeamID sets the "team_id" field.
+func (_u *PaymentOrderUpdateOne) SetTeamID(v int64) *PaymentOrderUpdateOne {
+	_u.mutation.SetTeamID(v)
+	return _u
+}
+
+// SetNillableTeamID sets the "team_id" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableTeamID(v *int64) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetTeamID(*v)
+	}
+	return _u
+}
+
+// ClearTeamID clears the value of the "team_id" field.
+func (_u *PaymentOrderUpdateOne) ClearTeamID() *PaymentOrderUpdateOne {
+	_u.mutation.ClearTeamID()
+	return _u
+}
+
+// SetCreatedByUserID sets the "created_by_user_id" field.
+func (_u *PaymentOrderUpdateOne) SetCreatedByUserID(v int64) *PaymentOrderUpdateOne {
+	_u.mutation.SetCreatedByUserID(v)
+	return _u
+}
+
+// SetNillableCreatedByUserID sets the "created_by_user_id" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableCreatedByUserID(v *int64) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetCreatedByUserID(*v)
+	}
+	return _u
+}
+
+// ClearCreatedByUserID clears the value of the "created_by_user_id" field.
+func (_u *PaymentOrderUpdateOne) ClearCreatedByUserID() *PaymentOrderUpdateOne {
+	_u.mutation.ClearCreatedByUserID()
 	return _u
 }
 
@@ -1782,6 +2038,35 @@ func (_u *PaymentOrderUpdateOne) SetUser(v *User) *PaymentOrderUpdateOne {
 	return _u.SetUserID(v.ID)
 }
 
+// SetBillingSubject sets the "billing_subject" edge to the BillingSubject entity.
+func (_u *PaymentOrderUpdateOne) SetBillingSubject(v *BillingSubject) *PaymentOrderUpdateOne {
+	return _u.SetBillingSubjectID(v.ID)
+}
+
+// SetTeam sets the "team" edge to the Team entity.
+func (_u *PaymentOrderUpdateOne) SetTeam(v *Team) *PaymentOrderUpdateOne {
+	return _u.SetTeamID(v.ID)
+}
+
+// SetCreatedByID sets the "created_by" edge to the User entity by ID.
+func (_u *PaymentOrderUpdateOne) SetCreatedByID(id int64) *PaymentOrderUpdateOne {
+	_u.mutation.SetCreatedByID(id)
+	return _u
+}
+
+// SetNillableCreatedByID sets the "created_by" edge to the User entity by ID if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableCreatedByID(id *int64) *PaymentOrderUpdateOne {
+	if id != nil {
+		_u = _u.SetCreatedByID(*id)
+	}
+	return _u
+}
+
+// SetCreatedBy sets the "created_by" edge to the User entity.
+func (_u *PaymentOrderUpdateOne) SetCreatedBy(v *User) *PaymentOrderUpdateOne {
+	return _u.SetCreatedByID(v.ID)
+}
+
 // Mutation returns the PaymentOrderMutation object of the builder.
 func (_u *PaymentOrderUpdateOne) Mutation() *PaymentOrderMutation {
 	return _u.mutation
@@ -1790,6 +2075,24 @@ func (_u *PaymentOrderUpdateOne) Mutation() *PaymentOrderMutation {
 // ClearUser clears the "user" edge to the User entity.
 func (_u *PaymentOrderUpdateOne) ClearUser() *PaymentOrderUpdateOne {
 	_u.mutation.ClearUser()
+	return _u
+}
+
+// ClearBillingSubject clears the "billing_subject" edge to the BillingSubject entity.
+func (_u *PaymentOrderUpdateOne) ClearBillingSubject() *PaymentOrderUpdateOne {
+	_u.mutation.ClearBillingSubject()
+	return _u
+}
+
+// ClearTeam clears the "team" edge to the Team entity.
+func (_u *PaymentOrderUpdateOne) ClearTeam() *PaymentOrderUpdateOne {
+	_u.mutation.ClearTeam()
+	return _u
+}
+
+// ClearCreatedBy clears the "created_by" edge to the User entity.
+func (_u *PaymentOrderUpdateOne) ClearCreatedBy() *PaymentOrderUpdateOne {
+	_u.mutation.ClearCreatedBy()
 	return _u
 }
 
@@ -2155,6 +2458,93 @@ func (_u *PaymentOrderUpdateOne) sqlSave(ctx context.Context) (_node *PaymentOrd
 			Inverse: true,
 			Table:   paymentorder.UserTable,
 			Columns: []string{paymentorder.UserColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.BillingSubjectCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   paymentorder.BillingSubjectTable,
+			Columns: []string{paymentorder.BillingSubjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.BillingSubjectIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   paymentorder.BillingSubjectTable,
+			Columns: []string{paymentorder.BillingSubjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.TeamCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   paymentorder.TeamTable,
+			Columns: []string{paymentorder.TeamColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.TeamIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   paymentorder.TeamTable,
+			Columns: []string{paymentorder.TeamColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.CreatedByCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   paymentorder.CreatedByTable,
+			Columns: []string{paymentorder.CreatedByColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.CreatedByIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   paymentorder.CreatedByTable,
+			Columns: []string{paymentorder.CreatedByColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),

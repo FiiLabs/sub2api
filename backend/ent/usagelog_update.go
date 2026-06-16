@@ -12,8 +12,10 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/Wei-Shaw/sub2api/ent/account"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
+	"github.com/Wei-Shaw/sub2api/ent/billingsubject"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
+	"github.com/Wei-Shaw/sub2api/ent/team"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
@@ -266,6 +268,66 @@ func (_u *UsageLogUpdate) SetNillableSubscriptionID(v *int64) *UsageLogUpdate {
 // ClearSubscriptionID clears the value of the "subscription_id" field.
 func (_u *UsageLogUpdate) ClearSubscriptionID() *UsageLogUpdate {
 	_u.mutation.ClearSubscriptionID()
+	return _u
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (_u *UsageLogUpdate) SetBillingSubjectID(v int64) *UsageLogUpdate {
+	_u.mutation.SetBillingSubjectID(v)
+	return _u
+}
+
+// SetNillableBillingSubjectID sets the "billing_subject_id" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableBillingSubjectID(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetBillingSubjectID(*v)
+	}
+	return _u
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (_u *UsageLogUpdate) ClearBillingSubjectID() *UsageLogUpdate {
+	_u.mutation.ClearBillingSubjectID()
+	return _u
+}
+
+// SetTeamID sets the "team_id" field.
+func (_u *UsageLogUpdate) SetTeamID(v int64) *UsageLogUpdate {
+	_u.mutation.SetTeamID(v)
+	return _u
+}
+
+// SetNillableTeamID sets the "team_id" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableTeamID(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetTeamID(*v)
+	}
+	return _u
+}
+
+// ClearTeamID clears the value of the "team_id" field.
+func (_u *UsageLogUpdate) ClearTeamID() *UsageLogUpdate {
+	_u.mutation.ClearTeamID()
+	return _u
+}
+
+// SetActorUserID sets the "actor_user_id" field.
+func (_u *UsageLogUpdate) SetActorUserID(v int64) *UsageLogUpdate {
+	_u.mutation.SetActorUserID(v)
+	return _u
+}
+
+// SetNillableActorUserID sets the "actor_user_id" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableActorUserID(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetActorUserID(*v)
+	}
+	return _u
+}
+
+// ClearActorUserID clears the value of the "actor_user_id" field.
+func (_u *UsageLogUpdate) ClearActorUserID() *UsageLogUpdate {
+	_u.mutation.ClearActorUserID()
 	return _u
 }
 
@@ -850,6 +912,35 @@ func (_u *UsageLogUpdate) SetSubscription(v *UserSubscription) *UsageLogUpdate {
 	return _u.SetSubscriptionID(v.ID)
 }
 
+// SetBillingSubject sets the "billing_subject" edge to the BillingSubject entity.
+func (_u *UsageLogUpdate) SetBillingSubject(v *BillingSubject) *UsageLogUpdate {
+	return _u.SetBillingSubjectID(v.ID)
+}
+
+// SetTeam sets the "team" edge to the Team entity.
+func (_u *UsageLogUpdate) SetTeam(v *Team) *UsageLogUpdate {
+	return _u.SetTeamID(v.ID)
+}
+
+// SetActorID sets the "actor" edge to the User entity by ID.
+func (_u *UsageLogUpdate) SetActorID(id int64) *UsageLogUpdate {
+	_u.mutation.SetActorID(id)
+	return _u
+}
+
+// SetNillableActorID sets the "actor" edge to the User entity by ID if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableActorID(id *int64) *UsageLogUpdate {
+	if id != nil {
+		_u = _u.SetActorID(*id)
+	}
+	return _u
+}
+
+// SetActor sets the "actor" edge to the User entity.
+func (_u *UsageLogUpdate) SetActor(v *User) *UsageLogUpdate {
+	return _u.SetActorID(v.ID)
+}
+
 // Mutation returns the UsageLogMutation object of the builder.
 func (_u *UsageLogUpdate) Mutation() *UsageLogMutation {
 	return _u.mutation
@@ -882,6 +973,24 @@ func (_u *UsageLogUpdate) ClearGroup() *UsageLogUpdate {
 // ClearSubscription clears the "subscription" edge to the UserSubscription entity.
 func (_u *UsageLogUpdate) ClearSubscription() *UsageLogUpdate {
 	_u.mutation.ClearSubscription()
+	return _u
+}
+
+// ClearBillingSubject clears the "billing_subject" edge to the BillingSubject entity.
+func (_u *UsageLogUpdate) ClearBillingSubject() *UsageLogUpdate {
+	_u.mutation.ClearBillingSubject()
+	return _u
+}
+
+// ClearTeam clears the "team" edge to the Team entity.
+func (_u *UsageLogUpdate) ClearTeam() *UsageLogUpdate {
+	_u.mutation.ClearTeam()
+	return _u
+}
+
+// ClearActor clears the "actor" edge to the User entity.
+func (_u *UsageLogUpdate) ClearActor() *UsageLogUpdate {
+	_u.mutation.ClearActor()
 	return _u
 }
 
@@ -1358,6 +1467,93 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.BillingSubjectCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   usagelog.BillingSubjectTable,
+			Columns: []string{usagelog.BillingSubjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.BillingSubjectIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   usagelog.BillingSubjectTable,
+			Columns: []string{usagelog.BillingSubjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.TeamCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   usagelog.TeamTable,
+			Columns: []string{usagelog.TeamColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.TeamIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   usagelog.TeamTable,
+			Columns: []string{usagelog.TeamColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ActorCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   usagelog.ActorTable,
+			Columns: []string{usagelog.ActorColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ActorIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   usagelog.ActorTable,
+			Columns: []string{usagelog.ActorColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{usagelog.Label}
@@ -1612,6 +1808,66 @@ func (_u *UsageLogUpdateOne) SetNillableSubscriptionID(v *int64) *UsageLogUpdate
 // ClearSubscriptionID clears the value of the "subscription_id" field.
 func (_u *UsageLogUpdateOne) ClearSubscriptionID() *UsageLogUpdateOne {
 	_u.mutation.ClearSubscriptionID()
+	return _u
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (_u *UsageLogUpdateOne) SetBillingSubjectID(v int64) *UsageLogUpdateOne {
+	_u.mutation.SetBillingSubjectID(v)
+	return _u
+}
+
+// SetNillableBillingSubjectID sets the "billing_subject_id" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableBillingSubjectID(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetBillingSubjectID(*v)
+	}
+	return _u
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (_u *UsageLogUpdateOne) ClearBillingSubjectID() *UsageLogUpdateOne {
+	_u.mutation.ClearBillingSubjectID()
+	return _u
+}
+
+// SetTeamID sets the "team_id" field.
+func (_u *UsageLogUpdateOne) SetTeamID(v int64) *UsageLogUpdateOne {
+	_u.mutation.SetTeamID(v)
+	return _u
+}
+
+// SetNillableTeamID sets the "team_id" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableTeamID(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetTeamID(*v)
+	}
+	return _u
+}
+
+// ClearTeamID clears the value of the "team_id" field.
+func (_u *UsageLogUpdateOne) ClearTeamID() *UsageLogUpdateOne {
+	_u.mutation.ClearTeamID()
+	return _u
+}
+
+// SetActorUserID sets the "actor_user_id" field.
+func (_u *UsageLogUpdateOne) SetActorUserID(v int64) *UsageLogUpdateOne {
+	_u.mutation.SetActorUserID(v)
+	return _u
+}
+
+// SetNillableActorUserID sets the "actor_user_id" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableActorUserID(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetActorUserID(*v)
+	}
+	return _u
+}
+
+// ClearActorUserID clears the value of the "actor_user_id" field.
+func (_u *UsageLogUpdateOne) ClearActorUserID() *UsageLogUpdateOne {
+	_u.mutation.ClearActorUserID()
 	return _u
 }
 
@@ -2196,6 +2452,35 @@ func (_u *UsageLogUpdateOne) SetSubscription(v *UserSubscription) *UsageLogUpdat
 	return _u.SetSubscriptionID(v.ID)
 }
 
+// SetBillingSubject sets the "billing_subject" edge to the BillingSubject entity.
+func (_u *UsageLogUpdateOne) SetBillingSubject(v *BillingSubject) *UsageLogUpdateOne {
+	return _u.SetBillingSubjectID(v.ID)
+}
+
+// SetTeam sets the "team" edge to the Team entity.
+func (_u *UsageLogUpdateOne) SetTeam(v *Team) *UsageLogUpdateOne {
+	return _u.SetTeamID(v.ID)
+}
+
+// SetActorID sets the "actor" edge to the User entity by ID.
+func (_u *UsageLogUpdateOne) SetActorID(id int64) *UsageLogUpdateOne {
+	_u.mutation.SetActorID(id)
+	return _u
+}
+
+// SetNillableActorID sets the "actor" edge to the User entity by ID if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableActorID(id *int64) *UsageLogUpdateOne {
+	if id != nil {
+		_u = _u.SetActorID(*id)
+	}
+	return _u
+}
+
+// SetActor sets the "actor" edge to the User entity.
+func (_u *UsageLogUpdateOne) SetActor(v *User) *UsageLogUpdateOne {
+	return _u.SetActorID(v.ID)
+}
+
 // Mutation returns the UsageLogMutation object of the builder.
 func (_u *UsageLogUpdateOne) Mutation() *UsageLogMutation {
 	return _u.mutation
@@ -2228,6 +2513,24 @@ func (_u *UsageLogUpdateOne) ClearGroup() *UsageLogUpdateOne {
 // ClearSubscription clears the "subscription" edge to the UserSubscription entity.
 func (_u *UsageLogUpdateOne) ClearSubscription() *UsageLogUpdateOne {
 	_u.mutation.ClearSubscription()
+	return _u
+}
+
+// ClearBillingSubject clears the "billing_subject" edge to the BillingSubject entity.
+func (_u *UsageLogUpdateOne) ClearBillingSubject() *UsageLogUpdateOne {
+	_u.mutation.ClearBillingSubject()
+	return _u
+}
+
+// ClearTeam clears the "team" edge to the Team entity.
+func (_u *UsageLogUpdateOne) ClearTeam() *UsageLogUpdateOne {
+	_u.mutation.ClearTeam()
+	return _u
+}
+
+// ClearActor clears the "actor" edge to the User entity.
+func (_u *UsageLogUpdateOne) ClearActor() *UsageLogUpdateOne {
+	_u.mutation.ClearActor()
 	return _u
 }
 
@@ -2727,6 +3030,93 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(usersubscription.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.BillingSubjectCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   usagelog.BillingSubjectTable,
+			Columns: []string{usagelog.BillingSubjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.BillingSubjectIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   usagelog.BillingSubjectTable,
+			Columns: []string{usagelog.BillingSubjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(billingsubject.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.TeamCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   usagelog.TeamTable,
+			Columns: []string{usagelog.TeamColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.TeamIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   usagelog.TeamTable,
+			Columns: []string{usagelog.TeamColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(team.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ActorCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   usagelog.ActorTable,
+			Columns: []string{usagelog.ActorColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ActorIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   usagelog.ActorTable,
+			Columns: []string{usagelog.ActorColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

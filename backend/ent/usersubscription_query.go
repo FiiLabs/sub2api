@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/Wei-Shaw/sub2api/ent/billingsubject"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
@@ -30,6 +31,7 @@ type UserSubscriptionQuery struct {
 	withUser           *UserQuery
 	withGroup          *GroupQuery
 	withAssignedByUser *UserQuery
+	withBillingSubject *BillingSubjectQuery
 	withUsageLogs      *UsageLogQuery
 	modifiers          []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
@@ -127,6 +129,28 @@ func (_q *UserSubscriptionQuery) QueryAssignedByUser() *UserQuery {
 			sqlgraph.From(usersubscription.Table, usersubscription.FieldID, selector),
 			sqlgraph.To(user.Table, user.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, usersubscription.AssignedByUserTable, usersubscription.AssignedByUserColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryBillingSubject chains the current query on the "billing_subject" edge.
+func (_q *UserSubscriptionQuery) QueryBillingSubject() *BillingSubjectQuery {
+	query := (&BillingSubjectClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(usersubscription.Table, usersubscription.FieldID, selector),
+			sqlgraph.To(billingsubject.Table, billingsubject.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, usersubscription.BillingSubjectTable, usersubscription.BillingSubjectColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -351,6 +375,7 @@ func (_q *UserSubscriptionQuery) Clone() *UserSubscriptionQuery {
 		withUser:           _q.withUser.Clone(),
 		withGroup:          _q.withGroup.Clone(),
 		withAssignedByUser: _q.withAssignedByUser.Clone(),
+		withBillingSubject: _q.withBillingSubject.Clone(),
 		withUsageLogs:      _q.withUsageLogs.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
@@ -388,6 +413,17 @@ func (_q *UserSubscriptionQuery) WithAssignedByUser(opts ...func(*UserQuery)) *U
 		opt(query)
 	}
 	_q.withAssignedByUser = query
+	return _q
+}
+
+// WithBillingSubject tells the query-builder to eager-load the nodes that are connected to
+// the "billing_subject" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserSubscriptionQuery) WithBillingSubject(opts ...func(*BillingSubjectQuery)) *UserSubscriptionQuery {
+	query := (&BillingSubjectClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withBillingSubject = query
 	return _q
 }
 
@@ -480,10 +516,11 @@ func (_q *UserSubscriptionQuery) sqlAll(ctx context.Context, hooks ...queryHook)
 	var (
 		nodes       = []*UserSubscription{}
 		_spec       = _q.querySpec()
-		loadedTypes = [4]bool{
+		loadedTypes = [5]bool{
 			_q.withUser != nil,
 			_q.withGroup != nil,
 			_q.withAssignedByUser != nil,
+			_q.withBillingSubject != nil,
 			_q.withUsageLogs != nil,
 		}
 	)
@@ -523,6 +560,12 @@ func (_q *UserSubscriptionQuery) sqlAll(ctx context.Context, hooks ...queryHook)
 	if query := _q.withAssignedByUser; query != nil {
 		if err := _q.loadAssignedByUser(ctx, query, nodes, nil,
 			func(n *UserSubscription, e *User) { n.Edges.AssignedByUser = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withBillingSubject; query != nil {
+		if err := _q.loadBillingSubject(ctx, query, nodes, nil,
+			func(n *UserSubscription, e *BillingSubject) { n.Edges.BillingSubject = e }); err != nil {
 			return nil, err
 		}
 	}
@@ -626,6 +669,38 @@ func (_q *UserSubscriptionQuery) loadAssignedByUser(ctx context.Context, query *
 	}
 	return nil
 }
+func (_q *UserSubscriptionQuery) loadBillingSubject(ctx context.Context, query *BillingSubjectQuery, nodes []*UserSubscription, init func(*UserSubscription), assign func(*UserSubscription, *BillingSubject)) error {
+	ids := make([]int64, 0, len(nodes))
+	nodeids := make(map[int64][]*UserSubscription)
+	for i := range nodes {
+		if nodes[i].BillingSubjectID == nil {
+			continue
+		}
+		fk := *nodes[i].BillingSubjectID
+		if _, ok := nodeids[fk]; !ok {
+			ids = append(ids, fk)
+		}
+		nodeids[fk] = append(nodeids[fk], nodes[i])
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	query.Where(billingsubject.IDIn(ids...))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		nodes, ok := nodeids[n.ID]
+		if !ok {
+			return fmt.Errorf(`unexpected foreign-key "billing_subject_id" returned %v`, n.ID)
+		}
+		for i := range nodes {
+			assign(nodes[i], n)
+		}
+	}
+	return nil
+}
 func (_q *UserSubscriptionQuery) loadUsageLogs(ctx context.Context, query *UsageLogQuery, nodes []*UserSubscription, init func(*UserSubscription), assign func(*UserSubscription, *UsageLog)) error {
 	fks := make([]driver.Value, 0, len(nodes))
 	nodeids := make(map[int64]*UserSubscription)
@@ -696,6 +771,9 @@ func (_q *UserSubscriptionQuery) querySpec() *sqlgraph.QuerySpec {
 		}
 		if _q.withAssignedByUser != nil {
 			_spec.Node.AddColumnOnce(usersubscription.FieldAssignedBy)
+		}
+		if _q.withBillingSubject != nil {
+			_spec.Node.AddColumnOnce(usersubscription.FieldBillingSubjectID)
 		}
 	}
 	if ps := _q.predicates; len(ps) > 0 {
