@@ -171,7 +171,7 @@
         </section>
 
         <!-- Pricing Comparison -->
-        <section class="py-14">
+        <section id="pricing" class="py-14">
           <div v-reveal class="reveal-item mx-auto mb-10 max-w-3xl text-center">
             <span
               class="font-mono text-xs font-medium uppercase tracking-[0.12em] text-primary-600 dark:text-primary-400">
@@ -185,60 +185,68 @@
             </p>
           </div>
 
-          <div v-reveal class="reveal-item mx-auto max-w-4xl">
-            <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white/80 shadow-card backdrop-blur-sm dark:border-dark-700 dark:bg-dark-800/80">
-              <table class="w-full min-w-[520px] text-left">
-                <thead>
-                  <tr class="border-b border-gray-200 dark:border-dark-700">
-                    <th class="px-5 py-4 text-sm font-semibold text-gray-500 dark:text-dark-400">
-                      {{ t('home.landing.pricing.col.provider') }}
-                    </th>
-                    <th class="px-5 py-4 text-sm font-semibold text-gray-500 dark:text-dark-400">
-                      {{ t('home.landing.pricing.col.input') }}
-                    </th>
-                    <th class="px-5 py-4 text-sm font-semibold text-gray-500 dark:text-dark-400">
-                      {{ t('home.landing.pricing.col.output') }}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <template v-for="group in pricingData" :key="group.model">
-                    <!-- Model header -->
-                    <tr class="border-b border-gray-100 bg-gray-50/60 dark:border-dark-700/50 dark:bg-dark-900/40">
-                      <td colspan="3" class="px-5 py-3 text-sm font-bold text-gray-900 dark:text-white">
-                        {{ group.model }}
-                      </td>
-                    </tr>
-                    <!-- Provider rows -->
-                    <tr v-for="row in group.rows" :key="row.provider"
-                      class="border-b border-gray-100 last:border-0 dark:border-dark-700/50"
-                      :class="row.highlight ? 'bg-primary-50/50 dark:bg-primary-900/10' : ''">
-                      <td class="px-5 py-3.5">
-                        <div class="flex items-center gap-2">
-                          <span class="text-sm font-medium"
-                            :class="row.highlight ? 'text-primary-600 dark:text-primary-400' : 'text-gray-700 dark:text-dark-200'">
-                            {{ row.provider }}
-                          </span>
-                          <span v-if="row.highlight"
-                            class="inline-flex items-center rounded-md bg-primary-500/10 px-2 py-0.5 text-[11px] font-bold text-primary-600 dark:text-primary-400">
-                            {{ t('home.landing.pricing.badge') }}
-                          </span>
-                        </div>
-                      </td>
-                      <td class="px-5 py-3.5 font-mono text-sm"
-                        :class="row.highlight ? 'font-bold text-primary-600 dark:text-primary-400' : 'text-gray-600 dark:text-dark-300'">
-                        {{ row.input }}
-                      </td>
-                      <td class="px-5 py-3.5 font-mono text-sm"
-                        :class="row.highlight ? 'font-bold text-primary-600 dark:text-primary-400' : 'text-gray-600 dark:text-dark-300'">
-                        {{ row.output }}
-                      </td>
-                    </tr>
-                  </template>
-                </tbody>
-              </table>
+          <div v-reveal class="reveal-item mx-auto max-w-5xl">
+            <div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              <div v-for="(model, index) in pricingCards" :key="model.name"
+                class="relative overflow-hidden rounded-2xl border border-gray-200 bg-white/80 p-6 shadow-card backdrop-blur-sm transition hover:-translate-y-1 hover:shadow-lg dark:border-dark-700 dark:bg-dark-800/80"
+                :style="{ transitionDelay: `${index * 60}ms` }">
+                <!-- Logo decoration -->
+                <div class="pointer-events-none absolute -right-3 -top-3 opacity-[0.07]">
+                  <svg v-if="model.brand === 'gpt'" viewBox="0 0 24 24" class="size-24" fill="currentColor">
+                    <path d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.985 5.985 0 0 0-3.998 2.9 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073zM13.26 22.43a4.476 4.476 0 0 1-2.876-1.04l.141-.081 4.779-2.758a.795.795 0 0 0 .392-.681v-6.737l2.02 1.168a.071.071 0 0 1 .038.052v5.583a4.504 4.504 0 0 1-4.494 4.494zM3.6 18.304a4.47 4.47 0 0 1-.535-3.014l.142.085 4.783 2.759a.771.771 0 0 0 .78 0l5.843-3.369v2.332a.08.08 0 0 1-.033.062L9.74 19.95a4.5 4.5 0 0 1-6.14-1.646zM2.34 7.896a4.485 4.485 0 0 1 2.366-1.973V11.6a.766.766 0 0 0 .388.676l5.815 3.355-2.02 1.168a.076.076 0 0 1-.071 0l-4.83-2.786A4.504 4.504 0 0 1 2.34 7.872zm16.597 3.855l-5.833-3.387L15.119 7.2a.076.076 0 0 1 .071 0l4.83 2.791a4.494 4.494 0 0 1-.676 8.105v-5.678a.79.79 0 0 0-.407-.667zm2.01-3.023l-.141-.085-4.774-2.782a.776.776 0 0 0-.785 0L9.409 9.23V6.897a.066.066 0 0 1 .028-.061l4.83-2.787a4.5 4.5 0 0 1 6.68 4.66zm-12.64 4.135l-2.02-1.164a.08.08 0 0 1-.038-.057V6.075a4.5 4.5 0 0 1 7.375-3.453l-.142.08L8.704 5.46a.795.795 0 0 0-.393.681zm1.097-2.365l2.602-1.5 2.607 1.5v2.999l-2.597 1.5-2.607-1.5z" />
+                  </svg>
+                  <svg v-else viewBox="0 0 100 100" class="size-24" fill="#d97757">
+                    <path d="m19.6 66.5 19.7-11 .3-1-.3-.5h-1l-3.3-.2-11.2-.3L14 53l-9.5-.5-2.4-.5L0 49l.2-1.5 2-1.3 2.9.2 6.3.5 9.5.6 6.9.4L38 49.1h1.6l.2-.7-.5-.4-.4-.4L29 41l-10.6-7-5.6-4.1-3-2-1.5-2-.6-4.2 2.7-3 3.7.3.9.2 3.7 2.9 8 6.1L37 36l1.5 1.2.6-.4.1-.3-.7-1.1L33 25l-6-10.4-2.7-4.3-.7-2.6c-.3-1-.4-2-.4-3l3-4.2L28 0l4.2.6L33.8 2l2.6 6 4.1 9.3L47 29.9l2 3.8 1 3.4.3 1h.7v-.5l.5-7.2 1-8.7 1-11.2.3-3.2 1.6-3.8 3-2L61 2.6l2 2.9-.3 1.8-1.1 7.7L59 27.1l-1.5 8.2h.9l1-1.1 4.1-5.4 6.9-8.6 3-3.5L77 13l2.3-1.8h4.3l3.1 4.7-1.4 4.9-4.4 5.6-3.7 4.7-5.3 7.1-3.2 5.7.3.4h.7l12-2.6 6.4-1.1 7.6-1.3 3.5 1.6.4 1.6-1.4 3.4-8.2 2-9.6 2-14.3 3.3-.2.1.2.3 6.4.6 2.8.2h6.8l12.6 1 3.3 2 1.9 2.7-.3 2-5.1 2.6-6.8-1.6-16-3.8-5.4-1.3h-.8v.4l4.6 4.5 8.3 7.5L89 80.1l.5 2.4-1.3 2-1.4-.2-9.2-7-3.6-3-8-6.8h-.5v.7l1.8 2.7 9.8 14.7.5 4.5-.7 1.4-2.6 1-2.7-.6-5.8-8-6-9-4.7-8.2-.5.4-2.9 30.2-1.3 1.5-3 1.2-2.5-2-1.4-3 1.4-6.2 1.6-8 1.3-6.4 1.2-7.9.7-2.6v-.2H49L43 72l-9 12.3-7.2 7.6-1.7.7-3-1.5.3-2.8L24 86l10-12.8 6-7.9 4-4.6-.1-.5h-.3L17.2 77.4l-4.7.6-2-2 .2-3 1-1 8-5.5Z" />
+                  </svg>
+                </div>
+
+                <!-- Model info -->
+                <div class="relative">
+                  <div class="mb-1 flex items-center gap-2">
+                    <span class="text-sm font-semibold text-gray-500 dark:text-dark-400">{{ model.provider }}</span>
+                  </div>
+                  <h3 class="text-xl font-bold text-gray-900 dark:text-white">{{ model.name }}</h3>
+
+                  <!-- Input price -->
+                  <div class="mt-4 space-y-1.5">
+                    <div class="flex items-center justify-between text-xs">
+                      <span class="text-gray-500 dark:text-dark-400">{{ t('home.landing.pricing.col.input') }}</span>
+                      <span class="font-mono text-gray-400 line-through dark:text-dark-500">${{ model.officialInput }}/M</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs text-gray-500 dark:text-dark-400">{{ t('home.landing.pricing.col.input') }}</span>
+                      <span class="font-mono text-lg font-bold text-primary-600 dark:text-primary-400">${{ model.gatewayInput }}/M</span>
+                    </div>
+
+                  </div>
+
+                  <!-- Divider -->
+                  <div class="my-4 border-t border-gray-100 dark:border-dark-700"></div>
+
+                  <!-- Output price -->
+                  <div class="space-y-1.5">
+                    <div class="flex items-center justify-between text-xs">
+                      <span class="text-gray-500 dark:text-dark-400">{{ t('home.landing.pricing.col.output') }}</span>
+                      <span class="font-mono text-gray-400 line-through dark:text-dark-500">${{ model.officialOutput }}/M</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs text-gray-500 dark:text-dark-400">{{ t('home.landing.pricing.col.output') }}</span>
+                      <span class="font-mono text-lg font-bold text-primary-600 dark:text-primary-400">${{ model.gatewayOutput }}/M</span>
+                    </div>
+                  </div>
+
+                  <!-- badge -->
+                  <div class="mt-4 flex justify-end">
+                    <span
+                      class="inline-flex items-center rounded-lg bg-emerald-500/10 px-2.5 py-1 font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                      {{ t('home.tags.realtimeBilling') }}
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="mt-4 flex justify-center">
+
+            <div class="mt-6 flex justify-center">
               <span
                 class="inline-flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 font-mono text-sm font-medium text-emerald-600 dark:text-emerald-400">
                 <Icon name="dollar" size="sm" :stroke-width="2" />
@@ -528,24 +536,25 @@ const costRows = computed(() => [
   }
 ])
 
-const pricingData = computed(() => [
-  {
-    model: t('home.landing.pricing.models.sonnet'),
-    rows: [
-      { provider: t('home.landing.pricing.providers.official'), input: '$3.00', output: '$15.00', highlight: false },
-      { provider: t('home.landing.pricing.providers.openrouter'), input: '$3.00', output: '$15.00', highlight: false },
-      { provider: t('home.landing.pricing.providers.publicai'), input: '$0.90', output: '$4.50', highlight: true }
-    ]
-  },
-  {
-    model: t('home.landing.pricing.models.codex'),
-    rows: [
-      { provider: t('home.landing.pricing.providers.official'), input: '$1.75', output: '$14.00', highlight: false },
-      { provider: t('home.landing.pricing.providers.openrouter'), input: '$1.75', output: '$14.00', highlight: false },
-      { provider: t('home.landing.pricing.providers.publicai'), input: '$0.53', output: '$4.20', highlight: true }
-    ]
-  }
-])
+// Official model pricing (per 1M tokens)
+const officialPricing = [
+  { name: 'GPT-5.4', provider: 'OpenAI', brand: 'gpt', officialInput: 2.50, officialOutput: 15.00 },
+  { name: 'GPT-5.5', provider: 'OpenAI', brand: 'gpt', officialInput: 5.00, officialOutput: 30.00 },
+  { name: 'Claude 4.6', provider: 'Anthropic', brand: 'claude', officialInput: 5.00, officialOutput: 25.00 },
+  { name: 'Claude 4.7', provider: 'Anthropic', brand: 'claude', officialInput: 5.00, officialOutput: 25.00 },
+  { name: 'Claude 4.8', provider: 'Anthropic', brand: 'claude', officialInput: 5.00, officialOutput: 25.00 },
+]
+
+// Gateway price = 30% of official price
+const GATEWAY_DISCOUNT = 0.3
+
+const pricingCards = computed(() =>
+  officialPricing.map((m) => ({
+    ...m,
+    gatewayInput: (m.officialInput * GATEWAY_DISCOUNT).toFixed(2),
+    gatewayOutput: (m.officialOutput * GATEWAY_DISCOUNT).toFixed(2),
+  }))
+)
 
 const modelCards = [
   {

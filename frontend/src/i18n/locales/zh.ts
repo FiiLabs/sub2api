@@ -10,6 +10,12 @@ export default {
     login: '登录',
     getStarted: '立即开始',
     goToDashboard: '进入控制台',
+    nav: {
+      price: '价格',
+      personal: '个人',
+      team: '团队',
+      document: '文档'
+    },
     // 新增：面向用户的价值主张
     heroSubtitle: '一个密钥，畅用多个 AI 模型',
     heroDescription: '无需管理多个订阅账号，一站式接入 Claude、GPT、Gemini 等主流 AI 服务',
@@ -137,7 +143,7 @@ export default {
           description:
             '无需修改代码即可降低 AI 支出。我们持续优化模型访问与价格策略，帮助开发者和企业在规模化调用中降低推理成本。',
           tags: {
-            save: '最高节省 30%',
+            save: '最高节省 70%',
             transparent: '透明定价',
             noHiddenFees: '无隐藏费用'
           }
@@ -150,7 +156,7 @@ export default {
       },
       costs: {
         direct: '直连',
-        spendHint: '推理支出最高降低 30%'
+        spendHint: '推理支出最高降低 70%'
       },
       pricing: {
         eyebrow: '// 价格对比',

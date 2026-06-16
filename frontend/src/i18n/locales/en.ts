@@ -10,6 +10,12 @@ export default {
     login: 'Login',
     getStarted: 'Get Started',
     goToDashboard: 'Go to Dashboard',
+    nav: {
+      price: 'Price',
+      personal: 'Personal',
+      team: 'Team',
+      document: 'Document'
+    },
     // User-focused value proposition
     heroSubtitle: 'One Key, All AI Models',
     heroDescription: 'No need to manage multiple subscriptions. Access Claude, GPT, Gemini and more with a single API key',
@@ -114,7 +120,7 @@ export default {
       },
       badges: {
         uptime: '99.99% Uptime',
-        lowerCost: 'Up to 30% Lower Cost',
+        lowerCost: 'Up to 70% Lower Cost',
         compatible: 'OpenAI-Compatible'
       },
       statement: {
@@ -150,7 +156,7 @@ export default {
       },
       costs: {
         direct: 'direct',
-        spendHint: 'up to 30% lower inference spend'
+        spendHint: 'up to 70% lower inference spend'
       },
       pricing: {
         eyebrow: '// Pricing',

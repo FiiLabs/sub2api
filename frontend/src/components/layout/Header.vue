@@ -38,6 +38,29 @@
         </router-link>
       </div>
 
+      <!-- Desktop Navigation -->
+      <div class="hidden items-center gap-8 md:flex">
+        <template v-for="item in navItems" :key="item.key">
+          <a
+            v-if="item.type === 'anchor'"
+            :href="`#${item.target}`"
+            class="text-base font-medium text-gray-600 transition-colors hover:text-gray-900 dark:text-dark-300 dark:hover:text-white"
+            @click.prevent="scrollToSection(item.target)"
+          >
+            {{ t(item.label) }}
+          </a>
+          <a
+            v-else-if="item.type === 'external' && item.href"
+            :href="item.href"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-base font-medium text-gray-600 transition-colors hover:text-gray-900 dark:text-dark-300 dark:hover:text-white"
+          >
+            {{ t(item.label) }}
+          </a>
+        </template>
+      </div>
+
       <div class="flex items-center gap-3">
         <LocaleSwitcher />
 
@@ -61,10 +84,38 @@
           <Icon v-else name="moon" size="md" />
         </button>
 
+        <!-- Mobile Hamburger Menu -->
+        <button
+          class="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white md:hidden"
+          :title="t('home.nav.menu')"
+          @click="toggleMobileMenu"
+        >
+          <svg
+            class="h-6 w-6"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path
+              v-if="!mobileMenuOpen"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M4 6h16M4 12h16M4 18h16"
+            />
+            <path
+              v-else
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M6 18L18 6M6 6l12 12"
+            />
+          </svg>
+        </button>
+
         <router-link
           v-if="isAuthenticated"
           :to="dashboardPath"
-          class="inline-flex items-center gap-1.5 rounded-xl border-2 border-gray-200 py-2 pl-2.5 pr-3 transition-colors hover:border-gray-400 dark:border-dark-700 dark:hover:border-dark-400 md:pl-2 md:pr-3.5"
+          class="hidden md:inline-flex items-center gap-1.5 rounded-xl border-2 border-gray-200 py-2 pl-2.5 pr-3 transition-colors hover:border-gray-400 dark:border-dark-700 dark:hover:border-dark-400 md:pl-2 md:pr-3.5"
         >
           <span
             class="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-primary-400 to-primary-600 text-[10px] font-semibold text-white"
@@ -77,13 +128,137 @@
         <router-link
           v-else
           to="/login"
-          class="inline-flex items-center rounded-xl border-2 border-gray-200 px-3 py-2 text-sm font-medium transition-colors hover:border-gray-400 dark:border-dark-700 dark:hover:border-dark-400 md:px-4 md:text-base"
+          class="hidden md:inline-flex items-center rounded-xl border-2 border-gray-200 px-3 py-2 text-sm font-medium transition-colors hover:border-gray-400 dark:border-dark-700 dark:hover:border-dark-400 md:px-4 md:text-base"
         >
           {{ t('home.login') }}
         </router-link>
       </div>
     </nav>
   </header>
+
+  <!-- Mobile Sidebar Overlay -->
+  <transition name="fade">
+    <div
+      v-if="mobileMenuOpen"
+      class="fixed inset-0 z-40 bg-black/50 md:hidden"
+      @click="closeMobileMenu"
+    ></div>
+  </transition>
+
+  <!-- Mobile Sidebar -->
+  <transition name="slide">
+    <aside
+      v-if="mobileMenuOpen"
+      class="fixed inset-y-0 right-0 z-50 w-64 bg-white shadow-xl dark:bg-dark-900 md:hidden"
+    >
+      <div class="flex h-full flex-col">
+        <!-- Sidebar Header -->
+        <div class="flex items-center justify-between border-b border-gray-200 px-4 py-4 dark:border-dark-700">
+          <span class="text-lg font-semibold text-gray-900 dark:text-white">Menu</span>
+          <button
+            class="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+            @click="closeMobileMenu"
+          >
+            <svg
+              class="h-6 w-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Navigation Links -->
+        <nav class="flex-1 overflow-y-auto px-4 py-6">
+          <div class="space-y-2">
+            <template v-for="item in navItems" :key="item.key">
+              <a
+                v-if="item.type === 'anchor'"
+                :href="`#${item.target}`"
+                class="flex items-center rounded-lg px-4 py-3 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:text-dark-200 dark:hover:bg-dark-800"
+                @click.prevent="scrollToSection(item.target)"
+              >
+                <svg
+                  class="mr-3 h-5 w-5 text-gray-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" :d="item.icon" />
+                </svg>
+                {{ t(item.label) }}
+              </a>
+              <a
+                v-else-if="item.type === 'external' && item.href"
+                :href="item.href"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="flex items-center rounded-lg px-4 py-3 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:text-dark-200 dark:hover:bg-dark-800"
+                @click="closeMobileMenu"
+              >
+                <svg
+                  class="mr-3 h-5 w-5 text-gray-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" :d="item.icon" />
+                </svg>
+                {{ t(item.label) }}
+              </a>
+            </template>
+          </div>
+
+          <!-- Divider -->
+          <div class="my-6 border-t border-gray-200 dark:border-dark-700"></div>
+
+          <!-- Additional Actions -->
+          <div class="space-y-2">
+            <button
+              class="flex w-full items-center rounded-lg px-4 py-3 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:text-dark-200 dark:hover:bg-dark-800"
+              @click="toggleTheme"
+            >
+              <svg class="mr-3 h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path v-if="isDark" stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
+                <path v-else stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
+              </svg>
+              {{ isDark ? t('home.switchToLight') : t('home.switchToDark') }}
+            </button>
+          </div>
+        </nav>
+
+        <!-- Sidebar Footer -->
+        <div class="border-t border-gray-200 px-4 py-4 dark:border-dark-700">
+          <router-link
+            v-if="isAuthenticated"
+            :to="dashboardPath"
+            class="flex w-full items-center justify-center gap-2 rounded-xl bg-primary-500 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-primary-600"
+            @click="closeMobileMenu"
+          >
+            <span
+              class="flex h-5 w-5 items-center justify-center rounded-full bg-white/20 text-[10px] font-semibold"
+            >
+              {{ userInitial }}
+            </span>
+            {{ t('home.dashboard') }}
+          </router-link>
+          <router-link
+            v-else
+            to="/login"
+            class="flex w-full items-center justify-center rounded-xl bg-primary-500 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-primary-600"
+            @click="closeMobileMenu"
+          >
+            {{ t('home.login') }}
+          </router-link>
+        </div>
+      </div>
+    </aside>
+  </transition>
 </template>
 
 <script setup lang="ts">
@@ -107,7 +282,40 @@ const userInitial = computed(() => {
   return user.email.charAt(0).toUpperCase()
 })
 
+// Navigation items - single source of truth
+const navItems = computed(() => [
+  {
+    key: 'price',
+    label: 'home.nav.price',
+    type: 'anchor',
+    target: 'pricing',
+    icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z'
+  },
+  {
+    key: 'personal',
+    label: 'home.nav.personal',
+    type: 'anchor',
+    target: 'features',
+    icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z'
+  },
+  {
+    key: 'team',
+    label: 'home.nav.team',
+    type: 'anchor',
+    target: 'models',
+    icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z'
+  },
+  {
+    key: 'document',
+    label: 'home.nav.document',
+    type: 'external',
+    href: docUrl.value || undefined,
+    icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z'
+  }
+] as const)
+
 const isDark = ref(document.documentElement.classList.contains('dark'))
+const mobileMenuOpen = ref(false)
 
 function toggleTheme() {
   isDark.value = !isDark.value
@@ -126,8 +334,48 @@ function initTheme() {
   }
 }
 
+function toggleMobileMenu() {
+  mobileMenuOpen.value = !mobileMenuOpen.value
+  document.body.style.overflow = mobileMenuOpen.value ? 'hidden' : ''
+}
+
+function closeMobileMenu() {
+  mobileMenuOpen.value = false
+  document.body.style.overflow = ''
+}
+
+function scrollToSection(sectionId: string) {
+  closeMobileMenu()
+  const element = document.getElementById(sectionId)
+  if (element) {
+    element.scrollIntoView({ behavior: 'smooth' })
+  }
+}
+
 onMounted(() => {
   initTheme()
   authStore.checkAuth()
 })
 </script>
+
+<style scoped>
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.slide-enter-active,
+.slide-leave-active {
+  transition: transform 0.3s ease;
+}
+
+.slide-enter-from,
+.slide-leave-to {
+  transform: translateX(100%);
+}
+</style>
