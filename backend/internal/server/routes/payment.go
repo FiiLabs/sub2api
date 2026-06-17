@@ -1,8 +1,10 @@
 package routes
 
 import (
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -19,10 +21,13 @@ func RegisterPaymentRoutes(
 	jwtAuth middleware.JWTAuthMiddleware,
 	adminAuth middleware.AdminAuthMiddleware,
 	settingService *service.SettingService,
+	teamService *service.TeamService,
 ) {
 	// --- User-facing payment endpoints (authenticated) ---
 	authenticated := v1.Group("/payment")
 	authenticated.Use(gin.HandlerFunc(jwtAuth))
+	authenticated.Use(middleware.SubjectContextMiddleware(teamService))
+	authenticated.Use(requirePersonalPaymentSubject())
 	authenticated.Use(middleware.BackendModeUserGuard(settingService))
 	{
 		authenticated.GET("/config", paymentHandler.GetPaymentConfig)
@@ -103,5 +108,22 @@ func RegisterPaymentRoutes(
 			providers.PUT("/:id", adminPaymentHandler.UpdateProvider)
 			providers.DELETE("/:id", adminPaymentHandler.DeleteProvider)
 		}
+	}
+}
+
+func requirePersonalPaymentSubject() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		subject, ok := middleware.GetAuthSubjectFromContext(c)
+		if !ok {
+			response.Unauthorized(c, "User not authenticated")
+			c.Abort()
+			return
+		}
+		if subject.SubjectType == domain.BillingSubjectTypeTeam {
+			response.Forbidden(c, "Team payments are not available yet")
+			c.Abort()
+			return
+		}
+		c.Next()
 	}
 }

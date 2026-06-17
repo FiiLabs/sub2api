@@ -14,9 +14,11 @@ func RegisterUserRoutes(
 	h *handler.Handlers,
 	jwtAuth middleware.JWTAuthMiddleware,
 	settingService *service.SettingService,
+	teamService *service.TeamService,
 ) {
 	authenticated := v1.Group("")
 	authenticated.Use(gin.HandlerFunc(jwtAuth))
+	authenticated.Use(middleware.SubjectContextMiddleware(teamService))
 	authenticated.Use(middleware.BackendModeUserGuard(settingService))
 	{
 		// 用户接口
@@ -76,6 +78,16 @@ func RegisterUserRoutes(
 		channels := authenticated.Group("/channels")
 		{
 			channels.GET("/available", h.AvailableChannel.List)
+		}
+
+		authenticated.GET("/workspaces", h.Team.ListWorkspaces)
+		teams := authenticated.Group("/teams")
+		{
+			teams.POST("", h.Team.CreateTeam)
+			teams.GET("/:id/members", h.Team.ListMembers)
+			teams.POST("/:id/invitations", h.Team.InviteMember)
+			teams.PATCH("/:id/members/:user_id", h.Team.UpdateMember)
+			teams.DELETE("/:id/members/:user_id", h.Team.RemoveMember)
 		}
 
 		// 使用记录
