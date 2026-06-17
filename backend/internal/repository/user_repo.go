@@ -20,6 +20,7 @@ import (
 	dbuser "github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
@@ -106,6 +107,9 @@ func (r *userRepository) Create(ctx context.Context, userIn *service.User) error
 	if err := ensureEmailAuthIdentityWithClient(txCtx, txClient, created.ID, created.Email, "user_repo_create"); err != nil {
 		return err
 	}
+	if err := ensurePersonalBillingSubjectWithClient(txCtx, txClient, created); err != nil {
+		return err
+	}
 
 	if tx != nil {
 		if err := tx.Commit(); err != nil {
@@ -115,6 +119,26 @@ func (r *userRepository) Create(ctx context.Context, userIn *service.User) error
 
 	applyUserEntityToService(userIn, created)
 	return nil
+}
+
+func ensurePersonalBillingSubjectWithClient(ctx context.Context, client *dbent.Client, user *dbent.User) error {
+	if client == nil || user == nil || user.ID <= 0 {
+		return nil
+	}
+	_, err := client.BillingSubject.Create().
+		SetType(domain.BillingSubjectTypeUser).
+		SetUserID(user.ID).
+		SetStatus(user.Status).
+		SetBalance(user.Balance).
+		SetTotalRecharged(user.TotalRecharged).
+		SetConcurrency(user.Concurrency).
+		SetRpmLimit(user.RpmLimit).
+		SetBalanceNotifyEnabled(user.BalanceNotifyEnabled).
+		SetBalanceNotifyThresholdType(user.BalanceNotifyThresholdType).
+		SetNillableBalanceNotifyThreshold(user.BalanceNotifyThreshold).
+		SetBalanceNotifyExtraEmails(user.BalanceNotifyExtraEmails).
+		Save(ctx)
+	return err
 }
 
 func (r *userRepository) GetByID(ctx context.Context, id int64) (*service.User, error) {
