@@ -87,6 +87,20 @@ type BillingCache interface {
 	BatchGetUserPlatformQuotaCache(ctx context.Context, keys []UserPlatformQuotaKey) ([]*UserPlatformQuotaCacheEntry, error)
 }
 
+// BillingSubjectCache 是 BillingCache 的可选扩展，提供以 billing subject
+// （团队/用户工作区计费主体）为键的余额与配额缓存。具体的 Redis 实现满足该接口；
+// BillingCacheService 的包装方法通过类型断言探测该接口，未实现时回退到以用户为键的缓存。
+type BillingSubjectCache interface {
+	GetSubjectBalance(ctx context.Context, subjectID int64) (float64, error)
+	SetSubjectBalance(ctx context.Context, subjectID int64, balance float64) error
+	DeductSubjectBalance(ctx context.Context, subjectID int64, amount float64) error
+	InvalidateSubjectBalance(ctx context.Context, subjectID int64) error
+
+	GetSubjectPlatformQuotaCache(ctx context.Context, subjectID int64, platform string) (*UserPlatformQuotaCacheEntry, bool, error)
+	SetSubjectPlatformQuotaCache(ctx context.Context, subjectID int64, platform string, entry *UserPlatformQuotaCacheEntry, ttl time.Duration) error
+	IncrSubjectPlatformQuotaUsageCache(ctx context.Context, subjectID int64, platform string, cost float64, ttl time.Duration, markDirty bool) error
+}
+
 // ModelPricing 模型价格配置（per-token价格，与LiteLLM格式一致）
 type ModelPricing struct {
 	InputPricePerToken             float64 // 每token输入价格 (USD)

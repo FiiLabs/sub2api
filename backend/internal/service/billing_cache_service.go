@@ -299,6 +299,100 @@ func (s *BillingCacheService) logCacheWriteDrop(task cacheWriteTask, reason stri
 }
 
 // ============================================
+// Billing subject 余额/配额缓存方法
+// ============================================
+//
+// 这些方法以 billing subject（团队/用户工作区计费主体）为键。当底层缓存实现满足
+// BillingSubjectCache（真实 Redis 实现）时委派到 subject 专用键；否则回退到以
+// subjectID 当作 userID 的用户余额缓存，保持向后兼容。
+
+// GetSubjectBalance 获取计费主体余额。
+func (s *BillingCacheService) GetSubjectBalance(ctx context.Context, subjectID int64) (float64, error) {
+	if subjectID <= 0 {
+		return 0, ErrUserNotFound
+	}
+	if subjectCache, ok := s.cache.(BillingSubjectCache); ok {
+		return subjectCache.GetSubjectBalance(ctx, subjectID)
+	}
+	return s.GetUserBalance(ctx, subjectID)
+}
+
+// SetSubjectBalance 设置计费主体余额缓存。
+func (s *BillingCacheService) SetSubjectBalance(ctx context.Context, subjectID int64, balance float64) error {
+	if subjectID <= 0 {
+		return ErrUserNotFound
+	}
+	if subjectCache, ok := s.cache.(BillingSubjectCache); ok {
+		return subjectCache.SetSubjectBalance(ctx, subjectID, balance)
+	}
+	if s.cache == nil {
+		return nil
+	}
+	return s.cache.SetUserBalance(ctx, subjectID, balance)
+}
+
+// DeductSubjectBalance 扣减计费主体余额缓存。
+func (s *BillingCacheService) DeductSubjectBalance(ctx context.Context, subjectID int64, amount float64) error {
+	if subjectID <= 0 {
+		return ErrUserNotFound
+	}
+	if subjectCache, ok := s.cache.(BillingSubjectCache); ok {
+		return subjectCache.DeductSubjectBalance(ctx, subjectID, amount)
+	}
+	if s.cache == nil {
+		return nil
+	}
+	return s.cache.DeductUserBalance(ctx, subjectID, amount)
+}
+
+// InvalidateSubjectBalance 失效计费主体余额缓存。
+func (s *BillingCacheService) InvalidateSubjectBalance(ctx context.Context, subjectID int64) error {
+	if subjectID <= 0 {
+		return ErrUserNotFound
+	}
+	if subjectCache, ok := s.cache.(BillingSubjectCache); ok {
+		return subjectCache.InvalidateSubjectBalance(ctx, subjectID)
+	}
+	if s.cache == nil {
+		return nil
+	}
+	return s.cache.InvalidateUserBalance(ctx, subjectID)
+}
+
+// GetSubjectPlatformQuotaCache 读取计费主体 × platform 配额缓存。
+func (s *BillingCacheService) GetSubjectPlatformQuotaCache(ctx context.Context, subjectID int64, platform string) (*UserPlatformQuotaCacheEntry, bool, error) {
+	if subjectCache, ok := s.cache.(BillingSubjectCache); ok {
+		return subjectCache.GetSubjectPlatformQuotaCache(ctx, subjectID, platform)
+	}
+	if s.cache == nil {
+		return nil, false, nil
+	}
+	return s.cache.GetUserPlatformQuotaCache(ctx, subjectID, platform)
+}
+
+// SetSubjectPlatformQuotaCache 写入计费主体 × platform 配额缓存。
+func (s *BillingCacheService) SetSubjectPlatformQuotaCache(ctx context.Context, subjectID int64, platform string, entry *UserPlatformQuotaCacheEntry, ttl time.Duration) error {
+	if subjectCache, ok := s.cache.(BillingSubjectCache); ok {
+		return subjectCache.SetSubjectPlatformQuotaCache(ctx, subjectID, platform, entry, ttl)
+	}
+	if s.cache == nil {
+		return nil
+	}
+	return s.cache.SetUserPlatformQuotaCache(ctx, subjectID, platform, entry, ttl)
+}
+
+// IncrSubjectPlatformQuotaUsageCache 累加计费主体 × platform 配额用量缓存。
+func (s *BillingCacheService) IncrSubjectPlatformQuotaUsageCache(ctx context.Context, subjectID int64, platform string, cost float64, ttl time.Duration, markDirty bool) error {
+	if subjectCache, ok := s.cache.(BillingSubjectCache); ok {
+		return subjectCache.IncrSubjectPlatformQuotaUsageCache(ctx, subjectID, platform, cost, ttl, markDirty)
+	}
+	if s.cache == nil {
+		return nil
+	}
+	return s.cache.IncrUserPlatformQuotaUsageCache(ctx, subjectID, platform, cost, ttl, markDirty)
+}
+
+// ============================================
 // 余额缓存方法
 // ============================================
 

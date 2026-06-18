@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	billingBalanceKeyPrefix   = "billing:balance:"
-	billingSubKeyPrefix       = "billing:sub:"
+	billingBalanceKeyPrefix        = "billing:balance:"
+	billingSubjectBalanceKeyPrefix = "billing:subject_balance:"
+	billingSubKeyPrefix            = "billing:sub:"
 	billingRateLimitKeyPrefix = "apikey:rate:"
 	billingCacheTTL           = 5 * time.Minute
 	billingCacheJitter        = 30 * time.Second
@@ -170,6 +171,116 @@ func (c *billingCache) DeductUserBalance(ctx context.Context, userID int64, amou
 func (c *billingCache) InvalidateUserBalance(ctx context.Context, userID int64) error {
 	key := billingBalanceKey(userID)
 	return c.rdb.Del(ctx, key).Err()
+}
+
+// ============================================
+// billing subject 余额/配额缓存（团队/用户工作区计费主体）
+// ============================================
+
+// billingSubjectBalanceKey 构造以 billing subject 为键的余额 Redis key。
+func billingSubjectBalanceKey(subjectID int64) string {
+	return fmt.Sprintf("%s%d", billingSubjectBalanceKeyPrefix, subjectID)
+}
+
+// subjectPlatformQuotaCacheKey 构造以 billing subject 为键的 platform quota Redis key。
+func subjectPlatformQuotaCacheKey(subjectID int64, platform string) string {
+	return fmt.Sprintf("billing:subject_platform_quota:%d:%s", subjectID, platform)
+}
+
+func (c *billingCache) GetSubjectBalance(ctx context.Context, subjectID int64) (float64, error) {
+	val, err := c.rdb.Get(ctx, billingSubjectBalanceKey(subjectID)).Result()
+	if err != nil {
+		return 0, err
+	}
+	return strconv.ParseFloat(val, 64)
+}
+
+func (c *billingCache) SetSubjectBalance(ctx context.Context, subjectID int64, balance float64) error {
+	return c.rdb.Set(ctx, billingSubjectBalanceKey(subjectID), balance, jitteredTTL()).Err()
+}
+
+func (c *billingCache) DeductSubjectBalance(ctx context.Context, subjectID int64, amount float64) error {
+	key := billingSubjectBalanceKey(subjectID)
+	_, err := deductBalanceScript.Run(ctx, c.rdb, []string{key}, amount, int(jitteredTTL().Seconds())).Result()
+	if err != nil && !errors.Is(err, redis.Nil) {
+		log.Printf("Warning: deduct balance cache failed for subject %d: %v", subjectID, err)
+		return err
+	}
+	return nil
+}
+
+func (c *billingCache) InvalidateSubjectBalance(ctx context.Context, subjectID int64) error {
+	return c.rdb.Del(ctx, billingSubjectBalanceKey(subjectID)).Err()
+}
+
+func (c *billingCache) GetSubjectPlatformQuotaCache(ctx context.Context, subjectID int64, platform string) (*service.UserPlatformQuotaCacheEntry, bool, error) {
+	key := subjectPlatformQuotaCacheKey(subjectID, platform)
+	m, err := c.rdb.HGetAll(ctx, key).Result()
+	if err != nil {
+		return nil, false, err
+	}
+	entry := parseUserPlatformQuotaHash(m)
+	if entry == nil {
+		return nil, false, nil
+	}
+	return entry, true, nil
+}
+
+func (c *billingCache) SetSubjectPlatformQuotaCache(ctx context.Context, subjectID int64, platform string, entry *service.UserPlatformQuotaCacheEntry, ttl time.Duration) error {
+	if entry == nil {
+		return nil
+	}
+	key := subjectPlatformQuotaCacheKey(subjectID, platform)
+	pipe := c.rdb.TxPipeline()
+
+	fmtFloatPtr := func(p *float64) string {
+		if p == nil {
+			return ""
+		}
+		return strconv.FormatFloat(*p, 'f', -1, 64)
+	}
+	fmtTimePtr := func(p *time.Time) string {
+		if p == nil {
+			return ""
+		}
+		return strconv.FormatInt(p.Unix(), 10)
+	}
+
+	pipe.HSet(ctx, key,
+		"daily_usage", entry.DailyUsageUSD,
+		"weekly_usage", entry.WeeklyUsageUSD,
+		"monthly_usage", entry.MonthlyUsageUSD,
+		"version", entry.Version,
+		"schema_version", entry.SchemaVersion,
+		"daily_limit", fmtFloatPtr(entry.DailyLimitUSD),
+		"weekly_limit", fmtFloatPtr(entry.WeeklyLimitUSD),
+		"monthly_limit", fmtFloatPtr(entry.MonthlyLimitUSD),
+		"daily_window_start", fmtTimePtr(entry.DailyWindowStart),
+		"weekly_window_start", fmtTimePtr(entry.WeeklyWindowStart),
+		"monthly_window_start", fmtTimePtr(entry.MonthlyWindowStart),
+	)
+	pipe.Expire(ctx, key, ttl)
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+func (c *billingCache) IncrSubjectPlatformQuotaUsageCache(ctx context.Context, subjectID int64, platform string, cost float64, ttl time.Duration, markDirty bool) error {
+	member := ""
+	if markDirty {
+		member = userPlatformQuotaDirtyMember(subjectID, platform)
+	}
+	_, err := c.rdb.Eval(ctx, updateUserPlatformQuotaUsageScript,
+		[]string{subjectPlatformQuotaCacheKey(subjectID, platform), userPlatformQuotaDirtySetKey()},
+		strconv.FormatFloat(cost, 'f', -1, 64),
+		int(ttl.Seconds()),
+		service.UserPlatformQuotaCacheSchemaV1,
+		member,
+		userPlatformQuotaDirtyTTLSeconds,
+	).Result()
+	if err != nil && !errors.Is(err, redis.Nil) {
+		return err
+	}
+	return nil
 }
 
 func (c *billingCache) GetSubscriptionCache(ctx context.Context, userID, groupID int64) (*service.SubscriptionCacheData, error) {

@@ -8485,6 +8485,15 @@ func resolveUsageBillingPayloadFingerprint(ctx context.Context, requestPayloadHa
 	return ""
 }
 
+// nonZeroBillingSubjectID 返回有效的计费主体 ID：当 subjectID > 0 时直接使用，
+// 否则回退到用户 ID（个人工作区计费主体即用户自身）。
+func nonZeroBillingSubjectID(subjectID, fallbackUserID int64) int64 {
+	if subjectID > 0 {
+		return subjectID
+	}
+	return fallbackUserID
+}
+
 func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsageBillingParams) *UsageBillingCommand {
 	if p == nil || p.Cost == nil || p.APIKey == nil || p.User == nil || p.Account == nil {
 		return nil
@@ -8494,9 +8503,13 @@ func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsage
 		RequestID:          requestID,
 		APIKeyID:           p.APIKey.ID,
 		UserID:             p.User.ID,
+		BillingSubjectID:   nonZeroBillingSubjectID(p.APIKey.BillingSubjectID, p.User.ID),
 		AccountID:          p.Account.ID,
 		AccountType:        p.Account.Type,
 		RequestPayloadHash: strings.TrimSpace(p.RequestPayloadHash),
+	}
+	if usageLog != nil && usageLog.BillingSubjectID > 0 {
+		cmd.BillingSubjectID = usageLog.BillingSubjectID
 	}
 	if usageLog != nil {
 		cmd.Model = usageLog.Model
@@ -9183,6 +9196,9 @@ func (s *GatewayService) buildRecordUsageLog(
 		IPAddress:             optionalTrimmedStringPtr(input.IPAddress),
 		GroupID:               apiKey.GroupID,
 		SubscriptionID:        optionalSubscriptionID(subscription),
+		BillingSubjectID:      nonZeroBillingSubjectID(apiKey.BillingSubjectID, user.ID),
+		TeamID:                apiKey.TeamID,
+		ActorUserID:           optionalInt64Ptr(user.ID),
 		CreatedAt:             time.Now(),
 	}
 	if result.ImageCount > 0 && (cost == nil || cost.BillingMode != string(BillingModeToken)) {
