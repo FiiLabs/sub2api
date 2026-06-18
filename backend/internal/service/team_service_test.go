@@ -80,7 +80,109 @@ func (r *teamRepoMemory) ListWorkspaces(ctx context.Context, userID int64) ([]Wo
 	return out, nil
 }
 
+func (r *teamRepoMemory) ListMembers(ctx context.Context, teamID int64) ([]TeamMember, []TeamInvitation, error) {
+	return r.members[teamID], nil, nil
+}
+
+func (r *teamRepoMemory) InviteMember(ctx context.Context, input InviteTeamMemberInput) (*TeamInvitation, error) {
+	id := r.nextID
+	r.nextID++
+	return &TeamInvitation{
+		ID:              id,
+		TeamID:          input.TeamID,
+		Email:           input.Email,
+		Role:            input.Role,
+		TokenHash:       input.TokenHash,
+		Status:          domain.TeamInvitationStatusPending,
+		InvitedByUserID: input.ActorUserID,
+		ExpiresAt:       input.ExpiresAt,
+	}, nil
+}
+
+func (r *teamRepoMemory) UpdateMember(ctx context.Context, actorUserID, teamID, userID int64, input UpdateTeamMemberInput) (*TeamMember, error) {
+	members := r.members[teamID]
+	for i := range members {
+		if members[i].UserID == userID {
+			if input.Role != nil {
+				members[i].Role = *input.Role
+			}
+			if input.Status != nil {
+				members[i].Status = *input.Status
+			}
+			r.members[teamID] = members
+			m := members[i]
+			return &m, nil
+		}
+	}
+	return nil, ErrTeamMembershipNotFound
+}
+
+func (r *teamRepoMemory) RemoveMember(ctx context.Context, actorUserID, teamID, userID int64) error {
+	members := r.members[teamID]
+	for i := range members {
+		if members[i].UserID == userID {
+			members[i].Status = domain.TeamMemberStatusLeft
+			r.members[teamID] = members
+			return nil
+		}
+	}
+	return ErrTeamMembershipNotFound
+}
+
 func teamTestPtrTime(t time.Time) *time.Time { return &t }
+
+func TestTeamServiceListMembersRequiresViewPermission(t *testing.T) {
+	repo := newTeamRepoMemory()
+	svc := NewTeamService(repo, nil)
+	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
+	require.NoError(t, err)
+
+	members, _, err := svc.ListMembers(context.Background(), 7, team.ID)
+	require.NoError(t, err)
+	require.Len(t, members, 1)
+
+	// non-member is denied
+	_, _, err = svc.ListMembers(context.Background(), 99, team.ID)
+	require.Error(t, err)
+}
+
+func TestTeamServiceInviteMemberRejectsOwnerRole(t *testing.T) {
+	repo := newTeamRepoMemory()
+	svc := NewTeamService(repo, nil)
+	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
+	require.NoError(t, err)
+
+	_, _, err = svc.InviteMember(context.Background(), InviteTeamMemberInput{ActorUserID: 7, TeamID: team.ID, Email: "x@example.com", Role: domain.TeamRoleOwner, ExpiresAt: time.Now().Add(time.Hour)})
+	require.ErrorIs(t, err, ErrTeamInvalidRole)
+
+	invitation, token, err := svc.InviteMember(context.Background(), InviteTeamMemberInput{ActorUserID: 7, TeamID: team.ID, Email: "X@Example.com", Role: domain.TeamRoleDeveloper, ExpiresAt: time.Now().Add(time.Hour)})
+	require.NoError(t, err)
+	require.NotEmpty(t, token)
+	require.Equal(t, "x@example.com", invitation.Email)
+	require.NotEmpty(t, invitation.TokenHash)
+}
+
+func TestTeamServiceUpdateMemberValidations(t *testing.T) {
+	repo := newTeamRepoMemory()
+	svc := NewTeamService(repo, nil)
+	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
+	require.NoError(t, err)
+	repo.members[team.ID] = append(repo.members[team.ID], TeamMember{TeamID: team.ID, UserID: 8, Role: domain.TeamRoleViewer, Status: domain.TeamMemberStatusActive})
+
+	// empty update rejected
+	_, err = svc.UpdateMember(context.Background(), 7, team.ID, 8, UpdateTeamMemberInput{})
+	require.Error(t, err)
+
+	// owner role rejected
+	owner := domain.TeamRoleOwner
+	_, err = svc.UpdateMember(context.Background(), 7, team.ID, 8, UpdateTeamMemberInput{Role: &owner})
+	require.ErrorIs(t, err, ErrTeamInvalidRole)
+
+	dev := domain.TeamRoleDeveloper
+	member, err := svc.UpdateMember(context.Background(), 7, team.ID, 8, UpdateTeamMemberInput{Role: &dev})
+	require.NoError(t, err)
+	require.Equal(t, domain.TeamRoleDeveloper, member.Role)
+}
 
 func TestTeamServiceCreateTeamCreatesOwnerWorkspace(t *testing.T) {
 	repo := newTeamRepoMemory()

@@ -7,6 +7,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/billingsubject"
 	dbteam "github.com/Wei-Shaw/sub2api/ent/team"
+	"github.com/Wei-Shaw/sub2api/ent/teaminvitation"
 	"github.com/Wei-Shaw/sub2api/ent/teammember"
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -137,6 +138,128 @@ func (r *teamRepository) ListWorkspaces(ctx context.Context, userID int64) ([]se
 		})
 	}
 	return out, nil
+}
+
+// ListMembers returns active/suspended members (with their User loaded) and
+// pending invitations for a team.
+//
+// NOTE: aggregate fields key_count and last_7d_actual_cost are intentionally
+// left unset (zero) here. Those metrics require cross-aggregating the api_keys
+// and usage_logs tables per member/subject which would add several joins/queries
+// to this hot path; the plan permits returning members+invitations with the
+// aggregates zeroed. They can be layered on later via a dedicated stats query.
+func (r *teamRepository) ListMembers(ctx context.Context, teamID int64) ([]service.TeamMember, []service.TeamInvitation, error) {
+	client := clientFromContext(ctx, r.client)
+
+	memberRows, err := client.TeamMember.Query().
+		Where(
+			teammember.TeamIDEQ(teamID),
+			teammember.DeletedAtIsNil(),
+			teammember.StatusNEQ(domain.TeamMemberStatusLeft),
+		).
+		WithUser().
+		Order(dbent.Asc(teammember.FieldID)).
+		All(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	members := make([]service.TeamMember, 0, len(memberRows))
+	for _, row := range memberRows {
+		m := teamMemberEntityToService(row)
+		if row.Edges.User != nil {
+			m.User = userEntityToService(row.Edges.User)
+		}
+		members = append(members, *m)
+	}
+
+	inviteRows, err := client.TeamInvitation.Query().
+		Where(
+			teaminvitation.TeamIDEQ(teamID),
+			teaminvitation.DeletedAtIsNil(),
+			teaminvitation.StatusEQ(domain.TeamInvitationStatusPending),
+		).
+		Order(dbent.Asc(teaminvitation.FieldID)).
+		All(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	invitations := make([]service.TeamInvitation, 0, len(inviteRows))
+	for _, row := range inviteRows {
+		invitations = append(invitations, *teamInvitationEntityToService(row))
+	}
+
+	return members, invitations, nil
+}
+
+func (r *teamRepository) InviteMember(ctx context.Context, input service.InviteTeamMemberInput) (*service.TeamInvitation, error) {
+	client := clientFromContext(ctx, r.client)
+	created, err := client.TeamInvitation.Create().
+		SetTeamID(input.TeamID).
+		SetEmail(input.Email).
+		SetRole(input.Role).
+		SetTokenHash(input.TokenHash).
+		SetStatus(domain.TeamInvitationStatusPending).
+		SetInvitedByUserID(input.ActorUserID).
+		SetExpiresAt(input.ExpiresAt).
+		Save(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return teamInvitationEntityToService(created), nil
+}
+
+func (r *teamRepository) UpdateMember(ctx context.Context, actorUserID, teamID, userID int64, input service.UpdateTeamMemberInput) (*service.TeamMember, error) {
+	client := clientFromContext(ctx, r.client)
+	row, err := client.TeamMember.Query().
+		Where(teammember.TeamIDEQ(teamID), teammember.UserIDEQ(userID), teammember.DeletedAtIsNil()).
+		Only(ctx)
+	if err != nil {
+		return nil, service.ErrTeamMembershipNotFound
+	}
+	upd := client.TeamMember.UpdateOneID(row.ID)
+	if input.Role != nil {
+		upd.SetRole(*input.Role)
+	}
+	if input.Status != nil {
+		upd.SetStatus(*input.Status)
+	}
+	updated, err := upd.Save(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return teamMemberEntityToService(updated), nil
+}
+
+func (r *teamRepository) RemoveMember(ctx context.Context, actorUserID, teamID, userID int64) error {
+	client := clientFromContext(ctx, r.client)
+	row, err := client.TeamMember.Query().
+		Where(teammember.TeamIDEQ(teamID), teammember.UserIDEQ(userID), teammember.DeletedAtIsNil()).
+		Only(ctx)
+	if err != nil {
+		return service.ErrTeamMembershipNotFound
+	}
+	_, err = client.TeamMember.UpdateOneID(row.ID).
+		SetStatus(domain.TeamMemberStatusLeft).
+		SetDeletedAt(time.Now()).
+		Save(ctx)
+	return err
+}
+
+func teamInvitationEntityToService(row *dbent.TeamInvitation) *service.TeamInvitation {
+	if row == nil {
+		return nil
+	}
+	return &service.TeamInvitation{
+		ID:               row.ID,
+		TeamID:           row.TeamID,
+		Email:            row.Email,
+		Role:             row.Role,
+		TokenHash:        row.TokenHash,
+		Status:           row.Status,
+		InvitedByUserID:  row.InvitedByUserID,
+		AcceptedByUserID: row.AcceptedByUserID,
+		ExpiresAt:        row.ExpiresAt,
+	}
 }
 
 func teamEntityToService(row *dbent.Team) *service.Team {

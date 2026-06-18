@@ -83,10 +83,19 @@ type InviteTeamMemberInput struct {
 	ExpiresAt   time.Time
 }
 
+type UpdateTeamMemberInput struct {
+	Role   *string
+	Status *string
+}
+
 type TeamRepository interface {
 	CreateTeam(ctx context.Context, input CreateTeamInput) (*Team, error)
 	GetMembership(ctx context.Context, teamID, userID int64) (*TeamMember, error)
 	ListWorkspaces(ctx context.Context, userID int64) ([]WorkspaceSubject, error)
+	ListMembers(ctx context.Context, teamID int64) ([]TeamMember, []TeamInvitation, error)
+	InviteMember(ctx context.Context, input InviteTeamMemberInput) (*TeamInvitation, error)
+	UpdateMember(ctx context.Context, actorUserID, teamID, userID int64, input UpdateTeamMemberInput) (*TeamMember, error)
+	RemoveMember(ctx context.Context, actorUserID, teamID, userID int64) error
 }
 
 type TeamService struct {
@@ -137,6 +146,56 @@ func (s *TeamService) ListWorkspaces(ctx context.Context, userID int64) ([]Works
 		return nil, infraerrors.Unauthorized("USER_NOT_AUTHENTICATED", "user not authenticated")
 	}
 	return s.repo.ListWorkspaces(ctx, userID)
+}
+
+func (s *TeamService) ListMembers(ctx context.Context, actorUserID, teamID int64) ([]TeamMember, []TeamInvitation, error) {
+	if _, err := s.Require(ctx, actorUserID, teamID, domain.TeamPermissionViewUsage); err != nil {
+		return nil, nil, err
+	}
+	return s.repo.ListMembers(ctx, teamID)
+}
+
+func (s *TeamService) InviteMember(ctx context.Context, input InviteTeamMemberInput) (*TeamInvitation, string, error) {
+	if _, err := s.Require(ctx, input.ActorUserID, input.TeamID, domain.TeamPermissionManageMembers); err != nil {
+		return nil, "", err
+	}
+	if input.Role == domain.TeamRoleOwner {
+		return nil, "", ErrTeamInvalidRole
+	}
+	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
+	if input.Email == "" {
+		return nil, "", infraerrors.BadRequest("TEAM_INVITATION_INVALID", "invitation email is required")
+	}
+	plain, tokenHash, err := GenerateInvitationToken()
+	if err != nil {
+		return nil, "", err
+	}
+	input.TokenHash = tokenHash
+	invitation, err := s.repo.InviteMember(ctx, input)
+	if err != nil {
+		return nil, "", err
+	}
+	return invitation, plain, nil
+}
+
+func (s *TeamService) UpdateMember(ctx context.Context, actorUserID, teamID, userID int64, input UpdateTeamMemberInput) (*TeamMember, error) {
+	if _, err := s.Require(ctx, actorUserID, teamID, domain.TeamPermissionManageMembers); err != nil {
+		return nil, err
+	}
+	if input.Role != nil && *input.Role == domain.TeamRoleOwner {
+		return nil, ErrTeamInvalidRole
+	}
+	if input.Role == nil && input.Status == nil {
+		return nil, infraerrors.BadRequest("TEAM_MEMBER_UPDATE_EMPTY", "team member update is empty")
+	}
+	return s.repo.UpdateMember(ctx, actorUserID, teamID, userID, input)
+}
+
+func (s *TeamService) RemoveMember(ctx context.Context, actorUserID, teamID, userID int64) error {
+	if _, err := s.Require(ctx, actorUserID, teamID, domain.TeamPermissionManageMembers); err != nil {
+		return err
+	}
+	return s.repo.RemoveMember(ctx, actorUserID, teamID, userID)
 }
 
 func GenerateInvitationToken() (plain string, tokenHash string, err error) {
