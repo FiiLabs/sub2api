@@ -61,6 +61,12 @@ apiClient.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`
     }
 
+    // Attach active workspace subject so the backend scopes requests to the selected team/personal workspace
+    const activeSubjectId = localStorage.getItem('active_workspace_subject_id')
+    if (activeSubjectId && config.headers) {
+      config.headers['X-Sub2API-Subject-ID'] = activeSubjectId
+    }
+
     // Attach locale for backend translations
     if (config.headers) {
       config.headers['Accept-Language'] = getLocale()

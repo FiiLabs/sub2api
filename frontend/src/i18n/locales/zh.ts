@@ -546,6 +546,20 @@ export default {
     channelMonitor: '渠道监控',
     channelStatus: '渠道状态',
     riskControl: '风控中心',
+    members: '成员管理',
+    workspace: '工作空间',
+  },
+
+  // Members
+  members: {
+    title: '成员管理',
+    description: '管理团队成员和邀请',
+    invite: '邀请成员',
+    role: '角色',
+    status: '状态',
+    joinedAt: '加入时间',
+    lastActive: '最近活跃',
+    pendingInvitations: '待接受邀请'
   },
 
   // Auth

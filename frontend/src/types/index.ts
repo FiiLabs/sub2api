@@ -110,6 +110,49 @@ export interface AdminUser extends User {
   current_concurrency?: number
 }
 
+// ==================== Team Workspaces ====================
+
+export type WorkspaceSubjectType = 'user' | 'team'
+export type TeamRole = 'owner' | 'admin' | 'billing' | 'developer' | 'viewer'
+
+export interface WorkspaceSubject {
+  billing_subject_id: number
+  type: WorkspaceSubjectType
+  user_id?: number
+  team_id?: number
+  name: string
+  role: TeamRole
+  permissions: Record<string, boolean>
+  balance: number
+}
+
+export interface WorkspacesResponse {
+  workspaces: WorkspaceSubject[]
+}
+
+export interface TeamMember {
+  id: number
+  team_id: number
+  user_id: number
+  role: TeamRole
+  status: 'active' | 'suspended' | 'left'
+  joined_at?: string | null
+  last_active_at?: string | null
+  user?: User
+  key_count?: number
+  last_7d_actual_cost?: number
+}
+
+export interface TeamInvitation {
+  id: number
+  team_id: number
+  email: string
+  role: Exclude<TeamRole, 'owner'>
+  status: 'pending' | 'accepted' | 'expired' | 'revoked'
+  expires_at: string
+  created_at: string
+}
+
 export interface LoginRequest {
   email: string
   password: string

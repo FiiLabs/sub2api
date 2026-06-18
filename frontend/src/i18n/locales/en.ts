@@ -549,6 +549,20 @@ export default {
     channelMonitor: 'Channel Monitor',
     channelStatus: 'Channel Status',
     riskControl: 'Risk Control',
+    members: 'Members',
+    workspace: 'Workspace',
+  },
+
+  // Members
+  members: {
+    title: 'Members',
+    description: 'Manage team members and invitations',
+    invite: 'Invite member',
+    role: 'Role',
+    status: 'Status',
+    joinedAt: 'Joined',
+    lastActive: 'Last active',
+    pendingInvitations: 'Pending invitations'
   },
 
   // Auth

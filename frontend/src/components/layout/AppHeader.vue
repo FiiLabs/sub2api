@@ -41,6 +41,23 @@
         <!-- Language Switcher -->
         <LocaleSwitcher />
 
+        <!-- Workspace Switcher (only when the user belongs to more than one workspace) -->
+        <select
+          v-if="user && workspaceStore.workspaces.length > 1"
+          :value="activeWorkspace?.billing_subject_id"
+          :aria-label="t('nav.workspace')"
+          class="hidden rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-700 dark:border-dark-700 dark:bg-dark-900 dark:text-dark-200 sm:block"
+          @change="workspaceStore.switchWorkspace(Number(($event.target as HTMLSelectElement).value))"
+        >
+          <option
+            v-for="workspace in workspaceStore.workspaces"
+            :key="workspace.billing_subject_id"
+            :value="workspace.billing_subject_id"
+          >
+            {{ workspace.name }}
+          </option>
+        </select>
+
         <!-- Subscription Progress (for users with active subscriptions) -->
         <SubscriptionProgressMini v-if="user" />
 
@@ -63,7 +80,7 @@
             />
           </svg>
           <span class="text-sm font-semibold text-primary-700 dark:text-primary-300">
-            ${{ user.balance?.toFixed(2) || '0.00' }}
+            ${{ displayBalance.toFixed(2) }}
           </span>
         </div>
 
@@ -111,7 +128,7 @@
                   {{ t('common.balance') }}
                 </div>
                 <div class="text-sm font-semibold text-primary-600 dark:text-primary-400">
-                  ${{ user.balance?.toFixed(2) || '0.00' }}
+                  ${{ displayBalance.toFixed(2) }}
                 </div>
               </div>
 
@@ -216,7 +233,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
+import { useAppStore, useAuthStore, useOnboardingStore, useWorkspaceStore } from '@/stores'
 import { useAdminSettingsStore } from '@/stores/adminSettings'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import SubscriptionProgressMini from '@/components/common/SubscriptionProgressMini.vue'
@@ -230,8 +247,14 @@ const appStore = useAppStore()
 const authStore = useAuthStore()
 const adminSettingsStore = useAdminSettingsStore()
 const onboardingStore = useOnboardingStore()
+const workspaceStore = useWorkspaceStore()
 
 const user = computed(() => authStore.user)
+const activeWorkspace = computed(() => workspaceStore.activeWorkspace)
+const displayBalance = computed(() => {
+  const balance = activeWorkspace.value?.balance ?? user.value?.balance ?? 0
+  return Number.isFinite(balance) ? balance : 0
+})
 const dropdownOpen = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
 const contactInfo = computed(() => appStore.contactInfo)
@@ -322,6 +345,11 @@ function handleClickOutside(event: MouseEvent) {
 
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
+  if (user.value) {
+    workspaceStore.loadWorkspaces().catch((error) => {
+      console.error('Failed to load workspaces:', error)
+    })
+  }
 })
 
 onBeforeUnmount(() => {
