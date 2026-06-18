@@ -431,6 +431,7 @@ export default {
     status: 'Status',
     name: 'Name',
     email: 'Email',
+    user: 'User',
     password: 'Password',
     submit: 'Submit',
     back: 'Back',
@@ -557,6 +558,7 @@ export default {
   members: {
     title: 'Members',
     description: 'Manage team members and invitations',
+    teamRequired: 'Select a team workspace to manage members.',
     invite: 'Invite member',
     role: 'Role',
     status: 'Status',

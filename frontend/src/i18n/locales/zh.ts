@@ -428,6 +428,7 @@ export default {
     status: '状态',
     name: '名称',
     email: '邮箱',
+    user: '用户',
     password: '密码',
     submit: '提交',
     back: '返回',
@@ -554,6 +555,7 @@ export default {
   members: {
     title: '成员管理',
     description: '管理团队成员和邀请',
+    teamRequired: '请选择团队工作空间后管理成员。',
     invite: '邀请成员',
     role: '角色',
     status: '状态',
