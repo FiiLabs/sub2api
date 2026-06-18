@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -233,6 +234,27 @@ func TestAPIKeyAuthSetsGroupContext(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestAuthSubjectFromAPIKeyIncludesWorkspaceSubject(t *testing.T) {
+	teamID := int64(77)
+	apiKey := &service.APIKey{
+		UserID:           42,
+		BillingSubjectID: 900,
+		TeamID:           &teamID,
+		User: &service.User{
+			ID:          42,
+			Concurrency: 3,
+		},
+	}
+
+	subject := authSubjectFromAPIKey(apiKey)
+
+	require.Equal(t, int64(42), subject.UserID)
+	require.Equal(t, 3, subject.Concurrency)
+	require.Equal(t, int64(900), subject.BillingSubjectID)
+	require.Equal(t, int64(77), subject.TeamID)
+	require.Equal(t, domain.BillingSubjectTypeTeam, subject.SubjectType)
 }
 
 func TestAPIKeyAuthRejectsExclusiveGroupWhenUserNoLongerAllowed(t *testing.T) {

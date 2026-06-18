@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -80,6 +81,16 @@ type APIKeyRepository interface {
 	IncrementRateLimitUsage(ctx context.Context, id int64, cost float64) error
 	ResetRateLimitWindows(ctx context.Context, id int64) error
 	GetRateLimitData(ctx context.Context, id int64) (*APIKeyRateLimitData, error)
+}
+
+type billingSubjectAPIKeyRepository interface {
+	ListByBillingSubjectID(ctx context.Context, billingSubjectID int64, params pagination.PaginationParams, filters APIKeyListFilters) ([]APIKey, *pagination.PaginationResult, error)
+	GetByIDForBillingSubjectID(ctx context.Context, id, billingSubjectID int64) (*APIKey, error)
+}
+
+type subjectScopedAPIKeyRepository interface {
+	UpdateByBillingSubjectID(ctx context.Context, key *APIKey, billingSubjectID int64) error
+	DeleteWithAuditByBillingSubjectID(ctx context.Context, id, billingSubjectID int64) error
 }
 
 // APIKeyRateLimitData holds rate limit usage and window state for an API key.
@@ -330,6 +341,10 @@ func (s *APIKeyService) canUserBindGroup(ctx context.Context, user *User, group 
 
 // Create 创建API Key
 func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIKeyRequest) (*APIKey, error) {
+	return s.createAPIKey(ctx, userID, req, nil)
+}
+
+func (s *APIKeyService) createAPIKey(ctx context.Context, userID int64, req CreateAPIKeyRequest, subject *SubjectResourceContext) (*APIKey, error) {
 	// 验证用户存在
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
@@ -413,6 +428,9 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 		RateLimit1d: req.RateLimit1d,
 		RateLimit7d: req.RateLimit7d,
 	}
+	if subject != nil {
+		applySubjectToAPIKey(apiKey, *subject)
+	}
 
 	// Set expiration time if specified
 	if req.ExpiresInDays != nil && *req.ExpiresInDays > 0 {
@@ -437,6 +455,115 @@ func (s *APIKeyService) List(ctx context.Context, userID int64, params paginatio
 		return nil, nil, fmt.Errorf("list api keys: %w", err)
 	}
 	return keys, pagination, nil
+}
+
+func (s *APIKeyService) CreateForSubject(ctx context.Context, subject SubjectResourceContext, req CreateAPIKeyRequest) (*APIKey, error) {
+	if err := validateAPIKeySubjectContext(subject); err != nil {
+		return nil, err
+	}
+	return s.createAPIKey(ctx, subject.ActorUserID, req, &subject)
+}
+
+func (s *APIKeyService) ListForSubject(ctx context.Context, subject SubjectResourceContext, params pagination.PaginationParams, filters APIKeyListFilters) ([]APIKey, *pagination.PaginationResult, error) {
+	if err := validateAPIKeySubjectContext(subject); err != nil {
+		return nil, nil, err
+	}
+	if subject.SubjectType != domain.BillingSubjectTypeTeam {
+		return s.List(ctx, subject.ActorUserID, params, filters)
+	}
+	repo, ok := s.apiKeyRepo.(billingSubjectAPIKeyRepository)
+	if !ok {
+		return nil, nil, infraerrors.InternalServer("API_KEY_SUBJECT_REPOSITORY_UNAVAILABLE", "api key subject repository is unavailable")
+	}
+	keys, result, err := repo.ListByBillingSubjectID(ctx, subject.BillingSubjectID, params, filters)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list api keys by subject: %w", err)
+	}
+	return keys, result, nil
+}
+
+func (s *APIKeyService) GetByIDForSubject(ctx context.Context, id int64, subject SubjectResourceContext) (*APIKey, error) {
+	if err := validateAPIKeySubjectContext(subject); err != nil {
+		return nil, err
+	}
+	if subject.SubjectType == domain.BillingSubjectTypeTeam {
+		repo, ok := s.apiKeyRepo.(billingSubjectAPIKeyRepository)
+		if !ok {
+			return nil, infraerrors.InternalServer("API_KEY_SUBJECT_REPOSITORY_UNAVAILABLE", "api key subject repository is unavailable")
+		}
+		key, err := repo.GetByIDForBillingSubjectID(ctx, id, subject.BillingSubjectID)
+		if err != nil {
+			return nil, fmt.Errorf("get api key by subject: %w", err)
+		}
+		s.compileAPIKeyIPRules(key)
+		return key, nil
+	}
+	key, err := s.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !apiKeyBelongsToSubject(key, subject) {
+		return nil, ErrInsufficientPerms
+	}
+	return key, nil
+}
+
+func (s *APIKeyService) UpdateForSubject(ctx context.Context, id int64, subject SubjectResourceContext, req UpdateAPIKeyRequest) (*APIKey, error) {
+	if err := validateAPIKeySubjectContext(subject); err != nil {
+		return nil, err
+	}
+	key, err := s.GetByIDForSubject(ctx, id, subject)
+	if err != nil {
+		return nil, err
+	}
+	return s.updateAPIKeyForSubject(ctx, key, subject, req)
+}
+
+func (s *APIKeyService) DeleteForSubject(ctx context.Context, id int64, subject SubjectResourceContext) error {
+	if err := validateAPIKeySubjectContext(subject); err != nil {
+		return err
+	}
+	key, err := s.GetByIDForSubject(ctx, id, subject)
+	if err != nil {
+		return err
+	}
+	if subject.SubjectType == domain.BillingSubjectTypeTeam {
+		repo, ok := s.apiKeyRepo.(subjectScopedAPIKeyRepository)
+		if !ok {
+			return infraerrors.InternalServer("API_KEY_SUBJECT_REPOSITORY_UNAVAILABLE", "api key subject repository is unavailable")
+		}
+		if err := repo.DeleteWithAuditByBillingSubjectID(ctx, id, subject.BillingSubjectID); err != nil {
+			return fmt.Errorf("delete api key: %w", err)
+		}
+	} else if err := s.apiKeyRepo.DeleteWithAudit(ctx, id); err != nil {
+		return fmt.Errorf("delete api key: %w", err)
+	}
+	if s.cache != nil {
+		_ = s.cache.DeleteCreateAttemptCount(ctx, subject.ActorUserID)
+	}
+	s.InvalidateAuthCacheByKey(ctx, key.Key)
+	s.lastUsedTouchL1.Delete(id)
+	return nil
+}
+
+func validateAPIKeySubjectContext(subject SubjectResourceContext) error {
+	if subject.ActorUserID <= 0 || subject.BillingSubjectID <= 0 {
+		return infraerrors.Unauthorized("SUBJECT_CONTEXT_REQUIRED", "workspace subject is required")
+	}
+	if subject.SubjectType == domain.BillingSubjectTypeTeam && !subject.Permissions[domain.TeamPermissionManageKeys] {
+		return ErrTeamPermissionDenied
+	}
+	return nil
+}
+
+func apiKeyBelongsToSubject(key *APIKey, subject SubjectResourceContext) bool {
+	if key == nil {
+		return false
+	}
+	if subject.SubjectType == domain.BillingSubjectTypeTeam {
+		return key.BillingSubjectID == subject.BillingSubjectID
+	}
+	return key.UserID == subject.ActorUserID
 }
 
 func (s *APIKeyService) VerifyOwnership(ctx context.Context, userID int64, apiKeyIDs []int64) ([]int64, error) {
@@ -525,6 +652,18 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 		return nil, ErrInsufficientPerms
 	}
 
+	return s.updateAPIKey(ctx, apiKey, userID, req)
+}
+
+func (s *APIKeyService) updateAPIKey(ctx context.Context, apiKey *APIKey, actorUserID int64, req UpdateAPIKeyRequest) (*APIKey, error) {
+	return s.updateAPIKeyInternal(ctx, apiKey, actorUserID, req, nil)
+}
+
+func (s *APIKeyService) updateAPIKeyForSubject(ctx context.Context, apiKey *APIKey, subject SubjectResourceContext, req UpdateAPIKeyRequest) (*APIKey, error) {
+	return s.updateAPIKeyInternal(ctx, apiKey, subject.ActorUserID, req, &subject)
+}
+
+func (s *APIKeyService) updateAPIKeyInternal(ctx context.Context, apiKey *APIKey, actorUserID int64, req UpdateAPIKeyRequest, subject *SubjectResourceContext) (*APIKey, error) {
 	// 验证 IP 白名单格式
 	if len(req.IPWhitelist) > 0 {
 		if invalid := ip.ValidateIPPatterns(req.IPWhitelist); len(invalid) > 0 {
@@ -546,7 +685,7 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 
 	if req.GroupID != nil {
 		// 验证分组权限
-		user, err := s.userRepo.GetByID(ctx, userID)
+		user, err := s.userRepo.GetByID(ctx, actorUserID)
 		if err != nil {
 			return nil, fmt.Errorf("get user: %w", err)
 		}
@@ -624,7 +763,18 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 		apiKey.Window7dStart = nil
 	}
 
-	if err := s.apiKeyRepo.Update(ctx, apiKey); err != nil {
+	if actorUserID > 0 {
+		apiKey.UpdatedByUserID = &actorUserID
+	}
+	if subject != nil && subject.SubjectType == domain.BillingSubjectTypeTeam {
+		repo, ok := s.apiKeyRepo.(subjectScopedAPIKeyRepository)
+		if !ok {
+			return nil, infraerrors.InternalServer("API_KEY_SUBJECT_REPOSITORY_UNAVAILABLE", "api key subject repository is unavailable")
+		}
+		if err := repo.UpdateByBillingSubjectID(ctx, apiKey, subject.BillingSubjectID); err != nil {
+			return nil, fmt.Errorf("update api key: %w", err)
+		}
+	} else if err := s.apiKeyRepo.Update(ctx, apiKey); err != nil {
 		return nil, fmt.Errorf("update api key: %w", err)
 	}
 

@@ -11,6 +11,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/group"
+	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/ent/schema/mixins"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -45,6 +46,10 @@ func (r *apiKeyRepository) Create(ctx context.Context, key *service.APIKey) erro
 		SetName(key.Name).
 		SetStatus(key.Status).
 		SetNillableGroupID(key.GroupID).
+		SetNillableBillingSubjectID(nilIfZero(key.BillingSubjectID)).
+		SetNillableTeamID(key.TeamID).
+		SetNillableCreatedByUserID(key.CreatedByUserID).
+		SetNillableUpdatedByUserID(key.UpdatedByUserID).
 		SetNillableLastUsedAt(key.LastUsedAt).
 		SetQuota(key.Quota).
 		SetQuotaUsed(key.QuotaUsed).
@@ -71,8 +76,16 @@ func (r *apiKeyRepository) Create(ctx context.Context, key *service.APIKey) erro
 }
 
 func (r *apiKeyRepository) GetByID(ctx context.Context, id int64) (*service.APIKey, error) {
+	return r.getByIDWhere(ctx, apikey.IDEQ(id))
+}
+
+func (r *apiKeyRepository) GetByIDForBillingSubjectID(ctx context.Context, id, billingSubjectID int64) (*service.APIKey, error) {
+	return r.getByIDWhere(ctx, apikey.IDEQ(id), apikey.BillingSubjectIDEQ(billingSubjectID))
+}
+
+func (r *apiKeyRepository) getByIDWhere(ctx context.Context, predicates ...predicate.APIKey) (*service.APIKey, error) {
 	m, err := r.activeQuery().
-		Where(apikey.IDEQ(id)).
+		Where(predicates...).
 		WithUser().
 		WithGroup().
 		Only(ctx)
@@ -130,6 +143,10 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 			apikey.FieldID,
 			apikey.FieldUserID,
 			apikey.FieldGroupID,
+			apikey.FieldBillingSubjectID,
+			apikey.FieldTeamID,
+			apikey.FieldCreatedByUserID,
+			apikey.FieldUpdatedByUserID,
 			apikey.FieldName,
 			apikey.FieldStatus,
 			apikey.FieldIPWhitelist,
@@ -212,6 +229,14 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 }
 
 func (r *apiKeyRepository) Update(ctx context.Context, key *service.APIKey) error {
+	return r.updateAPIKey(ctx, key, nil)
+}
+
+func (r *apiKeyRepository) UpdateByBillingSubjectID(ctx context.Context, key *service.APIKey, billingSubjectID int64) error {
+	return r.updateAPIKey(ctx, key, apikey.BillingSubjectIDEQ(billingSubjectID))
+}
+
+func (r *apiKeyRepository) updateAPIKey(ctx context.Context, key *service.APIKey, extraPredicates ...predicate.APIKey) error {
 	// 使用原子操作：将软删除检查与更新合并到同一语句，避免竞态条件。
 	// 之前的实现先检查 Exist 再 UpdateOneID，若在两步之间发生软删除，
 	// 则会更新已删除的记录。
@@ -219,8 +244,9 @@ func (r *apiKeyRepository) Update(ctx context.Context, key *service.APIKey) erro
 	// 同时显式设置 updated_at，避免二次查询带来的并发可见性问题。
 	client := clientFromContext(ctx, r.client)
 	now := time.Now()
+	predicates := append([]predicate.APIKey{apikey.IDEQ(key.ID), apikey.DeletedAtIsNil()}, extraPredicates...)
 	builder := client.APIKey.Update().
-		Where(apikey.IDEQ(key.ID), apikey.DeletedAtIsNil()).
+		Where(predicates...).
 		SetName(key.Name).
 		SetStatus(key.Status).
 		SetQuota(key.Quota).
@@ -232,6 +258,26 @@ func (r *apiKeyRepository) Update(ctx context.Context, key *service.APIKey) erro
 		SetUsage1d(key.Usage1d).
 		SetUsage7d(key.Usage7d).
 		SetUpdatedAt(now)
+	if key.BillingSubjectID > 0 {
+		builder.SetBillingSubjectID(key.BillingSubjectID)
+	} else {
+		builder.ClearBillingSubjectID()
+	}
+	if key.TeamID != nil {
+		builder.SetTeamID(*key.TeamID)
+	} else {
+		builder.ClearTeamID()
+	}
+	if key.CreatedByUserID != nil {
+		builder.SetCreatedByUserID(*key.CreatedByUserID)
+	} else {
+		builder.ClearCreatedByUserID()
+	}
+	if key.UpdatedByUserID != nil {
+		builder.SetUpdatedByUserID(*key.UpdatedByUserID)
+	} else {
+		builder.ClearUpdatedByUserID()
+	}
 	if key.GroupID != nil {
 		builder.SetGroupID(*key.GroupID)
 	} else {
@@ -350,6 +396,33 @@ func (r *apiKeyRepository) DeleteWithAudit(ctx context.Context, id int64) error 
 	return nil
 }
 
+func (r *apiKeyRepository) DeleteWithAuditByBillingSubjectID(ctx context.Context, id, billingSubjectID int64) error {
+	tombstoneKey := fmt.Sprintf("__deleted__%d__%d", id, time.Now().UnixNano())
+
+	if existingTx := dbent.TxFromContext(ctx); existingTx != nil {
+		return r.deleteWithAuditByBillingSubjectID(ctx, existingTx.Client(), id, billingSubjectID, tombstoneKey)
+	}
+
+	tx, err := r.client.Tx(ctx)
+	if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
+		return err
+	}
+	exec := r.client
+	if err == nil {
+		defer func() { _ = tx.Rollback() }()
+		exec = tx.Client()
+	}
+
+	if err := r.deleteWithAuditByBillingSubjectID(ctx, exec, id, billingSubjectID, tombstoneKey); err != nil {
+		return err
+	}
+
+	if tx != nil {
+		return tx.Commit()
+	}
+	return nil
+}
+
 func (r *apiKeyRepository) deleteWithAudit(ctx context.Context, exec *dbent.Client, id int64, tombstoneKey string) error {
 	// 1. 审计:数据源即 api_keys 当前行;WHERE deleted_at IS NULL 保证只对未删除行写一次。
 	if _, err := exec.ExecContext(ctx, `
@@ -388,9 +461,52 @@ func (r *apiKeyRepository) deleteWithAudit(ctx context.Context, exec *dbent.Clie
 	return nil
 }
 
+func (r *apiKeyRepository) deleteWithAuditByBillingSubjectID(ctx context.Context, exec *dbent.Client, id, billingSubjectID int64, tombstoneKey string) error {
+	if _, err := exec.ExecContext(ctx, `
+		INSERT INTO deleted_api_key_audits (key, api_key_id, user_id, key_name, deleted_at)
+		SELECT key, id, user_id, name, NOW()
+		FROM api_keys
+		WHERE id = $1 AND billing_subject_id = $2 AND deleted_at IS NULL`, id, billingSubjectID); err != nil {
+		return err
+	}
+
+	res, err := exec.ExecContext(ctx, `
+		UPDATE api_keys
+		SET key = $1, deleted_at = NOW(), updated_at = NOW()
+		WHERE id = $2 AND billing_subject_id = $3 AND deleted_at IS NULL`, tombstoneKey, id, billingSubjectID)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		exists, existErr := r.client.APIKey.Query().
+			Where(apikey.IDEQ(id)).
+			Exist(mixins.SkipSoftDelete(ctx))
+		if existErr != nil {
+			return existErr
+		}
+		if exists {
+			return service.ErrInsufficientPerms
+		}
+		return service.ErrAPIKeyNotFound
+	}
+	return nil
+}
+
 func (r *apiKeyRepository) ListByUserID(ctx context.Context, userID int64, params pagination.PaginationParams, filters service.APIKeyListFilters) ([]service.APIKey, *pagination.PaginationResult, error) {
 	q := r.activeQuery().Where(apikey.UserIDEQ(userID))
+	return r.listByQuery(ctx, q, params, filters)
+}
 
+func (r *apiKeyRepository) ListByBillingSubjectID(ctx context.Context, billingSubjectID int64, params pagination.PaginationParams, filters service.APIKeyListFilters) ([]service.APIKey, *pagination.PaginationResult, error) {
+	q := r.activeQuery().Where(apikey.BillingSubjectIDEQ(billingSubjectID))
+	return r.listByQuery(ctx, q, params, filters)
+}
+
+func (r *apiKeyRepository) listByQuery(ctx context.Context, q *dbent.APIKeyQuery, params pagination.PaginationParams, filters service.APIKeyListFilters) ([]service.APIKey, *pagination.PaginationResult, error) {
 	// Apply filters
 	if filters.Search != "" {
 		q = q.Where(apikey.Or(
@@ -703,29 +819,33 @@ func apiKeyEntityToService(m *dbent.APIKey) *service.APIKey {
 		return nil
 	}
 	out := &service.APIKey{
-		ID:            m.ID,
-		UserID:        m.UserID,
-		Key:           m.Key,
-		Name:          m.Name,
-		Status:        m.Status,
-		IPWhitelist:   m.IPWhitelist,
-		IPBlacklist:   m.IPBlacklist,
-		LastUsedAt:    m.LastUsedAt,
-		CreatedAt:     m.CreatedAt,
-		UpdatedAt:     m.UpdatedAt,
-		GroupID:       m.GroupID,
-		Quota:         m.Quota,
-		QuotaUsed:     m.QuotaUsed,
-		ExpiresAt:     m.ExpiresAt,
-		RateLimit5h:   m.RateLimit5h,
-		RateLimit1d:   m.RateLimit1d,
-		RateLimit7d:   m.RateLimit7d,
-		Usage5h:       m.Usage5h,
-		Usage1d:       m.Usage1d,
-		Usage7d:       m.Usage7d,
-		Window5hStart: m.Window5hStart,
-		Window1dStart: m.Window1dStart,
-		Window7dStart: m.Window7dStart,
+		ID:               m.ID,
+		UserID:           m.UserID,
+		BillingSubjectID: derefInt64(m.BillingSubjectID),
+		TeamID:           m.TeamID,
+		CreatedByUserID:  m.CreatedByUserID,
+		UpdatedByUserID:  m.UpdatedByUserID,
+		Key:              m.Key,
+		Name:             m.Name,
+		Status:           m.Status,
+		IPWhitelist:      m.IPWhitelist,
+		IPBlacklist:      m.IPBlacklist,
+		LastUsedAt:       m.LastUsedAt,
+		CreatedAt:        m.CreatedAt,
+		UpdatedAt:        m.UpdatedAt,
+		GroupID:          m.GroupID,
+		Quota:            m.Quota,
+		QuotaUsed:        m.QuotaUsed,
+		ExpiresAt:        m.ExpiresAt,
+		RateLimit5h:      m.RateLimit5h,
+		RateLimit1d:      m.RateLimit1d,
+		RateLimit7d:      m.RateLimit7d,
+		Usage5h:          m.Usage5h,
+		Usage1d:          m.Usage1d,
+		Usage7d:          m.Usage7d,
+		Window5hStart:    m.Window5hStart,
+		Window1dStart:    m.Window1dStart,
+		Window7dStart:    m.Window7dStart,
 	}
 	if m.Edges.User != nil {
 		out.User = userEntityToService(m.Edges.User)
@@ -742,6 +862,20 @@ func apiKeyEntityToService(m *dbent.APIKey) *service.APIKey {
 		out.Group = groupEntityToService(m.Edges.Group)
 	}
 	return out
+}
+
+func nilIfZero(v int64) *int64 {
+	if v <= 0 {
+		return nil
+	}
+	return &v
+}
+
+func derefInt64(v *int64) int64 {
+	if v == nil {
+		return 0
+	}
+	return *v
 }
 
 func userEntityToService(u *dbent.User) *service.User {

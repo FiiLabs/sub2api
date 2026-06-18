@@ -11,10 +11,11 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/dgraph-io/ristretto"
 )
 
-const apiKeyAuthSnapshotVersion = 12 // v12: include exclusive group authorization fields
+const apiKeyAuthSnapshotVersion = 13 // v13: include workspace billing subject fields
 
 type apiKeyAuthCacheConfig struct {
 	l1Size        int
@@ -206,20 +207,25 @@ func (s *APIKeyService) snapshotFromAPIKey(ctx context.Context, apiKey *APIKey) 
 		return nil
 	}
 	snapshot := &APIKeyAuthSnapshot{
-		Version:     apiKeyAuthSnapshotVersion,
-		APIKeyID:    apiKey.ID,
-		UserID:      apiKey.UserID,
-		GroupID:     apiKey.GroupID,
-		Name:        apiKey.Name,
-		Status:      apiKey.Status,
-		IPWhitelist: apiKey.IPWhitelist,
-		IPBlacklist: apiKey.IPBlacklist,
-		Quota:       apiKey.Quota,
-		QuotaUsed:   apiKey.QuotaUsed,
-		ExpiresAt:   apiKey.ExpiresAt,
-		RateLimit5h: apiKey.RateLimit5h,
-		RateLimit1d: apiKey.RateLimit1d,
-		RateLimit7d: apiKey.RateLimit7d,
+		Version:          apiKeyAuthSnapshotVersion,
+		APIKeyID:         apiKey.ID,
+		UserID:           apiKey.UserID,
+		BillingSubjectID: apiKey.BillingSubjectID,
+		SubjectType:      apiKeySubjectType(apiKey),
+		TeamID:           apiKey.TeamID,
+		CreatedByUserID:  apiKey.CreatedByUserID,
+		UpdatedByUserID:  apiKey.UpdatedByUserID,
+		GroupID:          apiKey.GroupID,
+		Name:             apiKey.Name,
+		Status:           apiKey.Status,
+		IPWhitelist:      apiKey.IPWhitelist,
+		IPBlacklist:      apiKey.IPBlacklist,
+		Quota:            apiKey.Quota,
+		QuotaUsed:        apiKey.QuotaUsed,
+		ExpiresAt:        apiKey.ExpiresAt,
+		RateLimit5h:      apiKey.RateLimit5h,
+		RateLimit1d:      apiKey.RateLimit1d,
+		RateLimit7d:      apiKey.RateLimit7d,
 		User: APIKeyAuthUserSnapshot{
 			ID:                         apiKey.User.ID,
 			Status:                     apiKey.User.Status,
@@ -290,21 +296,29 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 	if snapshot == nil {
 		return nil
 	}
+	if snapshot.BillingSubjectID == 0 {
+		snapshot.BillingSubjectID = snapshot.UserID
+		snapshot.SubjectType = domain.BillingSubjectTypeUser
+	}
 	apiKey := &APIKey{
-		ID:          snapshot.APIKeyID,
-		UserID:      snapshot.UserID,
-		GroupID:     snapshot.GroupID,
-		Key:         key,
-		Name:        snapshot.Name,
-		Status:      snapshot.Status,
-		IPWhitelist: snapshot.IPWhitelist,
-		IPBlacklist: snapshot.IPBlacklist,
-		Quota:       snapshot.Quota,
-		QuotaUsed:   snapshot.QuotaUsed,
-		ExpiresAt:   snapshot.ExpiresAt,
-		RateLimit5h: snapshot.RateLimit5h,
-		RateLimit1d: snapshot.RateLimit1d,
-		RateLimit7d: snapshot.RateLimit7d,
+		ID:               snapshot.APIKeyID,
+		UserID:           snapshot.UserID,
+		BillingSubjectID: snapshot.BillingSubjectID,
+		TeamID:           snapshot.TeamID,
+		CreatedByUserID:  snapshot.CreatedByUserID,
+		UpdatedByUserID:  snapshot.UpdatedByUserID,
+		GroupID:          snapshot.GroupID,
+		Key:              key,
+		Name:             snapshot.Name,
+		Status:           snapshot.Status,
+		IPWhitelist:      snapshot.IPWhitelist,
+		IPBlacklist:      snapshot.IPBlacklist,
+		Quota:            snapshot.Quota,
+		QuotaUsed:        snapshot.QuotaUsed,
+		ExpiresAt:        snapshot.ExpiresAt,
+		RateLimit5h:      snapshot.RateLimit5h,
+		RateLimit1d:      snapshot.RateLimit1d,
+		RateLimit7d:      snapshot.RateLimit7d,
 		User: &User{
 			ID:                         snapshot.User.ID,
 			Status:                     snapshot.User.Status,
@@ -363,4 +377,11 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 	}
 	s.compileAPIKeyIPRules(apiKey)
 	return apiKey
+}
+
+func apiKeySubjectType(apiKey *APIKey) string {
+	if apiKey != nil && apiKey.TeamID != nil && *apiKey.TeamID > 0 {
+		return domain.BillingSubjectTypeTeam
+	}
+	return domain.BillingSubjectTypeUser
 }

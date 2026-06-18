@@ -4,16 +4,21 @@ import "time"
 
 // APIKeyAuthSnapshot API Key 认证缓存快照（仅包含认证所需字段）
 type APIKeyAuthSnapshot struct {
-	Version     int                      `json:"version"`
-	APIKeyID    int64                    `json:"api_key_id"`
-	UserID      int64                    `json:"user_id"`
-	GroupID     *int64                   `json:"group_id,omitempty"`
-	Name        string                   `json:"name"`
-	Status      string                   `json:"status"`
-	IPWhitelist []string                 `json:"ip_whitelist,omitempty"`
-	IPBlacklist []string                 `json:"ip_blacklist,omitempty"`
-	User        APIKeyAuthUserSnapshot   `json:"user"`
-	Group       *APIKeyAuthGroupSnapshot `json:"group,omitempty"`
+	Version          int                      `json:"version"`
+	APIKeyID         int64                    `json:"api_key_id"`
+	UserID           int64                    `json:"user_id"`
+	BillingSubjectID int64                    `json:"billing_subject_id"`
+	SubjectType      string                   `json:"subject_type"`
+	TeamID           *int64                   `json:"team_id,omitempty"`
+	CreatedByUserID  *int64                   `json:"created_by_user_id,omitempty"`
+	UpdatedByUserID  *int64                   `json:"updated_by_user_id,omitempty"`
+	GroupID          *int64                   `json:"group_id,omitempty"`
+	Name             string                   `json:"name"`
+	Status           string                   `json:"status"`
+	IPWhitelist      []string                 `json:"ip_whitelist,omitempty"`
+	IPBlacklist      []string                 `json:"ip_blacklist,omitempty"`
+	User             APIKeyAuthUserSnapshot   `json:"user"`
+	Group            *APIKeyAuthGroupSnapshot `json:"group,omitempty"`
 
 	// Quota fields for API Key independent quota feature
 	Quota     float64 `json:"quota"`      // Quota limit in USD (0 = unlimited)

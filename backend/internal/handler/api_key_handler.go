@@ -65,7 +65,7 @@ type UpdateAPIKeyRequest struct {
 // List handles listing user's API keys with pagination
 // GET /api/v1/api-keys
 func (h *APIKeyHandler) List(c *gin.Context) {
-	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	subjectCtx, ok := subjectResourceContextFromGin(c)
 	if !ok {
 		response.Unauthorized(c, "User not authenticated")
 		return
@@ -95,7 +95,7 @@ func (h *APIKeyHandler) List(c *gin.Context) {
 		}
 	}
 
-	keys, result, err := h.apiKeyService.List(c.Request.Context(), subject.UserID, params, filters)
+	keys, result, err := h.apiKeyService.ListForSubject(c.Request.Context(), subjectCtx, params, filters)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -111,7 +111,7 @@ func (h *APIKeyHandler) List(c *gin.Context) {
 // GetByID handles getting a single API key
 // GET /api/v1/api-keys/:id
 func (h *APIKeyHandler) GetByID(c *gin.Context) {
-	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	subjectCtx, ok := subjectResourceContextFromGin(c)
 	if !ok {
 		response.Unauthorized(c, "User not authenticated")
 		return
@@ -123,15 +123,9 @@ func (h *APIKeyHandler) GetByID(c *gin.Context) {
 		return
 	}
 
-	key, err := h.apiKeyService.GetByID(c.Request.Context(), keyID)
+	key, err := h.apiKeyService.GetByIDForSubject(c.Request.Context(), keyID, subjectCtx)
 	if err != nil {
 		response.ErrorFrom(c, err)
-		return
-	}
-
-	// 验证所有权
-	if key.UserID != subject.UserID {
-		response.NotFound(c, "API key not found")
 		return
 	}
 
@@ -141,7 +135,7 @@ func (h *APIKeyHandler) GetByID(c *gin.Context) {
 // Create handles creating a new API key
 // POST /api/v1/api-keys
 func (h *APIKeyHandler) Create(c *gin.Context) {
-	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	subjectCtx, ok := subjectResourceContextFromGin(c)
 	if !ok {
 		response.Unauthorized(c, "User not authenticated")
 		return
@@ -175,7 +169,7 @@ func (h *APIKeyHandler) Create(c *gin.Context) {
 	}
 
 	executeUserIdempotentJSON(c, "user.api_keys.create", req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
-		key, err := h.apiKeyService.Create(ctx, subject.UserID, svcReq)
+		key, err := h.apiKeyService.CreateForSubject(ctx, subjectCtx, svcReq)
 		if err != nil {
 			return nil, err
 		}
@@ -186,7 +180,7 @@ func (h *APIKeyHandler) Create(c *gin.Context) {
 // Update handles updating an API key
 // PUT /api/v1/api-keys/:id
 func (h *APIKeyHandler) Update(c *gin.Context) {
-	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	subjectCtx, ok := subjectResourceContextFromGin(c)
 	if !ok {
 		response.Unauthorized(c, "User not authenticated")
 		return
@@ -237,7 +231,7 @@ func (h *APIKeyHandler) Update(c *gin.Context) {
 		}
 	}
 
-	key, err := h.apiKeyService.Update(c.Request.Context(), keyID, subject.UserID, svcReq)
+	key, err := h.apiKeyService.UpdateForSubject(c.Request.Context(), keyID, subjectCtx, svcReq)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -249,7 +243,7 @@ func (h *APIKeyHandler) Update(c *gin.Context) {
 // Delete handles deleting an API key
 // DELETE /api/v1/api-keys/:id
 func (h *APIKeyHandler) Delete(c *gin.Context) {
-	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	subjectCtx, ok := subjectResourceContextFromGin(c)
 	if !ok {
 		response.Unauthorized(c, "User not authenticated")
 		return
@@ -261,13 +255,27 @@ func (h *APIKeyHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	err = h.apiKeyService.Delete(c.Request.Context(), keyID, subject.UserID)
+	err = h.apiKeyService.DeleteForSubject(c.Request.Context(), keyID, subjectCtx)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
 
 	response.Success(c, gin.H{"message": "API key deleted successfully"})
+}
+
+func subjectResourceContextFromGin(c *gin.Context) (service.SubjectResourceContext, bool) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok || subject.UserID <= 0 || subject.BillingSubjectID <= 0 {
+		return service.SubjectResourceContext{}, false
+	}
+	return service.SubjectResourceContext{
+		ActorUserID:      subject.UserID,
+		BillingSubjectID: subject.BillingSubjectID,
+		SubjectType:      subject.SubjectType,
+		TeamID:           subject.TeamID,
+		Permissions:      subject.Permissions,
+	}, true
 }
 
 // GetAvailableGroups 获取用户可以绑定的分组列表

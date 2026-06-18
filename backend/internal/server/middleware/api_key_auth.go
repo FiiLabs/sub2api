@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -127,10 +128,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 
 		if cfg.RunMode == config.RunModeSimple {
 			c.Set(string(ContextKeyAPIKey), apiKey)
-			c.Set(string(ContextKeyUser), AuthSubject{
-				UserID:      apiKey.User.ID,
-				Concurrency: apiKey.User.Concurrency,
-			})
+			c.Set(string(ContextKeyUser), authSubjectFromAPIKey(apiKey))
 			c.Set(string(ContextKeyUserRole), apiKey.User.Role)
 			setGroupContext(c, apiKey.Group)
 			_ = apiKeyService.TouchLastUsed(c.Request.Context(), apiKey.ID)
@@ -222,16 +220,32 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 			c.Set(string(ContextKeySubscription), subscription)
 		}
 		c.Set(string(ContextKeyAPIKey), apiKey)
-		c.Set(string(ContextKeyUser), AuthSubject{
-			UserID:      apiKey.User.ID,
-			Concurrency: apiKey.User.Concurrency,
-		})
+		c.Set(string(ContextKeyUser), authSubjectFromAPIKey(apiKey))
 		c.Set(string(ContextKeyUserRole), apiKey.User.Role)
 		setGroupContext(c, apiKey.Group)
 		_ = apiKeyService.TouchLastUsed(c.Request.Context(), apiKey.ID)
 
 		c.Next()
 	}
+}
+
+func authSubjectFromAPIKey(apiKey *service.APIKey) AuthSubject {
+	subject := AuthSubject{}
+	if apiKey == nil || apiKey.User == nil {
+		return subject
+	}
+	subject.UserID = apiKey.User.ID
+	subject.Concurrency = apiKey.User.Concurrency
+	subject.BillingSubjectID = apiKey.BillingSubjectID
+	if subject.BillingSubjectID == 0 {
+		subject.BillingSubjectID = apiKey.User.ID
+	}
+	subject.SubjectType = domain.BillingSubjectTypeUser
+	if apiKey.TeamID != nil && *apiKey.TeamID > 0 {
+		subject.SubjectType = domain.BillingSubjectTypeTeam
+		subject.TeamID = *apiKey.TeamID
+	}
+	return subject
 }
 
 // GetAPIKeyFromContext 从上下文中获取API key
