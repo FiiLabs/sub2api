@@ -98,10 +98,31 @@ func (r routeTeamRepo) CreateTeam(_ context.Context, _ service.CreateTeamInput) 
 	return nil, nil
 }
 
-func (r routeTeamRepo) GetMembership(_ context.Context, _, _ int64) (*service.TeamMember, error) {
-	return nil, nil
+func (r routeTeamRepo) GetMembership(_ context.Context, teamID, userID int64) (*service.TeamMember, error) {
+	return &service.TeamMember{
+		TeamID: teamID,
+		UserID: userID,
+		Role:   domain.TeamRoleOwner,
+		Status: domain.TeamMemberStatusActive,
+	}, nil
 }
 
 func (r routeTeamRepo) ListWorkspaces(_ context.Context, _ int64) ([]service.WorkspaceSubject, error) {
 	return r.workspaces, nil
+}
+
+func (r routeTeamRepo) ListMembers(_ context.Context, _ int64) ([]service.TeamMember, []service.TeamInvitation, error) {
+	return []service.TeamMember{}, []service.TeamInvitation{}, nil
+}
+
+func (r routeTeamRepo) InviteMember(_ context.Context, _ service.InviteTeamMemberInput) (*service.TeamInvitation, error) {
+	return nil, nil
+}
+
+func (r routeTeamRepo) UpdateMember(_ context.Context, _, _, _ int64, _ service.UpdateTeamMemberInput) (*service.TeamMember, error) {
+	return nil, nil
+}
+
+func (r routeTeamRepo) RemoveMember(_ context.Context, _, _, _ int64) error {
+	return nil
 }

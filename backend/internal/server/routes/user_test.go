@@ -34,7 +34,8 @@ func TestRegisterUserRoutesExposesTeamMemberEndpoints(t *testing.T) {
 	req.Header.Set(middleware.SubjectHeader, "301")
 	router.ServeHTTP(rec, req)
 
-	require.Equal(t, http.StatusNotImplemented, rec.Code)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), `"members"`)
 }
 
 func newUserRoutesTestRouter() *gin.Engine {

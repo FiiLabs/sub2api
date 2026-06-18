@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	adminhandler "github.com/Wei-Shaw/sub2api/internal/handler/admin"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -226,6 +227,8 @@ func TestAPIContracts(t *testing.T) {
 				"data": {
 					"id": 100,
 					"user_id": 1,
+					"billing_subject_id": 1,
+					"created_by_user_id": 1,
 					"key": "sk_custom_1234567890",
 					"name": "Key One",
 					"group_id": null,
@@ -275,6 +278,7 @@ func TestAPIContracts(t *testing.T) {
 						{
 							"id": 100,
 							"user_id": 1,
+							"billing_subject_id": 0,
 							"key": "sk_custom_1234567890",
 							"name": "Key One",
 							"group_id": null,
@@ -347,6 +351,11 @@ func TestAPIContracts(t *testing.T) {
 						"is_exclusive": false,
 						"status": "active",
 						"subscription_type": "standard",
+						"dynamic_rate_enabled": false,
+						"dynamic_rate_mode": "",
+						"dynamic_rate_margin": 0,
+						"dynamic_rate_min_multiplier": null,
+						"dynamic_rate_max_multiplier": null,
 						"daily_limit_usd": null,
 						"weekly_limit_usd": null,
 						"monthly_limit_usd": null,
@@ -523,6 +532,7 @@ func TestAPIContracts(t *testing.T) {
 					{
 						ID:                    1,
 						UserID:                1,
+						BillingSubjectID:      1,
 						APIKeyID:              100,
 						AccountID:             200,
 						AccountRateMultiplier: ptr(0.5),
@@ -554,6 +564,9 @@ func TestAPIContracts(t *testing.T) {
 						{
 							"id": 1,
 							"user_id": 1,
+							"billing_subject_id": 1,
+							"team_id": null,
+							"actor_user_id": null,
 							"api_key_id": 100,
 							"account_id": 200,
 								"request_id": "req_123",
@@ -1289,18 +1302,25 @@ func newContractDeps(t *testing.T) *contractDeps {
 	adminSettingHandler := adminhandler.NewSettingHandler(settingService, nil, nil, nil, nil, nil, nil)
 	adminAccountHandler := adminhandler.NewAccountHandler(adminService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
+	// Mirror production: SubjectContextMiddleware runs after JWT auth and
+	// populates the active billing subject. These routes don't mount that
+	// middleware, so the stub fills the personal subject directly.
 	jwtAuth := func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{
-			UserID:      1,
-			Concurrency: 5,
+			UserID:           1,
+			Concurrency:      5,
+			BillingSubjectID: 1,
+			SubjectType:      domain.BillingSubjectTypeUser,
 		})
 		c.Set(string(middleware.ContextKeyUserRole), service.RoleUser)
 		c.Next()
 	}
 	adminAuth := func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{
-			UserID:      1,
-			Concurrency: 5,
+			UserID:           1,
+			Concurrency:      5,
+			BillingSubjectID: 1,
+			SubjectType:      domain.BillingSubjectTypeUser,
 		})
 		c.Set(string(middleware.ContextKeyUserRole), service.RoleAdmin)
 		c.Next()
@@ -2472,11 +2492,28 @@ func (r *stubUsageLogRepo) GetUserModelStats(ctx context.Context, userID int64, 
 }
 
 func (r *stubUsageLogRepo) ListWithFilters(ctx context.Context, params pagination.PaginationParams, filters usagestats.UsageLogFilters) ([]service.UsageLog, *pagination.PaginationResult, error) {
-	logs := r.userLogs[filters.UserID]
+	// Mirror production: when a billing subject is scoped, query by it across
+	// all rows; otherwise fall back to the per-user index.
+	var logs []service.UsageLog
+	if filters.BillingSubjectID > 0 {
+		for _, ls := range r.userLogs {
+			for _, l := range ls {
+				if l.BillingSubjectID == filters.BillingSubjectID {
+					logs = append(logs, l)
+				}
+			}
+		}
+	} else {
+		logs = r.userLogs[filters.UserID]
+	}
 
 	// Apply filters
 	var filtered []service.UsageLog
 	for _, log := range logs {
+		// Apply ActorUserID (member) filter
+		if filters.ActorUserID > 0 && (log.ActorUserID == nil || *log.ActorUserID != filters.ActorUserID) {
+			continue
+		}
 		// Apply APIKeyID filter
 		if filters.APIKeyID > 0 && log.APIKeyID != filters.APIKeyID {
 			continue

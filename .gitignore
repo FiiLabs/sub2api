@@ -132,6 +132,8 @@ docs/*
 !docs/PAYMENT.md
 !docs/PAYMENT_CN.md
 !docs/ADMIN_PAYMENT_INTEGRATION_API.md
+!docs/TEAM_WORKSPACES.md
+!docs/TEAM_WORKSPACES_CN.md
 .serena/
 .codex/
 frontend/coverage/

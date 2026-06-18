@@ -18,10 +18,10 @@ const (
 	billingBalanceKeyPrefix        = "billing:balance:"
 	billingSubjectBalanceKeyPrefix = "billing:subject_balance:"
 	billingSubKeyPrefix            = "billing:sub:"
-	billingRateLimitKeyPrefix = "apikey:rate:"
-	billingCacheTTL           = 5 * time.Minute
-	billingCacheJitter        = 30 * time.Second
-	rateLimitCacheTTL         = 7 * 24 * time.Hour // 7 days matches the longest window
+	billingRateLimitKeyPrefix      = "apikey:rate:"
+	billingCacheTTL                = 5 * time.Minute
+	billingCacheJitter             = 30 * time.Second
+	rateLimitCacheTTL              = 7 * 24 * time.Hour // 7 days matches the longest window
 
 	// Rate limit window durations — must match service.RateLimitWindow* constants.
 	rateLimitWindow5h = 5 * time.Hour

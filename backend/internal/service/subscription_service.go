@@ -359,13 +359,13 @@ func (s *SubscriptionService) createSubscription(ctx context.Context, input *Ass
 		UserID:           input.UserID,
 		BillingSubjectID: input.BillingSubjectID,
 		GroupID:          input.GroupID,
-		StartsAt:   now,
-		ExpiresAt:  expiresAt,
-		Status:     SubscriptionStatusActive,
-		AssignedAt: now,
-		Notes:      input.Notes,
-		CreatedAt:  now,
-		UpdatedAt:  now,
+		StartsAt:         now,
+		ExpiresAt:        expiresAt,
+		Status:           SubscriptionStatusActive,
+		AssignedAt:       now,
+		Notes:            input.Notes,
+		CreatedAt:        now,
+		UpdatedAt:        now,
 	}
 	// 只有当 AssignedBy > 0 时才设置（0 表示系统分配，如兑换码）
 	if input.AssignedBy > 0 {
