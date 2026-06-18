@@ -116,6 +116,19 @@
               />
             </div>
 
+            <!-- Member Filter (active workspace member by user id) -->
+            <div class="min-w-[140px]">
+              <label class="input-label">{{ t('usage.actor') }}</label>
+              <input
+                v-model.number="actorUserId"
+                type="number"
+                min="0"
+                class="input"
+                :placeholder="t('usage.allMembers')"
+                @change="applyFilters"
+              />
+            </div>
+
             <!-- Date Range Filter -->
             <div>
               <label class="input-label">{{ t('usage.timeRange') }}</label>
@@ -362,6 +375,11 @@
 
           <template #cell-user_agent="{ row }">
             <span v-if="row.user_agent" class="text-sm text-gray-600 dark:text-gray-400 block max-w-[320px] whitespace-normal break-all" :title="row.user_agent">{{ formatUserAgent(row.user_agent) }}</span>
+            <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
+          </template>
+
+          <template #cell-actor_user_id="{ row }">
+            <span v-if="row.actor_user_id" class="text-sm text-gray-600 dark:text-gray-400">{{ row.actor_user_id }}</span>
             <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
           </template>
 
@@ -665,6 +683,9 @@ const tokenTooltipData = ref<UsageLog | null>(null)
 // Usage stats from API
 const usageStats = ref<UsageStatsResponse | null>(null)
 
+// Member filter (active-workspace member whose usage to show); null = all members
+const actorUserId = ref<number | null>(null)
+
 // 缓存命中率 = cache_read / (input + cache_read)
 // 分母为 0（无任何输入）时显示 '-'
 const cacheStats = computed(() => {
@@ -690,7 +711,8 @@ const columns = computed<Column[]>(() => [
   { key: 'first_token', label: t('usage.firstToken'), sortable: false },
   { key: 'duration', label: t('usage.duration'), sortable: false },
   { key: 'created_at', label: t('usage.time'), sortable: true },
-  { key: 'user_agent', label: t('usage.userAgent'), sortable: false }
+  { key: 'user_agent', label: t('usage.userAgent'), sortable: false },
+  ...(actorUserId.value ? [{ key: 'actor_user_id', label: t('usage.actor'), sortable: false }] : [])
 ])
 
 const usageLogs = ref<UsageLog[]>([])
@@ -826,6 +848,7 @@ const buildUsageQueryParams = (page: number, pageSize: number): UsageTableQueryP
   page,
   page_size: pageSize,
   ...filters.value,
+  actor_user_id: actorUserId.value ? Number(actorUserId.value) : undefined,
   sort_by: sortState.sort_by,
   sort_order: sortState.sort_order
 })

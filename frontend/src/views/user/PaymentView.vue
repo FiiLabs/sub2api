@@ -1,6 +1,7 @@
 <template>
   <AppLayout>
     <div class="mx-auto max-w-4xl space-y-6">
+      <p v-if="targetName" class="text-sm text-gray-500 dark:text-dark-400">{{ t('workspace.billingTarget', { name: targetName }) }}</p>
       <div v-if="loading" class="flex items-center justify-center py-20">
         <div class="h-8 w-8 animate-spin rounded-full border-4 border-primary-500 border-t-transparent"></div>
       </div>
@@ -254,6 +255,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { usePaymentStore } from '@/stores/payment'
 import { useSubscriptionStore } from '@/stores/subscriptions'
+import { useWorkspaceStore } from '@/stores/workspaces'
 import { useAppStore } from '@/stores'
 import { paymentAPI } from '@/api/payment'
 import { extractApiErrorMessage, extractI18nErrorMessage } from '@/utils/apiError'
@@ -291,6 +293,9 @@ const authStore = useAuthStore()
 const paymentStore = usePaymentStore()
 const subscriptionStore = useSubscriptionStore()
 const appStore = useAppStore()
+const workspaceStore = useWorkspaceStore()
+
+const targetName = computed(() => workspaceStore.activeWorkspace?.name || '')
 
 const user = computed(() => authStore.user)
 const activeSubscriptions = computed(() => subscriptionStore.activeSubscriptions)

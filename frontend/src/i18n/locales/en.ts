@@ -567,6 +567,12 @@ export default {
     pendingInvitations: 'Pending invitations'
   },
 
+  // Workspace
+  workspace: {
+    active: 'Workspace',
+    billingTarget: 'Billing target: {name}'
+  },
+
   // Auth
   auth: {
     welcomeBack: 'Welcome Back',
@@ -868,6 +874,7 @@ export default {
     allGroups: 'All Groups',
     allStatus: 'All Status',
     createKey: 'Create API Key',
+    teamManagePermissionRequired: 'You need the team key-management permission to create keys.',
     editKey: 'Edit API Key',
     deleteKey: 'Delete API Key',
     deleteConfirmMessage: "Are you sure you want to delete '{name}'? This action cannot be undone.",
@@ -1020,6 +1027,8 @@ export default {
   usage: {
     title: 'Usage Records',
     description: 'View and analyze your API usage history',
+    actor: 'Member',
+    allMembers: 'All members',
     costDetails: 'Cost Breakdown',
     tokenDetails: 'Token Breakdown',
     cacheTtlOverriddenHint: 'Cache TTL Override enabled',

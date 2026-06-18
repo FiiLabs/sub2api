@@ -1,6 +1,7 @@
 <template>
   <AppLayout>
     <div class="space-y-4">
+      <p v-if="targetName" class="text-sm text-gray-500 dark:text-dark-400">{{ t('workspace.billingTarget', { name: targetName }) }}</p>
       <!-- Filters -->
       <div class="card p-4">
         <div class="flex flex-wrap items-center gap-3">
@@ -85,6 +86,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores'
+import { useWorkspaceStore } from '@/stores/workspaces'
 import { paymentAPI } from '@/api/payment'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import type { PaymentOrder } from '@/types/payment'
@@ -98,6 +100,9 @@ import OrderTable from '@/components/payment/OrderTable.vue'
 const { t } = useI18n()
 const router = useRouter()
 const appStore = useAppStore()
+const workspaceStore = useWorkspaceStore()
+
+const targetName = computed(() => workspaceStore.activeWorkspace?.name || '')
 
 const loading = ref(false)
 const actionLoading = ref(false)

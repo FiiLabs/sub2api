@@ -1268,6 +1268,7 @@ export type ImageSizeBreakdown = Record<string, number>
 export interface UsageLog {
   id: number
   user_id: number
+  actor_user_id?: number | null
   api_key_id: number
   account_id: number | null
   request_id: string
@@ -1705,6 +1706,7 @@ export interface UsageQueryParams {
   page_size?: number
   api_key_id?: number
   user_id?: number
+  actor_user_id?: number
   account_id?: number
   group_id?: number
   model?: string

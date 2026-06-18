@@ -1,6 +1,7 @@
 <template>
   <AppLayout>
     <div class="space-y-6">
+      <p v-if="targetName" class="text-sm text-gray-500 dark:text-dark-400">{{ t('workspace.billingTarget', { name: targetName }) }}</p>
       <!-- Loading State -->
       <div v-if="loading" class="flex justify-center py-12">
         <div
@@ -242,10 +243,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
+import { useWorkspaceStore } from '@/stores/workspaces'
 import subscriptionsAPI from '@/api/subscriptions'
 import type { UserSubscription } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -267,6 +269,9 @@ function platformAccentDotClass(p: string): string {
 const { t } = useI18n()
 const router = useRouter()
 const appStore = useAppStore()
+const workspaceStore = useWorkspaceStore()
+
+const targetName = computed(() => workspaceStore.activeWorkspace?.name || '')
 
 const subscriptions = ref<UserSubscription[]>([])
 const loading = ref(true)

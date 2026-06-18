@@ -564,6 +564,12 @@ export default {
     pendingInvitations: '待接受邀请'
   },
 
+  // Workspace
+  workspace: {
+    active: '工作空间',
+    billingTarget: '账单主体：{name}'
+  },
+
   // Auth
   auth: {
     welcomeBack: '欢迎回来',
@@ -864,6 +870,7 @@ export default {
     allGroups: '全部分组',
     allStatus: '全部状态',
     createKey: '创建密钥',
+    teamManagePermissionRequired: '您需要团队密钥管理权限才能创建密钥。',
     editKey: '编辑密钥',
     deleteKey: '删除密钥',
     deleteConfirmMessage: "确定要删除 '{name}' 吗？此操作无法撤销。",
@@ -1021,6 +1028,8 @@ export default {
   usage: {
     title: '使用记录',
     description: '查看和分析您的 API 使用历史',
+    actor: '成员',
+    allMembers: '全部成员',
     costDetails: '成本明细',
     tokenDetails: 'Token 明细',
     cacheTtlOverriddenHint: '缓存 TTL Override 已启用',

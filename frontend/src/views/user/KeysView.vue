@@ -3,6 +3,9 @@
     <TablePageLayout>
       <template #filters>
         <div class="flex flex-col gap-3">
+          <p v-if="workspaceStore.activeWorkspace" class="text-sm text-gray-500 dark:text-dark-400">
+            {{ t('workspace.active') }}: {{ workspaceStore.activeWorkspace.name }}
+          </p>
           <div class="flex flex-wrap items-center gap-3">
             <SearchInput
               v-model="filterSearch"
@@ -41,7 +44,13 @@
         >
           <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
         </button>
-        <button @click="showCreateModal = true" class="btn btn-primary" data-tour="keys-create-btn">
+        <button
+          @click="showCreateModal = true"
+          :disabled="createDisabled"
+          :title="createDisabled ? t('keys.teamManagePermissionRequired') : undefined"
+          class="btn btn-primary"
+          data-tour="keys-create-btn"
+        >
           <Icon name="plus" size="md" class="mr-2" />
           {{ t('keys.createKey') }}
         </button>
@@ -1053,6 +1062,7 @@
 	import { useI18n } from 'vue-i18n'
 	import { useAppStore } from '@/stores/app'
 	import { useOnboardingStore } from '@/stores/onboarding'
+	import { useWorkspaceStore } from '@/stores/workspaces'
 	import { useClipboard } from '@/composables/useClipboard'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 
@@ -1102,7 +1112,13 @@ interface GroupOption {
 
 const appStore = useAppStore()
 const onboardingStore = useOnboardingStore()
+const workspaceStore = useWorkspaceStore()
 const { copyToClipboard: clipboardCopy } = useClipboard()
+
+// Disable key creation when a team workspace is active and the user lacks key-management permission
+const createDisabled = computed(
+  () => workspaceStore.isTeamWorkspace && !workspaceStore.activeWorkspace?.permissions?.['team.keys.manage']
+)
 
 const columns = computed<Column[]>(() => [
   { key: 'name', label: t('common.name'), sortable: true },

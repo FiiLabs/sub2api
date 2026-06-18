@@ -1,6 +1,7 @@
 <template>
   <AppLayout>
     <div class="mx-auto max-w-2xl space-y-6">
+      <p v-if="targetName" class="text-sm text-gray-500 dark:text-dark-400">{{ t('workspace.billingTarget', { name: targetName }) }}</p>
       <!-- Current Balance Card -->
       <div class="card overflow-hidden">
         <div class="bg-gradient-to-br from-primary-500 to-primary-600 px-6 py-8 text-center">
@@ -347,6 +348,7 @@ import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
 import { useSubscriptionStore } from '@/stores/subscriptions'
+import { useWorkspaceStore } from '@/stores/workspaces'
 import { redeemAPI, authAPI, type RedeemHistoryItem } from '@/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -356,8 +358,10 @@ const { t } = useI18n()
 const authStore = useAuthStore()
 const appStore = useAppStore()
 const subscriptionStore = useSubscriptionStore()
+const workspaceStore = useWorkspaceStore()
 
 const user = computed(() => authStore.user)
+const targetName = computed(() => workspaceStore.activeWorkspace?.name || '')
 
 const redeemCode = ref('')
 const submitting = ref(false)

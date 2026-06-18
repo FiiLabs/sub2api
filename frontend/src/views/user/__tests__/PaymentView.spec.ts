@@ -74,6 +74,12 @@ vi.mock('@/stores', () => ({
   }),
 }))
 
+vi.mock('@/stores/workspaces', () => ({
+  useWorkspaceStore: () => ({
+    activeWorkspace: null,
+  }),
+}))
+
 vi.mock('@/api/payment', () => ({
   paymentAPI: {
     getCheckoutInfo,
