@@ -8,466 +8,436 @@
       <div class="absolute left-1/3 top-1/4 h-72 w-72 rounded-full bg-primary-300/10 blur-3xl"></div>
       <div class="absolute bottom-1/4 right-1/4 h-64 w-64 rounded-full bg-primary-400/10 blur-3xl"></div>
       <div
-        class="absolute inset-0 bg-[linear-gradient(rgba(20,184,166,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(20,184,166,0.03)_1px,transparent_1px)] bg-[size:64px_64px]">
+        class="absolute inset-0 bg-[linear-gradient(rgba(123,97,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(123,97,255,0.03)_1px,transparent_1px)] bg-[size:64px_64px]">
       </div>
     </div>
 
     <Header />
 
     <!-- Main Content -->
-    <main class="relative z-10 flex-1 px-6 py-16">
-      <div class="mx-auto max-w-6xl">
-        <!-- Hero Section - Left/Right Layout -->
-        <div class="mb-12 flex flex-col items-center justify-between gap-12 lg:flex-row lg:gap-16">
-          <!-- Left: Text Content -->
-          <div class="flex-1 text-center lg:text-left">
-            <h1 class="mb-4 text-4xl font-bold text-gray-900 dark:text-white md:text-5xl lg:text-6xl">
-              {{ t('home.landing.hero.titlePrefix') }} <span
-                class="bg-gradient-to-r from-primary-500 to-primary-600 bg-clip-text [-webkit-text-fill-color:transparent]">{{ t('home.landing.hero.titleHighlight') }}</span>
-              {{ t('home.landing.hero.titleSuffix') }}
-            </h1>
-            <p class="mb-8 text-lg text-gray-600 dark:text-dark-300 md:text-xl">
-              {{ siteSubtitle }}
-            </p>
-
-            <!-- CTA Button -->
-            <div>
-              <router-link :to="isAuthenticated ? dashboardPath : '/login'"
-                class="btn btn-primary px-8 py-3 text-base shadow-lg shadow-primary-500/30">
-                {{ isAuthenticated ? t('home.goToDashboard') : t('home.getStarted') }}
-                <Icon name="arrowRight" size="md" class="ml-2" :stroke-width="2" />
-              </router-link>
-            </div>
-          </div>
-
-          <!-- Right: Terminal Animation -->
-          <div class="flex flex-1 justify-center lg:justify-end">
-            <img class="w-full h-auto rounded-xl" src="/publicai_hero_cascade.svg"
-              alt="PublicAI Gateway routing requests from a developer node to Claude, GPT, and more LLMs">
+    <main class="relative z-10 flex-1 px-6 py-14">
+      <!-- HERO (above the fold — rendered instantly, no reveal) -->
+      <section class="mx-auto max-w-3xl text-center">
+        <div
+          class="mb-6 inline-flex items-center gap-2 rounded-full border border-primary-500/30 bg-primary-500/10 px-3 py-1.5 text-fluid-xs font-medium text-primary-600 dark:bg-primary-500/20 dark:text-primary-400">
+          <span class="h-[7px] w-[7px] shrink-0 animate-pulse rounded-full bg-primary-500 dark:bg-primary-400"></span>
+          {{ t('home.landing.hero.badge') }}
+        </div>
+        <h1 class="mb-5 text-fluid-3xl font-bold leading-[1.1] tracking-tight text-gray-900 dark:text-white">
+          {{ t('home.landing.hero.title.line1') }}<br />
+          <span class="text-primary-600 dark:text-primary-400">{{ t('home.landing.hero.title.line2') }}</span><br />
+          {{ t('home.landing.hero.title.line3') }}
+        </h1>
+        <p class="mx-auto mb-8 max-w-[460px] text-fluid-base text-gray-500 dark:text-dark-300">
+          {{ siteSubtitle }}
+        </p>
+        <div class="mb-10 flex flex-col gap-2 md:flex-row md:justify-center">
+          <router-link :to="ctaTarget" class="btn btn-primary px-6 py-3 text-fluid-base shadow-lg shadow-primary-500/30">
+            {{ isAuthenticated ? t('home.goToDashboard') : t('home.getStarted') }}
+          </router-link>
+          <a :href="docUrl || '#personal'" :target="docUrl ? '_blank' : undefined"
+            :rel="docUrl ? 'noopener noreferrer' : undefined" :class="outlineBtn">
+            {{ t('home.landing.hero.viewDocs') }}
+          </a>
+        </div>
+        <div class="mx-auto grid max-w-3xl grid-cols-2 gap-2 md:grid-cols-4">
+          <div v-for="stat in heroStats" :key="stat.label" :class="cardClass" class="p-4 text-center">
+            <div class="text-fluid-lg font-bold text-primary-600 dark:text-primary-400">{{ stat.value }}</div>
+            <div class="mt-0.5 text-fluid-2xs text-gray-400 dark:text-dark-500">{{ stat.label }}</div>
           </div>
         </div>
+      </section>
 
-        <!-- Feature Tags - Centered -->
-        <div class="mb-12 flex flex-wrap items-center justify-center gap-4 md:gap-6">
-          <div
-            class="inline-flex items-center gap-2.5 rounded-full border border-gray-200/50 bg-white/80 px-5 py-2.5 shadow-sm backdrop-blur-sm dark:border-dark-700/50 dark:bg-dark-800/80">
-            <Icon name="shield" size="sm" class="text-primary-500" />
-            <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{ t('home.landing.badges.uptime') }}</span>
+      <!-- ROUTING: TEE architecture -->
+      <div class="mx-auto mt-14 max-w-5xl">
+        <div v-reveal :class="cardClass" class="reveal-item overflow-hidden p-6 md:p-8">
+          <div class="mb-3 text-center">
+            <span :class="eyebrowClass">{{ t('home.landing.routing.eyebrow') }}</span>
           </div>
-          <div
-            class="inline-flex items-center gap-2.5 rounded-full border border-gray-200/50 bg-white/80 px-5 py-2.5 shadow-sm backdrop-blur-sm dark:border-dark-700/50 dark:bg-dark-800/80">
-            <Icon name="dollar" size="sm" class="text-primary-500" />
-            <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{ t('home.landing.badges.lowerCost') }}</span>
-          </div>
-          <div
-            class="inline-flex items-center gap-2.5 rounded-full border border-gray-200/50 bg-white/80 px-5 py-2.5 shadow-sm backdrop-blur-sm dark:border-dark-700/50 dark:bg-dark-800/80">
-            <Icon name="code" size="sm" class="text-primary-500" />
-            <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{ t('home.landing.badges.compatible') }}</span>
-          </div>
+          <svg id="routing-svg" viewBox="0 0 720 300" xmlns="http://www.w3.org/2000/svg"
+            class="block h-auto w-full">
+            <defs>
+              <marker id="arr" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto">
+                <path d="M0,0 L0,6 L6,3 z" class="arr-fill" />
+              </marker>
+              <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+                <feGaussianBlur stdDeviation="5" result="b" />
+                <feMerge>
+                  <feMergeNode in="b" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+              <linearGradient id="teeGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#7b61ff" />
+                <stop offset="1" stop-color="#5d30f7" />
+              </linearGradient>
+            </defs>
+
+            <!-- 1. User API Client -->
+            <rect x="12" y="116" width="132" height="68" rx="11" class="surf" stroke-width="1" />
+            <text x="78" y="138" text-anchor="middle" font-size="11.5" class="label"
+              font-family="system-ui,sans-serif" font-weight="600">User API Client</text>
+            <rect x="24" y="148" width="108" height="16" rx="4" class="chip" />
+            <text x="78" y="159.5" text-anchor="middle" font-size="9" class="chipt"
+              font-family="monospace">Encrypted prompt</text>
+            <text x="78" y="176" text-anchor="middle" font-size="8.5" class="label2"
+              font-family="monospace">↓ TLS / E2E ↓</text>
+
+            <!-- flow: client -> gateway -->
+            <line x1="144" y1="150" x2="226" y2="150" class="flow" stroke-width="1.3" stroke-dasharray="5,4"
+              marker-end="url(#arr)">
+              <animate attributeName="stroke-dashoffset" from="0" to="-18" dur="1.2s" repeatCount="indefinite" />
+            </line>
+            <text x="185" y="142" text-anchor="middle" font-size="8.5" class="label2"
+              font-family="system-ui">encrypted</text>
+
+            <!-- 2. TEE boundary box -->
+            <rect x="228" y="40" width="256" height="222" rx="16" fill="url(#teeGrad)" opacity="0.06"
+              stroke="#7b61ff" stroke-width="1.3" stroke-dasharray="6,5">
+              <animate attributeName="stroke-dashoffset" from="0" to="-22" dur="3s" repeatCount="indefinite" />
+            </rect>
+            <text x="356" y="60" text-anchor="middle" font-size="10.5" class="chipt"
+              font-family="system-ui,sans-serif" font-weight="700">🔒 Intel TDX Confidential VM (TEE)</text>
+            <text x="356" y="74" text-anchor="middle" font-size="8.5" class="label2"
+              font-family="system-ui">Hardware-isolated · memory encrypted</text>
+
+            <!-- Gateway core -->
+            <rect x="252" y="92" width="208" height="104" rx="14" fill="url(#teeGrad)" filter="url(#glow)" />
+            <rect x="256" y="96" width="200" height="42" rx="10" fill="rgba(255,255,255,0.10)" />
+            <text x="356" y="116" text-anchor="middle" font-size="13" fill="white" font-weight="700"
+              font-family="system-ui,sans-serif">TDX Secure Gateway</text>
+            <text x="356" y="131" text-anchor="middle" font-size="9.5" fill="rgba(255,255,255,0.8)"
+              font-family="system-ui">Nginx + PublicAI Gateway</text>
+            <!-- attestation badge -->
+            <rect x="284" y="148" width="144" height="34" rx="8" fill="rgba(255,255,255,0.14)"
+              stroke="rgba(255,255,255,0.35)" stroke-width="1" />
+            <circle cx="302" cy="165" r="5" fill="#7CE3B5">
+              <animate attributeName="opacity" values="1;0.4;1" dur="1.8s" repeatCount="indefinite" />
+            </circle>
+            <text x="356" y="163" text-anchor="middle" font-size="9" fill="white" font-weight="600"
+              font-family="system-ui">Verified by</text>
+            <text x="356" y="174" text-anchor="middle" font-size="9" fill="white" font-weight="600"
+              font-family="system-ui">Remote Attestation</text>
+
+            <!-- flow: gateway -> providers -->
+            <path d="M484,118 C540,118 548,72 596,72" class="flow" stroke-width="1.3" fill="none"
+              stroke-dasharray="5,4" marker-end="url(#arr)">
+              <animate attributeName="stroke-dashoffset" from="0" to="-18" dur="1s" repeatCount="indefinite" />
+            </path>
+            <line x1="484" y1="150" x2="596" y2="150" class="flow" stroke-width="1.3" stroke-dasharray="5,4"
+              marker-end="url(#arr)">
+              <animate attributeName="stroke-dashoffset" from="0" to="-18" dur="1.3s" repeatCount="indefinite" />
+            </line>
+            <path d="M484,182 C540,182 548,228 596,228" class="flow" stroke-width="1.3" fill="none"
+              stroke-dasharray="5,4" marker-end="url(#arr)">
+              <animate attributeName="stroke-dashoffset" from="0" to="-18" dur="0.9s" repeatCount="indefinite" />
+            </path>
+            <text x="540" y="143" text-anchor="middle" font-size="8.5" class="label2"
+              font-family="system-ui">Secure Routing</text>
+
+            <!-- 3. Providers -->
+            <rect x="596" y="52" width="116" height="40" rx="8" class="surf" stroke-width="1" />
+            <circle cx="612" cy="72" r="6.5" fill="#10a37f" />
+            <text x="623" y="69" font-size="10.5" font-weight="600" class="strong" font-family="system-ui">OpenAI</text>
+            <text x="623" y="80" font-size="9" class="label2" font-family="system-ui">GPT-5.x</text>
+
+            <rect x="596" y="130" width="116" height="40" rx="8" class="surf" stroke-width="1" />
+            <circle cx="612" cy="150" r="6.5" fill="#7b61ff" />
+            <text x="623" y="147" font-size="10.5" font-weight="600" class="strong" font-family="system-ui">Claude</text>
+            <text x="623" y="158" font-size="9" class="label2" font-family="system-ui">Anthropic 4.x</text>
+
+            <rect x="596" y="208" width="116" height="40" rx="8" class="surf" stroke-width="1" />
+            <circle cx="612" cy="228" r="6.5" fill="#4285F4" />
+            <text x="623" y="225" font-size="10.5" font-weight="600" class="strong" font-family="system-ui">Gemini</text>
+            <text x="623" y="236" font-size="9" class="label2" font-family="system-ui">Google</text>
+
+            <!-- packets -->
+            <circle r="4" fill="#7b61ff">
+              <animateMotion dur="1.6s" repeatCount="indefinite" path="M144,150 L226,150" />
+              <animate attributeName="opacity" values="0;0.9;0" dur="1.6s" repeatCount="indefinite" />
+            </circle>
+            <circle r="3.5" fill="#10a37f">
+              <animateMotion dur="1.2s" repeatCount="indefinite" begin="0.2s"
+                path="M484,118 C540,118 548,72 596,72" />
+              <animate attributeName="opacity" values="0;0.9;0" dur="1.2s" repeatCount="indefinite" begin="0.2s" />
+            </circle>
+            <circle r="3.5" fill="#7b61ff">
+              <animateMotion dur="1s" repeatCount="indefinite" begin="0.5s" path="M484,150 L596,150" />
+              <animate attributeName="opacity" values="0;0.9;0" dur="1s" repeatCount="indefinite" begin="0.5s" />
+            </circle>
+            <circle r="3.5" fill="#4285F4">
+              <animateMotion dur="1.4s" repeatCount="indefinite" begin="0.8s"
+                path="M484,182 C540,182 548,228 596,228" />
+              <animate attributeName="opacity" values="0;0.9;0" dur="1.4s" repeatCount="indefinite" begin="0.8s" />
+            </circle>
+          </svg>
+          <p class="mt-3 text-center text-fluid-2xs text-gray-400 dark:text-dark-500">
+            {{ t('home.landing.routing.caption') }}
+          </p>
         </div>
-
-        <!-- Statement -->
-        <section
-          v-reveal
-          class="reveal-item mx-auto max-w-4xl py-10 text-center"
-        >
-          <h2 class="text-3xl font-bold leading-tight text-gray-900 dark:text-white md:text-5xl">
-            {{ t('home.landing.statement.title') }}
-          </h2>
-          <p class="mx-auto mt-4 max-w-2xl text-lg leading-8 text-gray-600 dark:text-dark-300">
-            {{ t('home.landing.statement.description') }}
-          </p>
-        </section>
-
-        <!-- Features -->
-        <section id="features" class="py-4">
-          <div
-            v-for="(feature, index) in featureRows"
-            :key="feature.title"
-            v-reveal
-            class="reveal-item grid gap-8 border-t border-gray-200/70 py-10 dark:border-dark-700/70 lg:grid-cols-2 lg:items-center lg:gap-14"
-            :style="{ transitionDelay: `${index * 80}ms` }"
-          >
-            <div :class="feature.reversed ? 'lg:order-2' : ''">
-              <h3 class="mt-3 text-2xl font-semibold leading-tight text-gray-900 dark:text-white md:text-3xl">
-                {{ feature.title }}
-              </h3>
-              <p class="mt-4 max-w-xl text-base leading-7 text-gray-600 dark:text-dark-300">
-                {{ feature.description }}
-              </p>
-              <div class="mt-6 flex flex-wrap gap-2.5">
-                <span v-for="tag in feature.tags" :key="tag"
-                  class="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white/70 px-3 py-2 font-mono text-xs font-medium text-gray-600 shadow-sm dark:border-dark-700 dark:bg-dark-800/70 dark:text-dark-300">
-                  <span class="h-1.5 w-1.5 rounded-full bg-primary-500"></span>
-                  {{ tag }}
-                </span>
-              </div>
-            </div>
-
-            <div
-              class="relative overflow-hidden rounded-2xl border border-gray-200 bg-white/80 p-6 shadow-card backdrop-blur-sm dark:border-dark-700 dark:bg-dark-800/80"
-              :class="feature.reversed ? 'lg:order-1' : ''">
-              <div
-                class="pointer-events-none absolute inset-0 bg-[radial-gradient(420px_200px_at_80%_-20%,rgba(123,97,255,0.16),transparent_70%)]">
-              </div>
-
-              <div v-if="feature.visual === 'uptime'" class="relative">
-                <div class="mb-5 flex items-start justify-between gap-4">
-                  <div>
-                    <div class="text-4xl font-bold leading-none text-gray-900 dark:text-white">
-                      99.99<span class="text-xl text-gray-400">%</span>
-                    </div>
-                    <div class="mt-1 font-mono text-xs text-gray-500 dark:text-dark-400">
-                      {{ t('home.landing.reliability.uptimeWindow') }}
-                    </div>
-                  </div>
-                  <span
-                    class="inline-flex items-center gap-2 rounded-lg bg-emerald-500/10 px-3 py-1.5 font-mono text-xs font-medium text-emerald-500">
-                    <span class="relative flex size-2">
-                      <span
-                        class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
-                      <span class="relative inline-flex size-2 rounded-full bg-emerald-500"></span>
-                    </span>
-                    {{ t('home.landing.reliability.operational') }}
-                  </span>
-                </div>
-
-                <div class="flex h-14 items-end gap-1">
-                  <span v-for="(bar, barIndex) in uptimeBars" :key="barIndex"
-                    class="reveal-bar flex-1 rounded-sm bg-emerald-400/85"
-                    :class="bar.isDip ? 'bg-amber-400/90' : ''"
-                    :style="{ height: `${bar.height}%`, transitionDelay: `${barIndex * 14}ms` }"></span>
-                </div>
-
-                <div v-for="service in healthyServices" :key="service"
-                  class="mt-4 flex items-center justify-between border-t border-gray-100 pt-3 text-sm dark:border-dark-700">
-                  <span class="font-mono text-gray-600 dark:text-dark-300">{{ service }}</span>
-                  <span class="inline-flex items-center gap-2 font-mono text-xs text-emerald-500">
-                    <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400"></span>
-                    {{ t('home.landing.reliability.healthy') }}
-                  </span>
-                </div>
-              </div>
-
-              <div v-else class="relative space-y-4">
-                <div v-for="row in costRows" :key="row.label" class="flex items-center gap-4">
-                  <span class="w-20 font-mono text-xs text-gray-500 dark:text-dark-400">
-                    {{ row.label }}
-                  </span>
-                  <div class="h-8 flex-1 overflow-hidden rounded-lg bg-gray-100 dark:bg-dark-700">
-                    <div
-                      class="flex h-full items-center justify-end rounded-lg pr-3 font-mono text-xs font-bold text-white"
-                      :class="row.fillClass" :style="{ width: row.width }">
-                      {{ row.price }}
-                    </div>
-                  </div>
-                </div>
-                <div class="text-right font-mono text-xs text-gray-500 dark:text-dark-400">
-                  {{ t('home.landing.costs.spendHint') }}
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- Pricing Comparison -->
-        <section id="pricing" class="py-14">
-          <div v-reveal class="reveal-item mx-auto mb-10 max-w-3xl text-center">
-            <span
-              class="font-mono text-xs font-medium uppercase tracking-[0.12em] text-primary-600 dark:text-primary-400">
-              {{ t('home.landing.pricing.eyebrow') }}
-            </span>
-            <h2 class="mt-3 text-3xl font-bold leading-tight text-gray-900 dark:text-white md:text-4xl">
-              {{ t('home.landing.pricing.title') }}
-            </h2>
-            <p class="mx-auto mt-4 max-w-2xl text-base leading-7 text-gray-600 dark:text-dark-300">
-              {{ t('home.landing.pricing.subtitle') }}
-            </p>
-          </div>
-
-          <div v-reveal class="reveal-item mx-auto max-w-5xl">
-            <div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              <div v-for="(model, index) in pricingCards" :key="model.name"
-                class="relative overflow-hidden rounded-2xl border border-gray-200 bg-white/80 p-6 shadow-card backdrop-blur-sm transition hover:-translate-y-1 hover:shadow-lg dark:border-dark-700 dark:bg-dark-800/80"
-                :style="{ transitionDelay: `${index * 60}ms` }">
-                <!-- Logo decoration -->
-                <div class="pointer-events-none absolute -right-3 -top-3 opacity-[0.07]">
-                  <svg v-if="model.brand === 'gpt'" viewBox="0 0 24 24" class="size-24" fill="currentColor">
-                    <path d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.985 5.985 0 0 0-3.998 2.9 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073zM13.26 22.43a4.476 4.476 0 0 1-2.876-1.04l.141-.081 4.779-2.758a.795.795 0 0 0 .392-.681v-6.737l2.02 1.168a.071.071 0 0 1 .038.052v5.583a4.504 4.504 0 0 1-4.494 4.494zM3.6 18.304a4.47 4.47 0 0 1-.535-3.014l.142.085 4.783 2.759a.771.771 0 0 0 .78 0l5.843-3.369v2.332a.08.08 0 0 1-.033.062L9.74 19.95a4.5 4.5 0 0 1-6.14-1.646zM2.34 7.896a4.485 4.485 0 0 1 2.366-1.973V11.6a.766.766 0 0 0 .388.676l5.815 3.355-2.02 1.168a.076.076 0 0 1-.071 0l-4.83-2.786A4.504 4.504 0 0 1 2.34 7.872zm16.597 3.855l-5.833-3.387L15.119 7.2a.076.076 0 0 1 .071 0l4.83 2.791a4.494 4.494 0 0 1-.676 8.105v-5.678a.79.79 0 0 0-.407-.667zm2.01-3.023l-.141-.085-4.774-2.782a.776.776 0 0 0-.785 0L9.409 9.23V6.897a.066.066 0 0 1 .028-.061l4.83-2.787a4.5 4.5 0 0 1 6.68 4.66zm-12.64 4.135l-2.02-1.164a.08.08 0 0 1-.038-.057V6.075a4.5 4.5 0 0 1 7.375-3.453l-.142.08L8.704 5.46a.795.795 0 0 0-.393.681zm1.097-2.365l2.602-1.5 2.607 1.5v2.999l-2.597 1.5-2.607-1.5z" />
-                  </svg>
-                  <svg v-else viewBox="0 0 100 100" class="size-24" fill="#d97757">
-                    <path d="m19.6 66.5 19.7-11 .3-1-.3-.5h-1l-3.3-.2-11.2-.3L14 53l-9.5-.5-2.4-.5L0 49l.2-1.5 2-1.3 2.9.2 6.3.5 9.5.6 6.9.4L38 49.1h1.6l.2-.7-.5-.4-.4-.4L29 41l-10.6-7-5.6-4.1-3-2-1.5-2-.6-4.2 2.7-3 3.7.3.9.2 3.7 2.9 8 6.1L37 36l1.5 1.2.6-.4.1-.3-.7-1.1L33 25l-6-10.4-2.7-4.3-.7-2.6c-.3-1-.4-2-.4-3l3-4.2L28 0l4.2.6L33.8 2l2.6 6 4.1 9.3L47 29.9l2 3.8 1 3.4.3 1h.7v-.5l.5-7.2 1-8.7 1-11.2.3-3.2 1.6-3.8 3-2L61 2.6l2 2.9-.3 1.8-1.1 7.7L59 27.1l-1.5 8.2h.9l1-1.1 4.1-5.4 6.9-8.6 3-3.5L77 13l2.3-1.8h4.3l3.1 4.7-1.4 4.9-4.4 5.6-3.7 4.7-5.3 7.1-3.2 5.7.3.4h.7l12-2.6 6.4-1.1 7.6-1.3 3.5 1.6.4 1.6-1.4 3.4-8.2 2-9.6 2-14.3 3.3-.2.1.2.3 6.4.6 2.8.2h6.8l12.6 1 3.3 2 1.9 2.7-.3 2-5.1 2.6-6.8-1.6-16-3.8-5.4-1.3h-.8v.4l4.6 4.5 8.3 7.5L89 80.1l.5 2.4-1.3 2-1.4-.2-9.2-7-3.6-3-8-6.8h-.5v.7l1.8 2.7 9.8 14.7.5 4.5-.7 1.4-2.6 1-2.7-.6-5.8-8-6-9-4.7-8.2-.5.4-2.9 30.2-1.3 1.5-3 1.2-2.5-2-1.4-3 1.4-6.2 1.6-8 1.3-6.4 1.2-7.9.7-2.6v-.2H49L43 72l-9 12.3-7.2 7.6-1.7.7-3-1.5.3-2.8L24 86l10-12.8 6-7.9 4-4.6-.1-.5h-.3L17.2 77.4l-4.7.6-2-2 .2-3 1-1 8-5.5Z" />
-                  </svg>
-                </div>
-
-                <!-- Model info -->
-                <div class="relative">
-                  <div class="mb-1 flex items-center gap-2">
-                    <span class="text-sm font-semibold text-gray-500 dark:text-dark-400">{{ model.provider }}</span>
-                  </div>
-                  <h3 class="text-xl font-bold text-gray-900 dark:text-white">{{ model.name }}</h3>
-
-                  <!-- Input price -->
-                  <div class="mt-4 space-y-1.5">
-                    <div class="flex items-center justify-between text-xs">
-                      <span class="text-gray-500 dark:text-dark-400">{{ t('home.landing.pricing.col.input') }}</span>
-                      <span class="font-mono text-gray-400 line-through dark:text-dark-500">${{ model.officialInput }}/M</span>
-                    </div>
-                    <div class="flex items-center justify-between">
-                      <span class="text-xs text-gray-500 dark:text-dark-400">{{ t('home.landing.pricing.col.input') }}</span>
-                      <span class="font-mono text-lg font-bold text-primary-600 dark:text-primary-400">${{ model.gatewayInput }}/M</span>
-                    </div>
-
-                  </div>
-
-                  <!-- Divider -->
-                  <div class="my-4 border-t border-gray-100 dark:border-dark-700"></div>
-
-                  <!-- Output price -->
-                  <div class="space-y-1.5">
-                    <div class="flex items-center justify-between text-xs">
-                      <span class="text-gray-500 dark:text-dark-400">{{ t('home.landing.pricing.col.output') }}</span>
-                      <span class="font-mono text-gray-400 line-through dark:text-dark-500">${{ model.officialOutput }}/M</span>
-                    </div>
-                    <div class="flex items-center justify-between">
-                      <span class="text-xs text-gray-500 dark:text-dark-400">{{ t('home.landing.pricing.col.output') }}</span>
-                      <span class="font-mono text-lg font-bold text-primary-600 dark:text-primary-400">${{ model.gatewayOutput }}/M</span>
-                    </div>
-                  </div>
-
-                  <!-- badge -->
-                  <div class="mt-4 flex justify-end">
-                    <span
-                      class="inline-flex items-center rounded-lg bg-emerald-500/10 px-2.5 py-1 font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                      {{ t('home.tags.realtimeBilling') }}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="mt-6 flex justify-center">
-              <span
-                class="inline-flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 font-mono text-sm font-medium text-emerald-600 dark:text-emerald-400">
-                <Icon name="dollar" size="sm" :stroke-width="2" />
-                {{ t('home.landing.pricing.save') }}
-              </span>
-            </div>
-          </div>
-        </section>
-
-        <!-- Models -->
-        <section id="models" class="py-14">
-          <div v-reveal class="reveal-item mx-auto mb-10 max-w-3xl text-center">
-            <span
-              class="font-mono text-xs font-medium uppercase tracking-[0.12em] text-primary-600 dark:text-primary-400">
-              {{ t('home.landing.models.eyebrow') }}
-            </span>
-            <h2 class="mt-3 text-3xl font-bold leading-tight text-gray-900 dark:text-white md:text-4xl">
-              {{ t('home.landing.models.title') }}
-            </h2>
-          </div>
-
-          <div class="mx-auto grid max-w-4xl gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div v-for="(model, index) in modelCards" :key="model.name"
-              v-reveal
-              class="reveal-item flex items-center gap-4 rounded-2xl border bg-white/80 p-4 shadow-card transition hover:-translate-y-1 hover:border-primary-300 dark:bg-dark-800/80"
-              :class="[
-                model.available
-                  ? 'border-gray-200 dark:border-dark-700'
-                  : 'border-dashed border-gray-300 opacity-75 dark:border-dark-600'
-              ]" :style="{ transitionDelay: `${index * 60}ms` }">
-              <div class="flex h-11 w-11 flex-none items-center justify-center rounded-xl text-lg font-bold text-white"
-                :class="model.iconClass">
-                {{ model.initial }}
-              </div>
-              <div class="min-w-0">
-                <div class="font-semibold text-gray-900 dark:text-white">{{ model.name }}</div>
-                <div class="mt-0.5 font-mono text-[11px] uppercase tracking-wider"
-                  :class="model.available ? 'text-emerald-500' : 'text-gray-400'">
-                  {{ model.available ? t('home.landing.models.available') : t('home.landing.models.comingSoon') }}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <p class="mt-8 text-center text-base text-gray-600 dark:text-dark-300">
-            <b class="font-semibold text-gray-900 dark:text-white">{{ t('home.landing.models.noLockIn') }}</b>
-            {{ t('home.landing.models.switchHint') }}
-          </p>
-        </section>
-
-        <!-- Production -->
-        <section class="py-14">
-          <div v-reveal class="reveal-item mx-auto mb-10 max-w-3xl text-center">
-            <span
-              class="font-mono text-xs font-medium uppercase tracking-[0.12em] text-primary-600 dark:text-primary-400">
-              {{ t('home.landing.production.eyebrow') }}
-            </span>
-            <h2 class="mt-3 text-3xl font-bold leading-tight text-gray-900 dark:text-white md:text-4xl">
-              {{ t('home.landing.production.title') }}
-            </h2>
-          </div>
-
-          <div class="mx-auto grid max-w-4xl gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div v-for="(capability, index) in productionCapabilities" :key="capability.label"
-              v-reveal
-              class="reveal-item reveal-zoom flex items-center gap-3 rounded-2xl border border-gray-200 bg-white/80 p-4 shadow-card dark:border-dark-700 dark:bg-dark-800/80"
-              :style="{ transitionDelay: `${index * 55}ms` }">
-              <span
-                class="flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-primary-100 text-primary-600 dark:bg-primary-900/30 dark:text-primary-300">
-                <Icon :name="capability.icon" size="sm" />
-              </span>
-              <span class="font-medium text-gray-800 dark:text-dark-100">{{ capability.label }}</span>
-            </div>
-          </div>
-        </section>
-
-        <!-- Security -->
-        <section id="security" class="py-14">
-          <div v-reveal class="reveal-item mx-auto mb-8 max-w-3xl text-center">
-            <span
-              class="font-mono text-xs font-medium uppercase tracking-[0.12em] text-primary-600 dark:text-primary-400">
-              {{ t('home.landing.security.eyebrow') }}
-            </span>
-            <h2 class="mt-3 text-3xl font-bold leading-tight text-gray-900 dark:text-white md:text-4xl">
-              {{ t('home.landing.security.title') }}
-            </h2>
-          </div>
-
-          <p v-reveal class="reveal-item mx-auto mb-10 max-w-2xl text-center text-base leading-7 text-gray-600 dark:text-dark-300">
-            {{ t('home.landing.security.description') }}
-            <b class="font-semibold text-gray-900 dark:text-white">
-              {{ t('home.landing.security.highlight') }}
-            </b>
-          </p>
-
-          <div class="mx-auto grid max-w-3xl gap-4 sm:grid-cols-2">
-            <div v-for="(item, index) in securityCapabilities" :key="item.label"
-              v-reveal
-              class="reveal-item reveal-zoom flex items-center gap-3 rounded-2xl border border-gray-200 bg-white/80 p-4 shadow-card dark:border-dark-700 dark:bg-dark-800/80"
-              :style="{ transitionDelay: `${index * 65}ms` }">
-              <span
-                class="flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-primary-100 text-primary-600 dark:bg-primary-900/30 dark:text-primary-300">
-                <Icon :name="item.icon" size="sm" />
-              </span>
-              <span class="font-medium text-gray-800 dark:text-dark-100">{{ item.label }}</span>
-            </div>
-          </div>
-        </section>
-
-        <!-- Developers -->
-        <section id="developers" class="py-14">
-          <div
-            v-reveal
-            class="reveal-item grid gap-8 border-t grid-cols-1 border-gray-200/70 pt-10 dark:border-dark-700/70 lg:grid-cols-2 lg:items-center lg:gap-14">
-            <div class="reveal-child-left">
-              <h3 class="text-2xl font-semibold leading-tight text-gray-900 dark:text-white md:text-3xl">
-                {{ t('home.landing.developers.title') }}
-              </h3>
-              <p class="mt-4 max-w-xl text-base leading-7 text-gray-600 dark:text-dark-300">
-                {{ t('home.landing.developers.description') }}
-              </p>
-              <span
-                class="mt-5 inline-flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 font-mono text-sm font-medium text-emerald-500">
-                <Icon name="check" size="sm" :stroke-width="2" />
-                {{ t('home.landing.developers.compatibility') }}
-              </span>
-            </div>
-
-            <div class="reveal-child-right flex justify-center lg:justify-end">
-              <div class="terminal-container">
-                <div class="terminal-window w-full lg:w-[420px]">
-                  <!-- Window header -->
-                  <div class="terminal-header">
-                    <div class="terminal-buttons">
-                      <span class="btn-close"></span>
-                      <span class="btn-minimize"></span>
-                      <span class="btn-maximize"></span>
-                    </div>
-                    <span class="terminal-title">terminal</span>
-                  </div>
-                  <!-- Terminal content -->
-                  <div class="terminal-body">
-                    <div class="code-line line-1">
-                      <span class="code-prompt">$</span>
-                      <span class="code-cmd">curl</span>
-                      <span class="code-flag">-X POST</span>
-                      <span class="code-url">/v1/messages</span>
-                    </div>
-                    <div class="code-line line-2">
-                      <span class="code-comment"># Routing to upstream...</span>
-                    </div>
-                    <div class="code-line line-3">
-                      <span class="code-success">200 OK</span>
-                      <span class="code-response">{ "content": "Hello!" }</span>
-                    </div>
-                    <div class="code-line line-4">
-                      <span class="code-prompt">$</span>
-                      <span class="cursor"></span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- Social Proof -->
-        <section class="py-14 text-center">
-          <div v-reveal class="reveal-item mx-auto mb-8 max-w-3xl">
-            <span
-              class="font-mono text-xs font-medium uppercase tracking-[0.12em] text-primary-600 dark:text-primary-400">
-              {{ t('home.landing.socialProof.eyebrow') }}
-            </span>
-            <h2 class="mt-3 text-3xl font-bold leading-tight text-gray-900 dark:text-white md:text-4xl">
-              {{ t('home.landing.socialProof.title') }}
-            </h2>
-            <p class="mx-auto mt-4 max-w-2xl text-base leading-7 text-gray-600 dark:text-dark-300">
-              {{ t('home.landing.socialProof.description') }}
-            </p>
-          </div>
-
-          <div class="mx-auto grid max-w-4xl gap-5 md:grid-cols-3">
-            <div v-for="(stat, index) in proofStats" :key="stat.label"
-              v-reveal
-              class="reveal-item reveal-zoom rounded-2xl border border-gray-200 bg-white/80 p-7 shadow-card dark:border-dark-700 dark:bg-dark-800/80"
-              :style="{ transitionDelay: `${index * 70}ms` }">
-              <div
-                class="bg-gradient-to-r from-primary-500 to-primary-600 bg-clip-text text-4xl font-bold leading-none [-webkit-text-fill-color:transparent]">
-                {{ stat.value }}
-              </div>
-              <div class="mt-3 font-mono text-xs uppercase tracking-wider text-gray-500 dark:text-dark-400">
-                {{ stat.label }}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- Closing -->
-        <section class="py-14 text-center">
-          <div
-            v-reveal
-            class="reveal-item reveal-zoom relative overflow-hidden rounded-[1.75rem] border border-gray-200 bg-white/85 px-6 py-16 shadow-2xl dark:border-dark-700 dark:bg-dark-800/85 md:px-8">
-            <div
-              class="pointer-events-none absolute inset-0 bg-[radial-gradient(600px_280px_at_50%_-10%,rgba(123,97,255,0.18),transparent_60%)]">
-            </div>
-            <div class="relative">
-              <h2 class="text-4xl font-bold leading-tight text-gray-900 dark:text-white md:text-5xl">
-                {{ t('home.landing.closing.titleFirst') }}<br />{{ t('home.landing.closing.titleSecond') }}
-              </h2>
-              <p class="mx-auto mt-5 max-w-xl text-lg leading-8 text-gray-600 dark:text-dark-300">
-                {{ t('home.landing.closing.description') }}
-              </p>
-              <router-link :to="isAuthenticated ? dashboardPath : '/login'"
-                class="btn btn-primary mt-8 px-8 py-3 text-base shadow-lg shadow-primary-500/30">
-                {{ isAuthenticated ? t('home.goToDashboard') : t('home.landing.closing.button') }}
-                <Icon name="arrowRight" size="md" class="ml-2" :stroke-width="2" />
-              </router-link>
-            </div>
-          </div>
-        </section>
       </div>
+
+      <!-- PERSONAL -->
+      <section id="personal" class="mx-auto mt-14 max-w-5xl">
+        <div v-reveal class="reveal-item">
+          <span :class="eyebrowClass">{{ t('home.landing.personal.eyebrow') }}</span>
+          <h2 :class="headingClass" class="mt-1.5">{{ t('home.landing.personal.title') }}</h2>
+          <p :class="subClass" class="mb-6 mt-2 max-w-3xl">{{ t('home.landing.personal.subtitle') }}</p>
+        </div>
+
+        <div class="grid gap-4 md:grid-cols-2">
+          <div v-for="(feature, index) in personalFeatures" :key="feature.visual" v-reveal :class="cardClass"
+            class="reveal-item p-5" :style="{ transitionDelay: `${index * 70}ms` }">
+            <div class="mb-3 text-xl">{{ feature.icon }}</div>
+            <h3 class="mb-1 text-fluid-base font-semibold text-gray-900 dark:text-white">{{ feature.title }}</h3>
+            <p class="text-fluid-sm text-gray-500 dark:text-dark-400">{{ feature.desc }}</p>
+
+            <!-- cost bars -->
+            <div v-if="feature.visual === 'cost'" class="mt-3.5 rounded-lg bg-gray-50 p-3 dark:bg-dark-900/50">
+              <div v-for="bar in costBars" :key="bar.label" class="mb-1.5 flex items-center gap-2 last:mb-0">
+                <span class="w-[72px] shrink-0 text-fluid-2xs text-gray-500 dark:text-dark-400">{{ bar.label }}</span>
+                <div class="h-2 flex-1 overflow-hidden rounded-full bg-gray-200 dark:bg-dark-700">
+                  <div class="h-full rounded-full" :class="bar.fill" :style="{ width: `${bar.pct}%` }"></div>
+                </div>
+                <span class="min-w-[40px] text-right text-fluid-xs font-semibold" :class="bar.valueClass">{{ bar.value }}</span>
+              </div>
+              <div class="mt-1.5 text-right text-fluid-2xs text-gray-400 dark:text-dark-500">
+                {{ t('home.landing.personal.cost.note') }}
+              </div>
+            </div>
+
+            <!-- uptime grid -->
+            <div v-else-if="feature.visual === 'uptime'">
+              <div class="mt-3 flex items-stretch gap-[2px] sm:gap-[3px]">
+                <div v-for="(cell, i) in uptimeCells" :key="i" class="h-5 min-w-0 flex-1 rounded-[2px] sm:rounded-[3px]"
+                  :class="cell.warn ? 'bg-amber-400' : 'bg-primary-500 opacity-85'"></div>
+              </div>
+              <div class="mt-2.5 text-fluid-xl font-bold text-primary-600 dark:text-primary-400">99.99%</div>
+              <div class="text-fluid-2xs text-gray-400 dark:text-dark-500">
+                {{ t('home.landing.personal.uptime.window') }}
+              </div>
+            </div>
+
+            <!-- model pills -->
+            <div v-else-if="feature.visual === 'models'" class="mt-3 flex flex-wrap gap-1.5">
+              <span v-for="model in modelPills" :key="model" :class="pillClass">{{ model }}</span>
+            </div>
+
+            <!-- failover -->
+            <div v-else class="mt-3 flex flex-wrap items-center gap-1.5">
+              <div
+                class="rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 text-fluid-xs line-through opacity-45 dark:border-dark-700 dark:bg-dark-900/50">
+                {{ t('home.landing.personal.failover.from') }}
+              </div>
+              <span class="text-gray-400">→</span>
+              <div
+                class="rounded-lg border border-primary-500 bg-primary-500/10 px-2.5 py-1 text-fluid-xs text-primary-600 dark:text-primary-400">
+                {{ t('home.landing.personal.failover.to') }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="mx-auto my-12 h-px max-w-5xl bg-gray-200 dark:bg-dark-800"></div>
+
+      <!-- TEAM -->
+      <section id="team" class="mx-auto max-w-5xl">
+        <div v-reveal class="reveal-item">
+          <span :class="eyebrowClass">{{ t('home.landing.team.eyebrow') }}</span>
+          <h2 :class="headingClass" class="mt-1.5">{{ t('home.landing.team.title') }}</h2>
+          <p :class="subClass" class="mb-6 mt-2 max-w-3xl">{{ t('home.landing.team.subtitle') }}</p>
+        </div>
+
+        <div v-reveal :class="cardClass" class="reveal-item overflow-hidden">
+          <div
+            class="flex flex-col gap-2 bg-primary-500 p-5 text-white md:flex-row md:items-center md:justify-between">
+            <div>
+              <div class="text-fluid-sm font-semibold">{{ t('home.landing.team.header.title') }}</div>
+              <div class="text-fluid-xs opacity-75">{{ t('home.landing.team.header.subtitle') }}</div>
+            </div>
+            <span
+              class="inline-flex items-center gap-1.5 self-start rounded-full border border-white/30 bg-white/20 px-3 py-1 text-fluid-2xs font-medium">
+              {{ t('home.landing.team.header.badge') }}
+            </span>
+          </div>
+
+          <div class="grid md:grid-cols-2">
+            <!-- Member governance -->
+            <div class="border-b border-gray-200 p-5 dark:border-dark-700 md:border-r">
+              <h3 class="mb-1.5 text-fluid-sm font-semibold text-gray-900 dark:text-white">
+                {{ t('home.landing.team.members.title') }}
+              </h3>
+              <p class="mb-3 text-fluid-sm text-gray-500 dark:text-dark-400">
+                {{ t('home.landing.team.members.desc') }}
+              </p>
+              <div>
+                <div v-for="(member, i) in teamMembers" :key="member.initials"
+                  class="flex items-center justify-between py-1.5"
+                  :class="i < teamMembers.length - 1 ? 'border-b border-gray-200 dark:border-dark-700' : ''">
+                  <div class="flex items-center gap-2">
+                    <div class="flex h-[26px] w-[26px] items-center justify-center rounded-full text-fluid-2xs font-bold"
+                      :class="member.avatarClass">{{ member.initials }}</div>
+                    <div>
+                      <div class="text-fluid-xs font-semibold text-gray-900 dark:text-white">{{ member.name }}</div>
+                      <div class="text-fluid-2xs text-gray-400">{{ member.role }}</div>
+                    </div>
+                  </div>
+                  <span class="rounded-full px-2 py-0.5 text-fluid-2xs" :class="member.budgetClass">{{ member.budget }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- BYOK -->
+            <div class="border-b border-gray-200 p-5 dark:border-dark-700">
+              <h3 class="mb-1.5 text-fluid-sm font-semibold text-gray-900 dark:text-white">
+                {{ t('home.landing.team.byok.title') }}
+              </h3>
+              <p class="mb-3 text-fluid-sm text-gray-500 dark:text-dark-400">
+                {{ t('home.landing.team.byok.desc') }}
+              </p>
+              <div>
+                <div v-for="(key, i) in byokKeys" :key="key.provider"
+                  class="flex items-center gap-2 py-1.5 text-fluid-xs"
+                  :class="i < byokKeys.length - 1 ? 'border-b border-gray-200 dark:border-dark-700' : ''">
+                  <span class="min-w-[65px] shrink-0 text-gray-500 dark:text-dark-400">{{ key.provider }}</span>
+                  <span class="flex-1 truncate font-mono text-fluid-2xs text-gray-400">{{ key.masked }}</span>
+                  <span class="shrink-0 rounded-full px-2 py-0.5 text-fluid-2xs" :class="key.statusClass">{{ key.status }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Usage visibility -->
+            <div class="border-b border-gray-200 p-5 dark:border-dark-700 md:border-b-0 md:border-r">
+              <h3 class="mb-1.5 text-fluid-sm font-semibold text-gray-900 dark:text-white">
+                {{ t('home.landing.team.usage.title') }}
+              </h3>
+              <p class="mb-3 text-fluid-sm text-gray-500 dark:text-dark-400">
+                {{ t('home.landing.team.usage.desc') }}
+              </p>
+              <div>
+                <div v-for="row in usageRows" :key="row.who"
+                  class="flex items-center justify-between border-b border-gray-200 py-1.5 text-fluid-xs dark:border-dark-700">
+                  <span class="text-gray-500 dark:text-dark-400">{{ row.who }}</span>
+                  <span class="font-semibold text-gray-900 dark:text-white">{{ row.amount }}</span>
+                </div>
+                <div class="flex items-center justify-between py-1.5 text-fluid-xs">
+                  <span class="font-semibold text-gray-900 dark:text-white">{{ t('home.landing.team.usage.total') }}</span>
+                  <span class="font-semibold text-primary-600 dark:text-primary-400">{{ usageTotal }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Verifiable privacy -->
+            <div class="p-5">
+              <h3 class="mb-1.5 text-fluid-sm font-semibold text-gray-900 dark:text-white">
+                {{ t('home.landing.team.privacy.title') }}
+              </h3>
+              <p class="mb-3 text-fluid-sm text-gray-500 dark:text-dark-400">
+                {{ t('home.landing.team.privacy.desc') }}
+              </p>
+              <div class="space-y-0.5">
+                <div v-for="point in privacyPoints" :key="point"
+                  class="flex items-center gap-2 py-0.5 text-fluid-sm text-gray-700 dark:text-dark-200">
+                  <span class="font-bold text-primary-600 dark:text-primary-400">✓</span> {{ point }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="mx-auto my-12 h-px max-w-5xl bg-gray-200 dark:bg-dark-800"></div>
+
+      <!-- PRICING -->
+      <section id="pricing" class="mx-auto max-w-5xl">
+        <div v-reveal class="reveal-item">
+          <span :class="eyebrowClass">{{ t('home.landing.pricing.eyebrow') }}</span>
+          <h2 :class="headingClass" class="mt-1.5">{{ t('home.landing.pricing.title') }}</h2>
+          <p :class="subClass" class="mb-6 mt-2 max-w-3xl">{{ t('home.landing.pricing.subtitle') }}</p>
+        </div>
+
+        <div class="flex flex-col gap-5 md:flex-row">
+          <div v-for="(plan, index) in pricingPlans" :key="plan.name" v-reveal
+            class="reveal-item relative flex-1 rounded-xl bg-white/80 p-6 pb-16 shadow-card backdrop-blur-sm dark:bg-dark-800/60"
+            :style="{ transitionDelay: `${index * 90}ms` }"
+            :class="plan.featured ? 'border-2 border-primary-500' : 'border border-gray-200 dark:border-dark-700'">
+            <div class="mb-1.5 text-fluid-2xs font-semibold uppercase tracking-wider text-primary-600 dark:text-primary-400">
+              {{ plan.name }}
+            </div>
+            <div class="mb-1 text-fluid-lg font-bold text-gray-900 dark:text-white">{{ plan.tagline }}</div>
+            <div class="mb-1 text-fluid-sm text-gray-500 dark:text-dark-400">
+              {{ t('home.landing.pricing.from') }}
+              <span class="text-fluid-base font-bold text-primary-600 dark:text-primary-400">{{ plan.pct }}</span>
+              {{ t('home.landing.pricing.perTokens') }}
+            </div>
+            <p class="mb-5 text-fluid-sm text-gray-500 dark:text-dark-400">{{ plan.desc }}</p>
+            <ul class="mb-6 space-y-2">
+              <li v-for="feat in plan.features" :key="feat"
+                class="flex items-start gap-1.5 text-fluid-sm text-gray-700 dark:text-dark-200">
+                <span class="mt-px shrink-0 font-bold text-primary-600 dark:text-primary-400">✓</span> {{ feat }}
+              </li>
+            </ul>
+            <a v-if="plan.ctaHref" :href="plan.ctaHref"
+              class="absolute inset-x-6 bottom-6 rounded-lg py-3 text-center text-fluid-sm font-semibold transition-colors"
+              :class="plan.featured
+                ? 'bg-primary-500 text-white hover:bg-primary-600'
+                : 'border border-gray-300 text-gray-700 hover:border-primary-500 dark:border-dark-600 dark:text-dark-200'"
+            >
+              {{ plan.cta }}
+            </a>
+            <router-link v-else :to="ctaTarget"
+              class="absolute inset-x-6 bottom-6 rounded-lg py-3 text-center text-fluid-sm font-semibold transition-colors"
+              :class="plan.featured
+                ? 'bg-primary-500 text-white hover:bg-primary-600'
+                : 'border border-gray-300 text-gray-700 hover:border-primary-500 dark:border-dark-600 dark:text-dark-200'">
+              {{ plan.cta }}
+            </router-link>
+          </div>
+        </div>
+      </section>
+
+      <!-- TRUST -->
+      <section class="mx-auto mt-14 max-w-5xl text-center">
+        <div v-reveal class="reveal-item">
+          <span :class="eyebrowClass">{{ t('home.landing.trust.eyebrow') }}</span>
+          <h2 :class="headingClass" class="mt-1.5">{{ t('home.landing.trust.title') }}</h2>
+        </div>
+
+        <div class="my-6 grid grid-cols-3 gap-2">
+          <div v-for="(stat, index) in trustStats" :key="stat.label" v-reveal :class="cardClass"
+            class="reveal-item p-4" :style="{ transitionDelay: `${index * 70}ms` }">
+            <div class="text-fluid-xl font-bold text-primary-600 dark:text-primary-400">{{ stat.value }}</div>
+            <div class="mt-0.5 text-fluid-2xs text-gray-500 dark:text-dark-400">{{ stat.label }}</div>
+          </div>
+        </div>
+
+        <div v-reveal class="reveal-item flex flex-wrap justify-center gap-2">
+          <span v-for="badge in trustPills" :key="badge"
+            class="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white/80 px-3 py-1.5 text-fluid-xs text-gray-500 dark:border-dark-700 dark:bg-dark-800/60 dark:text-dark-300">
+            {{ badge }}
+          </span>
+        </div>
+      </section>
+
+      <!-- CTA -->
+      <section class="mx-auto mt-14 max-w-5xl">
+        <div v-reveal
+          class="reveal-item rounded-xl border border-primary-500/30 bg-primary-500/10 px-6 py-14 text-center dark:bg-primary-500/15">
+          <h2 class="mb-2 text-fluid-2xl font-bold tracking-tight text-gray-900 dark:text-white">
+            {{ t('home.landing.cta.titleFirst') }}<br />{{ t('home.landing.cta.titleSecond') }}
+          </h2>
+          <p class="mb-7 text-fluid-sm text-gray-500 dark:text-dark-400">
+            {{ t('home.landing.cta.description') }}
+          </p>
+          <div class="flex flex-col gap-2 md:flex-row md:justify-center">
+            <router-link :to="ctaTarget" class="btn btn-primary px-6 py-3 text-fluid-base shadow-lg shadow-primary-500/30">
+              {{ t('home.landing.cta.primary') }}
+            </router-link>
+            <a href="#team" :class="outlineBtn">{{ t('home.landing.cta.secondary') }}</a>
+          </div>
+        </div>
+      </section>
     </main>
 
     <!-- Footer -->
@@ -480,7 +450,6 @@ import type { Directive } from 'vue'
 import { computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore, useAuthStore } from '@/stores'
-import Icon from '@/components/icons/Icon.vue'
 import AppFooter from '@/components/layout/AppFooter.vue'
 import Header from '@/components/layout/Header.vue'
 
@@ -489,147 +458,194 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 
-const featureRows = computed(() => [
+// Shared utility class fragments (kept here so the template stays declarative)
+const cardClass =
+  'rounded-xl border border-gray-200 bg-white/80 shadow-card backdrop-blur-sm dark:border-dark-700 dark:bg-dark-800/60'
+const eyebrowClass =
+  'font-mono text-fluid-2xs font-semibold uppercase tracking-[0.1em] text-primary-600 dark:text-primary-400'
+const headingClass = 'text-fluid-2xl font-bold tracking-tight text-gray-900 dark:text-white'
+const subClass = 'text-fluid-sm text-gray-500 dark:text-dark-400'
+const pillClass =
+  'rounded-full border border-gray-200 bg-gray-100 px-2.5 py-1 text-fluid-xs text-gray-500 dark:border-dark-600 dark:bg-dark-700/50 dark:text-dark-300'
+const outlineBtn =
+  'inline-flex items-center justify-center rounded-lg border border-gray-300 px-6 py-3 text-fluid-base font-medium text-gray-700 transition-colors hover:border-primary-500 dark:border-dark-600 dark:text-dark-200'
+
+// HERO stats
+const heroStats = computed(() => [
+  { value: '99.99%', label: t('home.landing.hero.stats.uptime') },
+  { value: '−90%', label: t('home.landing.hero.stats.savings') },
+  { value: 'Millions', label: t('home.landing.hero.stats.requests') },
+  { value: 'TDX', label: t('home.landing.hero.stats.vm') }
+])
+
+// PERSONAL feature cards
+const personalFeatures = computed(() => [
   {
-    title: t('home.landing.features.reliability.title'),
-    description: t('home.landing.features.reliability.description'),
-    tags: [
-      t('home.landing.features.reliability.tags.uptime'),
-      t('home.landing.features.reliability.tags.failover'),
-      t('home.landing.features.reliability.tags.productionReady')
-    ],
-    visual: 'uptime',
-    reversed: false
+    icon: '💰',
+    title: t('home.landing.personal.cost.title'),
+    desc: t('home.landing.personal.cost.desc'),
+    visual: 'cost'
   },
   {
-    title: t('home.landing.features.costs.title'),
-    description: t('home.landing.features.costs.description'),
-    tags: [
-      t('home.landing.features.costs.tags.save'),
-      t('home.landing.features.costs.tags.transparent'),
-      t('home.landing.features.costs.tags.noHiddenFees')
-    ],
-    visual: 'cost',
-    reversed: true
+    icon: '📈',
+    title: t('home.landing.personal.uptime.title'),
+    desc: t('home.landing.personal.uptime.desc'),
+    visual: 'uptime'
+  },
+  {
+    icon: '🔀',
+    title: t('home.landing.personal.aggregation.title'),
+    desc: t('home.landing.personal.aggregation.desc'),
+    visual: 'models'
+  },
+  {
+    icon: '⚡',
+    title: t('home.landing.personal.failover.title'),
+    desc: t('home.landing.personal.failover.desc'),
+    visual: 'failover'
   }
 ])
 
-const uptimeBars = [
-  88, 80, 82, 81, 88, 91, 95, 80, 93, 89, 81, 94, 99, 92, 90, 82, 94, 92, 83, 89,
-  82, 84, 85, 83, 92, 99, 60, 93, 86, 88, 90, 94, 92, 96, 83, 98, 82, 84, 95, 81
-].map((height, index) => ({ height, isDip: index === 26 }))
-
-const healthyServices = ['claude-opus', 'gpt-4o'] as const
-
-const costRows = computed(() => [
+const costBars = computed(() => [
   {
-    label: t('home.landing.costs.direct'),
-    price: '$1.00',
-    width: '100%',
-    fillClass: 'bg-gray-400'
+    label: t('home.landing.personal.cost.direct'),
+    pct: 100,
+    value: '$10.00',
+    fill: 'bg-gray-400 dark:bg-dark-500',
+    valueClass: 'text-gray-400'
   },
   {
-    label: 'publicai',
-    price: '$0.30',
-    width: '30%',
-    fillClass: 'bg-gradient-to-r from-primary-500 to-primary-600'
+    label: t('home.landing.personal.cost.publicai'),
+    pct: 10,
+    value: '$1.00',
+    fill: 'bg-primary-500',
+    valueClass: 'text-primary-600 dark:text-primary-400'
   }
 ])
 
-// Official model pricing (per 1M tokens)
-const officialPricing = [
-  { name: 'GPT-5.4', provider: 'OpenAI', brand: 'gpt', officialInput: 2.50, officialOutput: 15.00 },
-  { name: 'GPT-5.5', provider: 'OpenAI', brand: 'gpt', officialInput: 5.00, officialOutput: 30.00 },
-  { name: 'Claude 4.6', provider: 'Anthropic', brand: 'claude', officialInput: 5.00, officialOutput: 25.00 },
-  { name: 'Claude 4.7', provider: 'Anthropic', brand: 'claude', officialInput: 5.00, officialOutput: 25.00 },
-  { name: 'Claude 4.8', provider: 'Anthropic', brand: 'claude', officialInput: 5.00, officialOutput: 25.00 },
+const uptimeCells = Array.from({ length: 25 }, (_, i) => ({ warn: i === 11 }))
+
+const modelPills = ['GPT-5.4', 'GPT-5.5', 'Claude 4.8', 'Claude 4.6', 'Gemini', '+ more']
+
+// TEAM panels
+const teamMembers = computed(() => [
+  {
+    initials: 'AJ',
+    name: 'Alex J.',
+    role: t('home.landing.team.members.roles.admin'),
+    budget: '$500 / mo',
+    avatarClass: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300',
+    budgetClass: 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300'
+  },
+  {
+    initials: 'SR',
+    name: 'Sara R.',
+    role: t('home.landing.team.members.roles.developer'),
+    budget: '$89 / $100',
+    avatarClass: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300',
+    budgetClass: 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300'
+  },
+  {
+    initials: 'MK',
+    name: 'Mike K.',
+    role: t('home.landing.team.members.roles.analyst'),
+    budget: '$42 / $150',
+    avatarClass: 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300',
+    budgetClass: 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300'
+  }
+])
+
+const byokKeys = computed(() => [
+  {
+    provider: 'OpenAI',
+    masked: 'sk-••••••••jK92',
+    status: t('home.landing.team.byok.active'),
+    statusClass: 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300'
+  },
+  {
+    provider: 'Anthropic',
+    masked: 'sk-ant-••••xP4T',
+    status: t('home.landing.team.byok.governed'),
+    statusClass: 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
+  },
+  {
+    provider: 'Gemini',
+    masked: 'AIza••••••7Rq',
+    status: t('home.landing.team.byok.governed'),
+    statusClass: 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
+  }
+])
+
+const usageRows = [
+  { who: 'Alex · claude-opus-4-8', amount: '142K · $2.13' },
+  { who: 'Sara · gpt-5-5', amount: '89K · $0.80' },
+  { who: 'Mike · claude-sonnet-4-6', amount: '61K · $0.46' }
 ]
+const usageTotal = '$3.39'
 
-// Gateway price = 30% of official price
-const GATEWAY_DISCOUNT = 0.3
-
-const pricingCards = computed(() =>
-  officialPricing.map((m) => ({
-    ...m,
-    gatewayInput: (m.officialInput * GATEWAY_DISCOUNT).toFixed(2),
-    gatewayOutput: (m.officialOutput * GATEWAY_DISCOUNT).toFixed(2),
-  }))
-)
-
-const modelCards = [
-  {
-    name: 'Claude',
-    initial: 'C',
-    available: true,
-    iconClass: 'bg-gradient-to-br from-orange-500 to-orange-600'
-  },
-  {
-    name: 'GPT',
-    initial: 'G',
-    available: true,
-    iconClass: 'bg-gradient-to-br from-emerald-500 to-emerald-600'
-  },
-  {
-    name: 'Gemini',
-    initial: 'G',
-    available: false,
-    iconClass: 'bg-gradient-to-br from-blue-500 to-violet-500'
-  },
-  // {
-  //   name: 'DeepSeek',
-  //   initial: 'D',
-  //   available: false,
-  //   iconClass: 'bg-gradient-to-br from-indigo-500 to-blue-700'
-  // },
-  // {
-  //   name: 'Qwen',
-  //   initial: 'Q',
-  //   available: false,
-  //   iconClass: 'bg-gradient-to-br from-violet-600 to-purple-800'
-  // },
-  // {
-  //   name: 'Grok',
-  //   initial: 'X',
-  //   available: false,
-  //   iconClass: 'bg-gradient-to-br from-gray-700 to-black'
-  // }
-] as const
-
-const productionCapabilities = computed(() => [
-  { label: t('home.landing.production.capabilities.streaming'), icon: 'bolt' },
-  { label: t('home.landing.production.capabilities.toolCalling'), icon: 'link' },
-  { label: t('home.landing.production.capabilities.structuredOutput'), icon: 'grid' },
-  { label: t('home.landing.production.capabilities.visionModels'), icon: 'eye' },
-  { label: t('home.landing.production.capabilities.longContext'), icon: 'document' },
-  { label: t('home.landing.production.capabilities.highThroughput'), icon: 'trendingUp' }
-] as const)
-
-const securityCapabilities = computed(() => [
-  { label: t('home.landing.security.capabilities.encryptedTraffic'), icon: 'lock' },
-  { label: t('home.landing.security.capabilities.noTraining'), icon: 'shield' },
-  { label: t('home.landing.security.capabilities.auditReady'), icon: 'checkCircle' },
-  { label: t('home.landing.security.capabilities.accessControl'), icon: 'userCircle' }
-] as const)
-
-const proofStats = computed(() => [
-  { value: t('home.landing.socialProof.stats.requests.value'), label: t('home.landing.socialProof.stats.requests.label') },
-  { value: '99.99%', label: t('home.landing.socialProof.stats.availability.label') },
-  { value: t('home.landing.socialProof.stats.infrastructure.value'), label: t('home.landing.socialProof.stats.infrastructure.label') }
+const privacyPoints = computed(() => [
+  t('home.landing.team.privacy.points.tdx'),
+  t('home.landing.team.privacy.points.noLog'),
+  t('home.landing.team.privacy.points.attestation'),
+  t('home.landing.team.privacy.points.metadata')
 ])
 
+// PRICING plans
+const pricingPlans = computed(() => [
+  {
+    name: t('home.landing.pricing.personal.name'),
+    tagline: t('home.landing.pricing.personal.tagline'),
+    pct: t('home.landing.pricing.personal.pct'),
+    desc: t('home.landing.pricing.personal.desc'),
+    cta: t('home.landing.pricing.personal.cta'),
+    featured: false,
+    features: [1, 2, 3, 4, 5].map((i) => t(`home.landing.pricing.personal.features.f${i}`))
+  },
+  {
+    name: t('home.landing.pricing.team.name'),
+    tagline: t('home.landing.pricing.team.tagline'),
+    pct: t('home.landing.pricing.team.pct'),
+    desc: t('home.landing.pricing.team.desc'),
+    cta: t('home.landing.pricing.team.cta'),
+    ctaHref: 'mailto:Support@publicai.io',
+    featured: true,
+    features: [1, 2, 3, 4, 5, 6].map((i) => t(`home.landing.pricing.team.features.f${i}`))
+  }
+])
+
+// TRUST
+const trustStats = computed(() => [
+  { value: 'M+', label: t('home.landing.trust.stats.requests') },
+  { value: '99.99%', label: t('home.landing.trust.stats.availability') },
+  { value: 'Global', label: t('home.landing.trust.stats.infrastructure') }
+])
+
+const trustPills = computed(() => [
+  t('home.landing.trust.pills.encrypted'),
+  t('home.landing.trust.pills.noTraining'),
+  t('home.landing.trust.pills.audit'),
+  t('home.landing.trust.pills.tee'),
+  t('home.landing.trust.pills.compatible')
+])
+
+// Scroll reveal — hysteresis avoids the enter/exit flicker when an element sits
+// right on the trigger line: reveal once it is comfortably in view (ratio ≥ 0.12),
+// and only reset after it has fully left the viewport (ratio === 0). The dead band
+// in between keeps the current state, so partial scrolls never toggle the animation.
 const revealObserver =
   typeof window === 'undefined'
     ? null
     : new IntersectionObserver(
         (entries) => {
           entries.forEach((entry) => {
-            entry.target.classList.toggle('is-visible', entry.isIntersecting)
+            if (entry.isIntersecting && entry.intersectionRatio >= 0.12) {
+              entry.target.classList.add('is-visible')
+            } else if (entry.intersectionRatio === 0) {
+              entry.target.classList.remove('is-visible')
+            }
           })
         },
-        {
-          threshold: 0.18,
-          rootMargin: '0px 0px -8% 0px'
-        }
+        { threshold: [0, 0.12, 0.5] }
       )
 
 const vReveal: Directive<HTMLElement> = {
@@ -645,13 +661,19 @@ const vReveal: Directive<HTMLElement> = {
   }
 }
 
+// Remote documentation link (admin-configurable, falls back to in-page anchor)
+const docUrl = computed(() => appStore.cachedPublicSettings?.doc_url || appStore.docUrl || '')
+
 // Site settings - directly from appStore (already initialized from injected config)
-const siteSubtitle = computed(() => appStore.cachedPublicSettings?.site_subtitle || t('home.landing.hero.subtitleFallback'))
+const siteSubtitle = computed(
+  () => appStore.cachedPublicSettings?.site_subtitle || t('home.landing.hero.subtitle')
+)
 
 // Auth state
 const isAuthenticated = computed(() => authStore.isAuthenticated)
 const isAdmin = computed(() => authStore.isAdmin)
-const dashboardPath = computed(() => isAdmin.value ? '/admin/dashboard' : '/dashboard')
+const dashboardPath = computed(() => (isAdmin.value ? '/admin/dashboard' : '/dashboard'))
+const ctaTarget = computed(() => (isAuthenticated.value ? dashboardPath.value : '/login'))
 
 onMounted(() => {
   authStore.checkAuth()
@@ -671,35 +693,15 @@ h3 {
   letter-spacing: -.02em
 }
 
+/* Scroll reveal — symmetric enter/exit. Paired with the hysteresis observer so the
+   exit only plays once the element is fully out of view (no edge flicker). */
 .reveal-item {
   opacity: 0;
-  transform: translate3d(0, 34px, 0) scale(.985);
+  transform: translate3d(0, 26px, 0) scale(.99);
   transition:
-    opacity .72s cubic-bezier(.2, .7, .2, 1),
-    transform .72s cubic-bezier(.2, .7, .2, 1),
-    filter .72s cubic-bezier(.2, .7, .2, 1);
-  will-change: opacity, transform, filter;
-}
-
-.reveal-zoom {
-  transform: translate3d(0, 28px, 0) scale(.955);
-}
-
-.reveal-child-left,
-.reveal-child-right {
-  opacity: 0;
-  transition:
-    opacity .75s cubic-bezier(.2, .7, .2, 1),
-    transform .75s cubic-bezier(.2, .7, .2, 1);
-}
-
-.reveal-child-left {
-  transform: translate3d(-28px, 0, 0);
-}
-
-.reveal-child-right {
-  transform: translate3d(28px, 0, 0);
-  transition-delay: .12s;
+    opacity .6s cubic-bezier(.2, .7, .2, 1),
+    transform .6s cubic-bezier(.2, .7, .2, 1);
+  will-change: opacity, transform;
 }
 
 .is-visible {
@@ -707,205 +709,80 @@ h3 {
   transform: translate3d(0, 0, 0) scale(1);
 }
 
-.is-visible .reveal-child-left,
-.is-visible .reveal-child-right {
-  opacity: 1;
-  transform: translate3d(0, 0, 0);
-}
-
-.reveal-bar {
-  transform: scaleY(.18);
-  transform-origin: bottom;
-  transition: transform .58s cubic-bezier(.2, .85, .2, 1);
-}
-
-.is-visible .reveal-bar {
-  transform: scaleY(1);
-}
-
-/* Terminal Container */
-.terminal-container {
-  position: relative;
-  display: inline-block;
-}
-
-/* Terminal Window */
-.terminal-window {
-  background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%);
-  border-radius: 14px;
-  box-shadow:
-    0 25px 50px -12px rgba(0, 0, 0, 0.4),
-    0 0 0 1px rgba(255, 255, 255, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  overflow: hidden;
-  transform: perspective(1000px) rotateX(2deg) rotateY(-2deg);
-  transition: transform 0.3s ease;
-}
-
-.terminal-window:hover {
-  transform: perspective(1000px) rotateX(0deg) rotateY(0deg) translateY(-4px);
-}
-
-/* Terminal Header */
-.terminal-header {
-  display: flex;
-  align-items: center;
-  padding: 12px 16px;
-  background: rgba(30, 41, 59, 0.8);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.terminal-buttons {
-  display: flex;
-  gap: 8px;
-}
-
-.terminal-buttons span {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-}
-
-.btn-close {
-  background: #ef4444;
-}
-
-.btn-minimize {
-  background: #eab308;
-}
-
-.btn-maximize {
-  background: #22c55e;
-}
-
-.terminal-title {
-  flex: 1;
-  text-align: center;
-  font-size: 12px;
-  font-family: ui-monospace, monospace;
-  color: #64748b;
-  margin-right: 52px;
-}
-
-/* Terminal Body */
-.terminal-body {
-  padding: 20px 24px;
-  font-family: ui-monospace, 'Fira Code', monospace;
-  font-size: 14px;
-  line-height: 2;
-}
-
-.code-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  opacity: 0;
-  animation: line-appear 0.5s ease forwards;
-}
-
-.line-1 {
-  animation-delay: 0.3s;
-}
-
-.line-2 {
-  animation-delay: 1s;
-}
-
-.line-3 {
-  animation-delay: 1.8s;
-}
-
-.line-4 {
-  animation-delay: 2.5s;
-}
-
-@keyframes line-appear {
-  from {
-    opacity: 0;
-    transform: translateY(5px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.code-prompt {
-  color: #22c55e;
-  font-weight: bold;
-}
-
-.code-cmd {
-  color: #38bdf8;
-}
-
-.code-flag {
-  color: #a78bfa;
-}
-
-.code-url {
-  color: #14b8a6;
-}
-
-.code-comment {
-  color: #64748b;
-  font-style: italic;
-}
-
-.code-success {
-  color: #22c55e;
-  background: rgba(34, 197, 94, 0.15);
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-weight: 600;
-}
-
-.code-response {
-  color: #fbbf24;
-}
-
-/* Blinking Cursor */
-.cursor {
-  display: inline-block;
-  width: 8px;
-  height: 16px;
-  background: #22c55e;
-  animation: blink 1s step-end infinite;
-}
-
-@keyframes blink {
-
-  0%,
-  50% {
-    opacity: 1;
-  }
-
-  51%,
-  100% {
-    opacity: 0;
-  }
-}
-
-/* Dark mode adjustments */
-:deep(.dark) .terminal-window {
-  box-shadow:
-    0 25px 50px -12px rgba(0, 0, 0, 0.6),
-    0 0 0 1px rgba(20, 184, 166, 0.2),
-    0 0 40px rgba(20, 184, 166, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .reveal-item,
-  .reveal-child-left,
-  .reveal-child-right,
-  .reveal-bar {
+  .reveal-item {
     opacity: 1;
     transform: none;
-    filter: none;
     transition: none;
   }
+}
+</style>
+
+<!-- Routing diagram: theme-aware SVG token fills (id-scoped, intentionally not `scoped`) -->
+<style>
+#routing-svg .surf {
+  fill: #ffffff;
+  stroke: #e5e4ef
+}
+
+#routing-svg .label {
+  fill: #6b6b80
+}
+
+#routing-svg .label2 {
+  fill: #9898a8
+}
+
+#routing-svg .strong {
+  fill: #1a1a2e
+}
+
+#routing-svg .chip {
+  fill: #e9e8ff
+}
+
+#routing-svg .chipt {
+  fill: #7b61ff
+}
+
+#routing-svg .flow {
+  stroke: #b6b1ff
+}
+
+#routing-svg .arr-fill {
+  fill: #9385ff
+}
+
+.dark #routing-svg .surf {
+  fill: #1e293b;
+  stroke: #334155
+}
+
+.dark #routing-svg .label {
+  fill: #94a3b8
+}
+
+.dark #routing-svg .label2 {
+  fill: #64748b
+}
+
+.dark #routing-svg .strong {
+  fill: #f1f5f9
+}
+
+.dark #routing-svg .chip {
+  fill: #312e81
+}
+
+.dark #routing-svg .chipt {
+  fill: #a5b4fc
+}
+
+.dark #routing-svg .flow {
+  stroke: #7b61ff
+}
+
+.dark #routing-svg .arr-fill {
+  fill: #7b61ff
 }
 </style>

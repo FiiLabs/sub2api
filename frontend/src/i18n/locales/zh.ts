@@ -113,132 +113,152 @@ export default {
     },
     landing: {
       hero: {
-        titlePrefix: '最',
-        titleHighlight: '可靠',
-        titleSuffix: '的 AI API 平台',
-        subtitleFallback: 'AI API 网关平台'
-      },
-      badges: {
-        uptime: '99.99% 可用性',
-        lowerCost: '成本最高降低 70%',
-        compatible: '兼容 OpenAI'
-      },
-      statement: {
-        title: '一个 API，连接所有模型，始终可用。',
-        description: '在保持行业领先可靠性的同时，降低 AI 基础设施成本。'
-      },
-      features: {
-        reliability: {
-          title: '行业领先的可靠性',
-          description:
-            '无需再担心服务商故障、速率限制或性能下降。我们的基础设施会持续监控模型可用性，并自动保障你的应用服务不中断。',
-          tags: {
-            uptime: '99.99% 可用性',
-            failover: '自动故障切换',
-            productionReady: '生产环境可用'
-          }
+        badge: '全新 TEE 可验证隐私路由',
+        title: {
+          line1: '节省 AI 开销。',
+          line2: '掌控你的团队。',
+          line3: '守护你的数据。'
         },
-        costs: {
-          title: '更低的 AI 成本',
-          description:
-            '无需修改代码即可降低 AI 支出。我们持续优化模型访问与价格策略，帮助开发者和企业在规模化调用中降低推理成本。',
-          tags: {
-            save: '最高节省 70%',
-            transparent: '透明定价',
-            noHiddenFees: '无隐藏费用'
-          }
+        subtitle: 'AI 访问的信任层——对个人更实惠，对团队可治理、更私密。',
+        viewDocs: '查看文档',
+        stats: {
+          uptime: '可用性 SLA',
+          savings: '最高节省',
+          requests: 'API 请求',
+          vm: '机密虚拟机'
         }
       },
-      reliability: {
-        uptimeWindow: '过去 90 天可用性',
-        operational: '运行正常',
-        healthy: '健康'
+      routing: {
+        eyebrow: '// 机密路由架构',
+        caption: '提示词全程端到端加密。明文仅存在于经过远程认证的 TEE 内部——PublicAI 运营方无法读取。'
       },
-      costs: {
-        direct: '直连',
-        spendHint: '推理支出最高降低 70%'
+      personal: {
+        eyebrow: '// PublicAI 个人版',
+        title: 'AI 访问，真正帮你省钱。',
+        subtitle:
+          '别再为 API 调用多花钱。PublicAI 个人版聚合多家服务商，通过单一兼容 OpenAI 的端点，提供更低价格、更高可用性与自动故障切换。',
+        cost: {
+          title: '低至官方价的 10%',
+          desc: '最低可享直连服务商价格的十分之一，按百万 Token 计费。无需改动代码——只需替换 base URL。',
+          direct: '直连 API',
+          publicai: 'PublicAI',
+          note: '每百万 Token · 低至官方价的 10%（示意）'
+        },
+        uptime: {
+          title: '始终 99.99% 可用',
+          desc: '我们 7×24 全天候监控模型可用性，服务商故障时自动重新路由流量。',
+          window: '近 90 天可用性'
+        },
+        aggregation: {
+          title: '多服务商聚合',
+          desc: '一个端点即可访问 Claude、GPT、Gemini 等模型。改一项配置即可切换模型。'
+        },
+        failover: {
+          title: '自动故障切换',
+          desc: '遇到限流或宕机？PublicAI 立即通过备用线路重试——让你的用户零中断。',
+          from: '✗ 服务商 A',
+          to: '✓ 服务商 B'
+        }
+      },
+      team: {
+        eyebrow: '// PublicAI 团队版',
+        title: '让全组织都能信任的私有 AI 工作区。',
+        subtitle:
+          '别再分发主 API 密钥。PublicAI 团队版让管理员全面掌握并控制谁在用 AI、用哪些模型、花了多少——并让你的数据完全不经过路由层。',
+        header: {
+          title: '你的组织专属私有 AI 工作区',
+          subtitle: '治理成员 · 预算 · 模型 · 服务商密钥 · 隐私',
+          badge: '🔒 TEE 可验证路由'
+        },
+        members: {
+          title: '👥 成员治理',
+          desc: '无需轮换主密钥即可增删成员。每人获得受限访问权限，并单独设定预算。',
+          roles: {
+            admin: '管理员 · 全部模型',
+            developer: '开发者 · 仅 Claude',
+            analyst: '分析师 · 仅 GPT'
+          }
+        },
+        byok: {
+          title: '🔑 BYOK——保留你的账户',
+          desc: '使用你自己的 OpenAI、Anthropic 或 Gemini 密钥。PublicAI 仅作为纯治理层——不强制转售，无锁定。',
+          active: '使用中',
+          governed: '受治理'
+        },
+        usage: {
+          title: '📊 用量可见',
+          desc: '实时掌握全组织内谁用了哪个模型、消耗多少 Token、花费多少。',
+          total: '本月合计'
+        },
+        privacy: {
+          title: '🛡 可验证隐私',
+          desc: '我们的路由层运行在 Intel TDX TEE 中。技术上我们无法读取你的提示词或响应——而且你可以通过密码学方式验证这一点。',
+          points: {
+            tdx: '路由运行在 Intel TDX 虚拟机内',
+            noLog: '从不记录明文提示词',
+            attestation: '支持远程认证',
+            metadata: '仅存储元数据（模型、费用、时延）'
+          }
+        }
       },
       pricing: {
-        eyebrow: '// 价格对比',
-        title: '透明定价，更低价格。',
-        subtitle: '与官方及 OpenRouter 价格对比（每百万 Tokens）',
-        col: {
-          provider: '服务商',
-          input: '输入',
-          output: '输出'
+        eyebrow: '// 价格',
+        title: '价格明晰，告别隐性消费。',
+        subtitle: '个人版，省心更省钱；团队版，掌控更全面，内置完善的治理与隐私保障。',
+        from: '低至',
+        perTokens: '官方价 · 每百万 Token',
+        personal: {
+          name: '个人版',
+          tagline: '按量付费',
+          pct: '10%',
+          desc: '面向想要大幅降低成本、获得更可靠 AI API 访问的个人开发者与小团队。',
+          cta: '立即开始 →',
+          features: {
+            f1: '低至直连服务商价格的 10%',
+            f2: '按百万 Token 计费',
+            f3: '多服务商聚合',
+            f4: '自动故障切换 & 99.99% 可用性',
+            f5: '兼容 OpenAI 的 API'
+          }
         },
-        badge: '推荐',
-        save: '省 70%',
-        models: {
-          sonnet: 'Claude Sonnet 4.5',
-          codex: 'Codex gpt-5.3-codex'
-        },
-        providers: {
-          official: '官方',
-          openrouter: 'OpenRouter',
-          publicai: 'PublicAI'
-        }
-      },
-      models: {
-        eyebrow: '// 模型',
-        title: '一次集成，接入全球领先模型。',
-        available: '已可用',
-        comingSoon: '即将推出',
-        noLockIn: '不绑定单一服务商。',
-        switchHint: '只需修改一项配置，即可切换模型。'
-      },
-      production: {
-        eyebrow: '// 面向生产环境',
-        title: '为真实应用、智能体和企业工作流而设计',
-        capabilities: {
-          streaming: '流式输出支持',
-          toolCalling: '工具调用',
-          structuredOutput: '结构化输出',
-          visionModels: '视觉模型',
-          longContext: '长上下文',
-          highThroughput: '高吞吐'
-        }
-      },
-      security: {
-        eyebrow: '// 企业级安全',
-        title: '你的数据始终属于你',
-        description: '我们绝不会将客户的提示词或响应内容用于模型训练。',
-        highlight: '从第一天起就遵循安全与隐私最佳实践。',
-        capabilities: {
-          encryptedTraffic: '加密传输',
-          noTraining: '不使用客户数据训练',
-          auditReady: '审计就绪',
-          accessControl: '企业级访问控制'
-        }
-      },
-      developers: {
-        title: '开发者友好',
-        description: '几分钟即可开始使用。完全兼容 OpenAI API 标准，无需操心基础设施，只管构建产品。',
-        compatibility: '可直接替换 OpenAI 接入'
-      },
-      socialProof: {
-        eyebrow: '// 深受 AI 开发者信赖',
-        title: '支撑关键业务 AI 应用',
-        description: '从初创团队到企业团队，开发者都依靠 PublicAI 发布产品并扩展业务。',
-        stats: {
-          requests: {
-            value: '数百万',
-            label: 'API 请求已处理'
-          },
-          availability: {
-            label: '可用性'
-          },
-          infrastructure: {
-            value: '全球',
-            label: '基础设施'
+        team: {
+          name: '团队版',
+          tagline: '订阅制',
+          pct: '50%',
+          desc: '面向需要治理 AI 用量、保护敏感数据并保留上游账户所有权的组织。',
+          cta: '联系我们 →',
+          features: {
+            f1: '低至官方价的 50%，按百万 Token 计费',
+            f2: '组织专属私有工作区',
+            f3: '成员、模型与预算治理',
+            f4: 'BYOK——使用你自己的 API 密钥',
+            f5: 'TEE 路由 + 远程认证',
+            f6: '完整用量可见与审计日志'
           }
         }
       },
-      closing: {
+      trust: {
+        eyebrow: '// 大规模可信赖',
+        title: '为生产环境而生。',
+        stats: {
+          requests: 'API 请求',
+          availability: '可用性',
+          infrastructure: '基础设施'
+        },
+        pills: {
+          encrypted: '🔒 传输加密',
+          noTraining: '🚫 不用你的数据训练',
+          audit: '📋 审计日志',
+          tee: '🛡 TEE 可验证',
+          compatible: '⚡ 兼容 OpenAI'
+        }
+      },
+      cta: {
         titleFirst: '更快构建。',
         titleSecond: '扩展更远。',
         description: '专注你的产品，AI 基础设施交给我们。',
-        button: '免费开始构建'
+        primary: '从个人版开始 →',
+        secondary: '了解团队版 →'
       }
     },
     footer: {

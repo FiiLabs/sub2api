@@ -113,133 +113,155 @@ export default {
     },
     landing: {
       hero: {
-        titlePrefix: 'The Most',
-        titleHighlight: 'Reliable',
-        titleSuffix: 'AI API Platform',
-        subtitleFallback: 'AI API Gateway Platform'
-      },
-      badges: {
-        uptime: '99.99% Uptime',
-        lowerCost: 'Up to 70% Lower Cost',
-        compatible: 'OpenAI-Compatible'
-      },
-      statement: {
-        title: 'One API. Every Model. Always Available.',
-        description: 'Reduce AI infrastructure costs while maintaining industry-leading reliability.'
-      },
-      features: {
-        reliability: {
-          title: 'Industry-Leading Reliability',
-          description:
-            'Never worry about provider outages, rate limits, or degraded performance again. Our infrastructure continuously monitors model availability and automatically ensures uninterrupted service for your applications.',
-          tags: {
-            uptime: '99.99% Uptime',
-            failover: 'Automatic Failover',
-            productionReady: 'Production Ready'
-          }
+        badge: 'Now with TEE-verified privacy routing',
+        title: {
+          line1: 'Save money on AI.',
+          line2: 'Control your team.',
+          line3: 'Protect your data.'
         },
-        costs: {
-          title: 'Lower AI Costs',
-          description:
-            'Reduce your AI spending without changing your code. We continuously optimize model access and pricing to help developers and businesses lower inference costs at scale.',
-          tags: {
-            save: 'Save up to 70%',
-            transparent: 'Transparent Pricing',
-            noHiddenFees: 'No Hidden Fees'
-          }
+        subtitle:
+          'The trust layer for AI access — more affordable for individuals, governed and private for teams.',
+        viewDocs: 'View docs',
+        stats: {
+          uptime: 'Uptime SLA',
+          savings: 'Max savings',
+          requests: 'API requests',
+          vm: 'Confidential VM'
         }
       },
-      reliability: {
-        uptimeWindow: 'uptime / last 90 days',
-        operational: 'operational',
-        healthy: 'healthy'
+      routing: {
+        eyebrow: '// Confidential routing architecture',
+        caption:
+          'Prompts stay encrypted end-to-end. Plaintext exists only inside the attested TEE — PublicAI operators cannot read it.'
       },
-      costs: {
-        direct: 'direct',
-        spendHint: 'up to 70% lower inference spend'
+      personal: {
+        eyebrow: '// PublicAI Personal',
+        title: 'AI access that actually saves you money.',
+        subtitle:
+          'Stop overpaying for API calls. PublicAI Personal aggregates providers to deliver lower prices, higher uptime, and automatic failover — through a single OpenAI-compatible endpoint.',
+        cost: {
+          title: 'As low as 10% of list price',
+          desc: 'Pay as little as one-tenth of direct provider pricing, billed per million tokens. No code changes — just swap your base URL.',
+          direct: 'Direct API',
+          publicai: 'PublicAI',
+          note: 'Per 1M tokens · from 10% of list (illustrative)'
+        },
+        uptime: {
+          title: '99.99% uptime, always',
+          desc: 'We monitor model availability 24/7 and automatically reroute traffic when a provider goes down.',
+          window: '90-day availability'
+        },
+        aggregation: {
+          title: 'Multi-provider aggregation',
+          desc: 'Access Claude, GPT, Gemini, and more from one endpoint. Switch models with a single config change.'
+        },
+        failover: {
+          title: 'Automatic failover',
+          desc: 'Rate-limited or outage? PublicAI retries instantly through alternate routes — zero downtime for your users.',
+          from: '✗ Provider A',
+          to: '✓ Provider B'
+        }
+      },
+      team: {
+        eyebrow: '// PublicAI Team',
+        title: 'A private AI workspace your whole org can trust.',
+        subtitle:
+          'Stop distributing master API keys. PublicAI Team gives admins full visibility and control over who uses AI, which models, how much they spend — and keeps your data out of the routing layer entirely.',
+        header: {
+          title: "Your organization's private AI workspace",
+          subtitle: 'Govern members · budgets · models · provider keys · privacy',
+          badge: '🔒 TEE-verified routing'
+        },
+        members: {
+          title: '👥 Member governance',
+          desc: 'Add or remove members without rotating master keys. Each person gets scoped access, individually budgeted.',
+          roles: {
+            admin: 'Admin · all models',
+            developer: 'Developer · Claude only',
+            analyst: 'Analyst · GPT only'
+          }
+        },
+        byok: {
+          title: '🔑 BYOK — keep your accounts',
+          desc: 'Bring your own OpenAI, Anthropic, or Gemini keys. PublicAI becomes a pure governance layer — no forced resale, no lock-in.',
+          active: 'Active',
+          governed: 'Governed'
+        },
+        usage: {
+          title: '📊 Usage visibility',
+          desc: 'Know exactly who used which model, how many tokens, and at what cost — across your entire org, in real time.',
+          total: 'Total this month'
+        },
+        privacy: {
+          title: '🛡 Verifiable privacy',
+          desc: 'Our routing layer runs inside an Intel TDX TEE. We technically cannot read your prompts or responses — and you can cryptographically verify it.',
+          points: {
+            tdx: 'Routing runs inside Intel TDX VM',
+            noLog: 'Plaintext prompts never logged',
+            attestation: 'Remote attestation available',
+            metadata: 'Only metadata stored (model, cost, latency)'
+          }
+        }
       },
       pricing: {
         eyebrow: '// Pricing',
-        title: 'Transparent pricing. Lower costs.',
-        subtitle: 'Price comparison with official & OpenRouter (per 1M tokens)',
-        col: {
-          provider: 'Provider',
-          input: 'Input',
-          output: 'Output'
+        title: 'One clear price. Nothing hidden.',
+        subtitle:
+          'Save more on Personal. Control more on Team, with governance and privacy built in.',
+        from: 'From',
+        perTokens: 'of list price · per 1M tokens',
+        personal: {
+          name: 'Personal',
+          tagline: 'Pay as you go',
+          pct: '10%',
+          desc: 'For individual developers and small teams who want dramatically cheaper, more reliable AI API access.',
+          cta: 'Get started →',
+          features: {
+            f1: 'As low as 10% of direct provider pricing',
+            f2: 'Per-million-token billing',
+            f3: 'Multi-provider aggregation',
+            f4: 'Auto failover & 99.99% uptime',
+            f5: 'OpenAI-compatible API'
+          }
         },
-        badge: 'Best Value',
-        save: 'Save 70%',
-        models: {
-          sonnet: 'Claude Sonnet 4.5',
-          codex: 'Codex gpt-5.3-codex'
-        },
-        providers: {
-          official: 'Official',
-          openrouter: 'OpenRouter',
-          publicai: 'PublicAI'
-        }
-      },
-      models: {
-        eyebrow: '// Models',
-        title: "Integrate once. Access the world's most advanced models.",
-        available: 'Available',
-        comingSoon: 'Coming soon',
-        noLockIn: 'No vendor lock-in.',
-        switchHint: 'Switch models with a single configuration change.'
-      },
-      production: {
-        eyebrow: '// Built for Production',
-        title: 'Designed for real apps, agents, and enterprise workflows',
-        capabilities: {
-          streaming: 'Streaming Support',
-          toolCalling: 'Tool Calling',
-          structuredOutput: 'Structured Output',
-          visionModels: 'Vision Models',
-          longContext: 'Long Context',
-          highThroughput: 'High Throughput'
-        }
-      },
-      security: {
-        eyebrow: '// Enterprise Security',
-        title: 'Your data belongs to you',
-        description: 'We never use customer prompts or responses for model training.',
-        highlight: 'Built with security and privacy best practices from day one.',
-        capabilities: {
-          encryptedTraffic: 'Encrypted Traffic',
-          noTraining: 'No Training on Customer Data',
-          auditReady: 'Audit Ready',
-          accessControl: 'Enterprise Access Control'
-        }
-      },
-      developers: {
-        title: 'Developer Friendly',
-        description:
-          'Get started in minutes. Fully compatible with the OpenAI API standard. No infrastructure headaches. Just build.',
-        compatibility: 'Drop-in OpenAI compatibility'
-      },
-      socialProof: {
-        eyebrow: '// Trusted by AI Builders',
-        title: 'Powering mission-critical AI applications',
-        description: 'From startups to enterprise teams, developers rely on PublicAI to ship and scale their products.',
-        stats: {
-          requests: {
-            value: 'Millions',
-            label: 'API Requests Served'
-          },
-          availability: {
-            label: 'Availability'
-          },
-          infrastructure: {
-            value: 'Global',
-            label: 'Infrastructure'
+        team: {
+          name: 'Team',
+          tagline: 'Subscription',
+          pct: '50%',
+          desc: 'For organizations that need to govern AI usage, protect sensitive data, and keep ownership of upstream accounts.',
+          cta: 'Talk to us →',
+          features: {
+            f1: 'From 50% of list price, per 1M tokens',
+            f2: 'Private workspace for your org',
+            f3: 'Member, model & budget governance',
+            f4: 'BYOK — bring your own API keys',
+            f5: 'TEE routing + remote attestation',
+            f6: 'Full usage visibility & audit logs'
           }
         }
       },
-      closing: {
-        titleFirst: 'Build Faster.',
-        titleSecond: 'Scale Further.',
-        description: "Focus on your product. We'll handle the AI infrastructure.",
-        button: 'Start Building Free'
+      trust: {
+        eyebrow: '// Trusted at scale',
+        title: 'Built for production.',
+        stats: {
+          requests: 'API requests',
+          availability: 'Availability',
+          infrastructure: 'Infrastructure'
+        },
+        pills: {
+          encrypted: '🔒 Encrypted in transit',
+          noTraining: '🚫 No training on your data',
+          audit: '📋 Audit logs',
+          tee: '🛡 TEE-verified',
+          compatible: '⚡ OpenAI-compatible'
+        }
+      },
+      cta: {
+        titleFirst: 'Build faster.',
+        titleSecond: 'Scale further.',
+        description: 'Focus on your product. Leave the AI infrastructure to us.',
+        primary: 'Start with Personal →',
+        secondary: 'Explore Team →'
       }
     },
     footer: {
