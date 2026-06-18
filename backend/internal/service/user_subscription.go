@@ -3,9 +3,10 @@ package service
 import "time"
 
 type UserSubscription struct {
-	ID      int64
-	UserID  int64
-	GroupID int64
+	ID               int64
+	UserID           int64
+	BillingSubjectID int64
+	GroupID          int64
 
 	StartsAt  time.Time
 	ExpiresAt time.Time

@@ -28,6 +28,7 @@ func (r *userSubscriptionRepository) Create(ctx context.Context, sub *service.Us
 	builder := client.UserSubscription.Create().
 		SetUserID(sub.UserID).
 		SetGroupID(sub.GroupID).
+		SetNillableBillingSubjectID(nilIfZero(sub.BillingSubjectID)).
 		SetExpiresAt(sub.ExpiresAt).
 		SetNillableDailyWindowStart(sub.DailyWindowStart).
 		SetNillableWeeklyWindowStart(sub.WeeklyWindowStart).
@@ -432,6 +433,7 @@ func userSubscriptionEntityToService(m *dbent.UserSubscription) *service.UserSub
 	out := &service.UserSubscription{
 		ID:                 m.ID,
 		UserID:             m.UserID,
+		BillingSubjectID:   derefInt64(m.BillingSubjectID),
 		GroupID:            m.GroupID,
 		StartsAt:           m.StartsAt,
 		ExpiresAt:          m.ExpiresAt,

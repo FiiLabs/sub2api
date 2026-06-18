@@ -70,7 +70,9 @@ func generateRandomString(n int) string {
 }
 
 type CreateOrderRequest struct {
-	UserID          int64
+	UserID           int64
+	BillingSubjectID int64
+	TeamID           int64
 	Amount          float64
 	PaymentType     string
 	OpenID          string
@@ -185,13 +187,14 @@ type PaymentService struct {
 	configService            *PaymentConfigService
 	userRepo                 UserRepository
 	groupRepo                GroupRepository
+	billingSubjectRepo       BillingSubjectRepository
 	resumeService            *PaymentResumeService
 	affiliateService         *AffiliateService
 	notificationEmailService *NotificationEmailService
 }
 
-func NewPaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, affiliateService *AffiliateService) *PaymentService {
-	svc := &PaymentService{entClient: entClient, registry: registry, loadBalancer: newVisibleMethodLoadBalancer(loadBalancer, configService), redeemService: redeemService, subscriptionSvc: subscriptionSvc, configService: configService, userRepo: userRepo, groupRepo: groupRepo, affiliateService: affiliateService}
+func NewPaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, billingSubjectRepo BillingSubjectRepository, affiliateService *AffiliateService) *PaymentService {
+	svc := &PaymentService{entClient: entClient, registry: registry, loadBalancer: newVisibleMethodLoadBalancer(loadBalancer, configService), redeemService: redeemService, subscriptionSvc: subscriptionSvc, configService: configService, userRepo: userRepo, groupRepo: groupRepo, billingSubjectRepo: billingSubjectRepo, affiliateService: affiliateService}
 	svc.resumeService = psNewPaymentResumeService(configService)
 	return svc
 }

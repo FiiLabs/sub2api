@@ -20,6 +20,16 @@ import (
 
 // --- Order Creation ---
 
+// int64PtrOrNil returns a pointer to v, or nil when v is not a positive id.
+// Used to populate optional nillable order columns (billing_subject_id, team_id,
+// created_by_user_id) only when a real subject/team/actor is resolved.
+func int64PtrOrNil(v int64) *int64 {
+	if v <= 0 {
+		return nil
+	}
+	return &v
+}
+
 func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest) (*CreateOrderResponse, error) {
 	if req.OrderType == "" {
 		req.OrderType = payment.OrderTypeBalance
@@ -177,6 +187,9 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 	}
 	b := tx.PaymentOrder.Create().
 		SetUserID(req.UserID).
+		SetNillableBillingSubjectID(int64PtrOrNil(req.BillingSubjectID)).
+		SetNillableTeamID(int64PtrOrNil(req.TeamID)).
+		SetNillableCreatedByUserID(int64PtrOrNil(req.UserID)).
 		SetUserEmail(user.Email).
 		SetUserName(user.Username).
 		SetNillableUserNotes(psNilIfEmpty(user.Notes)).
@@ -806,6 +819,36 @@ func (s *PaymentService) GetUserOrders(ctx context.Context, userID int64, p Orde
 	orders, err := q.Order(dbent.Desc(paymentorder.FieldCreatedAt)).Limit(ps).Offset((pg - 1) * ps).All(ctx)
 	if err != nil {
 		return nil, 0, fmt.Errorf("query user orders: %w", err)
+	}
+	return orders, total, nil
+}
+
+// GetSubjectOrders returns a paginated list of orders billed to a specific
+// billing subject. When billingSubjectID <= 0 it falls back to filtering by the
+// payer user id, preserving behaviour for personal-user flows where no subject
+// is resolved.
+func (s *PaymentService) GetSubjectOrders(ctx context.Context, billingSubjectID, userID int64, p OrderListParams) ([]*dbent.PaymentOrder, int, error) {
+	if billingSubjectID <= 0 {
+		return s.GetUserOrders(ctx, userID, p)
+	}
+	q := s.entClient.PaymentOrder.Query().Where(paymentorder.BillingSubjectIDEQ(billingSubjectID))
+	if p.Status != "" {
+		q = q.Where(paymentorder.StatusEQ(p.Status))
+	}
+	if p.OrderType != "" {
+		q = q.Where(paymentorder.OrderTypeEQ(p.OrderType))
+	}
+	if p.PaymentType != "" {
+		q = q.Where(paymentorder.PaymentTypeEQ(p.PaymentType))
+	}
+	total, err := q.Clone().Count(ctx)
+	if err != nil {
+		return nil, 0, fmt.Errorf("count subject orders: %w", err)
+	}
+	ps, pg := applyPagination(p.PageSize, p.Page)
+	orders, err := q.Order(dbent.Desc(paymentorder.FieldCreatedAt)).Limit(ps).Offset((pg - 1) * ps).All(ctx)
+	if err != nil {
+		return nil, 0, fmt.Errorf("query subject orders: %w", err)
 	}
 	return orders, total, nil
 }

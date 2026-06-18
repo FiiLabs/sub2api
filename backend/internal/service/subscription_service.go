@@ -144,11 +144,12 @@ func (s *SubscriptionService) InvalidateSubCache(userID, groupID int64) {
 
 // AssignSubscriptionInput 分配订阅输入
 type AssignSubscriptionInput struct {
-	UserID       int64
-	GroupID      int64
-	ValidityDays int
-	AssignedBy   int64
-	Notes        string
+	UserID           int64
+	BillingSubjectID int64
+	GroupID          int64
+	ValidityDays     int
+	AssignedBy       int64
+	Notes            string
 }
 
 // AssignSubscription 分配订阅给用户（不允许重复分配）
@@ -355,8 +356,9 @@ func (s *SubscriptionService) createSubscription(ctx context.Context, input *Ass
 	}
 
 	sub := &UserSubscription{
-		UserID:     input.UserID,
-		GroupID:    input.GroupID,
+		UserID:           input.UserID,
+		BillingSubjectID: input.BillingSubjectID,
+		GroupID:          input.GroupID,
 		StartsAt:   now,
 		ExpiresAt:  expiresAt,
 		Status:     SubscriptionStatusActive,

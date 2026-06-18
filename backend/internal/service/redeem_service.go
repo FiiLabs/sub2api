@@ -138,6 +138,7 @@ type RedeemService struct {
 	subscriptionService  *SubscriptionService
 	cache                RedeemCache
 	billingCacheService  *BillingCacheService
+	billingSubjectRepo   BillingSubjectRepository
 	entClient            *dbent.Client
 	authCacheInvalidator APIKeyAuthCacheInvalidator
 	affiliateService     *AffiliateService
@@ -150,6 +151,7 @@ func NewRedeemService(
 	subscriptionService *SubscriptionService,
 	cache RedeemCache,
 	billingCacheService *BillingCacheService,
+	billingSubjectRepo BillingSubjectRepository,
 	entClient *dbent.Client,
 	authCacheInvalidator APIKeyAuthCacheInvalidator,
 	affiliateService *AffiliateService,
@@ -160,6 +162,7 @@ func NewRedeemService(
 		subscriptionService:  subscriptionService,
 		cache:                cache,
 		billingCacheService:  billingCacheService,
+		billingSubjectRepo:   billingSubjectRepo,
 		entClient:            entClient,
 		authCacheInvalidator: authCacheInvalidator,
 		affiliateService:     affiliateService,
@@ -374,8 +377,30 @@ func (s *RedeemService) releaseRedeemLock(ctx context.Context, code string) {
 	_ = s.cache.ReleaseRedeemLock(ctx, code)
 }
 
-// Redeem 使用兑换码
+// redeemEffectiveSubjectID resolves the billing subject a redemption should be
+// applied to. When no billing subject is provided (billingSubjectID <= 0) it
+// falls back to the actor's personal subject id (the user id), keeping existing
+// personal-user redeem flows working unchanged.
+func redeemEffectiveSubjectID(actorUserID, billingSubjectID int64) int64 {
+	if billingSubjectID > 0 {
+		return billingSubjectID
+	}
+	return actorUserID
+}
+
+// Redeem 使用兑换码（个人语境，等价于 RedeemForSubject 且未解析团队主体）。
 func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (*RedeemCode, error) {
+	return s.RedeemForSubject(ctx, userID, 0, code)
+}
+
+// RedeemForSubject 在指定计费主体语境下使用兑换码。
+//   - 余额类兑换码：当解析到团队计费主体时记入 billing_subjects.balance；
+//     否则回退到用户个人余额（向后兼容个人用户）。
+//   - 订阅类兑换码：将订阅归属到该计费主体（billing_subject_id）。
+//
+// billingSubjectID <= 0 表示未解析到独立计费主体，回退到 actorUserID 的个人主体。
+func (s *RedeemService) RedeemForSubject(ctx context.Context, actorUserID, billingSubjectID int64, code string) (*RedeemCode, error) {
+	userID := actorUserID
 	// 检查限流
 	if err := s.checkRedeemRateLimit(ctx, userID); err != nil {
 		return nil, err
@@ -445,7 +470,13 @@ func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (
 		if amount < 0 && user.Balance+amount < 0 {
 			amount = -user.Balance
 		}
-		if err := s.userRepo.UpdateBalance(txCtx, userID, amount); err != nil {
+		// 当解析到独立计费主体且配置了 billingSubjectRepo 时，记入计费主体余额；
+		// 否则回退到用户个人余额（向后兼容）。
+		if billingSubjectID > 0 && s.billingSubjectRepo != nil {
+			if err := s.billingSubjectRepo.UpdateBalance(txCtx, billingSubjectID, amount); err != nil {
+				return nil, fmt.Errorf("update billing subject balance: %w", err)
+			}
+		} else if err := s.userRepo.UpdateBalance(txCtx, userID, amount); err != nil {
 			return nil, fmt.Errorf("update user balance: %w", err)
 		}
 
@@ -471,11 +502,12 @@ func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (
 				validityDays = 30
 			}
 			_, _, err := s.subscriptionService.AssignOrExtendSubscription(txCtx, &AssignSubscriptionInput{
-				UserID:       userID,
-				GroupID:      *redeemCode.GroupID,
-				ValidityDays: validityDays,
-				AssignedBy:   0, // 系统分配
-				Notes:        fmt.Sprintf("通过兑换码 %s 兑换", redeemCode.Code),
+				UserID:           userID,
+				BillingSubjectID: billingSubjectID,
+				GroupID:          *redeemCode.GroupID,
+				ValidityDays:     validityDays,
+				AssignedBy:       0, // 系统分配
+				Notes:            fmt.Sprintf("通过兑换码 %s 兑换", redeemCode.Code),
 			})
 			if err != nil {
 				return nil, fmt.Errorf("assign or extend subscription: %w", err)

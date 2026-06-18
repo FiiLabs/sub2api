@@ -253,7 +253,9 @@ func (h *PaymentHandler) CreateOrder(c *gin.Context) {
 		mobile = *req.IsMobile
 	}
 	result, err := h.paymentService.CreateOrder(c.Request.Context(), service.CreateOrderRequest{
-		UserID:          subject.UserID,
+		UserID:           subject.UserID,
+		BillingSubjectID: subject.BillingSubjectID,
+		TeamID:           subject.TeamID,
 		Amount:          req.Amount,
 		PaymentType:     req.PaymentType,
 		OpenID:          req.OpenID,
@@ -322,7 +324,7 @@ func (h *PaymentHandler) GetMyOrders(c *gin.Context) {
 	}
 
 	page, pageSize := response.ParsePagination(c)
-	orders, total, err := h.paymentService.GetUserOrders(c.Request.Context(), subject.UserID, service.OrderListParams{
+	orders, total, err := h.paymentService.GetSubjectOrders(c.Request.Context(), subject.BillingSubjectID, subject.UserID, service.OrderListParams{
 		Page:        page,
 		PageSize:    pageSize,
 		Status:      c.Query("status"),

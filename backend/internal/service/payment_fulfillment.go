@@ -270,6 +270,26 @@ func resolveRedeemAction(existing *RedeemCode, lookupErr error) redeemAction {
 	return redeemActionRedeem
 }
 
+// paymentOrderBillingSubjectID returns the order's explicit billing_subject_id
+// (0 when unset). Unlike paymentOrderSubjectID it does NOT fall back to the user
+// id, so subscriptions created from personal orders keep a nil billing subject
+// rather than storing the user id as a subject id.
+func paymentOrderBillingSubjectID(o *dbent.PaymentOrder) int64 {
+	if o.BillingSubjectID != nil && *o.BillingSubjectID > 0 {
+		return *o.BillingSubjectID
+	}
+	return 0
+}
+
+// applyBalanceToSubject credits the given billing subject's balance via the
+// billing subject repository.
+func (s *PaymentService) applyBalanceToSubject(ctx context.Context, subjectID int64, amount float64) error {
+	if s.billingSubjectRepo == nil {
+		return infraerrors.InternalServer("PAYMENT_BILLING_SUBJECT_REPO_MISSING", "payment billing subject repository is not configured")
+	}
+	return s.billingSubjectRepo.UpdateBalance(ctx, subjectID, amount)
+}
+
 func (s *PaymentService) doBalance(ctx context.Context, o *dbent.PaymentOrder) error {
 	// Idempotency: check if redeem code already exists (from a previous partial run)
 	existing, lookupErr := s.redeemService.GetByCode(ctx, o.RechargeCode)
@@ -290,7 +310,7 @@ func (s *PaymentService) doBalance(ctx context.Context, o *dbent.PaymentOrder) e
 	case redeemActionRedeem:
 		// Code exists but unused — skip creation, proceed to redeem
 	}
-	if _, err := s.redeemService.Redeem(ContextSkipRedeemAffiliate(ctx), o.UserID, o.RechargeCode); err != nil {
+	if _, err := s.redeemService.RedeemForSubject(ContextSkipRedeemAffiliate(ctx), o.UserID, paymentOrderBillingSubjectID(o), o.RechargeCode); err != nil {
 		return fmt.Errorf("redeem balance: %w", err)
 	}
 	if err := s.applyAffiliateRebateForOrder(ctx, o); err != nil {
@@ -436,7 +456,7 @@ func (s *PaymentService) doSub(ctx context.Context, o *dbent.PaymentOrder) error
 		return s.markCompleted(ctx, o, "SUBSCRIPTION_SUCCESS")
 	}
 	orderNote := fmt.Sprintf("payment order %d", o.ID)
-	_, _, err = s.subscriptionSvc.AssignOrExtendSubscription(ctx, &AssignSubscriptionInput{UserID: o.UserID, GroupID: gid, ValidityDays: days, AssignedBy: 0, Notes: orderNote})
+	_, _, err = s.subscriptionSvc.AssignOrExtendSubscription(ctx, &AssignSubscriptionInput{UserID: o.UserID, BillingSubjectID: paymentOrderBillingSubjectID(o), GroupID: gid, ValidityDays: days, AssignedBy: 0, Notes: orderNote})
 	if err != nil {
 		return fmt.Errorf("assign subscription: %w", err)
 	}
