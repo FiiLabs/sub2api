@@ -298,6 +298,31 @@ func (s *UsageService) GetUserDashboardStats(ctx context.Context, userID int64) 
 	return stats, nil
 }
 
+// GetDashboardStatsBySubject returns dashboard summary stats scoped to a billing subject.
+// When the active subject is a personal account (billingSubjectID derived from the user),
+// the result is identical to the per-user dashboard. For team subjects the underlying repo
+// uses the same per-user keying today; callers must pass the resolved subject so the scope
+// can be tightened without changing the handler contract.
+func (s *UsageService) GetDashboardStatsBySubject(ctx context.Context, userID, billingSubjectID int64) (*usagestats.UserDashboardStats, error) {
+	if billingSubjectID <= 0 {
+		return nil, fmt.Errorf("get dashboard stats by subject: invalid billing subject")
+	}
+	if reader, ok := s.usageRepo.(dashboardStatsBySubjectReader); ok {
+		stats, err := reader.GetDashboardStatsBySubject(ctx, billingSubjectID)
+		if err != nil {
+			return nil, fmt.Errorf("get dashboard stats by subject: %w", err)
+		}
+		return stats, nil
+	}
+	return s.GetUserDashboardStats(ctx, userID)
+}
+
+// dashboardStatsBySubjectReader is an optional repository capability for subject-scoped
+// dashboard stats. When absent the service falls back to per-user dashboard stats.
+type dashboardStatsBySubjectReader interface {
+	GetDashboardStatsBySubject(ctx context.Context, billingSubjectID int64) (*usagestats.UserDashboardStats, error)
+}
+
 // GetAPIKeyDashboardStats returns dashboard summary stats filtered by API Key.
 func (s *UsageService) GetAPIKeyDashboardStats(ctx context.Context, apiKeyID int64) (*usagestats.UserDashboardStats, error) {
 	stats, err := s.usageRepo.GetAPIKeyDashboardStats(ctx, apiKeyID)

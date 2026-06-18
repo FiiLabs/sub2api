@@ -261,7 +261,10 @@ type PlatformDashboardStats struct {
 
 // UsageLogFilters represents filters for usage log queries
 type UsageLogFilters struct {
-	UserID      int64
+	UserID           int64
+	BillingSubjectID int64
+	// ActorUserID filters team usage by the member who issued the request (>0 to enable).
+	ActorUserID int64
 	APIKeyID    int64
 	AccountID   int64
 	GroupID     int64

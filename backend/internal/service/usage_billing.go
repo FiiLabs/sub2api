@@ -20,6 +20,7 @@ type UsageBillingCommand struct {
 	RequestPayloadHash string
 
 	UserID              int64
+	BillingSubjectID    int64
 	AccountID           int64
 	SubscriptionID      *int64
 	AccountType         string
@@ -56,8 +57,9 @@ func buildUsageBillingFingerprint(c *UsageBillingCommand) string {
 		return ""
 	}
 	raw := fmt.Sprintf(
-		"%d|%d|%d|%s|%s|%s|%s|%d|%d|%d|%d|%d|%d|%s|%d|%0.10f|%0.10f|%0.10f|%0.10f|%0.10f",
+		"%d|%d|%d|%d|%s|%s|%s|%s|%d|%d|%d|%d|%d|%d|%s|%d|%0.10f|%0.10f|%0.10f|%0.10f|%0.10f",
 		c.UserID,
+		c.BillingSubjectID,
 		c.AccountID,
 		c.APIKeyID,
 		strings.TrimSpace(c.AccountType),

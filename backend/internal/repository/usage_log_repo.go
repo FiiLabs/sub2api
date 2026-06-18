@@ -30,7 +30,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const usageLogSelectColumns = "id, user_id, api_key_id, account_id, request_id, model, requested_model, upstream_model, group_id, subscription_id, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, cache_creation_5m_tokens, cache_creation_1h_tokens, image_output_tokens, image_output_cost, input_cost, output_cost, cache_creation_cost, cache_read_cost, total_cost, actual_cost, rate_multiplier, account_rate_multiplier, billing_type, request_type, stream, openai_ws_mode, duration_ms, first_token_ms, user_agent, ip_address, image_count, image_size, image_input_size, image_output_size, image_size_source, image_size_breakdown, service_tier, reasoning_effort, inbound_endpoint, upstream_endpoint, cache_ttl_overridden, channel_id, model_mapping_chain, billing_tier, billing_mode, account_stats_cost, created_at"
+const usageLogSelectColumns = "id, user_id, api_key_id, account_id, request_id, model, requested_model, upstream_model, group_id, subscription_id, billing_subject_id, team_id, actor_user_id, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, cache_creation_5m_tokens, cache_creation_1h_tokens, image_output_tokens, image_output_cost, input_cost, output_cost, cache_creation_cost, cache_read_cost, total_cost, actual_cost, rate_multiplier, account_rate_multiplier, billing_type, request_type, stream, openai_ws_mode, duration_ms, first_token_ms, user_agent, ip_address, image_count, image_size, image_input_size, image_output_size, image_size_source, image_size_breakdown, service_tier, reasoning_effort, inbound_endpoint, upstream_endpoint, cache_ttl_overridden, channel_id, model_mapping_chain, billing_tier, billing_mode, account_stats_cost, created_at"
 
 // usageLogInsertArgTypes must stay in the same order as:
 //  1. prepareUsageLogInsert().args
@@ -2794,6 +2794,14 @@ func (r *usageLogRepository) ListWithFilters(ctx context.Context, params paginat
 		conditions = append(conditions, fmt.Sprintf("user_id = $%d", len(args)+1))
 		args = append(args, filters.UserID)
 	}
+	if filters.BillingSubjectID > 0 {
+		conditions = append(conditions, fmt.Sprintf("billing_subject_id = $%d", len(args)+1))
+		args = append(args, filters.BillingSubjectID)
+	}
+	if filters.ActorUserID > 0 {
+		conditions = append(conditions, fmt.Sprintf("actor_user_id = $%d", len(args)+1))
+		args = append(args, filters.ActorUserID)
+	}
 	if filters.APIKeyID > 0 {
 		conditions = append(conditions, fmt.Sprintf("api_key_id = $%d", len(args)+1))
 		args = append(args, filters.APIKeyID)
@@ -3510,6 +3518,14 @@ func (r *usageLogRepository) GetStatsWithFilters(ctx context.Context, filters Us
 	if filters.UserID > 0 {
 		conditions = append(conditions, fmt.Sprintf("user_id = $%d", len(args)+1))
 		args = append(args, filters.UserID)
+	}
+	if filters.BillingSubjectID > 0 {
+		conditions = append(conditions, fmt.Sprintf("billing_subject_id = $%d", len(args)+1))
+		args = append(args, filters.BillingSubjectID)
+	}
+	if filters.ActorUserID > 0 {
+		conditions = append(conditions, fmt.Sprintf("actor_user_id = $%d", len(args)+1))
+		args = append(args, filters.ActorUserID)
 	}
 	if filters.APIKeyID > 0 {
 		conditions = append(conditions, fmt.Sprintf("api_key_id = $%d", len(args)+1))
@@ -4259,6 +4275,9 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 		upstreamModel         sql.NullString
 		groupID               sql.NullInt64
 		subscriptionID        sql.NullInt64
+		billingSubjectID      sql.NullInt64
+		teamID                sql.NullInt64
+		actorUserID           sql.NullInt64
 		inputTokens           int
 		outputTokens          int
 		cacheCreationTokens   int
@@ -4313,6 +4332,9 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 		&upstreamModel,
 		&groupID,
 		&subscriptionID,
+		&billingSubjectID,
+		&teamID,
+		&actorUserID,
 		&inputTokens,
 		&outputTokens,
 		&cacheCreationTokens,
@@ -4403,6 +4425,17 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 	if subscriptionID.Valid {
 		value := subscriptionID.Int64
 		log.SubscriptionID = &value
+	}
+	if billingSubjectID.Valid {
+		log.BillingSubjectID = billingSubjectID.Int64
+	}
+	if teamID.Valid {
+		value := teamID.Int64
+		log.TeamID = &value
+	}
+	if actorUserID.Valid {
+		value := actorUserID.Int64
+		log.ActorUserID = &value
 	}
 	if durationMs.Valid {
 		value := int(durationMs.Int64)

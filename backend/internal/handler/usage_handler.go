@@ -106,6 +106,17 @@ func (h *UsageHandler) List(c *gin.Context) {
 		billingType = &bt
 	}
 
+	// Optional member (actor) filter for team workspaces.
+	var actorUserID int64
+	if raw := strings.TrimSpace(c.Query("actor_user_id")); raw != "" {
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || id <= 0 {
+			response.BadRequest(c, "Invalid actor_user_id")
+			return
+		}
+		actorUserID = id
+	}
+
 	// Parse date range
 	var startTime, endTime *time.Time
 	userTZ := c.Query("timezone") // Get user's timezone from request
@@ -136,14 +147,21 @@ func (h *UsageHandler) List(c *gin.Context) {
 		SortOrder: c.DefaultQuery("sort_order", "desc"),
 	}
 	filters := usagestats.UsageLogFilters{
-		UserID:      subject.UserID, // Always filter by current user for security
 		APIKeyID:    apiKeyID,
 		Model:       model,
 		RequestType: requestType,
 		Stream:      stream,
 		BillingType: billingType,
+		ActorUserID: actorUserID,
 		StartTime:   startTime,
 		EndTime:     endTime,
+	}
+	// Scope to the active billing subject (team workspace or personal account).
+	// Fall back to per-user scoping when no subject is resolved, for security.
+	if subject.BillingSubjectID > 0 {
+		filters.BillingSubjectID = subject.BillingSubjectID
+	} else {
+		filters.UserID = subject.UserID
 	}
 
 	records, result, err := h.usageService.ListWithFilters(c.Request.Context(), params, filters)
@@ -446,12 +464,12 @@ func apiKeyDailyUsageRange(days int, userTZ string) (time.Time, time.Time) {
 // GET /api/v1/usage/dashboard/stats
 func (h *UsageHandler) DashboardStats(c *gin.Context) {
 	subject, ok := middleware2.GetAuthSubjectFromContext(c)
-	if !ok {
+	if !ok || subject.BillingSubjectID <= 0 {
 		response.Unauthorized(c, "User not authenticated")
 		return
 	}
 
-	stats, err := h.usageService.GetUserDashboardStats(c.Request.Context(), subject.UserID)
+	stats, err := h.usageService.GetDashboardStatsBySubject(c.Request.Context(), subject.UserID, subject.BillingSubjectID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

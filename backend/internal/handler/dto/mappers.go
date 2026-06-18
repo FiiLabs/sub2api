@@ -592,6 +592,9 @@ func usageLogFromServiceUser(l *service.UsageLog) UsageLog {
 	return UsageLog{
 		ID:                    l.ID,
 		UserID:                l.UserID,
+		BillingSubjectID:      l.BillingSubjectID,
+		TeamID:                l.TeamID,
+		ActorUserID:           l.ActorUserID,
 		APIKeyID:              l.APIKeyID,
 		AccountID:             l.AccountID,
 		RequestID:             l.RequestID,
