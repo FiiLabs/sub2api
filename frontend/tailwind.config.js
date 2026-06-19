@@ -64,6 +64,16 @@ export default {
         ],
         mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace']
       },
+      fontSize: {
+        'fluid-2xs': ['clamp(0.68rem, 0.64rem + 0.18vw, 0.78rem)', { lineHeight: '1.4' }],
+        'fluid-xs': ['clamp(0.75rem, 0.71rem + 0.18vw, 0.85rem)', { lineHeight: '1.5' }],
+        'fluid-sm': ['clamp(0.84rem, 0.79rem + 0.24vw, 0.97rem)', { lineHeight: '1.6' }],
+        'fluid-base': ['clamp(0.95rem, 0.89rem + 0.3vw, 1.12rem)', { lineHeight: '1.7' }],
+        'fluid-lg': ['clamp(1.05rem, 0.95rem + 0.5vw, 1.4rem)', { lineHeight: '1.5' }],
+        'fluid-xl': ['clamp(1.2rem, 1rem + 0.95vw, 1.85rem)', { lineHeight: '1.3' }],
+        'fluid-2xl': ['clamp(1.45rem, 1.1rem + 1.6vw, 2.5rem)', { lineHeight: '1.2' }],
+        'fluid-3xl': ['clamp(1.95rem, 1.35rem + 2.9vw, 3.75rem)', { lineHeight: '1.08' }]
+      },
       boxShadow: {
         glass: '0 8px 32px rgba(0, 0, 0, 0.08)',
         'glass-sm': '0 4px 16px rgba(0, 0, 0, 0.06)',
