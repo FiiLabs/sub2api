@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -70,6 +71,28 @@ func TestGatewayRoutesModelsIsPublicWithoutAPIKey(t *testing.T) {
 	require.Contains(t, w.Body.String(), `"id":"MiniMax-M3"`)
 	require.Contains(t, w.Body.String(), `"id":"MiniMax-M2"`)
 	require.Contains(t, w.Body.String(), `"owned_by":"minimax"`)
+}
+
+func TestGatewayRoutesV1ReturnsUnauthorizedErrorWithoutAPIKey(t *testing.T) {
+	router := newGatewayRoutesTestRouter()
+
+	req := httptest.NewRequest(http.MethodGet, "/v1", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
+	require.Equal(t, map[string]any{
+		"error": map[string]any{
+			"message": "Permission denied. Please provide a valid API key.",
+			"type":    "invalid_request_error",
+			"param":   nil,
+			"code":    "unauthorized",
+		},
+	}, got)
 }
 
 func TestGatewayRoutesOpenAIResponsesCompactPathIsRegistered(t *testing.T) {

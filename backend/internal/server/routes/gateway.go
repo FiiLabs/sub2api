@@ -34,6 +34,7 @@ func RegisterGatewayRoutes(
 
 	// API网关（Claude API兼容）
 	optionalAPIKeyAuth := optionalAPIKeyAuthMiddleware(apiKeyAuth)
+	r.GET("/v1", writePublicV1Unauthorized)
 	gateway := r.Group("/v1")
 	gateway.Use(bodyLimit)
 	gateway.Use(clientRequestID)
@@ -246,6 +247,17 @@ func RegisterGatewayRoutes(
 		antigravityV1Beta.POST("/models/*modelAction", h.Gateway.GeminiV1BetaModels)
 	}
 
+}
+
+func writePublicV1Unauthorized(c *gin.Context) {
+	c.JSON(http.StatusUnauthorized, gin.H{
+		"error": gin.H{
+			"message": "Permission denied. Please provide a valid API key.",
+			"type":    "invalid_request_error",
+			"param":   nil,
+			"code":    "unauthorized",
+		},
+	})
 }
 
 func optionalAPIKeyAuthMiddleware(apiKeyAuth middleware.APIKeyAuthMiddleware) gin.HandlerFunc {
