@@ -42,6 +42,36 @@ func newGatewayRoutesTestRouter() *gin.Engine {
 	return router
 }
 
+func TestGatewayRoutesModelsIsPublicWithoutAPIKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+
+	RegisterGatewayRoutes(
+		router,
+		&handler.Handlers{
+			Gateway: &handler.GatewayHandler{},
+		},
+		servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
+			c.AbortWithStatus(http.StatusUnauthorized)
+		}),
+		nil,
+		nil,
+		nil,
+		nil,
+		&config.Config{},
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), `"id":"MiniMax-M3"`)
+	require.Contains(t, w.Body.String(), `"id":"MiniMax-M2"`)
+	require.Contains(t, w.Body.String(), `"owned_by":"minimax"`)
+}
+
 func TestGatewayRoutesOpenAIResponsesCompactPathIsRegistered(t *testing.T) {
 	router := newGatewayRoutesTestRouter()
 
