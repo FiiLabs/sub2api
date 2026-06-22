@@ -150,6 +150,7 @@ describe('API Client', () => {
   describe('401 Token 刷新', () => {
     it('无 refresh_token 时 401 清除 localStorage', async () => {
       localStorage.setItem('auth_token', 'expired-token')
+      localStorage.setItem('active_workspace_subject_id', '2')
       // 不设置 refresh_token
 
       // Mock window.location
@@ -175,6 +176,7 @@ describe('API Client', () => {
       await expect(apiClient.get('/test')).rejects.toBeDefined()
 
       expect(localStorage.getItem('auth_token')).toBeNull()
+      expect(localStorage.getItem('active_workspace_subject_id')).toBeNull()
 
       // 恢复 location
       Object.defineProperty(window, 'location', {

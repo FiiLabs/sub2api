@@ -13,6 +13,9 @@ const AUTH_USER_KEY = 'auth_user'
 const REFRESH_TOKEN_KEY = 'refresh_token'
 const TOKEN_EXPIRES_AT_KEY = 'token_expires_at' // 存储过期时间戳而非有效期
 const PENDING_AUTH_SESSION_KEY = 'pending_auth_session'
+// 必须与 stores/workspaces.ts 的 ACTIVE_WORKSPACE_KEY 一致。登出时一并清除,
+// 否则换账户登录会复用上一用户的工作区 subject,被 SubjectContextMiddleware 拒绝。
+const ACTIVE_WORKSPACE_KEY = 'active_workspace_subject_id'
 const AUTO_REFRESH_INTERVAL = 60 * 1000 // 60 seconds for user data refresh
 const TOKEN_REFRESH_BUFFER = 120 * 1000 // 120 seconds before expiry to refresh token
 
@@ -454,6 +457,7 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem(AUTH_USER_KEY)
     localStorage.removeItem(REFRESH_TOKEN_KEY)
     localStorage.removeItem(TOKEN_EXPIRES_AT_KEY)
+    localStorage.removeItem(ACTIVE_WORKSPACE_KEY)
 
     if (options?.preservePendingAuthSession) {
       pendingAuthSession.value = getPersistedPendingAuthSession()

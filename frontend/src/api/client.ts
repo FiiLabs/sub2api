@@ -42,6 +42,21 @@ function onTokenRefreshed(token: string): void {
   refreshSubscribers = []
 }
 
+/**
+ * Clear persisted auth on a forced logout (token expired/revoked). client.ts is a
+ * low-level module and cannot import the auth store (circular dep), so it mirrors
+ * clearAuth here — including the active workspace selector, so that a different
+ * account logging in on the same browser does not inherit a foreign workspace
+ * subject and get rejected by SubjectContextMiddleware (TEAM_PERMISSION_DENIED).
+ */
+function clearPersistedAuth(): void {
+  localStorage.removeItem('auth_token')
+  localStorage.removeItem('refresh_token')
+  localStorage.removeItem('auth_user')
+  localStorage.removeItem('token_expires_at')
+  localStorage.removeItem('active_workspace_subject_id')
+}
+
 // ==================== Request Interceptor ====================
 
 // Get user's timezone
@@ -231,10 +246,7 @@ apiClient.interceptors.response.use(
             isRefreshing = false
 
             // Clear tokens and redirect to login
-            localStorage.removeItem('auth_token')
-            localStorage.removeItem('refresh_token')
-            localStorage.removeItem('auth_user')
-            localStorage.removeItem('token_expires_at')
+            clearPersistedAuth()
             sessionStorage.setItem('auth_expired', '1')
 
             if (!window.location.pathname.includes('/login')) {
@@ -260,10 +272,7 @@ apiClient.interceptors.response.use(
               ? authHeader.length > 0
               : !!authHeader
 
-        localStorage.removeItem('auth_token')
-        localStorage.removeItem('refresh_token')
-        localStorage.removeItem('auth_user')
-        localStorage.removeItem('token_expires_at')
+        clearPersistedAuth()
         if ((hasToken || sentAuth) && !isAuthEndpoint) {
           sessionStorage.setItem('auth_expired', '1')
         }

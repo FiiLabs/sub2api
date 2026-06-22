@@ -156,6 +156,21 @@ describe('useAuthStore', () => {
       expect(localStorage.getItem('refresh_token')).toBeNull()
       expect(localStorage.getItem('token_expires_at')).toBeNull()
     })
+
+    it('注销时清除工作区选择,防止跨账户泄漏', async () => {
+      mockLogin.mockResolvedValue(fakeAuthResponse)
+      mockLogout.mockResolvedValue(undefined)
+      const store = useAuthStore()
+
+      await store.login({ email: 'test@example.com', password: '123456' })
+      // 模拟上一会话选中的团队工作区残留在 localStorage
+      localStorage.setItem('active_workspace_subject_id', '2')
+
+      await store.logout()
+
+      // 否则换账户登录后会带着别人的 subject,触发 TEAM_PERMISSION_DENIED
+      expect(localStorage.getItem('active_workspace_subject_id')).toBeNull()
+    })
   })
 
   // --- checkAuth ---

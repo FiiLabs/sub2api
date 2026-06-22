@@ -118,6 +118,52 @@ func TestSubjectContextSelectsTeamByHeader(t *testing.T) {
 	require.Equal(t, http.StatusNoContent, rec.Code)
 }
 
+// A stale or foreign workspace selector (e.g. left in the browser from a
+// previous account, or a team the user was removed from) must NOT lock the
+// user out of every authenticated route. The middleware should fall back to
+// the default (personal) workspace instead of returning TEAM_PERMISSION_DENIED,
+// otherwise even /workspaces — the endpoint that would correct the selector —
+// becomes unreachable, creating a permanent deadlock.
+func TestSubjectContextFallsBackWhenSelectorUnknown(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(ContextKeyUser), AuthSubject{UserID: 11, Concurrency: 3})
+		c.Next()
+	})
+	router.Use(SubjectContextMiddleware(subjectTeamServiceAdapter{workspaces: []service.WorkspaceSubject{
+		{
+			BillingSubjectID: 101,
+			Type:             domain.BillingSubjectTypeUser,
+			UserID:           11,
+			Name:             "Personal",
+			Role:             domain.TeamRoleOwner,
+			Permissions:      domain.TeamRolePermissions(domain.TeamRoleOwner),
+		},
+		{
+			BillingSubjectID: 202,
+			Type:             domain.BillingSubjectTypeTeam,
+			TeamID:           22,
+			Name:             "Team",
+			Role:             domain.TeamRoleDeveloper,
+			Permissions:      domain.TeamRolePermissions(domain.TeamRoleDeveloper),
+		},
+	}}))
+	router.GET("/probe", func(c *gin.Context) {
+		subject, ok := GetAuthSubjectFromContext(c)
+		require.True(t, ok)
+		require.Equal(t, int64(101), subject.BillingSubjectID)
+		require.Equal(t, domain.BillingSubjectTypeUser, subject.SubjectType)
+		c.Status(http.StatusNoContent)
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/probe", nil)
+	req.Header.Set(SubjectHeader, "999") // not in the user's workspace list
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusNoContent, rec.Code)
+}
+
 type subjectTeamServiceAdapter struct {
 	workspaces []service.WorkspaceSubject
 }

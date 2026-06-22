@@ -80,9 +80,14 @@ func resolveWorkspaceSubject(
 			return item, nil
 		}
 	}
-	if hasSubjectID || hasTeamID {
-		return service.WorkspaceSubject{}, service.ErrTeamPermissionDenied
-	}
+	// An unmatched selector means the client asked for a workspace this user no
+	// longer has: stale localStorage carried over from another account, a team
+	// they were removed from, or a deleted workspace. Returning 403 here would
+	// hard-fail every authenticated route — including /workspaces itself, the
+	// endpoint that would let the client correct its selector — trapping the user
+	// with no way to recover. Fall back to the default workspace instead. The
+	// resolved subject is always drawn from this user's own ListWorkspaces result,
+	// so a bad selector can never widen access beyond what they already have.
 
 	for _, item := range items {
 		if item.Type == domain.BillingSubjectTypeUser {
