@@ -9,7 +9,7 @@
         <button
           v-if="canManageMembers"
           type="button"
-          class="btn-primary"
+          class="btn btn-primary"
           @click="openInvite"
         >
           {{ t('members.invite') }}
@@ -131,7 +131,7 @@
             v-model="inviteForm.email"
             type="email"
             class="input"
-            :placeholder="t('members.emailPlaceholder')"
+            placeholder="member@example.com"
             @keyup.enter="handleInvite"
           />
         </div>
@@ -192,7 +192,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
@@ -387,6 +387,16 @@ async function confirmTransfer(): Promise<void> {
     appStore.showError(err?.message || t('members.failedToTransfer'))
   }
 }
+
+// 工作区是异步加载的:硬刷新落在 /members 时,onMounted 执行时 activeWorkspace
+// 往往还没就绪(team_id 为空),loadMembers 会因缺少 team_id 而早退。等工作区 store
+// 解析完成、team_id 出现(或切换团队)时,由该 watch 补发加载(与 DashboardView 一致)。
+watch(
+  () => activeWorkspace.value?.team_id,
+  () => {
+    loadMembers().catch((error) => console.error('Failed to load team members:', error))
+  }
+)
 
 onMounted(() => {
   loadMembers().catch((error) => console.error('Failed to load team members:', error))

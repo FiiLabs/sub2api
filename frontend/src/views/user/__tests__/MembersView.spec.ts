@@ -200,4 +200,25 @@ describe('MembersView', () => {
     expect(wrapper.find('button.select-stub').exists()).toBe(false)
     expect(wrapper.findAll('button').find((b) => b.text() === 'members.remove')).toBeUndefined()
   })
+
+  it('loads members once the workspace store resolves after a hard refresh', async () => {
+    // Simulate a hard refresh: the workspace store has not resolved yet at mount,
+    // so there is no active team_id to fetch with.
+    const store = useWorkspaceStore()
+    store.workspaces = []
+    store.activeSubjectId = null
+    mount(MembersView, { global: { stubs: globalStubs } })
+    await flushPromises()
+
+    // onMounted ran without a team_id, so no request should have fired yet.
+    expect(workspacesAPI.listMembers).not.toHaveBeenCalled()
+
+    // The async loadWorkspaces resolves and populates the active team workspace.
+    store.workspaces = [{ billing_subject_id: 2, type: 'team', team_id: 7, name: 'Platform', role: 'admin', permissions: { 'team.members.manage': true }, balance: 20 }]
+    store.activeSubjectId = 2
+    await flushPromises()
+
+    // The watcher must now load members for the freshly-resolved team.
+    expect(workspacesAPI.listMembers).toHaveBeenCalledWith(7)
+  })
 })
