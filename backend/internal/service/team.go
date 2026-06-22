@@ -80,6 +80,21 @@ type CreateTeamInput struct {
 	ActorUserID int64
 	Name        string
 	Slug        string
+	// OwnerUserID, when > 0, overrides the team owner (used by AdminCreateTeam so a
+	// platform admin can create a team on behalf of another user). When 0 the owner
+	// defaults to ActorUserID (user self-service path).
+	OwnerUserID int64
+}
+
+// AdminCreateTeamInput holds the input for AdminCreateTeam. The owner is resolved
+// by OwnerUserID first, falling back to OwnerEmail. AdminUserID is the platform
+// admin performing the action (recorded as the team creator).
+type AdminCreateTeamInput struct {
+	Name        string
+	Slug        string
+	OwnerUserID int64
+	OwnerEmail  string
+	AdminUserID int64
 }
 
 type InviteTeamMemberInput struct {
@@ -145,10 +160,11 @@ type TeamRepository interface {
 }
 
 // TeamUserLookup is the narrow user-resolution dependency used by admin member
-// management (resolving a target user by email). *userRepository (the concrete
-// UserRepository implementation) satisfies it.
+// and team management (resolving a target user by email or id). *userRepository
+// (the concrete UserRepository implementation) satisfies it.
 type TeamUserLookup interface {
 	GetByEmail(ctx context.Context, email string) (*User, error)
+	GetByID(ctx context.Context, id int64) (*User, error)
 }
 
 type TeamService struct {
@@ -171,9 +187,14 @@ func NewTeamService(repo TeamRepository, billingSubject BillingSubjectRepository
 func (s *TeamService) CreateTeam(ctx context.Context, input CreateTeamInput) (*Team, error) {
 	input.Name = strings.TrimSpace(input.Name)
 	input.Slug = strings.TrimSpace(input.Slug)
-	if input.ActorUserID <= 0 || input.Name == "" || input.Slug == "" {
-		return nil, infraerrors.BadRequest("TEAM_INVALID_INPUT", "team name and slug are required")
+	if input.ActorUserID <= 0 || input.Name == "" {
+		return nil, infraerrors.BadRequest("TEAM_INVALID_INPUT", "team name is required")
 	}
+	slug, err := buildTeamSlug(input.Name, input.Slug)
+	if err != nil {
+		return nil, err
+	}
+	input.Slug = slug
 	return s.repo.CreateTeam(ctx, input)
 }
 
@@ -268,6 +289,69 @@ func isAssignableTeamRole(role string) bool {
 	default:
 		return false
 	}
+}
+
+// AdminCreateTeam creates a team on behalf of a resolved owner as a platform
+// admin. The owner is resolved by OwnerUserID first (verified via GetByID),
+// falling back to OwnerEmail (resolved via GetByEmail); at least one is required.
+// The slug is auto-generated from the name when not provided. No team-membership
+// checks are performed; access is gated by the admin auth middleware at the route
+// level. The team creator is recorded as the admin (AdminUserID) while ownership
+// is assigned to the resolved owner.
+func (s *TeamService) AdminCreateTeam(ctx context.Context, input AdminCreateTeamInput) (*AdminTeamSummary, error) {
+	input.Name = strings.TrimSpace(input.Name)
+	if input.Name == "" {
+		return nil, infraerrors.BadRequest("TEAM_INVALID_INPUT", "team name is required")
+	}
+
+	ownerID, err := s.resolveTeamOwner(ctx, input.OwnerUserID, input.OwnerEmail)
+	if err != nil {
+		return nil, err
+	}
+
+	slug, err := buildTeamSlug(input.Name, input.Slug)
+	if err != nil {
+		return nil, err
+	}
+
+	team, err := s.repo.CreateTeam(ctx, CreateTeamInput{
+		ActorUserID: input.AdminUserID,
+		OwnerUserID: ownerID,
+		Name:        input.Name,
+		Slug:        slug,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.AdminGetTeamSummary(ctx, team.ID)
+}
+
+// resolveTeamOwner resolves a team owner user id from an explicit id or an email.
+// OwnerUserID takes precedence and is verified to exist; otherwise email is
+// resolved (lowercased/trimmed). At least one must be provided.
+func (s *TeamService) resolveTeamOwner(ctx context.Context, ownerUserID int64, ownerEmail string) (int64, error) {
+	if ownerUserID > 0 {
+		if s.userLookup == nil {
+			return 0, ErrUserNotFound
+		}
+		owner, err := s.userLookup.GetByID(ctx, ownerUserID)
+		if err != nil {
+			return 0, err
+		}
+		return owner.ID, nil
+	}
+	email := strings.ToLower(strings.TrimSpace(ownerEmail))
+	if email == "" {
+		return 0, infraerrors.BadRequest("TEAM_INVALID_INPUT", "owner_user_id or owner_email is required")
+	}
+	if s.userLookup == nil {
+		return 0, ErrUserNotFound
+	}
+	owner, err := s.userLookup.GetByEmail(ctx, email)
+	if err != nil {
+		return 0, err
+	}
+	return owner.ID, nil
 }
 
 // AdminListTeams returns a paginated platform-admin view of all teams.
@@ -408,4 +492,64 @@ func GenerateInvitationToken() (plain string, tokenHash string, err error) {
 	plain = hex.EncodeToString(buf)
 	sum := sha256.Sum256([]byte(plain))
 	return plain, hex.EncodeToString(sum[:]), nil
+}
+
+// maxTeamSlugBaseLen caps the slug base (the slugified name portion) so the final
+// slug, including the random suffix, stays within a reasonable length.
+const maxTeamSlugBaseLen = 80
+
+// buildTeamSlug returns the slug to persist for a team. If an explicit slug is
+// provided it is returned as-is (already trimmed by the caller). Otherwise a slug
+// is auto-generated from the name: the slugified base (falling back to "team" when
+// slugification yields an empty string, e.g. for all-non-ASCII names) plus a short
+// random suffix to keep it unique.
+func buildTeamSlug(name, explicitSlug string) (string, error) {
+	if explicitSlug != "" {
+		return explicitSlug, nil
+	}
+	base := slugifyTeamName(name)
+	if base == "" {
+		base = "team"
+	}
+	suffix, err := randHexSuffix()
+	if err != nil {
+		return "", err
+	}
+	return base + "-" + suffix, nil
+}
+
+// slugifyTeamName lowercases name, collapses any run of characters outside
+// [a-z0-9] into a single "-", trims leading/trailing "-", and caps the length.
+// It may return "" when name has no ASCII alphanumerics (e.g. all-CJK names);
+// callers handle that fallback.
+func slugifyTeamName(name string) string {
+	var b strings.Builder
+	prevDash := false
+	for _, r := range strings.ToLower(name) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			prevDash = false
+			continue
+		}
+		// Any other character becomes a single "-" (runs collapse).
+		if !prevDash && b.Len() > 0 {
+			b.WriteByte('-')
+			prevDash = true
+		}
+	}
+	slug := strings.Trim(b.String(), "-")
+	if len(slug) > maxTeamSlugBaseLen {
+		slug = strings.Trim(slug[:maxTeamSlugBaseLen], "-")
+	}
+	return slug
+}
+
+// randHexSuffix returns ~6 hex chars of crypto-random entropy, reusing the
+// crypto/rand style of GenerateInvitationToken.
+func randHexSuffix() (string, error) {
+	buf := make([]byte, 3)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf), nil
 }

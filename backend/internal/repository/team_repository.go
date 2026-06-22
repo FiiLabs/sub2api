@@ -30,10 +30,17 @@ func (r *teamRepository) CreateTeam(ctx context.Context, input service.CreateTea
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// owner defaults to the actor (user self-service); an admin creating a team on
+	// behalf of someone else sets OwnerUserID. The creator is always the actor.
+	owner := input.ActorUserID
+	if input.OwnerUserID > 0 {
+		owner = input.OwnerUserID
+	}
+
 	created, err := tx.Team.Create().
 		SetName(input.Name).
 		SetSlug(input.Slug).
-		SetOwnerUserID(input.ActorUserID).
+		SetOwnerUserID(owner).
 		SetCreatedByUserID(input.ActorUserID).
 		SetStatus(domain.TeamStatusActive).
 		Save(ctx)
@@ -65,7 +72,7 @@ func (r *teamRepository) CreateTeam(ctx context.Context, input service.CreateTea
 	now := time.Now()
 	_, err = tx.TeamMember.Create().
 		SetTeamID(created.ID).
-		SetUserID(input.ActorUserID).
+		SetUserID(owner).
 		SetRole(domain.TeamRoleOwner).
 		SetStatus(domain.TeamMemberStatusActive).
 		SetJoinedAt(now).

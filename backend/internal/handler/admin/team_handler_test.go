@@ -22,11 +22,27 @@ import (
 type adminTeamServiceStub struct {
 	teams []service.AdminTeamSummary
 
+	createTeamInput  *service.AdminCreateTeamInput
+	createTeamResult *service.AdminTeamSummary
+	createTeamErr    error
+
 	addMemberInput   *service.AdminAddMemberInput
 	addMemberResult  *service.TeamMember
 	addMemberErr     error
 	removeMemberErr  error
 	removeMemberArgs [3]int64 // adminUserID, teamID, userID
+}
+
+func (s *adminTeamServiceStub) AdminCreateTeam(_ context.Context, input service.AdminCreateTeamInput) (*service.AdminTeamSummary, error) {
+	in := input
+	s.createTeamInput = &in
+	if s.createTeamErr != nil {
+		return nil, s.createTeamErr
+	}
+	if s.createTeamResult != nil {
+		return s.createTeamResult, nil
+	}
+	return &service.AdminTeamSummary{Team: service.Team{ID: 1, Name: input.Name, Slug: "auto-slug", OwnerUserID: input.OwnerUserID}}, nil
 }
 
 func (s *adminTeamServiceStub) AdminListTeams(_ context.Context, _ service.AdminTeamListFilter, params pagination.PaginationParams) ([]service.AdminTeamSummary, *pagination.PaginationResult, error) {
@@ -86,6 +102,7 @@ func adminRouter(h *AdminTeamHandler, adminUserID int64) *gin.Engine {
 	})
 	teams := router.Group("/api/v1/admin/teams")
 	teams.GET("", h.List)
+	teams.POST("", h.Create)
 	teams.GET("/:id", h.GetByID)
 	teams.PATCH("/:id", h.Update)
 	teams.POST("/:id/members", h.AddMember)
@@ -116,6 +133,49 @@ func TestAdminTeamHandlerListWithoutMembership(t *testing.T) {
 	require.Contains(t, body, `"balance":12.5`)
 	require.Contains(t, body, `"owner":{"id":5`)
 	require.Contains(t, body, `"total":1`)
+}
+
+func TestAdminTeamHandlerCreateHappyPath(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	owner := &service.User{ID: 55, Username: "owner", Email: "owner@example.com"}
+	stub := &adminTeamServiceStub{createTeamResult: &service.AdminTeamSummary{
+		Team:      service.Team{ID: 9, Name: "Platform", Slug: "platform-ab12cd", Status: domain.TeamStatusActive, OwnerUserID: 55},
+		OwnerUser: owner,
+	}}
+	h := &AdminTeamHandler{teamService: stub}
+	router := adminRouter(h, 999) // platform admin, not a team member
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/teams", strings.NewReader(`{"name":"Platform","owner_user_id":55}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	require.Contains(t, body, `"team"`)
+	require.Contains(t, body, `"slug":"platform-ab12cd"`)
+	require.Contains(t, body, `"owner_user_id":55`)
+	require.NotNil(t, stub.createTeamInput)
+	require.Equal(t, "Platform", stub.createTeamInput.Name)
+	require.Equal(t, int64(55), stub.createTeamInput.OwnerUserID)
+	// The admin user id is read from the auth subject and forwarded.
+	require.Equal(t, int64(999), stub.createTeamInput.AdminUserID)
+}
+
+func TestAdminTeamHandlerCreateRequiresOwner(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	stub := &adminTeamServiceStub{}
+	h := &AdminTeamHandler{teamService: stub}
+	router := adminRouter(h, 1)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/teams", strings.NewReader(`{"name":"Platform"}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	// Missing owner_user_id and owner_email is rejected before reaching the service.
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Nil(t, stub.createTeamInput)
 }
 
 func TestAdminTeamHandlerAddMemberWithoutMembership(t *testing.T) {

@@ -30,7 +30,8 @@ func NewTeamHandler(teamService TeamHTTPService) *TeamHandler {
 
 type CreateTeamRequest struct {
 	Name string `json:"name" binding:"required"`
-	Slug string `json:"slug" binding:"required"`
+	// Slug is optional; when empty the service auto-generates one from Name.
+	Slug string `json:"slug"`
 }
 
 type InviteMemberRequest struct {

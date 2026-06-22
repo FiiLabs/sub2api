@@ -18,6 +18,7 @@ import (
 // AdminTeamHandler. *service.TeamService satisfies it.
 type AdminTeamService interface {
 	AdminListTeams(ctx context.Context, filter service.AdminTeamListFilter, params pagination.PaginationParams) ([]service.AdminTeamSummary, *pagination.PaginationResult, error)
+	AdminCreateTeam(ctx context.Context, input service.AdminCreateTeamInput) (*service.AdminTeamSummary, error)
 	AdminGetTeam(ctx context.Context, teamID int64) (*service.AdminTeamSummary, []service.TeamMember, []service.TeamInvitation, error)
 	AdminUpdateTeam(ctx context.Context, teamID int64, input service.AdminUpdateTeamInput) (*service.AdminTeamSummary, error)
 	AdminAddMember(ctx context.Context, input service.AdminAddMemberInput) (*service.TeamMember, error)
@@ -132,6 +133,13 @@ func adminTeamInvitationDTOFromService(i *service.TeamInvitation) adminTeamInvit
 
 // --- Requests -----------------------------------------------------------------
 
+type adminCreateTeamRequest struct {
+	Name        string `json:"name" binding:"required"`
+	Slug        string `json:"slug"`
+	OwnerUserID int64  `json:"owner_user_id"`
+	OwnerEmail  string `json:"owner_email" binding:"omitempty,email"`
+}
+
 type adminUpdateTeamRequest struct {
 	Name   *string `json:"name"`
 	Status *string `json:"status" binding:"omitempty,oneof=active disabled"`
@@ -182,6 +190,42 @@ func (h *AdminTeamHandler) List(c *gin.Context) {
 		PageSize: result.PageSize,
 		Pages:    result.Pages,
 	})
+}
+
+// Create handles POST /api/v1/admin/teams. It creates a team and assigns
+// ownership to a resolved user (by owner_user_id or owner_email); the requesting
+// admin is recorded as the creator. The slug is auto-generated from the name when
+// not provided.
+func (h *AdminTeamHandler) Create(c *gin.Context) {
+	var req adminCreateTeamRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if req.OwnerUserID <= 0 && strings.TrimSpace(req.OwnerEmail) == "" {
+		response.BadRequest(c, "owner_user_id or owner_email is required")
+		return
+	}
+
+	adminUserID := int64(0)
+	if subject, ok := middleware2.GetAuthSubjectFromContext(c); ok {
+		adminUserID = subject.UserID
+	}
+
+	summary, err := h.teamService.AdminCreateTeam(c.Request.Context(), service.AdminCreateTeamInput{
+		Name:        req.Name,
+		Slug:        req.Slug,
+		OwnerUserID: req.OwnerUserID,
+		OwnerEmail:  req.OwnerEmail,
+		AdminUserID: adminUserID,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	team := adminTeamDTOFromSummary(summary)
+	response.Success(c, gin.H{"team": team})
 }
 
 // GetByID handles GET /api/v1/admin/teams/:id

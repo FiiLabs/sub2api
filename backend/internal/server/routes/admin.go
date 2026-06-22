@@ -260,6 +260,7 @@ func registerTeamManagementRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	teams := admin.Group("/teams")
 	{
 		teams.GET("", h.Admin.Team.List)
+		teams.POST("", h.Admin.Team.Create)
 		teams.GET("/:id", h.Admin.Team.GetByID)
 		teams.PATCH("/:id", h.Admin.Team.Update)
 		teams.POST("/:id/members", h.Admin.Team.AddMember)

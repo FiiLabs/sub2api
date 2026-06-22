@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,18 +28,24 @@ func newTeamRepoMemory() *teamRepoMemory {
 func (r *teamRepoMemory) CreateTeam(ctx context.Context, input CreateTeamInput) (*Team, error) {
 	id := r.nextID
 	r.nextID++
+	// Mirror the production repo: owner defaults to the actor unless OwnerUserID
+	// overrides it; the creator is always the actor.
+	owner := input.ActorUserID
+	if input.OwnerUserID > 0 {
+		owner = input.OwnerUserID
+	}
 	team := &Team{
 		ID:              id,
 		Name:            input.Name,
 		Slug:            input.Slug,
-		OwnerUserID:     input.ActorUserID,
+		OwnerUserID:     owner,
 		CreatedByUserID: input.ActorUserID,
 		Status:          domain.TeamStatusActive,
 	}
 	r.teams[id] = team
 	r.members[id] = append(r.members[id], TeamMember{
 		TeamID:   id,
-		UserID:   input.ActorUserID,
+		UserID:   owner,
 		Role:     domain.TeamRoleOwner,
 		Status:   domain.TeamMemberStatusActive,
 		JoinedAt: teamTestPtrTime(time.Now()),
@@ -296,6 +303,110 @@ func TestTeamServiceCreateTeamCreatesOwnerWorkspace(t *testing.T) {
 	require.Equal(t, domain.TeamRoleOwner, member.Role)
 }
 
+func TestTeamServiceCreateTeamAutoGeneratesSlug(t *testing.T) {
+	repo := newTeamRepoMemory()
+	svc := NewTeamService(repo, nil, nil)
+
+	// Name only (no slug): slug is auto-generated from the name plus a suffix.
+	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 42, Name: "Platform Team"})
+	require.NoError(t, err)
+	require.NotEmpty(t, team.Slug)
+	require.True(t, strings.HasPrefix(team.Slug, "platform-team-"), "got slug %q", team.Slug)
+	// base "platform-team" + "-" + 6 hex chars
+	require.Equal(t, len("platform-team-")+6, len(team.Slug))
+
+	// An explicit slug is preserved as-is.
+	team2, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 42, Name: "Another", Slug: "custom-slug"})
+	require.NoError(t, err)
+	require.Equal(t, "custom-slug", team2.Slug)
+}
+
+func TestTeamServiceCreateTeamSlugFallbackForNonASCIIName(t *testing.T) {
+	repo := newTeamRepoMemory()
+	svc := NewTeamService(repo, nil, nil)
+
+	// All-non-ASCII name slugifies to "" -> falls back to "team-<suffix>".
+	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "团队名称"})
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(team.Slug, "team-"), "got slug %q", team.Slug)
+	require.Equal(t, len("team-")+6, len(team.Slug))
+}
+
+func TestTeamServiceCreateTeamRequiresName(t *testing.T) {
+	repo := newTeamRepoMemory()
+	svc := NewTeamService(repo, nil, nil)
+
+	// Name is required even though slug is now optional.
+	_, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Slug: "ops"})
+	require.Error(t, err)
+}
+
+func TestTeamServiceAdminCreateTeamByOwnerID(t *testing.T) {
+	repo := newTeamRepoMemory()
+	lookup := teamUserLookupStub{byID: map[int64]*User{
+		55: {ID: 55, Email: "owner@example.com", Username: "owner"},
+	}}
+	svc := &TeamService{repo: repo, userLookup: lookup}
+
+	summary, err := svc.AdminCreateTeam(context.Background(), AdminCreateTeamInput{
+		Name:        "Owned Team",
+		OwnerUserID: 55,
+		AdminUserID: 1,
+	})
+	require.NoError(t, err)
+	// Owner is the resolved user (55), NOT the admin (1).
+	require.Equal(t, int64(55), summary.OwnerUserID)
+	require.True(t, strings.HasPrefix(summary.Slug, "owned-team-"), "got slug %q", summary.Slug)
+
+	// The creator is the admin while the owner membership is the resolved user.
+	team := repo.teams[summary.ID]
+	require.Equal(t, int64(1), team.CreatedByUserID)
+	owner, err := repo.GetMembership(context.Background(), summary.ID, 55)
+	require.NoError(t, err)
+	require.Equal(t, domain.TeamRoleOwner, owner.Role)
+	// The admin is not a member.
+	_, err = repo.GetMembership(context.Background(), summary.ID, 1)
+	require.Error(t, err)
+
+	// Unknown owner id yields not-found.
+	_, err = svc.AdminCreateTeam(context.Background(), AdminCreateTeamInput{Name: "X", OwnerUserID: 999, AdminUserID: 1})
+	require.ErrorIs(t, err, ErrUserNotFound)
+}
+
+func TestTeamServiceAdminCreateTeamByOwnerEmail(t *testing.T) {
+	repo := newTeamRepoMemory()
+	lookup := teamUserLookupStub{byEmail: map[string]*User{
+		"owner@example.com": {ID: 77, Email: "owner@example.com", Username: "owner"},
+	}}
+	svc := &TeamService{repo: repo, userLookup: lookup}
+
+	summary, err := svc.AdminCreateTeam(context.Background(), AdminCreateTeamInput{
+		Name:        "Email Team",
+		OwnerEmail:  "Owner@Example.com", // resolved case-insensitively
+		AdminUserID: 2,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(77), summary.OwnerUserID)
+
+	// Unknown email yields not-found.
+	_, err = svc.AdminCreateTeam(context.Background(), AdminCreateTeamInput{Name: "Y", OwnerEmail: "ghost@example.com", AdminUserID: 2})
+	require.ErrorIs(t, err, ErrUserNotFound)
+}
+
+func TestTeamServiceAdminCreateTeamRequiresOwner(t *testing.T) {
+	repo := newTeamRepoMemory()
+	lookup := teamUserLookupStub{}
+	svc := &TeamService{repo: repo, userLookup: lookup}
+
+	// Neither owner_user_id nor owner_email provided -> bad request.
+	_, err := svc.AdminCreateTeam(context.Background(), AdminCreateTeamInput{Name: "No Owner", AdminUserID: 1})
+	require.Error(t, err)
+
+	// Empty name -> bad request.
+	_, err = svc.AdminCreateTeam(context.Background(), AdminCreateTeamInput{OwnerUserID: 1, AdminUserID: 1})
+	require.Error(t, err)
+}
+
 func TestTeamServiceCanChecksRolePermissions(t *testing.T) {
 	repo := newTeamRepoMemory()
 	svc := NewTeamService(repo, nil, nil)
@@ -398,13 +509,21 @@ func TestTeamServiceAdminAddMemberReactivatesLeftMembership(t *testing.T) {
 }
 
 // teamUserLookupStub implements the narrow TeamUserLookup dependency for admin
-// email-resolution tests.
+// email/id-resolution tests.
 type teamUserLookupStub struct {
 	byEmail map[string]*User
+	byID    map[int64]*User
 }
 
 func (s teamUserLookupStub) GetByEmail(_ context.Context, email string) (*User, error) {
 	if u, ok := s.byEmail[email]; ok {
+		return u, nil
+	}
+	return nil, ErrUserNotFound
+}
+
+func (s teamUserLookupStub) GetByID(_ context.Context, id int64) (*User, error) {
+	if u, ok := s.byID[id]; ok {
 		return u, nil
 	}
 	return nil, ErrUserNotFound
