@@ -5,11 +5,13 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/billingsubject"
 	"github.com/Wei-Shaw/sub2api/ent/schema/mixins"
 	dbteam "github.com/Wei-Shaw/sub2api/ent/team"
 	"github.com/Wei-Shaw/sub2api/ent/teaminvitation"
 	"github.com/Wei-Shaw/sub2api/ent/teammember"
+	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -181,6 +183,10 @@ func (r *teamRepository) ListMembers(ctx context.Context, teamID int64) ([]servi
 		members = append(members, *m)
 	}
 
+	if err := r.fillMemberAggregates(ctx, client, teamID, members); err != nil {
+		return nil, nil, err
+	}
+
 	inviteRows, err := client.TeamInvitation.Query().
 		Where(
 			teaminvitation.TeamIDEQ(teamID),
@@ -198,6 +204,68 @@ func (r *teamRepository) ListMembers(ctx context.Context, teamID int64) ([]servi
 	}
 
 	return members, invitations, nil
+}
+
+// fillMemberAggregates populates KeyCount (API keys the member owns within the
+// team) and Last7dActualCost (the member's actual spend as actor over the last 7
+// days) for each member, using two batched group-by queries to avoid N+1.
+func (r *teamRepository) fillMemberAggregates(ctx context.Context, client *dbent.Client, teamID int64, members []service.TeamMember) error {
+	if len(members) == 0 {
+		return nil
+	}
+	userIDs := make([]int64, 0, len(members))
+	for i := range members {
+		userIDs = append(userIDs, members[i].UserID)
+	}
+
+	// API key count per owner within this team.
+	var keyRows []struct {
+		UserID int64 `json:"user_id"`
+		Count  int   `json:"count"`
+	}
+	if err := client.APIKey.Query().
+		Where(
+			apikey.TeamIDEQ(teamID),
+			apikey.UserIDIn(userIDs...),
+			apikey.DeletedAtIsNil(),
+		).
+		GroupBy(apikey.FieldUserID).
+		Aggregate(dbent.Count()).
+		Scan(ctx, &keyRows); err != nil {
+		return err
+	}
+	keyCountByUser := make(map[int64]int, len(keyRows))
+	for _, row := range keyRows {
+		keyCountByUser[row.UserID] = row.Count
+	}
+
+	// Actual spend per actor over the last 7 days within this team.
+	since := time.Now().Add(-7 * 24 * time.Hour)
+	var costRows []struct {
+		ActorUserID int64   `json:"actor_user_id"`
+		Sum         float64 `json:"sum"`
+	}
+	if err := client.UsageLog.Query().
+		Where(
+			usagelog.TeamIDEQ(teamID),
+			usagelog.ActorUserIDIn(userIDs...),
+			usagelog.CreatedAtGTE(since),
+		).
+		GroupBy(usagelog.FieldActorUserID).
+		Aggregate(dbent.As(dbent.Sum(usagelog.FieldActualCost), "sum")).
+		Scan(ctx, &costRows); err != nil {
+		return err
+	}
+	costByUser := make(map[int64]float64, len(costRows))
+	for _, row := range costRows {
+		costByUser[row.ActorUserID] = row.Sum
+	}
+
+	for i := range members {
+		members[i].KeyCount = keyCountByUser[members[i].UserID]
+		members[i].Last7dActualCost = costByUser[members[i].UserID]
+	}
+	return nil
 }
 
 func (r *teamRepository) InviteMember(ctx context.Context, input service.InviteTeamMemberInput) (*service.TeamInvitation, error) {

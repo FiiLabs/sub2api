@@ -59,6 +59,12 @@ type TeamMember struct {
 	JoinedAt        *time.Time
 	LastActiveAt    *time.Time
 	User            *User
+
+	// Aggregates populated by ListMembers for the team members view.
+	// KeyCount is the number of API keys this member owns within the team;
+	// Last7dActualCost is the member's actual spend as actor over the last 7 days.
+	KeyCount         int
+	Last7dActualCost float64
 }
 
 type TeamInvitation struct {

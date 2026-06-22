@@ -167,3 +167,89 @@ func TestTeamRepositoryTransferOwnershipRequiresActiveNewOwner(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, ownerID, got.OwnerUserID)
 }
+
+func TestTeamRepositoryListMembersAggregatesKeysAndRecentCost(t *testing.T) {
+	client := newWorkspaceEntClient(t)
+	ctx := context.Background()
+	repo, team, ownerID := seedTeamWithOwner(t, client)
+
+	member := createWorkspaceTestUser(t, client, "dev@example.com")
+	_, err := repo.AddMember(ctx, team.ID, member.ID, domain.TeamRoleDeveloper, ownerID)
+	require.NoError(t, err)
+
+	// A second team whose keys/usage must NOT bleed into this team's totals.
+	otherOwner := createWorkspaceTestUser(t, client, "other@example.com")
+	otherTeam, err := repo.CreateTeam(ctx, service.CreateTeamInput{ActorUserID: otherOwner.ID, Name: "Other", Slug: "other"})
+	require.NoError(t, err)
+
+	// Keys: owner has 2 in this team, member has 1; owner also has 1 in the other team.
+	mustCreateTeamAPIKey(t, client, team.ID, ownerID, "o1")
+	keyID := mustCreateTeamAPIKey(t, client, team.ID, ownerID, "o2")
+	mustCreateTeamAPIKey(t, client, team.ID, member.ID, "m1")
+	mustCreateTeamAPIKey(t, client, otherTeam.ID, ownerID, "x1")
+
+	accID := mustCreateMinimalAccount(t, client)
+	now := time.Now()
+
+	// Owner as actor in THIS team: 1.0 (1h) + 0.5 (2d) are within 7d; 9.9 (8d) is excluded.
+	mustCreateTeamUsage(t, client, team.ID, ownerID, keyID, accID, 1.0, now.Add(-1*time.Hour), "r1")
+	mustCreateTeamUsage(t, client, team.ID, ownerID, keyID, accID, 0.5, now.Add(-2*24*time.Hour), "r2")
+	mustCreateTeamUsage(t, client, team.ID, ownerID, keyID, accID, 9.9, now.Add(-8*24*time.Hour), "r3")
+	// Member as actor in THIS team: 0.25 (3h).
+	mustCreateTeamUsage(t, client, team.ID, member.ID, keyID, accID, 0.25, now.Add(-3*time.Hour), "r4")
+	// Owner's spend in the OTHER team must be excluded from this team's totals.
+	mustCreateTeamUsage(t, client, otherTeam.ID, ownerID, keyID, accID, 7.0, now.Add(-1*time.Hour), "r5")
+
+	members, _, err := repo.ListMembers(ctx, team.ID)
+	require.NoError(t, err)
+
+	byUser := make(map[int64]service.TeamMember, len(members))
+	for _, m := range members {
+		byUser[m.UserID] = m
+	}
+
+	require.Equal(t, 2, byUser[ownerID].KeyCount, "owner key count within team")
+	require.Equal(t, 1, byUser[member.ID].KeyCount, "member key count within team")
+	require.InDelta(t, 1.5, byUser[ownerID].Last7dActualCost, 1e-9, "owner 7d actual cost")
+	require.InDelta(t, 0.25, byUser[member.ID].Last7dActualCost, 1e-9, "member 7d actual cost")
+}
+
+func mustCreateTeamAPIKey(t *testing.T, client *dbent.Client, teamID, userID int64, key string) int64 {
+	t.Helper()
+	k, err := client.APIKey.Create().
+		SetUserID(userID).
+		SetTeamID(teamID).
+		SetKey(key).
+		SetName(key).
+		SetStatus(service.StatusActive).
+		Save(context.Background())
+	require.NoError(t, err)
+	return k.ID
+}
+
+func mustCreateMinimalAccount(t *testing.T, client *dbent.Client) int64 {
+	t.Helper()
+	a, err := client.Account.Create().
+		SetName("acc").
+		SetPlatform("claude").
+		SetType("api_key").
+		Save(context.Background())
+	require.NoError(t, err)
+	return a.ID
+}
+
+func mustCreateTeamUsage(t *testing.T, client *dbent.Client, teamID, actorUserID, apiKeyID, accountID int64, cost float64, createdAt time.Time, reqID string) {
+	t.Helper()
+	_, err := client.UsageLog.Create().
+		SetUserID(actorUserID).
+		SetAPIKeyID(apiKeyID).
+		SetAccountID(accountID).
+		SetRequestID(reqID).
+		SetModel("claude-3").
+		SetTeamID(teamID).
+		SetActorUserID(actorUserID).
+		SetActualCost(cost).
+		SetCreatedAt(createdAt).
+		Save(context.Background())
+	require.NoError(t, err)
+}

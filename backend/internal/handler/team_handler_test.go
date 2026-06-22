@@ -190,6 +190,7 @@ func TestTeamHandlerListMembersReturnsSnakeCaseWithoutSensitiveFields(t *testing
 		members: []service.TeamMember{
 			{
 				ID: 1, TeamID: 7, UserID: 11, Role: "owner", Status: "active",
+				KeyCount: 2, Last7dActualCost: 1.25,
 				User: &service.User{
 					ID: 11, Username: "owner", Email: "owner@example.com",
 					PasswordHash:  "secret-pw-hash",
@@ -224,6 +225,8 @@ func TestTeamHandlerListMembersReturnsSnakeCaseWithoutSensitiveFields(t *testing
 	require.Contains(t, body, `"email":"owner@example.com"`)
 	require.Contains(t, body, `"expires_at"`)
 	require.Contains(t, body, `"created_at"`)
+	require.Contains(t, body, `"key_count":2`)
+	require.Contains(t, body, `"last_7d_actual_cost":1.25`)
 
 	// no Go-default PascalCase leaking through
 	require.NotContains(t, body, `"UserID"`)

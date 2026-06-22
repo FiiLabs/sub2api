@@ -225,14 +225,16 @@ type teamMemberUserDTO struct {
 // The frontend keys off role/status/user to render rows; owner rows are gated on
 // member.role === 'owner', so the role must surface under the json name "role".
 type teamMemberDTO struct {
-	ID           int64              `json:"id"`
-	TeamID       int64              `json:"team_id"`
-	UserID       int64              `json:"user_id"`
-	Role         string             `json:"role"`
-	Status       string             `json:"status"`
-	JoinedAt     *time.Time         `json:"joined_at"`
-	LastActiveAt *time.Time         `json:"last_active_at"`
-	User         *teamMemberUserDTO `json:"user"`
+	ID               int64              `json:"id"`
+	TeamID           int64              `json:"team_id"`
+	UserID           int64              `json:"user_id"`
+	Role             string             `json:"role"`
+	Status           string             `json:"status"`
+	JoinedAt         *time.Time         `json:"joined_at"`
+	LastActiveAt     *time.Time         `json:"last_active_at"`
+	User             *teamMemberUserDTO `json:"user"`
+	KeyCount         int                `json:"key_count"`
+	Last7dActualCost float64            `json:"last_7d_actual_cost"`
 }
 
 // teamInvitationDTO is the pending-invitation shape returned to non-admin clients.
@@ -256,14 +258,16 @@ func teamMemberUserDTOFromService(u *service.User) *teamMemberUserDTO {
 
 func teamMemberDTOFromService(m *service.TeamMember) teamMemberDTO {
 	return teamMemberDTO{
-		ID:           m.ID,
-		TeamID:       m.TeamID,
-		UserID:       m.UserID,
-		Role:         m.Role,
-		Status:       m.Status,
-		JoinedAt:     m.JoinedAt,
-		LastActiveAt: m.LastActiveAt,
-		User:         teamMemberUserDTOFromService(m.User),
+		ID:               m.ID,
+		TeamID:           m.TeamID,
+		UserID:           m.UserID,
+		Role:             m.Role,
+		Status:           m.Status,
+		JoinedAt:         m.JoinedAt,
+		LastActiveAt:     m.LastActiveAt,
+		User:             teamMemberUserDTOFromService(m.User),
+		KeyCount:         m.KeyCount,
+		Last7dActualCost: m.Last7dActualCost,
 	}
 }
 
