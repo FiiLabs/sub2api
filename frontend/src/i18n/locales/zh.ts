@@ -578,7 +578,6 @@ export default {
     },
     inviteTitle: '邀请成员',
     email: '邮箱',
-    emailPlaceholder: 'member@example.com',
     emailRequired: '请输入邮箱',
     send: '发送邀请',
     sending: '发送中...',

@@ -581,7 +581,6 @@ export default {
     },
     inviteTitle: 'Invite a member',
     email: 'Email',
-    emailPlaceholder: 'member@example.com',
     emailRequired: 'Email is required',
     send: 'Send invite',
     sending: 'Sending...',
