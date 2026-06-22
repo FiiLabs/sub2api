@@ -71,6 +71,7 @@ type TeamInvitation struct {
 	InvitedByUserID  int64
 	AcceptedByUserID *int64
 	ExpiresAt        time.Time
+	CreatedAt        time.Time
 }
 
 // InvitationPreview is the read-only view of an invitation returned by

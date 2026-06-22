@@ -126,9 +126,7 @@ func adminTeamInvitationDTOFromService(i *service.TeamInvitation) adminTeamInvit
 		Role:      i.Role,
 		Status:    i.Status,
 		ExpiresAt: i.ExpiresAt,
-		// TeamInvitation does not carry a CreatedAt field on the service model;
-		// invitations are returned with the zero value for created_at.
-		CreatedAt: time.Time{},
+		CreatedAt: i.CreatedAt,
 	}
 }
 

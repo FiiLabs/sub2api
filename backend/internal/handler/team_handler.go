@@ -98,7 +98,7 @@ func (h *TeamHandler) ListMembers(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, gin.H{"members": members, "invitations": invitations})
+	response.Success(c, gin.H{"members": teamMemberDTOsFromService(members), "invitations": teamInvitationDTOsFromService(invitations)})
 }
 
 func (h *TeamHandler) InviteMember(c *gin.Context) {
@@ -125,7 +125,7 @@ func (h *TeamHandler) InviteMember(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, gin.H{"invitation": invitation, "token": token, "accept_link": acceptLink})
+	response.Success(c, gin.H{"invitation": teamInvitationDTOFromService(invitation), "token": token, "accept_link": acceptLink})
 }
 
 func (h *TeamHandler) UpdateMember(c *gin.Context) {
@@ -154,7 +154,7 @@ func (h *TeamHandler) UpdateMember(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, gin.H{"member": member})
+	response.Success(c, gin.H{"member": teamMemberDTOFromService(member)})
 }
 
 func (h *TeamHandler) RemoveMember(c *gin.Context) {
@@ -212,6 +212,89 @@ func teamSummaryDTOFromService(t *service.Team) *teamSummaryDTO {
 	}
 }
 
+// teamMemberUserDTO is the minimal user shape embedded in a member row. It
+// deliberately omits service.User's sensitive/internal fields (password hash,
+// TOTP secret, balance, allowed groups, token version, …).
+type teamMemberUserDTO struct {
+	ID       int64  `json:"id"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+}
+
+// teamMemberDTO is the snake_case member shape returned to non-admin clients.
+// The frontend keys off role/status/user to render rows; owner rows are gated on
+// member.role === 'owner', so the role must surface under the json name "role".
+type teamMemberDTO struct {
+	ID           int64              `json:"id"`
+	TeamID       int64              `json:"team_id"`
+	UserID       int64              `json:"user_id"`
+	Role         string             `json:"role"`
+	Status       string             `json:"status"`
+	JoinedAt     *time.Time         `json:"joined_at"`
+	LastActiveAt *time.Time         `json:"last_active_at"`
+	User         *teamMemberUserDTO `json:"user"`
+}
+
+// teamInvitationDTO is the pending-invitation shape returned to non-admin clients.
+// It excludes the token hash and the internal inviter/acceptor ids.
+type teamInvitationDTO struct {
+	ID        int64     `json:"id"`
+	TeamID    int64     `json:"team_id"`
+	Email     string    `json:"email"`
+	Role      string    `json:"role"`
+	Status    string    `json:"status"`
+	ExpiresAt time.Time `json:"expires_at"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func teamMemberUserDTOFromService(u *service.User) *teamMemberUserDTO {
+	if u == nil {
+		return nil
+	}
+	return &teamMemberUserDTO{ID: u.ID, Username: u.Username, Email: u.Email}
+}
+
+func teamMemberDTOFromService(m *service.TeamMember) teamMemberDTO {
+	return teamMemberDTO{
+		ID:           m.ID,
+		TeamID:       m.TeamID,
+		UserID:       m.UserID,
+		Role:         m.Role,
+		Status:       m.Status,
+		JoinedAt:     m.JoinedAt,
+		LastActiveAt: m.LastActiveAt,
+		User:         teamMemberUserDTOFromService(m.User),
+	}
+}
+
+func teamMemberDTOsFromService(members []service.TeamMember) []teamMemberDTO {
+	out := make([]teamMemberDTO, 0, len(members))
+	for i := range members {
+		out = append(out, teamMemberDTOFromService(&members[i]))
+	}
+	return out
+}
+
+func teamInvitationDTOFromService(i *service.TeamInvitation) teamInvitationDTO {
+	return teamInvitationDTO{
+		ID:        i.ID,
+		TeamID:    i.TeamID,
+		Email:     i.Email,
+		Role:      i.Role,
+		Status:    i.Status,
+		ExpiresAt: i.ExpiresAt,
+		CreatedAt: i.CreatedAt,
+	}
+}
+
+func teamInvitationDTOsFromService(invitations []service.TeamInvitation) []teamInvitationDTO {
+	out := make([]teamInvitationDTO, 0, len(invitations))
+	for i := range invitations {
+		out = append(out, teamInvitationDTOFromService(&invitations[i]))
+	}
+	return out
+}
+
 // PreviewInvitation handles GET /teams/invitations/preview?token=…. It is mounted
 // under the authenticated user group WITHOUT a team-membership Require: the invitee
 // is not yet a member.
@@ -263,7 +346,7 @@ func (h *TeamHandler) AcceptInvitation(c *gin.Context) {
 	if team, terr := h.teamService.GetTeam(c.Request.Context(), member.TeamID); terr == nil {
 		teamDTO = teamSummaryDTOFromService(team)
 	}
-	response.Success(c, gin.H{"team": teamDTO, "member": member})
+	response.Success(c, gin.H{"team": teamDTO, "member": teamMemberDTOFromService(member)})
 }
 
 // TransferOwnership handles POST /teams/:id/transfer-ownership. Owner-only; the

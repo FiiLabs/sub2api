@@ -181,6 +181,66 @@ func TestTeamHandlerListMembersRequiresTeamPermission(t *testing.T) {
 	require.Contains(t, rec.Body.String(), `"members"`)
 }
 
+// The members payload must use the project's snake_case convention (the frontend
+// reads member.role / member.user_id to render owner rows correctly) and must NOT
+// leak the embedded user's sensitive fields or the invitation token hash.
+func TestTeamHandlerListMembersReturnsSnakeCaseWithoutSensitiveFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	teamSvc := &teamMemberHandlerServiceStub{
+		members: []service.TeamMember{
+			{
+				ID: 1, TeamID: 7, UserID: 11, Role: "owner", Status: "active",
+				User: &service.User{
+					ID: 11, Username: "owner", Email: "owner@example.com",
+					PasswordHash:  "secret-pw-hash",
+					Balance:       42.5,
+					AllowedGroups: []int64{1, 2},
+				},
+			},
+		},
+		invitations: []service.TeamInvitation{
+			{ID: 3, TeamID: 7, Email: "dev@example.com", Role: "developer", Status: "pending", TokenHash: "secret-token-hash"},
+		},
+	}
+	h := NewTeamHandler(teamSvc)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 11, TeamID: 7, Permissions: map[string]bool{"team.members.manage": true}})
+		c.Next()
+	})
+	router.GET("/api/v1/teams/:id/members", h.ListMembers)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/teams/7/members", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+
+	// snake_case fields the frontend depends on (owner row rendering keys off member.role)
+	require.Contains(t, body, `"user_id":11`)
+	require.Contains(t, body, `"role":"owner"`)
+	require.Contains(t, body, `"username":"owner"`)
+	require.Contains(t, body, `"email":"owner@example.com"`)
+	require.Contains(t, body, `"expires_at"`)
+	require.Contains(t, body, `"created_at"`)
+
+	// no Go-default PascalCase leaking through
+	require.NotContains(t, body, `"UserID"`)
+	require.NotContains(t, body, `"Role"`)
+
+	// no sensitive / superfluous embedded-user fields
+	require.NotContains(t, body, "PasswordHash")
+	require.NotContains(t, body, "secret-pw-hash")
+	require.NotContains(t, body, "AllowedGroups")
+	require.NotContains(t, body, "allowed_groups")
+
+	// the invitation token hash must never reach the client
+	require.NotContains(t, body, "TokenHash")
+	require.NotContains(t, body, "token_hash")
+	require.NotContains(t, body, "secret-token-hash")
+}
+
 func TestTeamHandlerInviteMemberReturnsToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h := NewTeamHandler(&teamMemberHandlerServiceStub{})

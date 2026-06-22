@@ -680,6 +680,7 @@ func teamInvitationEntityToService(row *dbent.TeamInvitation) *service.TeamInvit
 		InvitedByUserID:  row.InvitedByUserID,
 		AcceptedByUserID: row.AcceptedByUserID,
 		ExpiresAt:        row.ExpiresAt,
+		CreatedAt:        row.CreatedAt,
 	}
 }
 
