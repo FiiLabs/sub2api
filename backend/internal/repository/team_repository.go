@@ -7,9 +7,11 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/billingsubject"
 	dbteam "github.com/Wei-Shaw/sub2api/ent/team"
+	"github.com/Wei-Shaw/sub2api/ent/schema/mixins"
 	"github.com/Wei-Shaw/sub2api/ent/teaminvitation"
 	"github.com/Wei-Shaw/sub2api/ent/teammember"
 	"github.com/Wei-Shaw/sub2api/internal/domain"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
@@ -243,6 +245,202 @@ func (r *teamRepository) RemoveMember(ctx context.Context, actorUserID, teamID, 
 		SetDeletedAt(time.Now()).
 		Save(ctx)
 	return err
+}
+
+// AdminListTeams returns a paginated platform-admin view of teams, enriched with
+// the owner user, the team billing-subject balance and the active member count.
+//
+// The owner user and billing subject are eager-loaded via edges; the active
+// member count is computed by eager-loading active, non-deleted members and
+// counting them per team. Search matches name OR slug (case-insensitive, via
+// ContainsFold → ILIKE on Postgres); status is an optional exact match. Only
+// non-deleted teams are returned.
+func (r *teamRepository) AdminListTeams(ctx context.Context, filter service.AdminTeamListFilter, params pagination.PaginationParams) ([]service.AdminTeamSummary, *pagination.PaginationResult, error) {
+	client := clientFromContext(ctx, r.client)
+
+	q := client.Team.Query().Where(dbteam.DeletedAtIsNil())
+	if filter.Status != "" {
+		q = q.Where(dbteam.StatusEQ(filter.Status))
+	}
+	if filter.Search != "" {
+		q = q.Where(dbteam.Or(
+			dbteam.NameContainsFold(filter.Search),
+			dbteam.SlugContainsFold(filter.Search),
+		))
+	}
+
+	total, err := q.Clone().Count(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	rows, err := q.
+		WithOwner().
+		WithBillingSubject().
+		WithMembers(func(mq *dbent.TeamMemberQuery) {
+			mq.Where(
+				teammember.DeletedAtIsNil(),
+				teammember.StatusEQ(domain.TeamMemberStatusActive),
+			)
+		}).
+		Order(dbent.Desc(dbteam.FieldCreatedAt)).
+		Offset(params.Offset()).
+		Limit(params.Limit()).
+		All(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	out := make([]service.AdminTeamSummary, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, *adminTeamSummaryFromEntity(row))
+	}
+	return out, paginationResultFromTotal(int64(total), params), nil
+}
+
+func (r *teamRepository) GetTeamByID(ctx context.Context, teamID int64) (*service.Team, error) {
+	client := clientFromContext(ctx, r.client)
+	row, err := client.Team.Query().
+		Where(dbteam.IDEQ(teamID), dbteam.DeletedAtIsNil()).
+		Only(ctx)
+	if err != nil {
+		return nil, service.ErrTeamNotFound
+	}
+	return teamEntityToService(row), nil
+}
+
+func (r *teamRepository) AdminGetTeamSummary(ctx context.Context, teamID int64) (*service.AdminTeamSummary, error) {
+	client := clientFromContext(ctx, r.client)
+	row, err := client.Team.Query().
+		Where(dbteam.IDEQ(teamID), dbteam.DeletedAtIsNil()).
+		WithOwner().
+		WithBillingSubject().
+		WithMembers(func(mq *dbent.TeamMemberQuery) {
+			mq.Where(
+				teammember.DeletedAtIsNil(),
+				teammember.StatusEQ(domain.TeamMemberStatusActive),
+			)
+		}).
+		Only(ctx)
+	if err != nil {
+		return nil, service.ErrTeamNotFound
+	}
+	return adminTeamSummaryFromEntity(row), nil
+}
+
+// AddMember creates an active membership for (teamID, userID). If a soft-deleted
+// or left membership row already exists it is reactivated (role/status reset,
+// deleted_at cleared, joined_at refreshed) rather than inserting a duplicate. An
+// existing active membership is rejected with service.ErrTeamMemberExists. The
+// returned member has its User edge populated.
+func (r *teamRepository) AddMember(ctx context.Context, teamID, userID int64, role string, invitedByUserID int64) (*service.TeamMember, error) {
+	client := clientFromContext(ctx, r.client)
+	now := time.Now()
+
+	// An active (non-deleted) membership blocks adding a duplicate. The unique
+	// index on (team_id, user_id) is partial (WHERE deleted_at IS NULL), so at
+	// most one such row can exist.
+	active, err := client.TeamMember.Query().
+		Where(teammember.TeamIDEQ(teamID), teammember.UserIDEQ(userID), teammember.DeletedAtIsNil()).
+		Only(ctx)
+	if err == nil && active != nil {
+		return nil, service.ErrTeamMemberExists
+	}
+	if err != nil && !dbent.IsNotFound(err) {
+		return nil, err
+	}
+
+	// Reactivate the most recent soft-deleted/left row if one exists; multiple
+	// soft-deleted rows may coexist because the unique index excludes them.
+	deleted, derr := client.TeamMember.Query().
+		Where(teammember.TeamIDEQ(teamID), teammember.UserIDEQ(userID), teammember.DeletedAtNotNil()).
+		Order(dbent.Desc(teammember.FieldID)).
+		First(mixins.SkipSoftDelete(ctx))
+	if derr != nil && !dbent.IsNotFound(derr) {
+		return nil, derr
+	}
+	if deleted != nil {
+		upd := client.TeamMember.UpdateOneID(deleted.ID).
+			SetRole(role).
+			SetStatus(domain.TeamMemberStatusActive).
+			ClearDeletedAt().
+			SetJoinedAt(now)
+		if invitedByUserID > 0 {
+			upd.SetInvitedByUserID(invitedByUserID)
+		}
+		updated, uerr := upd.Save(ctx)
+		if uerr != nil {
+			return nil, uerr
+		}
+		return r.loadMemberWithUser(ctx, updated.ID)
+	}
+
+	create := client.TeamMember.Create().
+		SetTeamID(teamID).
+		SetUserID(userID).
+		SetRole(role).
+		SetStatus(domain.TeamMemberStatusActive).
+		SetJoinedAt(now)
+	if invitedByUserID > 0 {
+		create.SetInvitedByUserID(invitedByUserID)
+	}
+	created, cerr := create.Save(ctx)
+	if cerr != nil {
+		return nil, cerr
+	}
+	return r.loadMemberWithUser(ctx, created.ID)
+}
+
+func (r *teamRepository) loadMemberWithUser(ctx context.Context, memberID int64) (*service.TeamMember, error) {
+	client := clientFromContext(ctx, r.client)
+	row, err := client.TeamMember.Query().
+		Where(teammember.IDEQ(memberID)).
+		WithUser().
+		Only(ctx)
+	if err != nil {
+		return nil, err
+	}
+	m := teamMemberEntityToService(row)
+	if row.Edges.User != nil {
+		m.User = userEntityToService(row.Edges.User)
+	}
+	return m, nil
+}
+
+func (r *teamRepository) UpdateTeam(ctx context.Context, teamID int64, name *string, status *string) (*service.Team, error) {
+	client := clientFromContext(ctx, r.client)
+	if _, err := client.Team.Query().Where(dbteam.IDEQ(teamID), dbteam.DeletedAtIsNil()).Only(ctx); err != nil {
+		return nil, service.ErrTeamNotFound
+	}
+	upd := client.Team.UpdateOneID(teamID)
+	if name != nil {
+		upd.SetName(*name)
+	}
+	if status != nil {
+		upd.SetStatus(*status)
+	}
+	updated, err := upd.Save(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return teamEntityToService(updated), nil
+}
+
+func adminTeamSummaryFromEntity(row *dbent.Team) *service.AdminTeamSummary {
+	if row == nil {
+		return nil
+	}
+	summary := &service.AdminTeamSummary{
+		Team:        *teamEntityToService(row),
+		MemberCount: len(row.Edges.Members),
+	}
+	if row.Edges.Owner != nil {
+		summary.OwnerUser = userEntityToService(row.Edges.Owner)
+	}
+	if row.Edges.BillingSubject != nil {
+		summary.Balance = row.Edges.BillingSubject.Balance
+	}
+	return summary
 }
 
 func teamInvitationEntityToService(row *dbent.TeamInvitation) *service.TeamInvitation {

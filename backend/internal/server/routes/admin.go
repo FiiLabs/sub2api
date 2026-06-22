@@ -23,6 +23,9 @@ func RegisterAdminRoutes(
 		// 用户管理
 		registerUserManagementRoutes(admin, h)
 
+		// 团队管理（平台管理员视角）
+		registerTeamManagementRoutes(admin, h)
+
 		// 分组管理
 		registerGroupRoutes(admin, h)
 
@@ -248,6 +251,20 @@ func registerUserManagementRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		// User attribute values
 		users.GET("/:id/attributes", h.Admin.UserAttribute.GetUserAttributes)
 		users.PUT("/:id/attributes", h.Admin.UserAttribute.UpdateUserAttributes)
+	}
+}
+
+// registerTeamManagementRoutes 注册团队管理的平台管理员路由。
+// 受 adminAuth 中间件保护，绕过团队成员权限校验。
+func registerTeamManagementRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	teams := admin.Group("/teams")
+	{
+		teams.GET("", h.Admin.Team.List)
+		teams.GET("/:id", h.Admin.Team.GetByID)
+		teams.PATCH("/:id", h.Admin.Team.Update)
+		teams.POST("/:id/members", h.Admin.Team.AddMember)
+		teams.PATCH("/:id/members/:user_id", h.Admin.Team.UpdateMember)
+		teams.DELETE("/:id/members/:user_id", h.Admin.Team.RemoveMember)
 	}
 }
 

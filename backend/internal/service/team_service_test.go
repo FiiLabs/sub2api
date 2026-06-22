@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 )
 
@@ -120,7 +121,8 @@ func (r *teamRepoMemory) UpdateMember(ctx context.Context, actorUserID, teamID, 
 func (r *teamRepoMemory) RemoveMember(ctx context.Context, actorUserID, teamID, userID int64) error {
 	members := r.members[teamID]
 	for i := range members {
-		if members[i].UserID == userID {
+		if members[i].UserID == userID && members[i].Status != domain.TeamMemberStatusLeft {
+			// In the in-memory mock, status "left" doubles as the soft-deleted marker.
 			members[i].Status = domain.TeamMemberStatusLeft
 			r.members[teamID] = members
 			return nil
@@ -129,11 +131,108 @@ func (r *teamRepoMemory) RemoveMember(ctx context.Context, actorUserID, teamID, 
 	return ErrTeamMembershipNotFound
 }
 
+func (r *teamRepoMemory) AdminListTeams(ctx context.Context, filter AdminTeamListFilter, params pagination.PaginationParams) ([]AdminTeamSummary, *pagination.PaginationResult, error) {
+	out := make([]AdminTeamSummary, 0, len(r.teams))
+	for id, team := range r.teams {
+		if filter.Status != "" && team.Status != filter.Status {
+			continue
+		}
+		active := 0
+		for _, m := range r.members[id] {
+			if m.Status == domain.TeamMemberStatusActive {
+				active++
+			}
+		}
+		out = append(out, AdminTeamSummary{Team: *team, MemberCount: active})
+	}
+	total := int64(len(out))
+	return out, &pagination.PaginationResult{Total: total, Page: params.Page, PageSize: params.PageSize, Pages: 1}, nil
+}
+
+func (r *teamRepoMemory) GetTeamByID(ctx context.Context, teamID int64) (*Team, error) {
+	team, ok := r.teams[teamID]
+	if !ok {
+		return nil, ErrTeamNotFound
+	}
+	t := *team
+	return &t, nil
+}
+
+func (r *teamRepoMemory) AdminGetTeamSummary(ctx context.Context, teamID int64) (*AdminTeamSummary, error) {
+	team, ok := r.teams[teamID]
+	if !ok {
+		return nil, ErrTeamNotFound
+	}
+	active := 0
+	for _, m := range r.members[teamID] {
+		if m.Status == domain.TeamMemberStatusActive {
+			active++
+		}
+	}
+	return &AdminTeamSummary{Team: *team, MemberCount: active}, nil
+}
+
+func (r *teamRepoMemory) AddMember(ctx context.Context, teamID, userID int64, role string, invitedByUserID int64) (*TeamMember, error) {
+	members := r.members[teamID]
+	// Reject an existing active membership.
+	for i := range members {
+		if members[i].UserID == userID && members[i].Status == domain.TeamMemberStatusActive {
+			return nil, ErrTeamMemberExists
+		}
+	}
+	// Reactivate the most recent soft-deleted/left row if present (status "left"
+	// is the in-memory soft-deleted marker).
+	for i := len(members) - 1; i >= 0; i-- {
+		if members[i].UserID == userID && members[i].Status == domain.TeamMemberStatusLeft {
+			members[i].Role = role
+			members[i].Status = domain.TeamMemberStatusActive
+			members[i].JoinedAt = teamTestPtrTime(time.Now())
+			if invitedByUserID > 0 {
+				members[i].InvitedByUserID = &invitedByUserID
+			}
+			r.members[teamID] = members
+			m := members[i]
+			return &m, nil
+		}
+	}
+	id := r.nextID
+	r.nextID++
+	member := TeamMember{
+		ID:       id,
+		TeamID:   teamID,
+		UserID:   userID,
+		Role:     role,
+		Status:   domain.TeamMemberStatusActive,
+		JoinedAt: teamTestPtrTime(time.Now()),
+	}
+	if invitedByUserID > 0 {
+		member.InvitedByUserID = &invitedByUserID
+	}
+	r.members[teamID] = append(members, member)
+	return &member, nil
+}
+
+func (r *teamRepoMemory) UpdateTeam(ctx context.Context, teamID int64, name *string, status *string) (*Team, error) {
+	team, ok := r.teams[teamID]
+	if !ok {
+		return nil, ErrTeamNotFound
+	}
+	if name != nil {
+		team.Name = *name
+	}
+	if status != nil {
+		team.Status = *status
+	}
+	r.teams[teamID] = team
+	t := *team
+	return &t, nil
+}
+
 func teamTestPtrTime(t time.Time) *time.Time { return &t }
 
 func TestTeamServiceListMembersRequiresViewPermission(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil)
+	svc := NewTeamService(repo, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 
@@ -148,7 +247,7 @@ func TestTeamServiceListMembersRequiresViewPermission(t *testing.T) {
 
 func TestTeamServiceInviteMemberRejectsOwnerRole(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil)
+	svc := NewTeamService(repo, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 
@@ -164,7 +263,7 @@ func TestTeamServiceInviteMemberRejectsOwnerRole(t *testing.T) {
 
 func TestTeamServiceUpdateMemberValidations(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil)
+	svc := NewTeamService(repo, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 	repo.members[team.ID] = append(repo.members[team.ID], TeamMember{TeamID: team.ID, UserID: 8, Role: domain.TeamRoleViewer, Status: domain.TeamMemberStatusActive})
@@ -186,7 +285,7 @@ func TestTeamServiceUpdateMemberValidations(t *testing.T) {
 
 func TestTeamServiceCreateTeamCreatesOwnerWorkspace(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil)
+	svc := NewTeamService(repo, nil, nil)
 
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 42, Name: "Platform Team", Slug: "platform-team"})
 	require.NoError(t, err)
@@ -199,7 +298,7 @@ func TestTeamServiceCreateTeamCreatesOwnerWorkspace(t *testing.T) {
 
 func TestTeamServiceCanChecksRolePermissions(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil)
+	svc := NewTeamService(repo, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Billing Team", Slug: "billing-team"})
 	require.NoError(t, err)
 
@@ -214,7 +313,7 @@ func TestTeamServiceCanChecksRolePermissions(t *testing.T) {
 
 func TestTeamServiceListWorkspacesIncludesPersonalAndTeams(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil)
+	svc := NewTeamService(repo, nil, nil)
 	_, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 9, Name: "AI Ops", Slug: "ai-ops"})
 	require.NoError(t, err)
 
@@ -224,4 +323,209 @@ func TestTeamServiceListWorkspacesIncludesPersonalAndTeams(t *testing.T) {
 	require.Equal(t, domain.BillingSubjectTypeUser, workspaces[0].Type)
 	require.Equal(t, domain.BillingSubjectTypeTeam, workspaces[1].Type)
 	require.True(t, workspaces[1].Permissions[domain.TeamPermissionManageMembers])
+}
+
+func TestTeamServiceAdminAddMemberCreatesActiveMembership(t *testing.T) {
+	repo := newTeamRepoMemory()
+	svc := NewTeamService(repo, nil, nil)
+	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
+	require.NoError(t, err)
+
+	member, err := svc.AdminAddMember(context.Background(), AdminAddMemberInput{TeamID: team.ID, UserID: 8, Role: domain.TeamRoleDeveloper, AdminUserID: 1})
+	require.NoError(t, err)
+	require.Equal(t, int64(8), member.UserID)
+	require.Equal(t, domain.TeamRoleDeveloper, member.Role)
+	require.Equal(t, domain.TeamMemberStatusActive, member.Status)
+	require.NotNil(t, member.InvitedByUserID)
+	require.Equal(t, int64(1), *member.InvitedByUserID)
+}
+
+func TestTeamServiceAdminAddMemberRejectsOwnerRole(t *testing.T) {
+	repo := newTeamRepoMemory()
+	svc := NewTeamService(repo, nil, nil)
+	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
+	require.NoError(t, err)
+
+	_, err = svc.AdminAddMember(context.Background(), AdminAddMemberInput{TeamID: team.ID, UserID: 8, Role: domain.TeamRoleOwner, AdminUserID: 1})
+	require.ErrorIs(t, err, ErrTeamInvalidRole)
+}
+
+func TestTeamServiceAdminAddMemberRejectsDuplicateActive(t *testing.T) {
+	repo := newTeamRepoMemory()
+	svc := NewTeamService(repo, nil, nil)
+	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
+	require.NoError(t, err)
+
+	_, err = svc.AdminAddMember(context.Background(), AdminAddMemberInput{TeamID: team.ID, UserID: 8, Role: domain.TeamRoleViewer, AdminUserID: 1})
+	require.NoError(t, err)
+
+	// Adding the same active member again is rejected.
+	_, err = svc.AdminAddMember(context.Background(), AdminAddMemberInput{TeamID: team.ID, UserID: 8, Role: domain.TeamRoleDeveloper, AdminUserID: 1})
+	require.ErrorIs(t, err, ErrTeamMemberExists)
+}
+
+func TestTeamServiceAdminAddMemberReactivatesLeftMembership(t *testing.T) {
+	repo := newTeamRepoMemory()
+	svc := NewTeamService(repo, nil, nil)
+	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
+	require.NoError(t, err)
+
+	first, err := svc.AdminAddMember(context.Background(), AdminAddMemberInput{TeamID: team.ID, UserID: 8, Role: domain.TeamRoleViewer, AdminUserID: 1})
+	require.NoError(t, err)
+
+	// Remove (soft-delete) then re-add: should reactivate the same row, not create a duplicate.
+	require.NoError(t, svc.AdminRemoveMember(context.Background(), 1, team.ID, 8))
+
+	reactivated, err := svc.AdminAddMember(context.Background(), AdminAddMemberInput{TeamID: team.ID, UserID: 8, Role: domain.TeamRoleDeveloper, AdminUserID: 2})
+	require.NoError(t, err)
+	require.Equal(t, first.ID, reactivated.ID, "expected the soft-deleted row to be reactivated")
+	require.Equal(t, domain.TeamRoleDeveloper, reactivated.Role)
+	require.Equal(t, domain.TeamMemberStatusActive, reactivated.Status)
+
+	// Only one active membership for user 8 should exist (the reactivated row).
+	active := 0
+	total := 0
+	for _, m := range repo.members[team.ID] {
+		if m.UserID == 8 {
+			total++
+			if m.Status == domain.TeamMemberStatusActive {
+				active++
+			}
+		}
+	}
+	require.Equal(t, 1, active)
+	require.Equal(t, 1, total, "expected the soft-deleted row to be reused, not duplicated")
+}
+
+// teamUserLookupStub implements the narrow TeamUserLookup dependency for admin
+// email-resolution tests.
+type teamUserLookupStub struct {
+	byEmail map[string]*User
+}
+
+func (s teamUserLookupStub) GetByEmail(_ context.Context, email string) (*User, error) {
+	if u, ok := s.byEmail[email]; ok {
+		return u, nil
+	}
+	return nil, ErrUserNotFound
+}
+
+func TestTeamServiceAdminAddMemberResolvesByEmail(t *testing.T) {
+	repo := newTeamRepoMemory()
+	lookup := teamUserLookupStub{byEmail: map[string]*User{
+		"dev@example.com": {ID: 55, Email: "dev@example.com", Username: "dev"},
+	}}
+	// Construct directly to inject the narrow lookup dependency.
+	svc := &TeamService{repo: repo, userLookup: lookup}
+	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
+	require.NoError(t, err)
+
+	member, err := svc.AdminAddMember(context.Background(), AdminAddMemberInput{TeamID: team.ID, Email: "Dev@Example.com", Role: domain.TeamRoleBilling, AdminUserID: 1})
+	require.NoError(t, err)
+	require.Equal(t, int64(55), member.UserID)
+	require.Equal(t, domain.TeamRoleBilling, member.Role)
+
+	// Unknown email yields not-found.
+	_, err = svc.AdminAddMember(context.Background(), AdminAddMemberInput{TeamID: team.ID, Email: "ghost@example.com", Role: domain.TeamRoleViewer, AdminUserID: 1})
+	require.ErrorIs(t, err, ErrUserNotFound)
+}
+
+func TestTeamServiceAdminAddMemberMissingUserAndEmail(t *testing.T) {
+	repo := newTeamRepoMemory()
+	svc := NewTeamService(repo, nil, nil)
+	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
+	require.NoError(t, err)
+
+	_, err = svc.AdminAddMember(context.Background(), AdminAddMemberInput{TeamID: team.ID, Role: domain.TeamRoleViewer, AdminUserID: 1})
+	require.Error(t, err)
+}
+
+func TestTeamServiceAdminUpdateMemberProtectsOwner(t *testing.T) {
+	repo := newTeamRepoMemory()
+	svc := NewTeamService(repo, nil, nil)
+	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
+	require.NoError(t, err)
+
+	// The owner (user 7) cannot be modified through the admin member API.
+	dev := domain.TeamRoleDeveloper
+	_, err = svc.AdminUpdateMember(context.Background(), 1, team.ID, 7, UpdateTeamMemberInput{Role: &dev})
+	require.ErrorIs(t, err, ErrTeamOwnerImmutable)
+}
+
+func TestTeamServiceAdminUpdateMemberValidations(t *testing.T) {
+	repo := newTeamRepoMemory()
+	svc := NewTeamService(repo, nil, nil)
+	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
+	require.NoError(t, err)
+	_, err = svc.AdminAddMember(context.Background(), AdminAddMemberInput{TeamID: team.ID, UserID: 8, Role: domain.TeamRoleViewer, AdminUserID: 1})
+	require.NoError(t, err)
+
+	// Empty update rejected.
+	_, err = svc.AdminUpdateMember(context.Background(), 1, team.ID, 8, UpdateTeamMemberInput{})
+	require.Error(t, err)
+
+	// owner role rejected.
+	owner := domain.TeamRoleOwner
+	_, err = svc.AdminUpdateMember(context.Background(), 1, team.ID, 8, UpdateTeamMemberInput{Role: &owner})
+	require.ErrorIs(t, err, ErrTeamInvalidRole)
+
+	// valid status update succeeds.
+	suspended := domain.TeamMemberStatusSuspended
+	member, err := svc.AdminUpdateMember(context.Background(), 1, team.ID, 8, UpdateTeamMemberInput{Status: &suspended})
+	require.NoError(t, err)
+	require.Equal(t, domain.TeamMemberStatusSuspended, member.Status)
+}
+
+func TestTeamServiceAdminRemoveMemberProtectsOwner(t *testing.T) {
+	repo := newTeamRepoMemory()
+	svc := NewTeamService(repo, nil, nil)
+	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
+	require.NoError(t, err)
+
+	err = svc.AdminRemoveMember(context.Background(), 1, team.ID, 7)
+	require.ErrorIs(t, err, ErrTeamOwnerImmutable)
+}
+
+func TestTeamServiceAdminUpdateTeamValidations(t *testing.T) {
+	repo := newTeamRepoMemory()
+	svc := NewTeamService(repo, nil, nil)
+	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
+	require.NoError(t, err)
+
+	// Empty update rejected.
+	_, err = svc.AdminUpdateTeam(context.Background(), team.ID, AdminUpdateTeamInput{})
+	require.Error(t, err)
+
+	// Invalid status rejected.
+	bad := "frozen"
+	_, err = svc.AdminUpdateTeam(context.Background(), team.ID, AdminUpdateTeamInput{Status: &bad})
+	require.Error(t, err)
+
+	// Valid update succeeds.
+	name := "Operations"
+	disabled := domain.TeamStatusDisabled
+	summary, err := svc.AdminUpdateTeam(context.Background(), team.ID, AdminUpdateTeamInput{Name: &name, Status: &disabled})
+	require.NoError(t, err)
+	require.Equal(t, "Operations", summary.Name)
+	require.Equal(t, domain.TeamStatusDisabled, summary.Status)
+}
+
+func TestTeamServiceAdminListAndGetTeam(t *testing.T) {
+	repo := newTeamRepoMemory()
+	svc := NewTeamService(repo, nil, nil)
+	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
+	require.NoError(t, err)
+	_, err = svc.AdminAddMember(context.Background(), AdminAddMemberInput{TeamID: team.ID, UserID: 8, Role: domain.TeamRoleViewer, AdminUserID: 1})
+	require.NoError(t, err)
+
+	summaries, result, err := svc.AdminListTeams(context.Background(), AdminTeamListFilter{}, pagination.PaginationParams{Page: 1, PageSize: 20})
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+	require.Equal(t, int64(1), result.Total)
+	require.Equal(t, 2, summaries[0].MemberCount) // owner + added member
+
+	got, members, _, err := svc.AdminGetTeam(context.Background(), team.ID)
+	require.NoError(t, err)
+	require.Equal(t, team.ID, got.ID)
+	require.Len(t, members, 2)
 }

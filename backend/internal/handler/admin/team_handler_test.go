@@ -1,0 +1,219 @@
+package admin
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/Wei-Shaw/sub2api/internal/domain"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
+	"github.com/Wei-Shaw/sub2api/internal/service"
+
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
+)
+
+// adminTeamServiceStub is a configurable stub implementing AdminTeamService. It
+// records the inputs it received so tests can assert routing/argument wiring
+// without a real team membership.
+type adminTeamServiceStub struct {
+	teams []service.AdminTeamSummary
+
+	addMemberInput   *service.AdminAddMemberInput
+	addMemberResult  *service.TeamMember
+	addMemberErr     error
+	removeMemberErr  error
+	removeMemberArgs [3]int64 // adminUserID, teamID, userID
+}
+
+func (s *adminTeamServiceStub) AdminListTeams(_ context.Context, _ service.AdminTeamListFilter, params pagination.PaginationParams) ([]service.AdminTeamSummary, *pagination.PaginationResult, error) {
+	return s.teams, &pagination.PaginationResult{Total: int64(len(s.teams)), Page: params.Page, PageSize: params.PageSize, Pages: 1}, nil
+}
+
+func (s *adminTeamServiceStub) AdminGetTeam(_ context.Context, teamID int64) (*service.AdminTeamSummary, []service.TeamMember, []service.TeamInvitation, error) {
+	return &service.AdminTeamSummary{Team: service.Team{ID: teamID}}, nil, nil, nil
+}
+
+func (s *adminTeamServiceStub) AdminUpdateTeam(_ context.Context, teamID int64, input service.AdminUpdateTeamInput) (*service.AdminTeamSummary, error) {
+	summary := &service.AdminTeamSummary{Team: service.Team{ID: teamID}}
+	if input.Name != nil {
+		summary.Name = *input.Name
+	}
+	if input.Status != nil {
+		summary.Status = *input.Status
+	}
+	return summary, nil
+}
+
+func (s *adminTeamServiceStub) AdminAddMember(_ context.Context, input service.AdminAddMemberInput) (*service.TeamMember, error) {
+	in := input
+	s.addMemberInput = &in
+	if s.addMemberErr != nil {
+		return nil, s.addMemberErr
+	}
+	if s.addMemberResult != nil {
+		return s.addMemberResult, nil
+	}
+	return &service.TeamMember{TeamID: input.TeamID, UserID: input.UserID, Role: input.Role, Status: domain.TeamMemberStatusActive}, nil
+}
+
+func (s *adminTeamServiceStub) AdminUpdateMember(_ context.Context, _ int64, teamID, userID int64, input service.UpdateTeamMemberInput) (*service.TeamMember, error) {
+	m := &service.TeamMember{TeamID: teamID, UserID: userID, Role: domain.TeamRoleViewer, Status: domain.TeamMemberStatusActive}
+	if input.Role != nil {
+		m.Role = *input.Role
+	}
+	if input.Status != nil {
+		m.Status = *input.Status
+	}
+	return m, nil
+}
+
+func (s *adminTeamServiceStub) AdminRemoveMember(_ context.Context, adminUserID, teamID, userID int64) error {
+	s.removeMemberArgs = [3]int64{adminUserID, teamID, userID}
+	return s.removeMemberErr
+}
+
+// adminRouter wires the handler routes the same way the production router does,
+// injecting an admin AuthSubject (a platform admin, NOT a team member).
+func adminRouter(h *AdminTeamHandler, adminUserID int64) *gin.Engine {
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: adminUserID})
+		c.Next()
+	})
+	teams := router.Group("/api/v1/admin/teams")
+	teams.GET("", h.List)
+	teams.GET("/:id", h.GetByID)
+	teams.PATCH("/:id", h.Update)
+	teams.POST("/:id/members", h.AddMember)
+	teams.PATCH("/:id/members/:user_id", h.UpdateMember)
+	teams.DELETE("/:id/members/:user_id", h.RemoveMember)
+	return router
+}
+
+func TestAdminTeamHandlerListWithoutMembership(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	owner := &service.User{ID: 5, Username: "owner", Email: "owner@example.com"}
+	stub := &adminTeamServiceStub{teams: []service.AdminTeamSummary{
+		{Team: service.Team{ID: 7, Name: "Platform", Slug: "platform", Status: domain.TeamStatusActive, OwnerUserID: 5}, OwnerUser: owner, Balance: 12.5, MemberCount: 3},
+	}}
+	h := &AdminTeamHandler{teamService: stub}
+	// admin user 999 is NOT a member of team 7
+	router := adminRouter(h, 999)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/teams?page=1&page_size=20", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	require.Contains(t, body, `"items"`)
+	require.Contains(t, body, `"slug":"platform"`)
+	require.Contains(t, body, `"member_count":3`)
+	require.Contains(t, body, `"balance":12.5`)
+	require.Contains(t, body, `"owner":{"id":5`)
+	require.Contains(t, body, `"total":1`)
+}
+
+func TestAdminTeamHandlerAddMemberWithoutMembership(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	stub := &adminTeamServiceStub{}
+	h := &AdminTeamHandler{teamService: stub}
+	router := adminRouter(h, 999) // admin is not a member of team 7
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/teams/7/members", strings.NewReader(`{"user_id":42,"role":"developer"}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), `"member"`)
+	require.NotNil(t, stub.addMemberInput)
+	require.Equal(t, int64(7), stub.addMemberInput.TeamID)
+	require.Equal(t, int64(42), stub.addMemberInput.UserID)
+	require.Equal(t, domain.TeamRoleDeveloper, stub.addMemberInput.Role)
+	// admin user id is read from the auth subject and forwarded as invited_by.
+	require.Equal(t, int64(999), stub.addMemberInput.AdminUserID)
+}
+
+func TestAdminTeamHandlerAddMemberResolvesByEmail(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	stub := &adminTeamServiceStub{}
+	h := &AdminTeamHandler{teamService: stub}
+	router := adminRouter(h, 1)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/teams/7/members", strings.NewReader(`{"email":"new@example.com","role":"viewer"}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, stub.addMemberInput)
+	require.Equal(t, "new@example.com", stub.addMemberInput.Email)
+	require.Equal(t, int64(0), stub.addMemberInput.UserID)
+	require.Equal(t, domain.TeamRoleViewer, stub.addMemberInput.Role)
+}
+
+func TestAdminTeamHandlerAddMemberRejectsOwnerRole(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	stub := &adminTeamServiceStub{}
+	h := &AdminTeamHandler{teamService: stub}
+	router := adminRouter(h, 1)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/teams/7/members", strings.NewReader(`{"user_id":42,"role":"owner"}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	// role=owner is rejected at request binding (oneof) before reaching the service.
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Nil(t, stub.addMemberInput)
+}
+
+func TestAdminTeamHandlerAddMemberRequiresUserOrEmail(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	stub := &adminTeamServiceStub{}
+	h := &AdminTeamHandler{teamService: stub}
+	router := adminRouter(h, 1)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/teams/7/members", strings.NewReader(`{"role":"viewer"}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Nil(t, stub.addMemberInput)
+}
+
+func TestAdminTeamHandlerRemoveOwnerIsRejected(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	stub := &adminTeamServiceStub{removeMemberErr: service.ErrTeamOwnerImmutable}
+	h := &AdminTeamHandler{teamService: stub}
+	router := adminRouter(h, 999)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/teams/7/members/5", nil)
+	router.ServeHTTP(rec, req)
+
+	// ErrTeamOwnerImmutable is a BadRequest application error -> HTTP 400.
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Equal(t, [3]int64{999, 7, 5}, stub.removeMemberArgs)
+}
+
+func TestAdminTeamHandlerRemoveMemberSucceeds(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	stub := &adminTeamServiceStub{}
+	h := &AdminTeamHandler{teamService: stub}
+	router := adminRouter(h, 999)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/teams/7/members/8", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), `"member removed"`)
+	require.Equal(t, [3]int64{999, 7, 8}, stub.removeMemberArgs)
+}

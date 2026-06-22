@@ -40,6 +40,9 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		middleware.ProviderSet,
 		handler.ProviderSet,
 
+		// Bind the user-facing team handler interface to the concrete TeamService.
+		wire.Bind(new(handler.TeamHTTPService), new(*service.TeamService)),
+
 		// Server layer ProviderSet
 		server.ProviderSet,
 

@@ -49,7 +49,7 @@ func newUserRoutesTestRouter() *gin.Engine {
 		Name:             "Personal",
 		Role:             domain.TeamRoleOwner,
 		Permissions:      domain.TeamRolePermissions(domain.TeamRoleOwner),
-	}}}, nil)
+	}}}, nil, nil)
 
 	RegisterUserRoutes(
 		v1,

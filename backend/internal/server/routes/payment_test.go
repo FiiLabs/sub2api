@@ -8,6 +8,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -36,7 +37,7 @@ func TestRegisterPaymentRoutesRejectsUnavailableWorkspaceSubject(t *testing.T) {
 			Name:             "Core Team",
 			Role:             domain.TeamRoleAdmin,
 			Permissions:      domain.TeamRolePermissions(domain.TeamRoleAdmin),
-		}}}, nil),
+		}}}, nil, nil),
 	)
 
 	rec := httptest.NewRecorder()
@@ -79,7 +80,7 @@ func TestRegisterPaymentRoutesRejectsTeamWorkspaceUntilPaymentIsSubjectAware(t *
 				Role:             domain.TeamRoleAdmin,
 				Permissions:      domain.TeamRolePermissions(domain.TeamRoleAdmin),
 			},
-		}}, nil),
+		}}, nil, nil),
 	)
 
 	rec := httptest.NewRecorder()
@@ -125,4 +126,24 @@ func (r routeTeamRepo) UpdateMember(_ context.Context, _, _, _ int64, _ service.
 
 func (r routeTeamRepo) RemoveMember(_ context.Context, _, _, _ int64) error {
 	return nil
+}
+
+func (r routeTeamRepo) AdminListTeams(_ context.Context, _ service.AdminTeamListFilter, _ pagination.PaginationParams) ([]service.AdminTeamSummary, *pagination.PaginationResult, error) {
+	return nil, nil, nil
+}
+
+func (r routeTeamRepo) GetTeamByID(_ context.Context, teamID int64) (*service.Team, error) {
+	return &service.Team{ID: teamID}, nil
+}
+
+func (r routeTeamRepo) AdminGetTeamSummary(_ context.Context, teamID int64) (*service.AdminTeamSummary, error) {
+	return &service.AdminTeamSummary{Team: service.Team{ID: teamID}}, nil
+}
+
+func (r routeTeamRepo) AddMember(_ context.Context, teamID, userID int64, role string, _ int64) (*service.TeamMember, error) {
+	return &service.TeamMember{TeamID: teamID, UserID: userID, Role: role, Status: domain.TeamMemberStatusActive}, nil
+}
+
+func (r routeTeamRepo) UpdateTeam(_ context.Context, teamID int64, _ *string, _ *string) (*service.Team, error) {
+	return &service.Team{ID: teamID}, nil
 }
