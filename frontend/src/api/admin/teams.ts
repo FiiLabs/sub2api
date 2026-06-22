@@ -52,6 +52,18 @@ export async function list(
 }
 
 /**
+ * Create a new team (platform admin), assigning an owner by user id or email
+ * @param payload - Team name and owner identity (one of owner_user_id / owner_email required)
+ * @returns Created team
+ */
+export async function create(
+  payload: { name: string; owner_user_id?: number; owner_email?: string }
+): Promise<{ team: AdminTeam }> {
+  const { data } = await apiClient.post<{ team: AdminTeam }>('/admin/teams', payload)
+  return data
+}
+
+/**
  * Get team detail by ID (team + members + invitations)
  * @param id - Team ID
  * @returns Team detail
@@ -127,6 +139,7 @@ export async function removeMember(id: number, userId: number): Promise<{ messag
 export const adminTeamsAPI = {
   list,
   get,
+  create,
   update,
   addMember,
   updateMember,

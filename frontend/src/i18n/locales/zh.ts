@@ -568,7 +568,14 @@ export default {
   // Workspace
   workspace: {
     active: '工作空间',
-    billingTarget: '账单主体：{name}'
+    billingTarget: '账单主体：{name}',
+    createTeam: '创建团队',
+    createTeamTitle: '创建团队工作空间',
+    teamName: '团队名称',
+    teamNamePlaceholder: '请输入团队名称',
+    teamNameRequired: '请输入团队名称',
+    createTeamSuccess: '团队已创建',
+    createTeamFailed: '创建团队失败'
   },
 
   // Auth
@@ -1999,6 +2006,16 @@ export default {
       manage: '管理',
       disable: '禁用',
       enable: '启用',
+      create: '创建团队',
+      createTitle: '创建团队',
+      teamName: '团队名称',
+      teamNamePlaceholder: '请输入团队名称',
+      ownerLabel: '所有者',
+      ownerPlaceholder: '用户 ID 或邮箱',
+      nameRequired: '请输入团队名称',
+      ownerRequired: '请输入所有者（用户 ID 或邮箱）',
+      createSuccess: '团队已创建',
+      failedToCreate: '创建团队失败',
       detailTitle: '团队详情',
       owner: '所有者',
       status: '状态',

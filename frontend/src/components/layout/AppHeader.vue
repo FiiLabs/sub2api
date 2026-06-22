@@ -41,22 +41,36 @@
         <!-- Language Switcher -->
         <LocaleSwitcher />
 
-        <!-- Workspace Switcher (only when the user belongs to more than one workspace) -->
-        <select
-          v-if="user && workspaceStore.workspaces.length > 1"
-          :value="activeWorkspace?.billing_subject_id"
-          :aria-label="t('nav.workspace')"
-          class="hidden rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-700 dark:border-dark-700 dark:bg-dark-900 dark:text-dark-200 sm:block"
-          @change="workspaceStore.switchWorkspace(Number(($event.target as HTMLSelectElement).value))"
-        >
-          <option
-            v-for="workspace in workspaceStore.workspaces"
-            :key="workspace.billing_subject_id"
-            :value="workspace.billing_subject_id"
+        <!-- Workspace Switcher + Create team -->
+        <div v-if="user" class="hidden items-center gap-1.5 sm:flex">
+          <!-- Switcher (only when the user belongs to more than one workspace) -->
+          <select
+            v-if="workspaceStore.workspaces.length > 1"
+            :value="activeWorkspace?.billing_subject_id"
+            :aria-label="t('nav.workspace')"
+            class="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-700 dark:border-dark-700 dark:bg-dark-900 dark:text-dark-200"
+            @change="workspaceStore.switchWorkspace(Number(($event.target as HTMLSelectElement).value))"
           >
-            {{ workspace.name }}
-          </option>
-        </select>
+            <option
+              v-for="workspace in workspaceStore.workspaces"
+              :key="workspace.billing_subject_id"
+              :value="workspace.billing_subject_id"
+            >
+              {{ workspace.name }}
+            </option>
+          </select>
+
+          <!-- Create team -->
+          <button
+            type="button"
+            @click="openCreateTeam"
+            class="btn-ghost btn-icon"
+            :aria-label="t('workspace.createTeam')"
+            :title="t('workspace.createTeam')"
+          >
+            <Icon name="plus" size="md" />
+          </button>
+        </div>
 
         <!-- Subscription Progress (for users with active subscriptions) -->
         <SubscriptionProgressMini v-if="user" />
@@ -226,6 +240,58 @@
         </div>
       </div>
     </div>
+
+    <!-- Create team modal -->
+    <BaseDialog
+      :show="showCreateTeam"
+      :title="t('workspace.createTeamTitle')"
+      width="narrow"
+      @close="closeCreateTeam"
+    >
+      <form id="create-team-form" @submit.prevent="handleCreateTeam" class="space-y-4">
+        <div>
+          <label class="input-label" for="create-team-name">{{ t('workspace.teamName') }}</label>
+          <input
+            id="create-team-name"
+            v-model="createTeamName"
+            type="text"
+            required
+            maxlength="100"
+            class="input"
+            :placeholder="t('workspace.teamNamePlaceholder')"
+          />
+        </div>
+      </form>
+
+      <template #footer>
+        <div class="flex justify-end gap-3">
+          <button type="button" class="btn btn-secondary" @click="closeCreateTeam">
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="submit"
+            form="create-team-form"
+            class="btn btn-primary"
+            :disabled="creatingTeam || !createTeamName.trim()"
+          >
+            <svg
+              v-if="creatingTeam"
+              class="-ml-1 mr-2 h-4 w-4 animate-spin"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path
+                class="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              ></path>
+            </svg>
+            {{ t('common.create') }}
+          </button>
+        </div>
+      </template>
+    </BaseDialog>
   </header>
 </template>
 
@@ -238,7 +304,9 @@ import { useAdminSettingsStore } from '@/stores/adminSettings'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import SubscriptionProgressMini from '@/components/common/SubscriptionProgressMini.vue'
 import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { workspacesAPI } from '@/api/workspaces'
 
 const router = useRouter()
 const route = useRoute()
@@ -335,6 +403,48 @@ async function handleLogout() {
 function handleReplayGuide() {
   closeDropdown()
   onboardingStore.replay()
+}
+
+// ==================== Create team ====================
+const showCreateTeam = ref(false)
+const createTeamName = ref('')
+const creatingTeam = ref(false)
+
+function openCreateTeam() {
+  createTeamName.value = ''
+  showCreateTeam.value = true
+}
+
+function closeCreateTeam() {
+  showCreateTeam.value = false
+  createTeamName.value = ''
+}
+
+async function handleCreateTeam() {
+  const name = createTeamName.value.trim()
+  if (!name) {
+    appStore.showError(t('workspace.teamNameRequired'))
+    return
+  }
+  creatingTeam.value = true
+  try {
+    const { team } = await workspacesAPI.createTeam({ name })
+    await workspaceStore.loadWorkspaces()
+    // Switch to the newly created team workspace.
+    const created =
+      workspaceStore.workspaces.find((w) => w.team_id === team.id) ??
+      workspaceStore.workspaces.find((w) => w.billing_subject_id === team.billing_subject_id)
+    if (created) {
+      workspaceStore.switchWorkspace(created.billing_subject_id)
+    }
+    appStore.showSuccess(t('workspace.createTeamSuccess'))
+    closeCreateTeam()
+  } catch (error: any) {
+    appStore.showError(error?.message || t('workspace.createTeamFailed'))
+    console.error('Failed to create team:', error)
+  } finally {
+    creatingTeam.value = false
+  }
 }
 
 function handleClickOutside(event: MouseEvent) {

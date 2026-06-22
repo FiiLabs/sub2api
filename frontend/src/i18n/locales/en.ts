@@ -571,7 +571,14 @@ export default {
   // Workspace
   workspace: {
     active: 'Workspace',
-    billingTarget: 'Billing target: {name}'
+    billingTarget: 'Billing target: {name}',
+    createTeam: 'Create team',
+    createTeamTitle: 'Create team workspace',
+    teamName: 'Team name',
+    teamNamePlaceholder: 'Enter a team name',
+    teamNameRequired: 'Team name is required',
+    createTeamSuccess: 'Team created',
+    createTeamFailed: 'Failed to create team'
   },
 
   // Auth
@@ -1981,6 +1988,16 @@ export default {
       manage: 'Manage',
       disable: 'Disable',
       enable: 'Enable',
+      create: 'Create Team',
+      createTitle: 'Create Team',
+      teamName: 'Team Name',
+      teamNamePlaceholder: 'Enter a team name',
+      ownerLabel: 'Owner',
+      ownerPlaceholder: 'User ID or email',
+      nameRequired: 'Team name is required',
+      ownerRequired: 'Owner (user ID or email) is required',
+      createSuccess: 'Team created',
+      failedToCreate: 'Failed to create team',
       detailTitle: 'Team Details',
       owner: 'Owner',
       status: 'Status',

@@ -7,6 +7,11 @@ export const workspacesAPI = {
     return data
   },
 
+  async createTeam(payload: { name: string }): Promise<{ team: { id: number; name: string; slug: string; billing_subject_id: number } }> {
+    const { data } = await apiClient.post<{ team: { id: number; name: string; slug: string; billing_subject_id: number } }>('/teams', payload)
+    return data
+  },
+
   async listMembers(teamId: number): Promise<{ members: TeamMember[]; invitations: TeamInvitation[] }> {
     const { data } = await apiClient.get<{ members: TeamMember[]; invitations: TeamInvitation[] }>(`/teams/${teamId}/members`)
     return data
