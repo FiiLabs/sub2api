@@ -266,6 +266,7 @@ func registerTeamManagementRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		teams.POST("/:id/members", h.Admin.Team.AddMember)
 		teams.PATCH("/:id/members/:user_id", h.Admin.Team.UpdateMember)
 		teams.DELETE("/:id/members/:user_id", h.Admin.Team.RemoveMember)
+		teams.POST("/:id/transfer-ownership", h.Admin.Team.TransferOwnership)
 	}
 }
 

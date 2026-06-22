@@ -24,6 +24,7 @@ type AdminTeamService interface {
 	AdminAddMember(ctx context.Context, input service.AdminAddMemberInput) (*service.TeamMember, error)
 	AdminUpdateMember(ctx context.Context, adminUserID, teamID, userID int64, input service.UpdateTeamMemberInput) (*service.TeamMember, error)
 	AdminRemoveMember(ctx context.Context, adminUserID, teamID, userID int64) error
+	AdminTransferOwnership(ctx context.Context, teamID, newOwnerUserID int64) error
 }
 
 // AdminTeamHandler handles platform-admin team management. Access is gated by the
@@ -154,6 +155,10 @@ type adminAddTeamMemberRequest struct {
 type adminUpdateTeamMemberRequest struct {
 	Role   *string `json:"role" binding:"omitempty,oneof=admin billing developer viewer"`
 	Status *string `json:"status" binding:"omitempty,oneof=active suspended"`
+}
+
+type adminTransferOwnershipRequest struct {
+	UserID int64 `json:"user_id" binding:"required"`
 }
 
 // --- Handlers -----------------------------------------------------------------
@@ -386,4 +391,28 @@ func (h *AdminTeamHandler) RemoveMember(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"message": "member removed"})
+}
+
+// TransferOwnership handles POST /api/v1/admin/teams/:id/transfer-ownership. No
+// membership gating on the admin; the service still validates the new owner is an
+// active member and demotes the previous owner to admin.
+func (h *AdminTeamHandler) TransferOwnership(c *gin.Context) {
+	teamID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || teamID <= 0 {
+		response.BadRequest(c, "Invalid team ID")
+		return
+	}
+
+	var req adminTransferOwnershipRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	if err := h.teamService.AdminTransferOwnership(c.Request.Context(), teamID, req.UserID); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"message": "ownership transferred"})
 }

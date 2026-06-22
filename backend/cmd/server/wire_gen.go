@@ -90,7 +90,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	authHandler := handler.NewAuthHandler(configConfig, authService, userService, settingService, promoService, redeemService, totpService, userAttributeService)
 	userHandler := handler.NewUserHandler(userService, authService, emailService, emailCache, affiliateService, serviceUserPlatformQuotaRepository)
 	teamRepository := repository.NewTeamRepository(client)
-	teamService := service.NewTeamService(teamRepository, billingSubjectRepository, userRepository)
+	teamService := service.ProvideTeamService(teamRepository, billingSubjectRepository, userRepository, emailService, settingService)
 	teamHandler := handler.NewTeamHandler(teamService)
 	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService)
 	usageLogRepository := repository.NewUsageLogRepository(client, db)

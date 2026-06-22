@@ -31,6 +31,9 @@ type adminTeamServiceStub struct {
 	addMemberErr     error
 	removeMemberErr  error
 	removeMemberArgs [3]int64 // adminUserID, teamID, userID
+
+	transferArgs [2]int64 // teamID, newOwnerUserID
+	transferErr  error
 }
 
 func (s *adminTeamServiceStub) AdminCreateTeam(_ context.Context, input service.AdminCreateTeamInput) (*service.AdminTeamSummary, error) {
@@ -92,6 +95,11 @@ func (s *adminTeamServiceStub) AdminRemoveMember(_ context.Context, adminUserID,
 	return s.removeMemberErr
 }
 
+func (s *adminTeamServiceStub) AdminTransferOwnership(_ context.Context, teamID, newOwnerUserID int64) error {
+	s.transferArgs = [2]int64{teamID, newOwnerUserID}
+	return s.transferErr
+}
+
 // adminRouter wires the handler routes the same way the production router does,
 // injecting an admin AuthSubject (a platform admin, NOT a team member).
 func adminRouter(h *AdminTeamHandler, adminUserID int64) *gin.Engine {
@@ -108,6 +116,7 @@ func adminRouter(h *AdminTeamHandler, adminUserID int64) *gin.Engine {
 	teams.POST("/:id/members", h.AddMember)
 	teams.PATCH("/:id/members/:user_id", h.UpdateMember)
 	teams.DELETE("/:id/members/:user_id", h.RemoveMember)
+	teams.POST("/:id/transfer-ownership", h.TransferOwnership)
 	return router
 }
 
@@ -276,4 +285,36 @@ func TestAdminTeamHandlerRemoveMemberSucceeds(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Contains(t, rec.Body.String(), `"member removed"`)
 	require.Equal(t, [3]int64{999, 7, 8}, stub.removeMemberArgs)
+}
+
+func TestAdminTeamHandlerTransferOwnership(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	stub := &adminTeamServiceStub{}
+	h := &AdminTeamHandler{teamService: stub}
+	router := adminRouter(h, 999) // platform admin, not a team member
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/teams/7/transfer-ownership", strings.NewReader(`{"user_id":8}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), "ownership transferred")
+	require.Equal(t, [2]int64{7, 8}, stub.transferArgs)
+}
+
+func TestAdminTeamHandlerTransferOwnershipRequiresUserID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	stub := &adminTeamServiceStub{}
+	h := &AdminTeamHandler{teamService: stub}
+	router := adminRouter(h, 999)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/teams/7/transfer-ownership", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	// Missing user_id is rejected at request binding.
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Equal(t, [2]int64{0, 0}, stub.transferArgs)
 }

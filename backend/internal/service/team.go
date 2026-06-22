@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"log/slog"
+	"net/url"
 	"strings"
 	"time"
 
@@ -20,6 +21,12 @@ var (
 	ErrTeamPermissionDenied   = infraerrors.Forbidden("TEAM_PERMISSION_DENIED", "team permission denied")
 	ErrTeamInvalidRole        = infraerrors.BadRequest("TEAM_INVALID_ROLE", "invalid team role")
 	ErrTeamInvitationInvalid  = infraerrors.BadRequest("TEAM_INVITATION_INVALID", "team invitation is invalid")
+	// ErrTeamInvitationExpired is returned when an invitation has lapsed (or is no
+	// longer pending) at accept time.
+	ErrTeamInvitationExpired = infraerrors.BadRequest("TEAM_INVITATION_EXPIRED", "team invitation is expired")
+	// ErrTeamInvitationEmailMismatch is returned when the accepting account's email
+	// does not match the invited email (acceptance is bound to the invited email).
+	ErrTeamInvitationEmailMismatch = infraerrors.Forbidden("TEAM_INVITATION_EMAIL_MISMATCH", "invitation does not match your account email")
 
 	// ErrTeamMemberExists is returned by AdminAddMember when an active membership
 	// already exists for the target (team, user).
@@ -64,6 +71,18 @@ type TeamInvitation struct {
 	InvitedByUserID  int64
 	AcceptedByUserID *int64
 	ExpiresAt        time.Time
+}
+
+// InvitationPreview is the read-only view of an invitation returned by
+// PreviewInvitation (no mutation). Expired reflects whether the invitation has
+// lapsed past its ExpiresAt at preview time.
+type InvitationPreview struct {
+	TeamID   int64
+	TeamName string
+	Role     string
+	Email    string
+	Status   string
+	Expired  bool
 }
 
 type WorkspaceSubject struct {
@@ -152,12 +171,33 @@ type TeamRepository interface {
 	UpdateMember(ctx context.Context, actorUserID, teamID, userID int64, input UpdateTeamMemberInput) (*TeamMember, error)
 	RemoveMember(ctx context.Context, actorUserID, teamID, userID int64) error
 
+	// GetInvitationByTokenHash returns the pending (non-deleted) invitation whose
+	// token_hash matches; a not-found error is returned when none matches.
+	GetInvitationByTokenHash(ctx context.Context, tokenHash string) (*TeamInvitation, error)
+	// AcceptInvitation creates-or-reactivates an active membership for the accepting
+	// user (role/invited_by from the invitation) and marks the invitation accepted,
+	// in a single transaction. It is idempotent when the same user re-accepts an
+	// already-accepted invitation (returns the existing membership).
+	AcceptInvitation(ctx context.Context, invitationID, acceptingUserID, teamID int64, role string) (*TeamMember, error)
+	// TransferOwnership promotes newOwnerUserID to owner and demotes prevOwnerUserID
+	// to admin, updating teams.owner_user_id, in a single transaction. The new owner
+	// must be an active member.
+	TransferOwnership(ctx context.Context, teamID, newOwnerUserID, prevOwnerUserID int64) error
+
 	// Platform-admin operations (no team-membership gating).
 	AdminListTeams(ctx context.Context, filter AdminTeamListFilter, params pagination.PaginationParams) ([]AdminTeamSummary, *pagination.PaginationResult, error)
 	GetTeamByID(ctx context.Context, teamID int64) (*Team, error)
 	AdminGetTeamSummary(ctx context.Context, teamID int64) (*AdminTeamSummary, error)
 	AddMember(ctx context.Context, teamID, userID int64, role string, invitedByUserID int64) (*TeamMember, error)
 	UpdateTeam(ctx context.Context, teamID int64, name *string, status *string) (*Team, error)
+}
+
+// TeamInviteNotifier delivers a team invitation to the invitee's email. It is a
+// best-effort dependency: InviteMember never fails when delivery fails. The
+// concrete adapter (over EmailService + SettingService) is wired in production;
+// it may be nil in tests/contexts where delivery is not needed.
+type TeamInviteNotifier interface {
+	SendInvite(ctx context.Context, toEmail, acceptLink, teamName string) error
 }
 
 // TeamUserLookup is the narrow user-resolution dependency used by admin member
@@ -172,6 +212,7 @@ type TeamService struct {
 	repo           TeamRepository
 	billingSubject BillingSubjectRepository
 	userLookup     TeamUserLookup
+	inviteNotifier TeamInviteNotifier
 }
 
 func NewTeamService(repo TeamRepository, billingSubject BillingSubjectRepository, userRepo UserRepository) *TeamService {
@@ -183,6 +224,12 @@ func NewTeamService(repo TeamRepository, billingSubject BillingSubjectRepository
 		s.userLookup = userRepo
 	}
 	return s
+}
+
+// SetInviteNotifier injects the (best-effort) invitation email notifier. Wire
+// uses this after construction so NewTeamService stays binding-free.
+func (s *TeamService) SetInviteNotifier(n TeamInviteNotifier) {
+	s.inviteNotifier = n
 }
 
 func (s *TeamService) CreateTeam(ctx context.Context, input CreateTeamInput) (*Team, error) {
@@ -197,6 +244,12 @@ func (s *TeamService) CreateTeam(ctx context.Context, input CreateTeamInput) (*T
 	}
 	input.Slug = slug
 	return s.repo.CreateTeam(ctx, input)
+}
+
+// GetTeam returns a team by id (no membership gating). Used by handlers to render
+// the joined team summary after an invitation is accepted.
+func (s *TeamService) GetTeam(ctx context.Context, teamID int64) (*Team, error) {
+	return s.repo.GetTeamByID(ctx, teamID)
 }
 
 func (s *TeamService) Can(ctx context.Context, actorUserID, teamID int64, permission string) (bool, error) {
@@ -281,27 +334,60 @@ func (s *TeamService) ListMembers(ctx context.Context, actorUserID, teamID int64
 	return s.repo.ListMembers(ctx, teamID)
 }
 
-func (s *TeamService) InviteMember(ctx context.Context, input InviteTeamMemberInput) (*TeamInvitation, string, error) {
+// InviteMember creates a pending invitation and best-effort delivers it by email.
+// It returns the invitation, the plaintext token (shown once so the caller can
+// surface a copyable link), and the accept link. Email delivery never fails the
+// invite: a delivery error is logged and the (copyable) link remains the fallback.
+func (s *TeamService) InviteMember(ctx context.Context, input InviteTeamMemberInput) (*TeamInvitation, string, string, error) {
 	if _, err := s.Require(ctx, input.ActorUserID, input.TeamID, domain.TeamPermissionManageMembers); err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
 	if input.Role == domain.TeamRoleOwner {
-		return nil, "", ErrTeamInvalidRole
+		return nil, "", "", ErrTeamInvalidRole
 	}
 	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
 	if input.Email == "" {
-		return nil, "", infraerrors.BadRequest("TEAM_INVITATION_INVALID", "invitation email is required")
+		return nil, "", "", infraerrors.BadRequest("TEAM_INVITATION_INVALID", "invitation email is required")
 	}
 	plain, tokenHash, err := GenerateInvitationToken()
 	if err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
 	input.TokenHash = tokenHash
 	invitation, err := s.repo.InviteMember(ctx, input)
 	if err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
-	return invitation, plain, nil
+
+	acceptLink := buildInvitationAcceptLink(ctx, s.inviteNotifier, plain)
+	if s.inviteNotifier != nil {
+		teamName := ""
+		if team, terr := s.repo.GetTeamByID(ctx, input.TeamID); terr == nil && team != nil {
+			teamName = team.Name
+		}
+		if sendErr := s.inviteNotifier.SendInvite(ctx, input.Email, acceptLink, teamName); sendErr != nil {
+			// Best-effort: never fail the invite when delivery fails. The copyable
+			// link returned to the caller is the fallback.
+			slog.WarnContext(ctx, "InviteMember: failed to send invitation email",
+				"team_id", input.TeamID, "error", sendErr.Error())
+		}
+	}
+	return invitation, plain, acceptLink, nil
+}
+
+// buildInvitationAcceptLink builds the frontend accept link for a plaintext token.
+// When the notifier exposes a base URL it is prefixed; otherwise a relative path
+// is returned (still copyable/usable by the SPA).
+func buildInvitationAcceptLink(ctx context.Context, notifier TeamInviteNotifier, plainToken string) string {
+	path := "/teams/accept?token=" + url.QueryEscape(plainToken)
+	if br, ok := notifier.(interface {
+		AcceptBaseURL(ctx context.Context) string
+	}); ok {
+		if base := strings.TrimRight(br.AcceptBaseURL(ctx), "/"); base != "" {
+			return base + path
+		}
+	}
+	return path
 }
 
 func (s *TeamService) UpdateMember(ctx context.Context, actorUserID, teamID, userID int64, input UpdateTeamMemberInput) (*TeamMember, error) {
@@ -322,6 +408,138 @@ func (s *TeamService) RemoveMember(ctx context.Context, actorUserID, teamID, use
 		return err
 	}
 	return s.repo.RemoveMember(ctx, actorUserID, teamID, userID)
+}
+
+// hashInvitationToken hashes a plaintext invitation token with the same scheme as
+// GenerateInvitationToken (sha256 hex).
+func hashInvitationToken(plainToken string) string {
+	sum := sha256.Sum256([]byte(plainToken))
+	return hex.EncodeToString(sum[:])
+}
+
+// PreviewInvitation returns a read-only view of the invitation behind a plaintext
+// token (team name, role, invited email, status, and whether it has expired). It
+// performs no mutation. A token that does not match a pending invitation yields
+// ErrTeamInvitationInvalid. The invitee need not be a team member to call this.
+func (s *TeamService) PreviewInvitation(ctx context.Context, plainToken string) (*InvitationPreview, error) {
+	plainToken = strings.TrimSpace(plainToken)
+	if plainToken == "" {
+		return nil, ErrTeamInvitationInvalid
+	}
+	invitation, err := s.repo.GetInvitationByTokenHash(ctx, hashInvitationToken(plainToken))
+	if err != nil {
+		return nil, ErrTeamInvitationInvalid
+	}
+	preview := &InvitationPreview{
+		TeamID:  invitation.TeamID,
+		Role:    invitation.Role,
+		Email:   invitation.Email,
+		Status:  invitation.Status,
+		Expired: !invitation.ExpiresAt.IsZero() && time.Now().After(invitation.ExpiresAt),
+	}
+	if team, terr := s.repo.GetTeamByID(ctx, invitation.TeamID); terr == nil && team != nil {
+		preview.TeamName = team.Name
+	}
+	return preview, nil
+}
+
+// AcceptInvitation accepts the invitation behind a plaintext token for the actor.
+// Acceptance is bound to the invited email: the actor's account email must equal
+// the invited email (normalized). An invitation that is not pending or has lapsed
+// is rejected with ErrTeamInvitationExpired. On success the actor is added to (or
+// reactivated on) the team with the invited role.
+func (s *TeamService) AcceptInvitation(ctx context.Context, actorUserID int64, plainToken string) (*TeamMember, error) {
+	if actorUserID <= 0 {
+		return nil, infraerrors.Unauthorized("USER_NOT_AUTHENTICATED", "user not authenticated")
+	}
+	plainToken = strings.TrimSpace(plainToken)
+	if plainToken == "" {
+		return nil, ErrTeamInvitationInvalid
+	}
+	invitation, err := s.repo.GetInvitationByTokenHash(ctx, hashInvitationToken(plainToken))
+	if err != nil {
+		return nil, ErrTeamInvitationInvalid
+	}
+	if invitation.Status != domain.TeamInvitationStatusPending {
+		return nil, ErrTeamInvitationExpired
+	}
+	if !invitation.ExpiresAt.IsZero() && time.Now().After(invitation.ExpiresAt) {
+		return nil, ErrTeamInvitationExpired
+	}
+	if s.userLookup == nil {
+		return nil, ErrUserNotFound
+	}
+	user, err := s.userLookup.GetByID(ctx, actorUserID)
+	if err != nil {
+		return nil, err
+	}
+	if normalizeEmail(user.Email) != normalizeEmail(invitation.Email) {
+		return nil, ErrTeamInvitationEmailMismatch
+	}
+	return s.repo.AcceptInvitation(ctx, invitation.ID, actorUserID, invitation.TeamID, invitation.Role)
+}
+
+// normalizeEmail lowercases and trims an email for case/space-insensitive matching.
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
+// TransferOwnership transfers team ownership from the current owner (the actor) to
+// newOwnerUserID. The actor must be the current owner (owner-only, stricter than
+// "manage members"). Self-transfer is rejected; the new owner must be an active
+// member. The previous owner is demoted to admin (kept in the team).
+func (s *TeamService) TransferOwnership(ctx context.Context, actorUserID, teamID, newOwnerUserID int64) error {
+	if teamID <= 0 || newOwnerUserID <= 0 {
+		return infraerrors.BadRequest("TEAM_INVALID_INPUT", "team_id and user_id are required")
+	}
+	team, err := s.repo.GetTeamByID(ctx, teamID)
+	if err != nil {
+		return err
+	}
+	if team.OwnerUserID != actorUserID {
+		return ErrTeamPermissionDenied
+	}
+	if newOwnerUserID == actorUserID {
+		return infraerrors.BadRequest("TEAM_TRANSFER_SELF", "cannot transfer ownership to yourself")
+	}
+	if err := s.requireActiveMember(ctx, teamID, newOwnerUserID); err != nil {
+		return err
+	}
+	return s.repo.TransferOwnership(ctx, teamID, newOwnerUserID, team.OwnerUserID)
+}
+
+// AdminTransferOwnership transfers team ownership as a platform admin (no
+// membership gating on the actor). The new owner must still be an active member;
+// the previous owner is demoted to admin.
+func (s *TeamService) AdminTransferOwnership(ctx context.Context, teamID, newOwnerUserID int64) error {
+	if teamID <= 0 || newOwnerUserID <= 0 {
+		return infraerrors.BadRequest("TEAM_INVALID_INPUT", "team_id and user_id are required")
+	}
+	team, err := s.repo.GetTeamByID(ctx, teamID)
+	if err != nil {
+		return err
+	}
+	if team.OwnerUserID == newOwnerUserID {
+		// Already the owner: nothing to do (idempotent, avoids demoting self to admin).
+		return nil
+	}
+	if err := s.requireActiveMember(ctx, teamID, newOwnerUserID); err != nil {
+		return err
+	}
+	return s.repo.TransferOwnership(ctx, teamID, newOwnerUserID, team.OwnerUserID)
+}
+
+// requireActiveMember verifies that userID is an active member of teamID, returning
+// ErrTeamMembershipNotFound otherwise.
+func (s *TeamService) requireActiveMember(ctx context.Context, teamID, userID int64) error {
+	member, err := s.repo.GetMembership(ctx, teamID, userID)
+	if err != nil {
+		return err
+	}
+	if member.Status != domain.TeamMemberStatusActive {
+		return ErrTeamMembershipNotFound
+	}
+	return nil
 }
 
 // isAssignableTeamRole reports whether role is one of the non-owner roles an

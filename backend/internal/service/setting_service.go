@@ -692,6 +692,15 @@ func (s *SettingService) GetFrontendURL(ctx context.Context) string {
 	return s.cfg.Server.FrontendURL
 }
 
+// GetAPIBaseURL 获取 API 端点地址（数据库 api_base_url，可能为空）。
+func (s *SettingService) GetAPIBaseURL(ctx context.Context) string {
+	val, err := s.settingRepo.GetValue(ctx, SettingKeyAPIBaseURL)
+	if err == nil && strings.TrimSpace(val) != "" {
+		return strings.TrimSpace(val)
+	}
+	return ""
+}
+
 // GetPublicSettings 获取公开设置（无需登录）
 func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings, error) {
 	keys := []string{

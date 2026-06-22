@@ -15,9 +15,14 @@ type TeamHTTPService interface {
 	ListWorkspaces(ctx context.Context, userID int64) ([]service.WorkspaceSubject, error)
 	CreateTeam(ctx context.Context, input service.CreateTeamInput) (*service.Team, error)
 	ListMembers(ctx context.Context, actorUserID, teamID int64) ([]service.TeamMember, []service.TeamInvitation, error)
-	InviteMember(ctx context.Context, input service.InviteTeamMemberInput) (*service.TeamInvitation, string, error)
+	InviteMember(ctx context.Context, input service.InviteTeamMemberInput) (*service.TeamInvitation, string, string, error)
 	UpdateMember(ctx context.Context, actorUserID, teamID, userID int64, input service.UpdateTeamMemberInput) (*service.TeamMember, error)
 	RemoveMember(ctx context.Context, actorUserID, teamID, userID int64) error
+	PreviewInvitation(ctx context.Context, plainToken string) (*service.InvitationPreview, error)
+	AcceptInvitation(ctx context.Context, actorUserID int64, plainToken string) (*service.TeamMember, error)
+	TransferOwnership(ctx context.Context, actorUserID, teamID, newOwnerUserID int64) error
+	// GetTeam loads a team by id (used to return the joined team summary on accept).
+	GetTeam(ctx context.Context, teamID int64) (*service.Team, error)
 }
 
 type TeamHandler struct {
@@ -112,7 +117,7 @@ func (h *TeamHandler) InviteMember(c *gin.Context) {
 		response.BadRequest(c, "Invalid invitation request")
 		return
 	}
-	invitation, token, err := h.teamService.InviteMember(c.Request.Context(), service.InviteTeamMemberInput{
+	invitation, token, acceptLink, err := h.teamService.InviteMember(c.Request.Context(), service.InviteTeamMemberInput{
 		ActorUserID: subject.UserID, TeamID: teamID, Email: req.Email, Role: req.Role,
 		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
 	})
@@ -120,7 +125,7 @@ func (h *TeamHandler) InviteMember(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, gin.H{"invitation": invitation, "token": token})
+	response.Success(c, gin.H{"invitation": invitation, "token": token, "accept_link": acceptLink})
 }
 
 func (h *TeamHandler) UpdateMember(c *gin.Context) {
@@ -173,4 +178,115 @@ func (h *TeamHandler) RemoveMember(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"message": "member removed"})
+}
+
+type acceptInvitationRequest struct {
+	Token string `json:"token" binding:"required"`
+}
+
+type transferOwnershipRequest struct {
+	UserID int64 `json:"user_id" binding:"required"`
+}
+
+// teamSummaryDTO is the minimal team shape returned on invitation accept.
+type teamSummaryDTO struct {
+	ID               int64  `json:"id"`
+	Name             string `json:"name"`
+	Slug             string `json:"slug"`
+	OwnerUserID      int64  `json:"owner_user_id"`
+	BillingSubjectID *int64 `json:"billing_subject_id"`
+	Status           string `json:"status"`
+}
+
+func teamSummaryDTOFromService(t *service.Team) *teamSummaryDTO {
+	if t == nil {
+		return nil
+	}
+	return &teamSummaryDTO{
+		ID:               t.ID,
+		Name:             t.Name,
+		Slug:             t.Slug,
+		OwnerUserID:      t.OwnerUserID,
+		BillingSubjectID: t.BillingSubjectID,
+		Status:           t.Status,
+	}
+}
+
+// PreviewInvitation handles GET /teams/invitations/preview?token=…. It is mounted
+// under the authenticated user group WITHOUT a team-membership Require: the invitee
+// is not yet a member.
+func (h *TeamHandler) PreviewInvitation(c *gin.Context) {
+	if _, ok := middleware2.GetAuthSubjectFromContext(c); !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	token := c.Query("token")
+	if token == "" {
+		response.BadRequest(c, "token is required")
+		return
+	}
+	preview, err := h.teamService.PreviewInvitation(c.Request.Context(), token)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{
+		"team_id":   preview.TeamID,
+		"team_name": preview.TeamName,
+		"role":      preview.Role,
+		"email":     preview.Email,
+		"status":    preview.Status,
+		"expired":   preview.Expired,
+	})
+}
+
+// AcceptInvitation handles POST /teams/invitations/accept. Mounted under the
+// authenticated user group WITHOUT a Require (the invitee is not yet a member).
+// On success it returns the joined team summary and the new membership.
+func (h *TeamHandler) AcceptInvitation(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	var req acceptInvitationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid invitation request")
+		return
+	}
+	member, err := h.teamService.AcceptInvitation(c.Request.Context(), subject.UserID, req.Token)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	var teamDTO *teamSummaryDTO
+	if team, terr := h.teamService.GetTeam(c.Request.Context(), member.TeamID); terr == nil {
+		teamDTO = teamSummaryDTOFromService(team)
+	}
+	response.Success(c, gin.H{"team": teamDTO, "member": member})
+}
+
+// TransferOwnership handles POST /teams/:id/transfer-ownership. Owner-only; the
+// service enforces that the actor is the current owner.
+func (h *TeamHandler) TransferOwnership(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	teamID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || teamID <= 0 {
+		response.BadRequest(c, "Invalid team ID")
+		return
+	}
+	var req transferOwnershipRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid transfer request")
+		return
+	}
+	if err := h.teamService.TransferOwnership(c.Request.Context(), subject.UserID, teamID, req.UserID); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "ownership transferred"})
 }

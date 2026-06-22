@@ -457,6 +457,15 @@ func ProvideOpsService(
 	return svc
 }
 
+// ProvideTeamService wires TeamService and injects the best-effort invitation
+// email notifier (over EmailService + SettingService). NewTeamService stays
+// binding-free; the notifier is attached post-construction.
+func ProvideTeamService(repo TeamRepository, billingSubject BillingSubjectRepository, userRepo UserRepository, emailService *EmailService, settingService *SettingService) *TeamService {
+	svc := NewTeamService(repo, billingSubject, userRepo)
+	svc.SetInviteNotifier(ProvideTeamInviteNotifier(emailService, settingService))
+	return svc
+}
+
 // ProvideSettingService wires SettingService with group reader and proxy repo.
 func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupRepository, proxyRepo ProxyRepository, cfg *config.Config) *SettingService {
 	svc := NewSettingService(settingRepo, cfg)
@@ -504,7 +513,7 @@ var ProviderSet = wire.NewSet(
 	// Core services
 	NewAuthService,
 	NewUserService,
-	NewTeamService,
+	ProvideTeamService,
 	ProvideAPIKeyService,
 	ProvideAPIKeyAuthCacheInvalidator,
 	NewGroupService,

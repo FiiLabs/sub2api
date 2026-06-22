@@ -120,6 +120,18 @@ func (r routeTeamRepo) InviteMember(_ context.Context, _ service.InviteTeamMembe
 	return nil, nil
 }
 
+func (r routeTeamRepo) GetInvitationByTokenHash(_ context.Context, _ string) (*service.TeamInvitation, error) {
+	return nil, service.ErrTeamInvitationInvalid
+}
+
+func (r routeTeamRepo) AcceptInvitation(_ context.Context, _, _, _ int64, _ string) (*service.TeamMember, error) {
+	return nil, nil
+}
+
+func (r routeTeamRepo) TransferOwnership(_ context.Context, _, _, _ int64) error {
+	return nil
+}
+
 func (r routeTeamRepo) UpdateMember(_ context.Context, _, _, _ int64, _ service.UpdateTeamMemberInput) (*service.TeamMember, error) {
 	return nil, nil
 }

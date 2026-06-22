@@ -84,10 +84,17 @@ func RegisterUserRoutes(
 		teams := authenticated.Group("/teams")
 		{
 			teams.POST("", h.Team.CreateTeam)
+			// Invitation preview/accept are intentionally NOT gated by team membership
+			// (the invitee is not yet a member); the service binds acceptance to the
+			// invited email. These must be registered before the "/:id/..." routes so
+			// "invitations" is not captured as an :id param.
+			teams.GET("/invitations/preview", h.Team.PreviewInvitation)
+			teams.POST("/invitations/accept", h.Team.AcceptInvitation)
 			teams.GET("/:id/members", h.Team.ListMembers)
 			teams.POST("/:id/invitations", h.Team.InviteMember)
 			teams.PATCH("/:id/members/:user_id", h.Team.UpdateMember)
 			teams.DELETE("/:id/members/:user_id", h.Team.RemoveMember)
+			teams.POST("/:id/transfer-ownership", h.Team.TransferOwnership)
 		}
 
 		// 使用记录

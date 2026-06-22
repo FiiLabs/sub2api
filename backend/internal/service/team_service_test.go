@@ -12,16 +12,18 @@ import (
 )
 
 type teamRepoMemory struct {
-	teams   map[int64]*Team
-	members map[int64][]TeamMember
-	nextID  int64
+	teams       map[int64]*Team
+	members     map[int64][]TeamMember
+	invitations map[int64]*TeamInvitation
+	nextID      int64
 }
 
 func newTeamRepoMemory() *teamRepoMemory {
 	return &teamRepoMemory{
-		teams:   map[int64]*Team{},
-		members: map[int64][]TeamMember{},
-		nextID:  1,
+		teams:       map[int64]*Team{},
+		members:     map[int64][]TeamMember{},
+		invitations: map[int64]*TeamInvitation{},
+		nextID:      1,
 	}
 }
 
@@ -95,7 +97,7 @@ func (r *teamRepoMemory) ListMembers(ctx context.Context, teamID int64) ([]TeamM
 func (r *teamRepoMemory) InviteMember(ctx context.Context, input InviteTeamMemberInput) (*TeamInvitation, error) {
 	id := r.nextID
 	r.nextID++
-	return &TeamInvitation{
+	inv := &TeamInvitation{
 		ID:              id,
 		TeamID:          input.TeamID,
 		Email:           input.Email,
@@ -104,7 +106,115 @@ func (r *teamRepoMemory) InviteMember(ctx context.Context, input InviteTeamMembe
 		Status:          domain.TeamInvitationStatusPending,
 		InvitedByUserID: input.ActorUserID,
 		ExpiresAt:       input.ExpiresAt,
-	}, nil
+	}
+	r.invitations[id] = inv
+	return inv, nil
+}
+
+func (r *teamRepoMemory) GetInvitationByTokenHash(ctx context.Context, tokenHash string) (*TeamInvitation, error) {
+	for _, inv := range r.invitations {
+		if inv.TokenHash == tokenHash && inv.Status == domain.TeamInvitationStatusPending {
+			cp := *inv
+			return &cp, nil
+		}
+	}
+	return nil, ErrTeamInvitationInvalid
+}
+
+func (r *teamRepoMemory) AcceptInvitation(ctx context.Context, invitationID, acceptingUserID, teamID int64, role string) (*TeamMember, error) {
+	inv, ok := r.invitations[invitationID]
+	if !ok {
+		return nil, ErrTeamInvitationInvalid
+	}
+	// Idempotency: same user re-accepting an accepted invitation returns the
+	// existing active membership.
+	if inv.Status != domain.TeamInvitationStatusPending {
+		if inv.Status == domain.TeamInvitationStatusAccepted &&
+			inv.AcceptedByUserID != nil && *inv.AcceptedByUserID == acceptingUserID {
+			for _, m := range r.members[teamID] {
+				if m.UserID == acceptingUserID && m.Status == domain.TeamMemberStatusActive {
+					mm := m
+					return &mm, nil
+				}
+			}
+			return nil, ErrTeamMembershipNotFound
+		}
+		return nil, ErrTeamInvitationExpired
+	}
+
+	invitedBy := inv.InvitedByUserID
+	members := r.members[teamID]
+	// Reactivate an existing active row (return as-is) or a left row, else insert.
+	for i := range members {
+		if members[i].UserID == acceptingUserID && members[i].Status == domain.TeamMemberStatusActive {
+			r.markInvitationAccepted(inv, acceptingUserID)
+			mm := members[i]
+			return &mm, nil
+		}
+	}
+	for i := len(members) - 1; i >= 0; i-- {
+		if members[i].UserID == acceptingUserID && members[i].Status == domain.TeamMemberStatusLeft {
+			members[i].Role = role
+			members[i].Status = domain.TeamMemberStatusActive
+			members[i].JoinedAt = teamTestPtrTime(time.Now())
+			if invitedBy > 0 {
+				ib := invitedBy
+				members[i].InvitedByUserID = &ib
+			}
+			r.members[teamID] = members
+			r.markInvitationAccepted(inv, acceptingUserID)
+			mm := members[i]
+			return &mm, nil
+		}
+	}
+	id := r.nextID
+	r.nextID++
+	member := TeamMember{
+		ID:       id,
+		TeamID:   teamID,
+		UserID:   acceptingUserID,
+		Role:     role,
+		Status:   domain.TeamMemberStatusActive,
+		JoinedAt: teamTestPtrTime(time.Now()),
+	}
+	if invitedBy > 0 {
+		ib := invitedBy
+		member.InvitedByUserID = &ib
+	}
+	r.members[teamID] = append(members, member)
+	r.markInvitationAccepted(inv, acceptingUserID)
+	return &member, nil
+}
+
+func (r *teamRepoMemory) markInvitationAccepted(inv *TeamInvitation, acceptingUserID int64) {
+	inv.Status = domain.TeamInvitationStatusAccepted
+	uid := acceptingUserID
+	inv.AcceptedByUserID = &uid
+}
+
+func (r *teamRepoMemory) TransferOwnership(ctx context.Context, teamID, newOwnerUserID, prevOwnerUserID int64) error {
+	members := r.members[teamID]
+	foundNew := false
+	for i := range members {
+		if members[i].UserID == newOwnerUserID && members[i].Status == domain.TeamMemberStatusActive {
+			foundNew = true
+		}
+	}
+	if !foundNew {
+		return ErrTeamMembershipNotFound
+	}
+	for i := range members {
+		if members[i].UserID == newOwnerUserID {
+			members[i].Role = domain.TeamRoleOwner
+		} else if members[i].UserID == prevOwnerUserID && prevOwnerUserID != newOwnerUserID {
+			members[i].Role = domain.TeamRoleAdmin
+		}
+	}
+	r.members[teamID] = members
+	if team, ok := r.teams[teamID]; ok {
+		team.OwnerUserID = newOwnerUserID
+	}
+	return nil
 }
 
 func (r *teamRepoMemory) UpdateMember(ctx context.Context, actorUserID, teamID, userID int64, input UpdateTeamMemberInput) (*TeamMember, error) {
@@ -258,14 +368,16 @@ func TestTeamServiceInviteMemberRejectsOwnerRole(t *testing.T) {
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 
-	_, _, err = svc.InviteMember(context.Background(), InviteTeamMemberInput{ActorUserID: 7, TeamID: team.ID, Email: "x@example.com", Role: domain.TeamRoleOwner, ExpiresAt: time.Now().Add(time.Hour)})
+	_, _, _, err = svc.InviteMember(context.Background(), InviteTeamMemberInput{ActorUserID: 7, TeamID: team.ID, Email: "x@example.com", Role: domain.TeamRoleOwner, ExpiresAt: time.Now().Add(time.Hour)})
 	require.ErrorIs(t, err, ErrTeamInvalidRole)
 
-	invitation, token, err := svc.InviteMember(context.Background(), InviteTeamMemberInput{ActorUserID: 7, TeamID: team.ID, Email: "X@Example.com", Role: domain.TeamRoleDeveloper, ExpiresAt: time.Now().Add(time.Hour)})
+	invitation, token, acceptLink, err := svc.InviteMember(context.Background(), InviteTeamMemberInput{ActorUserID: 7, TeamID: team.ID, Email: "X@Example.com", Role: domain.TeamRoleDeveloper, ExpiresAt: time.Now().Add(time.Hour)})
 	require.NoError(t, err)
 	require.NotEmpty(t, token)
 	require.Equal(t, "x@example.com", invitation.Email)
 	require.NotEmpty(t, invitation.TokenHash)
+	// With no notifier configured the link is a relative path carrying the token.
+	require.Contains(t, acceptLink, "/teams/accept?token=")
 }
 
 func TestTeamServiceUpdateMemberValidations(t *testing.T) {
@@ -647,4 +759,323 @@ func TestTeamServiceAdminListAndGetTeam(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, team.ID, got.ID)
 	require.Len(t, members, 2)
+}
+
+// --- Invitation accept / preview ---------------------------------------------
+
+// inviteTestSetup creates a team (owner=ownerID) and a pending invitation for
+// inviteEmail/role, returning the plaintext token and the service wired with a
+// lookup that resolves inviteEmail -> inviteeID.
+func inviteTestSetup(t *testing.T, ownerID, inviteeID int64, inviteEmail, role string) (*TeamService, *teamRepoMemory, string, int64) {
+	t.Helper()
+	repo := newTeamRepoMemory()
+	lookup := teamUserLookupStub{byID: map[int64]*User{
+		inviteeID: {ID: inviteeID, Email: inviteEmail, Username: "invitee"},
+		ownerID:   {ID: ownerID, Email: "owner@example.com", Username: "owner"},
+	}}
+	svc := &TeamService{repo: repo, userLookup: lookup}
+	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: ownerID, Name: "Ops", Slug: "ops"})
+	require.NoError(t, err)
+	_, token, _, err := svc.InviteMember(context.Background(), InviteTeamMemberInput{
+		ActorUserID: ownerID, TeamID: team.ID, Email: inviteEmail, Role: role, ExpiresAt: time.Now().Add(time.Hour),
+	})
+	require.NoError(t, err)
+	return svc, repo, token, team.ID
+}
+
+func TestTeamServiceAcceptInvitationCreatesMembership(t *testing.T) {
+	svc, repo, token, teamID := inviteTestSetup(t, 7, 8, "invitee@example.com", domain.TeamRoleDeveloper)
+
+	member, err := svc.AcceptInvitation(context.Background(), 8, token)
+	require.NoError(t, err)
+	require.Equal(t, int64(8), member.UserID)
+	require.Equal(t, domain.TeamRoleDeveloper, member.Role)
+	require.Equal(t, domain.TeamMemberStatusActive, member.Status)
+	// invited_by is the inviter (owner 7).
+	require.NotNil(t, member.InvitedByUserID)
+	require.Equal(t, int64(7), *member.InvitedByUserID)
+
+	// Membership is active and the invitation is now accepted.
+	got, err := repo.GetMembership(context.Background(), teamID, 8)
+	require.NoError(t, err)
+	require.Equal(t, domain.TeamRoleDeveloper, got.Role)
+	for _, inv := range repo.invitations {
+		require.Equal(t, domain.TeamInvitationStatusAccepted, inv.Status)
+		require.NotNil(t, inv.AcceptedByUserID)
+		require.Equal(t, int64(8), *inv.AcceptedByUserID)
+	}
+}
+
+func TestTeamServiceAcceptInvitationRejectsEmailMismatch(t *testing.T) {
+	repo := newTeamRepoMemory()
+	// The accepting user's email differs from the invited email.
+	lookup := teamUserLookupStub{byID: map[int64]*User{
+		8: {ID: 8, Email: "someone-else@example.com", Username: "other"},
+		7: {ID: 7, Email: "owner@example.com", Username: "owner"},
+	}}
+	svc := &TeamService{repo: repo, userLookup: lookup}
+	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
+	require.NoError(t, err)
+	_, token, _, err := svc.InviteMember(context.Background(), InviteTeamMemberInput{
+		ActorUserID: 7, TeamID: team.ID, Email: "invitee@example.com", Role: domain.TeamRoleViewer, ExpiresAt: time.Now().Add(time.Hour),
+	})
+	require.NoError(t, err)
+
+	_, err = svc.AcceptInvitation(context.Background(), 8, token)
+	require.ErrorIs(t, err, ErrTeamInvitationEmailMismatch)
+
+	// No membership was created for user 8.
+	_, err = repo.GetMembership(context.Background(), team.ID, 8)
+	require.Error(t, err)
+}
+
+func TestTeamServiceAcceptInvitationRejectsExpired(t *testing.T) {
+	repo := newTeamRepoMemory()
+	lookup := teamUserLookupStub{byID: map[int64]*User{
+		8: {ID: 8, Email: "invitee@example.com", Username: "invitee"},
+		7: {ID: 7, Email: "owner@example.com", Username: "owner"},
+	}}
+	svc := &TeamService{repo: repo, userLookup: lookup}
+	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
+	require.NoError(t, err)
+	_, token, _, err := svc.InviteMember(context.Background(), InviteTeamMemberInput{
+		ActorUserID: 7, TeamID: team.ID, Email: "invitee@example.com", Role: domain.TeamRoleViewer,
+		ExpiresAt: time.Now().Add(-time.Hour), // already expired
+	})
+	require.NoError(t, err)
+
+	_, err = svc.AcceptInvitation(context.Background(), 8, token)
+	require.ErrorIs(t, err, ErrTeamInvitationExpired)
+}
+
+func TestTeamServiceAcceptInvitationIsIdempotent(t *testing.T) {
+	svc, repo, token, teamID := inviteTestSetup(t, 7, 8, "invitee@example.com", domain.TeamRoleDeveloper)
+
+	first, err := svc.AcceptInvitation(context.Background(), 8, token)
+	require.NoError(t, err)
+
+	// Re-accepting through the service: the token no longer resolves to a PENDING
+	// invitation (GetInvitationByTokenHash returns pending-only), so the second
+	// service call is rejected as invalid rather than mutating anything. The point
+	// is that it is harmless and creates no duplicate membership. (Repo-level
+	// idempotency for the already-accepted-by-same-user case is covered by the
+	// repository test suite.)
+	_, err = svc.AcceptInvitation(context.Background(), 8, token)
+	require.Error(t, err)
+
+	// The first accept stands and there is exactly one membership row for user 8.
+	got, err := repo.GetMembership(context.Background(), teamID, 8)
+	require.NoError(t, err)
+	require.Equal(t, first.UserID, got.UserID)
+	count := 0
+	for _, m := range repo.members[teamID] {
+		if m.UserID == 8 {
+			count++
+		}
+	}
+	require.Equal(t, 1, count)
+}
+
+func TestTeamServiceAcceptInvitationReactivatesLeftMember(t *testing.T) {
+	svc, repo, _, teamID := inviteTestSetup(t, 7, 8, "invitee@example.com", domain.TeamRoleViewer)
+
+	// User 8 was previously a member who left.
+	repo.members[teamID] = append(repo.members[teamID], TeamMember{
+		ID: 999, TeamID: teamID, UserID: 8, Role: domain.TeamRoleViewer, Status: domain.TeamMemberStatusLeft,
+	})
+
+	// A fresh invitation (developer role) is accepted -> reactivates the left row.
+	_, token2, _, err := svc.InviteMember(context.Background(), InviteTeamMemberInput{
+		ActorUserID: 7, TeamID: teamID, Email: "invitee@example.com", Role: domain.TeamRoleDeveloper, ExpiresAt: time.Now().Add(time.Hour),
+	})
+	require.NoError(t, err)
+
+	member, err := svc.AcceptInvitation(context.Background(), 8, token2)
+	require.NoError(t, err)
+	require.Equal(t, domain.TeamRoleDeveloper, member.Role)
+	require.Equal(t, domain.TeamMemberStatusActive, member.Status)
+
+	// The left row was reactivated, not duplicated.
+	total := 0
+	active := 0
+	for _, m := range repo.members[teamID] {
+		if m.UserID == 8 {
+			total++
+			if m.Status == domain.TeamMemberStatusActive {
+				active++
+			}
+		}
+	}
+	require.Equal(t, 1, total)
+	require.Equal(t, 1, active)
+}
+
+func TestTeamServicePreviewInvitationNoMutation(t *testing.T) {
+	svc, repo, token, teamID := inviteTestSetup(t, 7, 8, "invitee@example.com", domain.TeamRoleDeveloper)
+
+	preview, err := svc.PreviewInvitation(context.Background(), token)
+	require.NoError(t, err)
+	require.Equal(t, teamID, preview.TeamID)
+	require.Equal(t, "Ops", preview.TeamName)
+	require.Equal(t, domain.TeamRoleDeveloper, preview.Role)
+	require.Equal(t, "invitee@example.com", preview.Email)
+	require.Equal(t, domain.TeamInvitationStatusPending, preview.Status)
+	require.False(t, preview.Expired)
+
+	// No mutation: invitation still pending, no membership created.
+	for _, inv := range repo.invitations {
+		require.Equal(t, domain.TeamInvitationStatusPending, inv.Status)
+		require.Nil(t, inv.AcceptedByUserID)
+	}
+	_, err = repo.GetMembership(context.Background(), teamID, 8)
+	require.Error(t, err)
+
+	// Unknown token -> invalid.
+	_, err = svc.PreviewInvitation(context.Background(), "deadbeef-not-a-real-token")
+	require.ErrorIs(t, err, ErrTeamInvitationInvalid)
+}
+
+// --- Ownership transfer -------------------------------------------------------
+
+func TestTeamServiceTransferOwnershipSwapsRoles(t *testing.T) {
+	repo := newTeamRepoMemory()
+	svc := NewTeamService(repo, nil, nil)
+	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
+	require.NoError(t, err)
+	_, err = svc.AdminAddMember(context.Background(), AdminAddMemberInput{TeamID: team.ID, UserID: 8, Role: domain.TeamRoleDeveloper, AdminUserID: 7})
+	require.NoError(t, err)
+
+	require.NoError(t, svc.TransferOwnership(context.Background(), 7, team.ID, 8))
+
+	// owner_user_id updated.
+	got, err := repo.GetTeamByID(context.Background(), team.ID)
+	require.NoError(t, err)
+	require.Equal(t, int64(8), got.OwnerUserID)
+
+	// New owner is owner; previous owner demoted to admin.
+	newOwner, err := repo.GetMembership(context.Background(), team.ID, 8)
+	require.NoError(t, err)
+	require.Equal(t, domain.TeamRoleOwner, newOwner.Role)
+	prevOwner, err := repo.GetMembership(context.Background(), team.ID, 7)
+	require.NoError(t, err)
+	require.Equal(t, domain.TeamRoleAdmin, prevOwner.Role)
+}
+
+func TestTeamServiceTransferOwnershipRejectsNonOwner(t *testing.T) {
+	repo := newTeamRepoMemory()
+	svc := NewTeamService(repo, nil, nil)
+	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
+	require.NoError(t, err)
+	_, err = svc.AdminAddMember(context.Background(), AdminAddMemberInput{TeamID: team.ID, UserID: 8, Role: domain.TeamRoleAdmin, AdminUserID: 7})
+	require.NoError(t, err)
+	_, err = svc.AdminAddMember(context.Background(), AdminAddMemberInput{TeamID: team.ID, UserID: 9, Role: domain.TeamRoleDeveloper, AdminUserID: 7})
+	require.NoError(t, err)
+
+	// User 8 (admin, not owner) cannot transfer ownership.
+	err = svc.TransferOwnership(context.Background(), 8, team.ID, 9)
+	require.ErrorIs(t, err, ErrTeamPermissionDenied)
+
+	// Self-transfer rejected.
+	err = svc.TransferOwnership(context.Background(), 7, team.ID, 7)
+	require.Error(t, err)
+}
+
+func TestTeamServiceTransferOwnershipRequiresActiveNewOwner(t *testing.T) {
+	repo := newTeamRepoMemory()
+	svc := NewTeamService(repo, nil, nil)
+	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
+	require.NoError(t, err)
+
+	// User 8 is not a member at all.
+	err = svc.TransferOwnership(context.Background(), 7, team.ID, 8)
+	require.ErrorIs(t, err, ErrTeamMembershipNotFound)
+}
+
+func TestTeamServiceAdminTransferOwnershipBypassesGating(t *testing.T) {
+	repo := newTeamRepoMemory()
+	svc := NewTeamService(repo, nil, nil)
+	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
+	require.NoError(t, err)
+	_, err = svc.AdminAddMember(context.Background(), AdminAddMemberInput{TeamID: team.ID, UserID: 8, Role: domain.TeamRoleDeveloper, AdminUserID: 7})
+	require.NoError(t, err)
+
+	// Admin (no membership) transfers ownership to active member 8.
+	require.NoError(t, svc.AdminTransferOwnership(context.Background(), team.ID, 8))
+	got, err := repo.GetTeamByID(context.Background(), team.ID)
+	require.NoError(t, err)
+	require.Equal(t, int64(8), got.OwnerUserID)
+
+	// New owner must still be an active member.
+	err = svc.AdminTransferOwnership(context.Background(), team.ID, 999)
+	require.ErrorIs(t, err, ErrTeamMembershipNotFound)
+}
+
+// --- Invitation email notifier -----------------------------------------------
+
+type inviteNotifierSpy struct {
+	called    bool
+	toEmail   string
+	link      string
+	teamName  string
+	returnErr error
+}
+
+func (s *inviteNotifierSpy) SendInvite(_ context.Context, toEmail, acceptLink, teamName string) error {
+	s.called = true
+	s.toEmail = toEmail
+	s.link = acceptLink
+	s.teamName = teamName
+	return s.returnErr
+}
+
+// inviteNotifierSpyWithBase additionally provides a base URL so the built accept
+// link is absolute (exercising buildInvitationAcceptLink's AcceptBaseURL branch).
+type inviteNotifierSpyWithBase struct {
+	inviteNotifierSpy
+	base string
+}
+
+func (s *inviteNotifierSpyWithBase) AcceptBaseURL(_ context.Context) string { return s.base }
+
+func TestTeamServiceInviteMemberInvokesNotifier(t *testing.T) {
+	repo := newTeamRepoMemory()
+	svc := NewTeamService(repo, nil, nil)
+	_, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
+	require.NoError(t, err)
+	spy := &inviteNotifierSpyWithBase{base: "https://app.example.com"}
+	svc.SetInviteNotifier(spy)
+
+	invitation, token, acceptLink, err := svc.InviteMember(context.Background(), InviteTeamMemberInput{
+		ActorUserID: 7, TeamID: 1, Email: "Invitee@Example.com", Role: domain.TeamRoleDeveloper, ExpiresAt: time.Now().Add(time.Hour),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, invitation)
+
+	require.True(t, spy.called)
+	require.Equal(t, "invitee@example.com", spy.toEmail) // normalized
+	require.Equal(t, "Ops", spy.teamName)
+	// The link returned to the caller matches the link handed to the notifier and is
+	// absolute (base URL + path + token).
+	require.Equal(t, acceptLink, spy.link)
+	require.Equal(t, "https://app.example.com/teams/accept?token="+token, acceptLink)
+}
+
+func TestTeamServiceInviteMemberNotifierErrorIsNonFatal(t *testing.T) {
+	repo := newTeamRepoMemory()
+	svc := NewTeamService(repo, nil, nil)
+	_, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
+	require.NoError(t, err)
+	spy := &inviteNotifierSpy{returnErr: ErrEmailNotConfigured}
+	svc.SetInviteNotifier(spy)
+
+	invitation, token, acceptLink, err := svc.InviteMember(context.Background(), InviteTeamMemberInput{
+		ActorUserID: 7, TeamID: 1, Email: "invitee@example.com", Role: domain.TeamRoleViewer, ExpiresAt: time.Now().Add(time.Hour),
+	})
+	// Delivery failure must NOT fail the invite.
+	require.NoError(t, err)
+	require.NotNil(t, invitation)
+	require.NotEmpty(t, token)
+	require.True(t, spy.called)
+	// With no base URL the link is a relative path.
+	require.Equal(t, "/teams/accept?token="+token, acceptLink)
 }

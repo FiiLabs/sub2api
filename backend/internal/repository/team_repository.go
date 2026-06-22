@@ -6,8 +6,8 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/billingsubject"
-	dbteam "github.com/Wei-Shaw/sub2api/ent/team"
 	"github.com/Wei-Shaw/sub2api/ent/schema/mixins"
+	dbteam "github.com/Wei-Shaw/sub2api/ent/team"
 	"github.com/Wei-Shaw/sub2api/ent/teaminvitation"
 	"github.com/Wei-Shaw/sub2api/ent/teammember"
 	"github.com/Wei-Shaw/sub2api/internal/domain"
@@ -412,6 +412,222 @@ func (r *teamRepository) loadMemberWithUser(ctx context.Context, memberID int64)
 		m.User = userEntityToService(row.Edges.User)
 	}
 	return m, nil
+}
+
+// GetInvitationByTokenHash returns the pending, non-deleted invitation whose
+// token_hash matches. service.ErrTeamInvitationInvalid is returned when none
+// matches (unknown/expired-status/revoked/deleted tokens are indistinguishable
+// to the caller by design).
+func (r *teamRepository) GetInvitationByTokenHash(ctx context.Context, tokenHash string) (*service.TeamInvitation, error) {
+	client := clientFromContext(ctx, r.client)
+	row, err := client.TeamInvitation.Query().
+		Where(
+			teaminvitation.TokenHashEQ(tokenHash),
+			teaminvitation.StatusEQ(domain.TeamInvitationStatusPending),
+			teaminvitation.DeletedAtIsNil(),
+		).
+		Only(ctx)
+	if err != nil {
+		return nil, service.ErrTeamInvitationInvalid
+	}
+	return teamInvitationEntityToService(row), nil
+}
+
+// AcceptInvitation creates-or-reactivates an active membership for the accepting
+// user (role + invited_by taken from the invitation) and marks the invitation
+// accepted, in a single transaction. It mirrors AddMember's reactivation pattern.
+// It is idempotent when the same user re-accepts an already-accepted invitation:
+// the existing membership is returned without further mutation.
+func (r *teamRepository) AcceptInvitation(ctx context.Context, invitationID, acceptingUserID, teamID int64, role string) (*service.TeamMember, error) {
+	tx, err := r.client.Tx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	invitation, err := tx.TeamInvitation.Get(ctx, invitationID)
+	if err != nil {
+		return nil, service.ErrTeamInvitationInvalid
+	}
+
+	// Idempotency: an invitation already accepted by this same user just returns the
+	// existing active membership (no re-mutation). An invitation accepted by someone
+	// else, or otherwise no longer pending, is rejected.
+	if invitation.Status != domain.TeamInvitationStatusPending {
+		if invitation.Status == domain.TeamInvitationStatusAccepted &&
+			invitation.AcceptedByUserID != nil && *invitation.AcceptedByUserID == acceptingUserID {
+			member, merr := txLoadActiveMember(ctx, tx, teamID, acceptingUserID)
+			if merr != nil {
+				return nil, merr
+			}
+			if cerr := tx.Commit(); cerr != nil {
+				return nil, cerr
+			}
+			return member, nil
+		}
+		return nil, service.ErrTeamInvitationExpired
+	}
+
+	invitedBy := invitation.InvitedByUserID
+	member, err := txUpsertActiveMember(ctx, tx, teamID, acceptingUserID, role, invitedBy)
+	if err != nil {
+		return nil, err
+	}
+
+	upd := tx.TeamInvitation.UpdateOneID(invitationID).
+		SetStatus(domain.TeamInvitationStatusAccepted).
+		SetAcceptedByUserID(acceptingUserID)
+	if _, err := upd.Save(ctx); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return member, nil
+}
+
+// txUpsertActiveMember creates-or-reactivates an active membership inside a
+// transaction, mirroring teamRepository.AddMember's logic (reactivate the most
+// recent soft-deleted/left row, else insert). Unlike AddMember it does NOT reject
+// an existing active membership — it returns it as-is (idempotent join), which is
+// the desired behavior for accept.
+func txUpsertActiveMember(ctx context.Context, tx *dbent.Tx, teamID, userID int64, role string, invitedByUserID int64) (*service.TeamMember, error) {
+	now := time.Now()
+
+	if active, err := tx.TeamMember.Query().
+		Where(teammember.TeamIDEQ(teamID), teammember.UserIDEQ(userID), teammember.DeletedAtIsNil()).
+		Only(ctx); err == nil && active != nil {
+		return txLoadMemberWithUser(ctx, tx, active.ID)
+	} else if err != nil && !dbent.IsNotFound(err) {
+		return nil, err
+	}
+
+	deleted, derr := tx.TeamMember.Query().
+		Where(teammember.TeamIDEQ(teamID), teammember.UserIDEQ(userID), teammember.DeletedAtNotNil()).
+		Order(dbent.Desc(teammember.FieldID)).
+		First(mixins.SkipSoftDelete(ctx))
+	if derr != nil && !dbent.IsNotFound(derr) {
+		return nil, derr
+	}
+	if deleted != nil {
+		upd := tx.TeamMember.UpdateOneID(deleted.ID).
+			SetRole(role).
+			SetStatus(domain.TeamMemberStatusActive).
+			ClearDeletedAt().
+			SetJoinedAt(now)
+		if invitedByUserID > 0 {
+			upd.SetInvitedByUserID(invitedByUserID)
+		}
+		updated, uerr := upd.Save(ctx)
+		if uerr != nil {
+			return nil, uerr
+		}
+		return txLoadMemberWithUser(ctx, tx, updated.ID)
+	}
+
+	create := tx.TeamMember.Create().
+		SetTeamID(teamID).
+		SetUserID(userID).
+		SetRole(role).
+		SetStatus(domain.TeamMemberStatusActive).
+		SetJoinedAt(now)
+	if invitedByUserID > 0 {
+		create.SetInvitedByUserID(invitedByUserID)
+	}
+	created, cerr := create.Save(ctx)
+	if cerr != nil {
+		return nil, cerr
+	}
+	return txLoadMemberWithUser(ctx, tx, created.ID)
+}
+
+// txLoadActiveMember loads the active (non-deleted) membership for (teamID,userID)
+// within a tx, returning service.ErrTeamMembershipNotFound when absent.
+func txLoadActiveMember(ctx context.Context, tx *dbent.Tx, teamID, userID int64) (*service.TeamMember, error) {
+	row, err := tx.TeamMember.Query().
+		Where(teammember.TeamIDEQ(teamID), teammember.UserIDEQ(userID), teammember.DeletedAtIsNil()).
+		WithUser().
+		Only(ctx)
+	if err != nil {
+		return nil, service.ErrTeamMembershipNotFound
+	}
+	m := teamMemberEntityToService(row)
+	if row.Edges.User != nil {
+		m.User = userEntityToService(row.Edges.User)
+	}
+	return m, nil
+}
+
+// txLoadMemberWithUser loads a membership (with its User edge) by id within a tx.
+func txLoadMemberWithUser(ctx context.Context, tx *dbent.Tx, memberID int64) (*service.TeamMember, error) {
+	row, err := tx.TeamMember.Query().
+		Where(teammember.IDEQ(memberID)).
+		WithUser().
+		Only(ctx)
+	if err != nil {
+		return nil, err
+	}
+	m := teamMemberEntityToService(row)
+	if row.Edges.User != nil {
+		m.User = userEntityToService(row.Edges.User)
+	}
+	return m, nil
+}
+
+// TransferOwnership promotes newOwnerUserID to owner and demotes prevOwnerUserID
+// to admin, then sets teams.owner_user_id = newOwnerUserID, in a single
+// transaction. The new owner must be an active, non-deleted member; otherwise
+// service.ErrTeamMembershipNotFound is returned.
+func (r *teamRepository) TransferOwnership(ctx context.Context, teamID, newOwnerUserID, prevOwnerUserID int64) error {
+	tx, err := r.client.Tx(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	newOwner, err := tx.TeamMember.Query().
+		Where(
+			teammember.TeamIDEQ(teamID),
+			teammember.UserIDEQ(newOwnerUserID),
+			teammember.DeletedAtIsNil(),
+			teammember.StatusEQ(domain.TeamMemberStatusActive),
+		).
+		Only(ctx)
+	if err != nil {
+		return service.ErrTeamMembershipNotFound
+	}
+
+	if _, err := tx.TeamMember.UpdateOneID(newOwner.ID).
+		SetRole(domain.TeamRoleOwner).
+		Save(ctx); err != nil {
+		return err
+	}
+
+	// Demote the previous owner's membership to admin (kept in the team). The row
+	// may be absent in pathological cases (e.g. a manually-edited owner_user_id); a
+	// missing row is tolerated so the transfer still completes.
+	if prevOwnerUserID > 0 && prevOwnerUserID != newOwnerUserID {
+		if prevOwner, perr := tx.TeamMember.Query().
+			Where(teammember.TeamIDEQ(teamID), teammember.UserIDEQ(prevOwnerUserID), teammember.DeletedAtIsNil()).
+			Only(ctx); perr == nil && prevOwner != nil {
+			if _, err := tx.TeamMember.UpdateOneID(prevOwner.ID).
+				SetRole(domain.TeamRoleAdmin).
+				Save(ctx); err != nil {
+				return err
+			}
+		} else if perr != nil && !dbent.IsNotFound(perr) {
+			return perr
+		}
+	}
+
+	if _, err := tx.Team.UpdateOneID(teamID).
+		SetOwnerUserID(newOwnerUserID).
+		Save(ctx); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func (r *teamRepository) UpdateTeam(ctx context.Context, teamID int64, name *string, status *string) (*service.Team, error) {
