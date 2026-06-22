@@ -48,6 +48,9 @@ func (r *billingSubjectRepository) EnsurePersonalForUser(ctx context.Context, us
 	if user == nil || user.ID <= 0 {
 		return nil, service.ErrUserNotFound
 	}
+	// Idempotency, layer 1 (check-first): if a personal subject already exists
+	// just return it. This is the common path and the guarantee exercised by
+	// repeated/self-heal calls.
 	existing, err := r.GetPersonalByUserID(ctx, user.ID)
 	if err == nil {
 		return existing, nil
@@ -67,6 +70,18 @@ func (r *billingSubjectRepository) EnsurePersonalForUser(ctx context.Context, us
 		SetBalanceNotifyExtraEmails(service.MarshalNotifyEmails(user.BalanceNotifyExtraEmails)).
 		Save(ctx)
 	if err != nil {
+		// Idempotency, layer 2 (race backstop): a concurrent caller may have
+		// inserted the personal subject between the check above and this insert.
+		// The partial unique index (idx_billing_subjects_user_unique, on
+		// type='user' AND deleted_at IS NULL) rejects the duplicate on Postgres;
+		// re-read and return the winner instead of surfacing the conflict. Safe
+		// here because this method runs outside a transaction (the self-heal read
+		// path), so the failed insert does not poison a surrounding tx.
+		if dbent.IsConstraintError(err) {
+			if winner, reErr := r.GetPersonalByUserID(ctx, user.ID); reErr == nil {
+				return winner, nil
+			}
+		}
 		return nil, err
 	}
 	return billingSubjectEntityToService(row), nil

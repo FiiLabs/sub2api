@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -227,7 +228,50 @@ func (s *TeamService) ListWorkspaces(ctx context.Context, userID int64) ([]Works
 	if userID <= 0 {
 		return nil, infraerrors.Unauthorized("USER_NOT_AUTHENTICATED", "user not authenticated")
 	}
-	return s.repo.ListWorkspaces(ctx, userID)
+	items, err := s.repo.ListWorkspaces(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if hasPersonalWorkspace(items) {
+		return items, nil
+	}
+	// Self-heal: a user without a personal billing subject (e.g. the bootstrap
+	// admin created outside userRepo.Create, or an account created before the
+	// subjects were backfilled) would otherwise get USER_NOT_FOUND on every
+	// authenticated route, since SubjectContextMiddleware resolves the active
+	// workspace from this list and aborts when it is empty. Idempotently ensure
+	// the personal subject exists, then re-list. EnsurePersonalForUser is
+	// safe to call repeatedly (check-first + unique-conflict backstop).
+	if s.billingSubject == nil || s.userLookup == nil {
+		return items, nil
+	}
+	user, lookupErr := s.userLookup.GetByID(ctx, userID)
+	if lookupErr != nil || user == nil {
+		// Unknown/deleted user: nothing to heal. Return what we have (empty list
+		// → caller surfaces USER_NOT_FOUND, which is correct for a stale token).
+		return items, nil
+	}
+	if _, ensureErr := s.billingSubject.EnsurePersonalForUser(ctx, user); ensureErr != nil {
+		slog.WarnContext(ctx, "ListWorkspaces: failed to ensure personal billing subject",
+			"user_id", userID, "error", ensureErr.Error())
+		return items, nil
+	}
+	healed, err := s.repo.ListWorkspaces(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return healed, nil
+}
+
+// hasPersonalWorkspace reports whether the resolved workspaces already include
+// the caller's personal (user) billing subject.
+func hasPersonalWorkspace(items []WorkspaceSubject) bool {
+	for _, item := range items {
+		if item.Type == domain.BillingSubjectTypeUser {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *TeamService) ListMembers(ctx context.Context, actorUserID, teamID int64) ([]TeamMember, []TeamInvitation, error) {

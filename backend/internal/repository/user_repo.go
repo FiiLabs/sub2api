@@ -13,6 +13,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
 	"github.com/Wei-Shaw/sub2api/ent/authidentitychannel"
+	"github.com/Wei-Shaw/sub2api/ent/billingsubject"
 	dbgroup "github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
@@ -125,7 +126,23 @@ func ensurePersonalBillingSubjectWithClient(ctx context.Context, client *dbent.C
 	if client == nil || user == nil || user.ID <= 0 {
 		return nil
 	}
-	_, err := client.BillingSubject.Create().
+	// Idempotent: skip if a personal subject already exists. Runs inside the
+	// user-creation transaction, so we check-first rather than relying on a
+	// unique-conflict (which on Postgres would abort the surrounding tx).
+	exists, err := client.BillingSubject.Query().
+		Where(
+			billingsubject.TypeEQ(domain.BillingSubjectTypeUser),
+			billingsubject.UserIDEQ(user.ID),
+			billingsubject.DeletedAtIsNil(),
+		).
+		Exist(ctx)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+	_, err = client.BillingSubject.Create().
 		SetType(domain.BillingSubjectTypeUser).
 		SetUserID(user.ID).
 		SetStatus(user.Status).

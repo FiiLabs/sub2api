@@ -414,16 +414,42 @@ func createAdminUser(cfg *SetupConfig) (bool, string, error) {
 		return false, "", err
 	}
 
-	_, err = db.ExecContext(
+	var adminID int64
+	err = db.QueryRowContext(
 		ctx,
 		`INSERT INTO users (email, password_hash, role, balance, concurrency, status, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		 RETURNING id`,
 		admin.Email,
 		admin.PasswordHash,
 		admin.Role,
 		admin.Balance,
 		admin.Concurrency,
 		admin.Status,
+		admin.CreatedAt,
+		admin.UpdatedAt,
+	).Scan(&adminID)
+	if err != nil {
+		return false, "", err
+	}
+
+	// Ensure the bootstrap admin has a personal billing subject, mirroring
+	// userRepo.Create for app-created users. This admin row is inserted via raw
+	// SQL (outside the repository layer), so without this it would have no
+	// workspace and every authenticated user route would return USER_NOT_FOUND.
+	// Idempotent via the NOT EXISTS guard; the remaining columns use their
+	// schema defaults (total_recharged=0, rpm_limit=0, notify_* defaults).
+	_, err = db.ExecContext(
+		ctx,
+		`INSERT INTO billing_subjects (type, user_id, status, balance, concurrency, created_at, updated_at)
+		 SELECT 'user', $1, $2, $3, $4, $5, $6
+		 WHERE NOT EXISTS (
+		     SELECT 1 FROM billing_subjects WHERE type = 'user' AND user_id = $1 AND deleted_at IS NULL
+		 )`,
+		adminID,
+		admin.Status,
+		admin.Balance,
+		admin.Concurrency,
 		admin.CreatedAt,
 		admin.UpdatedAt,
 	)
