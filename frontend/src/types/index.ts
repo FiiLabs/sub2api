@@ -153,6 +153,42 @@ export interface TeamInvitation {
   created_at: string
 }
 
+// ==================== Admin Team Management ====================
+
+/** Minimal user reference embedded in admin team payloads */
+export interface AdminTeamUserRef {
+  id: number
+  username: string
+  email: string
+}
+
+/** Team as seen by platform admins (oversees all teams) */
+export interface AdminTeam {
+  id: number
+  name: string
+  slug: string
+  status: 'active' | 'disabled'
+  owner_user_id: number
+  owner: AdminTeamUserRef | null
+  billing_subject_id: number
+  balance: number
+  member_count: number
+  created_at: string
+  updated_at: string
+}
+
+/** Team member as seen by platform admins */
+export interface AdminTeamMember {
+  id: number
+  team_id: number
+  user_id: number
+  role: TeamRole
+  status: 'active' | 'suspended' | 'left'
+  joined_at: string | null
+  last_active_at: string | null
+  user: AdminTeamUserRef | null
+}
+
 export interface LoginRequest {
   email: string
   password: string

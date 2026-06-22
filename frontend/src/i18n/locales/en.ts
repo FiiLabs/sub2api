@@ -551,6 +551,7 @@ export default {
     channelStatus: 'Channel Status',
     riskControl: 'Risk Control',
     members: 'Members',
+    teams: 'Teams',
     workspace: 'Workspace',
   },
 
@@ -1967,6 +1968,66 @@ export default {
         rebatedInviteeCount: 'Rebated Invitees',
         availableQuota: 'Available Quota',
         historyQuota: 'Historical Rebate'
+      }
+    },
+
+    // Teams
+    teams: {
+      title: 'Team Management',
+      description: 'Oversee all team workspaces, their members, and invitations',
+      search: 'Search by team name or slug...',
+      allStatus: 'All Status',
+      disabled: 'Disabled',
+      manage: 'Manage',
+      disable: 'Disable',
+      enable: 'Enable',
+      detailTitle: 'Team Details',
+      owner: 'Owner',
+      status: 'Status',
+      members: 'Members',
+      balance: 'Balance',
+      role: 'Role',
+      actions: 'Actions',
+      addMember: 'Add Member',
+      addMemberInput: 'User',
+      addMemberPlaceholder: 'Email or user ID',
+      suspend: 'Suspend',
+      activate: 'Activate',
+      remove: 'Remove',
+      removeConfirm: "Remove '{user}' from this team?",
+      pendingInvitations: 'Pending Invitations',
+      noTeams: 'No teams yet',
+      noTeamsDescription: 'Teams will appear here once users create team workspaces.',
+      teamEnabled: 'Team enabled',
+      teamDisabled: 'Team disabled',
+      memberAdded: 'Member added',
+      memberUpdated: 'Member updated',
+      memberRemoved: 'Member removed',
+      failedToLoad: 'Failed to load teams',
+      failedToUpdate: 'Failed to update team',
+      failedToAddMember: 'Failed to add member',
+      failedToUpdateMember: 'Failed to update member',
+      failedToRemoveMember: 'Failed to remove member',
+      columns: {
+        name: 'Team',
+        owner: 'Owner',
+        status: 'Status',
+        members: 'Members',
+        balance: 'Balance',
+        created: 'Created',
+        actions: 'Actions'
+      },
+      roles: {
+        owner: 'Owner',
+        admin: 'Admin',
+        billing: 'Billing',
+        developer: 'Developer',
+        viewer: 'Viewer'
+      },
+      memberStatus: {
+        active: 'Active',
+        suspended: 'Suspended',
+        left: 'Left'
       }
     },
 

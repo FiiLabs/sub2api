@@ -548,6 +548,7 @@ export default {
     channelStatus: '渠道状态',
     riskControl: '风控中心',
     members: '成员管理',
+    teams: '团队',
     workspace: '工作空间',
   },
 
@@ -1985,6 +1986,66 @@ export default {
         rebatedInviteeCount: '已产生返利人数',
         availableQuota: '可提余额',
         historyQuota: '历史返利'
+      }
+    },
+
+    // Teams Management
+    teams: {
+      title: '团队管理',
+      description: '管理所有团队工作空间及其成员和邀请',
+      search: '按团队名称或标识搜索...',
+      allStatus: '全部状态',
+      disabled: '已禁用',
+      manage: '管理',
+      disable: '禁用',
+      enable: '启用',
+      detailTitle: '团队详情',
+      owner: '所有者',
+      status: '状态',
+      members: '成员',
+      balance: '余额',
+      role: '角色',
+      actions: '操作',
+      addMember: '添加成员',
+      addMemberInput: '用户',
+      addMemberPlaceholder: '邮箱或用户 ID',
+      suspend: '暂停',
+      activate: '启用',
+      remove: '移除',
+      removeConfirm: '确定将 “{user}” 从该团队移除吗？',
+      pendingInvitations: '待处理邀请',
+      noTeams: '暂无团队',
+      noTeamsDescription: '当用户创建团队工作空间后，团队会显示在这里。',
+      teamEnabled: '团队已启用',
+      teamDisabled: '团队已禁用',
+      memberAdded: '成员已添加',
+      memberUpdated: '成员已更新',
+      memberRemoved: '成员已移除',
+      failedToLoad: '加载团队失败',
+      failedToUpdate: '更新团队失败',
+      failedToAddMember: '添加成员失败',
+      failedToUpdateMember: '更新成员失败',
+      failedToRemoveMember: '移除成员失败',
+      columns: {
+        name: '团队',
+        owner: '所有者',
+        status: '状态',
+        members: '成员数',
+        balance: '余额',
+        created: '创建时间',
+        actions: '操作'
+      },
+      roles: {
+        owner: '所有者',
+        admin: '管理员',
+        billing: '财务',
+        developer: '开发者',
+        viewer: '查看者'
+      },
+      memberStatus: {
+        active: '正常',
+        suspended: '已暂停',
+        left: '已退出'
       }
     },
 

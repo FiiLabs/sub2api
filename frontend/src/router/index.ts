@@ -426,6 +426,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/teams',
+    name: 'AdminTeams',
+    component: () => import('@/views/admin/TeamsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Team Management',
+      titleKey: 'admin.teams.title',
+      descriptionKey: 'admin.teams.description'
+    }
+  },
+  {
     path: '/admin/groups',
     name: 'AdminGroups',
     component: () => import('@/views/admin/GroupsView.vue'),
