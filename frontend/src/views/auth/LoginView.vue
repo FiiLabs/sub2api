@@ -177,7 +177,7 @@
       <p class="text-gray-500 dark:text-dark-400">
         {{ t('auth.dontHaveAccount') }}
         <router-link
-          to="/register"
+          :to="{ path: '/register', query: redirectQuery }"
           class="font-medium text-primary-600 transition-colors hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300"
         >
           {{ t('auth.signUp') }}
@@ -225,6 +225,13 @@ const LOGIN_AGREEMENT_STORAGE_KEY = 'sub2api_login_agreement_consent'
 const router = useRouter()
 const authStore = useAuthStore()
 const appStore = useAppStore()
+
+// Carry the post-login redirect target through to the register link so a brand-new
+// invitee who must sign up still lands back on the intended destination (e.g. /teams/accept).
+const redirectQuery = computed(() => {
+  const redirect = router.currentRoute.value.query.redirect
+  return typeof redirect === 'string' && redirect ? { redirect } : undefined
+})
 
 // ==================== State ====================
 

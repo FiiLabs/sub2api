@@ -287,7 +287,7 @@
       <p class="text-gray-500 dark:text-dark-400">
         {{ t('auth.alreadyHaveAccount') }}
         <router-link
-          to="/login"
+          :to="{ path: '/login', query: redirectQuery }"
           class="font-medium text-primary-600 transition-colors hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300"
         >
           {{ t('auth.signIn') }}
@@ -338,6 +338,14 @@ const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 const appStore = useAppStore()
+
+// Post-auth redirect target (e.g. /teams/accept?token=…). Carried through to the login
+// link and into the post-register navigation so a brand-new invitee lands back on it.
+const redirectTarget = computed(() => {
+  const redirect = route.query.redirect
+  return typeof redirect === 'string' && redirect ? redirect : ''
+})
+const redirectQuery = computed(() => (redirectTarget.value ? { redirect: redirectTarget.value } : undefined))
 
 // ==================== State ====================
 
@@ -872,7 +880,9 @@ async function handleRegister(): Promise<void> {
           turnstile_token: turnstileToken.value,
           promo_code: formData.promo_code || undefined,
           invitation_code: formData.invitation_code || undefined,
-          ...(affCode ? { aff_code: affCode } : {})
+          ...(affCode ? { aff_code: affCode } : {}),
+          // Preserve the post-auth redirect so EmailVerifyView returns the invitee to it.
+          ...(redirectTarget.value ? { pending_redirect: redirectTarget.value } : {})
         })
       )
 
@@ -895,8 +905,8 @@ async function handleRegister(): Promise<void> {
     // Show success toast
     appStore.showSuccess(t('auth.accountCreatedSuccess', { siteName: siteName.value }))
 
-    // Redirect to dashboard
-    await router.push('/dashboard')
+    // Redirect to the intended destination (e.g. /teams/accept), else dashboard
+    await router.push(redirectTarget.value || '/dashboard')
   } catch (error: unknown) {
     // Reset Turnstile on error
     if (turnstileRef.value) {

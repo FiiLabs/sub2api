@@ -229,6 +229,17 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/teams/accept',
+    name: 'AcceptInvitation',
+    component: () => import('@/views/user/AcceptInvitationView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Accept Invitation',
+      titleKey: 'acceptInvitation.title'
+    }
+  },
+  {
     path: '/redeem',
     name: 'Redeem',
     component: () => import('@/views/user/RedeemView.vue'),

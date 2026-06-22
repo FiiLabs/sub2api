@@ -1,6 +1,29 @@
 import { apiClient } from './client'
 import type { WorkspacesResponse, TeamMember, TeamInvitation, TeamRole } from '@/types'
 
+/** Response of POST /teams/:id/invitations — invitation row plus the copyable accept link. */
+export interface InviteMemberResponse {
+  invitation: TeamInvitation
+  token: string
+  accept_link: string
+}
+
+/** Response of GET /teams/invitations/preview — read-only invitation summary (no mutation). */
+export interface InvitationPreview {
+  team_id: number
+  team_name: string
+  role: string
+  email: string
+  status: string
+  expired: boolean
+}
+
+/** Response of POST /teams/invitations/accept — the joined team summary plus the new membership. */
+export interface AcceptInvitationResponse {
+  team: { id: number; name: string; billing_subject_id: number }
+  member: TeamMember
+}
+
 export const workspacesAPI = {
   async list(): Promise<WorkspacesResponse> {
     const { data } = await apiClient.get<WorkspacesResponse>('/workspaces')
@@ -17,8 +40,8 @@ export const workspacesAPI = {
     return data
   },
 
-  async inviteMember(teamId: number, payload: { email: string; role: Exclude<TeamRole, 'owner'> }): Promise<TeamInvitation> {
-    const { data } = await apiClient.post<TeamInvitation>(`/teams/${teamId}/invitations`, payload)
+  async inviteMember(teamId: number, payload: { email: string; role: Exclude<TeamRole, 'owner'> }): Promise<InviteMemberResponse> {
+    const { data } = await apiClient.post<InviteMemberResponse>(`/teams/${teamId}/invitations`, payload)
     return data
   },
 
@@ -29,6 +52,23 @@ export const workspacesAPI = {
 
   async removeMember(teamId: number, userId: number): Promise<{ message: string }> {
     const { data } = await apiClient.delete<{ message: string }>(`/teams/${teamId}/members/${userId}`)
+    return data
+  },
+
+  async previewInvitation(token: string): Promise<InvitationPreview> {
+    const { data } = await apiClient.get<InvitationPreview>('/teams/invitations/preview', {
+      params: { token }
+    })
+    return data
+  },
+
+  async acceptInvitation(token: string): Promise<AcceptInvitationResponse> {
+    const { data } = await apiClient.post<AcceptInvitationResponse>('/teams/invitations/accept', { token })
+    return data
+  },
+
+  async transferOwnership(teamId: number, userId: number): Promise<unknown> {
+    const { data } = await apiClient.post<unknown>(`/teams/${teamId}/transfer-ownership`, { user_id: userId })
     return data
   }
 }

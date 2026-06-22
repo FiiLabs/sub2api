@@ -136,6 +136,20 @@ export async function removeMember(id: number, userId: number): Promise<{ messag
   return data
 }
 
+/**
+ * Transfer team ownership to another member (platform admin)
+ * @param id - Team ID
+ * @param userId - User ID of the new owner (must be an existing member)
+ * @returns Updated team payload
+ */
+export async function transferOwnership(id: number, userId: number): Promise<unknown> {
+  const { data } = await apiClient.post<unknown>(
+    `/admin/teams/${id}/transfer-ownership`,
+    { user_id: userId }
+  )
+  return data
+}
+
 export const adminTeamsAPI = {
   list,
   get,
@@ -143,7 +157,8 @@ export const adminTeamsAPI = {
   update,
   addMember,
   updateMember,
-  removeMember
+  removeMember,
+  transferOwnership
 }
 
 export default adminTeamsAPI
