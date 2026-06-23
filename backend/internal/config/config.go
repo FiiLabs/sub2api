@@ -652,19 +652,16 @@ type BillingConfig struct {
 	// UserPlatformQuotaSentinelTTLSeconds sentinel(无 limit 占位)entry 的 TTL,
 	// 显著短于 quota cache 默认 86400s 以控 Redis 内存;默认 3600=1h。
 	UserPlatformQuotaSentinelTTLSeconds int `mapstructure:"user_platform_quota_sentinel_ttl_seconds"`
-	// QuotaSubjectScoped（platform-quota 灰度开关，默认 false）：
-	// 平台限额拦截（preflight 读路径）是否按 billing_subject 而非 user 计费。
-	//   - false（默认）：维持历史行为，按 user_id 拦截。
-	//   - true：按当前请求的 billing_subject_id 拦截——个人主体等价于 user；团队主体多成员共享限额。
-	// 仅切换"读路径"；写路径（cache 累加 + flusher 回写）仍按 user，由后续 (4/4) 切换。
+	// QuotaSubjectScoped（platform-quota 总开关 / kill-switch，默认 true）：
+	// 平台限额是否按 billing_subject 而非 user 拦截 + 计费（读路径 preflight + 写路径 cache/DB/flusher 全部）。
+	//   - true（默认）：按当前请求的 billing_subject_id 生效——个人主体等价于 user；团队主体多成员共享限额。
+	//   - false（kill-switch）：整体回退到历史 user 维度（读写均回退），用于线上异常时快速止血。
+	// 旧 user 维度代码与方法暂保留供回退；经线上验证稳定后，由后续小 PR 删除开关与旧路径收尾。
 	//
-	// ⚠️ 翻开前提（务必先满足，否则违反"个人工作空间不变性"）：
-	//   开启后按 subject 查 quota 行，要求目标 subject 的 quota 行 billing_subject_id 非空。
-	//   存量行已由迁移 152 回填；但注册默认限额（auth.snapshotPlatformQuotaDefaults → BulkInsertInitial）
-	//   写入的是 user 维度行、billing_subject_id 仍为空（个人主体当前为懒创建）。
-	//   因此在为新注册用户配置了 signup 默认平台限额的部署里，翻开本开关前需先补齐
-	//   这些行的 billing_subject_id（registration 早建个人主体 / 后台 reconcile）。
-	//   灰度只读期（本开关开启、写路径未切）正是用于观察并发现此类口径不一致。
+	// 数据前提（已在本工作项内满足，列此备查）：subject 维度查 quota 要求行 billing_subject_id 非空。
+	//   - 存量行：迁移 152 回填。
+	//   - 新注册默认限额：snapshotPlatformQuotaDefaults 先 EnsurePersonalForUser 再 BulkInsertInitial 写 subject。
+	//   - admin 改限额：UpsertForUser 的 insert/update 经子查询解析个人主体写 subject。
 	QuotaSubjectScoped bool `mapstructure:"quota_subject_scoped"`
 }
 
@@ -1623,6 +1620,9 @@ func setDefaults() {
 	viper.SetDefault("billing.circuit_breaker.half_open_requests", 3)
 	viper.SetDefault("billing.user_platform_quota_cache_ttl_seconds", 86400)
 	viper.SetDefault("billing.user_platform_quota_sentinel_ttl_seconds", 3600)
+	// platform-quota：平台限额默认按 billing_subject 拦截/计费（读写均按主体）。
+	// 设为 false 即 kill-switch，整体回退到历史 user 维度。
+	viper.SetDefault("billing.quota_subject_scoped", true)
 
 	// Turnstile
 	viper.SetDefault("turnstile.required", false)

@@ -511,7 +511,7 @@ func ProvideAPIKeyService(
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
 	// Core services
-	NewAuthService,
+	ProvideAuthService, // platform-quota: 注入 billingSubjectRepo（见 ProvideAuthService）
 	NewUserService,
 	ProvideTeamService,
 	ProvideAPIKeyService,

@@ -746,9 +746,23 @@ func (h *UserHandler) UpdateUserPlatformQuotas(c *gin.Context) {
 	// 增加一次 DB 查询和逻辑复杂度。由于 AllowedQuotaPlatforms 只有 4 个元素，
 	// 全量 invalidate 的额外开销可接受，且能可靠覆盖软删除场景。
 	if h.billingCache != nil {
+		// platform-quota: 个人主体行 user_id 与 billing_subject_id 一一对应，subjectID 取自 before 快照。
+		var subjectID int64
+		for _, r := range beforeRecords {
+			if r.BillingSubjectID > 0 {
+				subjectID = r.BillingSubjectID
+				break
+			}
+		}
 		for _, p := range service.AllowedQuotaPlatforms {
 			if err := h.billingCache.DeleteUserPlatformQuotaCache(ctx, userID, p); err != nil {
 				slog.Error("ALERT: quota cache invalidation failed after UpsertForUser; limit 生效可能延迟至 sentinel TTL(最长 1h),需人工确认或重试失效", "user_id", userID, "platform", p, "err", err)
+			}
+			// platform-quota: 同步失效 subject 维度缓存（QuotaSubjectScoped 读路径），避免改限额后读到旧值。
+			if subjectID > 0 {
+				if err := h.billingCache.DeleteSubjectPlatformQuotaCache(ctx, subjectID, p); err != nil {
+					slog.Error("ALERT: subject quota cache invalidation failed after UpsertForUser", "subject_id", subjectID, "platform", p, "err", err)
+				}
 			}
 		}
 	}
@@ -830,17 +844,33 @@ func (h *UserHandler) ResetUserPlatformQuotaWindow(c *gin.Context) {
 		"platform", req.Platform,
 		"window", req.Window)
 
-	if h.billingCache != nil {
-		if err := h.billingCache.DeleteUserPlatformQuotaCache(ctx, userID, req.Platform); err != nil {
-			slog.Error("ALERT: quota cache invalidation failed after ResetExpiredWindow; 窗口重置可能延迟至 sentinel TTL(最长 1h)", "user_id", userID, "platform", req.Platform, "err", err)
-		}
-	}
-
+	// 先取最新状态（兼作 subject 维度缓存失效的 subjectID 来源），再失效缓存。
 	records, err := h.userPlatformQuotaRepo.ListByUser(ctx, userID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
+
+	if h.billingCache != nil {
+		if err := h.billingCache.DeleteUserPlatformQuotaCache(ctx, userID, req.Platform); err != nil {
+			slog.Error("ALERT: quota cache invalidation failed after ResetExpiredWindow; 窗口重置可能延迟至 sentinel TTL(最长 1h)", "user_id", userID, "platform", req.Platform, "err", err)
+		}
+		// platform-quota: 同步失效 subject 维度缓存（QuotaSubjectScoped 读路径）。
+		// subjectID 取自该用户任一行（个人主体与 user 一一对应）。
+		var subjectID int64
+		for i := range records {
+			if records[i].BillingSubjectID > 0 {
+				subjectID = records[i].BillingSubjectID
+				break
+			}
+		}
+		if subjectID > 0 {
+			if err := h.billingCache.DeleteSubjectPlatformQuotaCache(ctx, subjectID, req.Platform); err != nil {
+				slog.Error("ALERT: subject quota cache invalidation failed after ResetExpiredWindow", "subject_id", subjectID, "platform", req.Platform, "err", err)
+			}
+		}
+	}
+
 	out := make([]map[string]any, 0, len(records))
 	for i := range records {
 		out = append(out, quotaview.LazyZeroQuotaForResponse(records[i], now, true))

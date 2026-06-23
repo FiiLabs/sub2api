@@ -191,3 +191,19 @@ func TestCheckBillingEligibility_FailSafeToUserWhenSubjectUnresolved(t *testing.
 		t.Errorf("apiKey=nil 应 fail-safe user 路径: gotUser=%v gotSubject=%v", repo2.gotUser, repo2.gotSubject)
 	}
 }
+
+// platform-quota: IncrementSubjectPlatformQuotaUsage 入参守卫（subjectID<=0 / 空 platform / cost<=0 → noop）。
+func TestIncrementSubjectPlatformQuotaUsage_Guards(t *testing.T) {
+	fake := &fakeIncrCache{}
+	cfg := &config.Config{}
+	cfg.Billing.UserPlatformQuotaCacheTTLSeconds = 60
+	s := &BillingCacheService{cache: fake, cfg: cfg}
+
+	s.IncrementSubjectPlatformQuotaUsage(0, "anthropic", 1.0) // subjectID<=0 → noop
+	s.IncrementSubjectPlatformQuotaUsage(7, "", 1.0)          // 空 platform → noop
+	s.IncrementSubjectPlatformQuotaUsage(7, "anthropic", 0)   // cost<=0 → noop
+
+	if len(fake.calls) != 0 {
+		t.Errorf("expected 0 incr calls (all guarded), got %d", len(fake.calls))
+	}
+}

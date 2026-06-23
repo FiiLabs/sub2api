@@ -85,7 +85,7 @@ func TestSnapshotPlatformQuotaDefaults_PassesToRepoBulkInsert(t *testing.T) {
 			"antigravity": {},
 		},
 	}
-	if err := s.snapshotPlatformQuotaDefaults(context.Background(), 999, plan); err != nil {
+	if err := s.snapshotPlatformQuotaDefaults(context.Background(), &User{ID: 999}, plan); err != nil {
 		t.Fatal(err)
 	}
 	if len(fakeRepo.records) != 4 {
@@ -105,7 +105,7 @@ func TestSnapshotPlatformQuotaDefaults_PassesToRepoBulkInsert(t *testing.T) {
 func TestSnapshotPlatformQuotaDefaults_NilPlanIsNoop(t *testing.T) {
 	fakeRepo := &fakeInsertRecorder{}
 	s := &AuthService{userPlatformQuotaRepo: fakeRepo}
-	if err := s.snapshotPlatformQuotaDefaults(context.Background(), 1, nil); err != nil {
+	if err := s.snapshotPlatformQuotaDefaults(context.Background(), &User{ID: 1}, nil); err != nil {
 		t.Errorf("nil plan should be noop, got %v", err)
 	}
 	if len(fakeRepo.records) != 0 {
@@ -122,7 +122,7 @@ func TestSnapshotPlatformQuotaDefaults_RepoErrorFailsOpen(t *testing.T) {
 			"anthropic": {DailyLimitUSD: &five},
 		},
 	}
-	if err := s.snapshotPlatformQuotaDefaults(context.Background(), 1, plan); err != nil {
+	if err := s.snapshotPlatformQuotaDefaults(context.Background(), &User{ID: 1}, plan); err != nil {
 		t.Errorf("fail-open: expected nil even on repo error, got %v", err)
 	}
 }
@@ -133,8 +133,58 @@ func TestSnapshotPlatformQuotaDefaults_NilRepoIsNoop(t *testing.T) {
 	plan := &signupGrantPlan{
 		PlatformQuotas: map[string]*DefaultPlatformQuotaSetting{"a": {DailyLimitUSD: &five}},
 	}
-	if err := s.snapshotPlatformQuotaDefaults(context.Background(), 1, plan); err != nil {
+	if err := s.snapshotPlatformQuotaDefaults(context.Background(), &User{ID: 1}, plan); err != nil {
 		t.Errorf("nil repo should be noop, got %v", err)
+	}
+}
+
+// fakeSubjectEnsurer 实现 BillingSubjectRepository 的 EnsurePersonalForUser（其余方法嵌入接口，未用）。
+type fakeSubjectEnsurer struct {
+	BillingSubjectRepository
+	subjectID int64
+	err       error
+}
+
+func (f *fakeSubjectEnsurer) EnsurePersonalForUser(_ context.Context, _ *User) (*BillingSubject, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &BillingSubject{ID: f.subjectID}, nil
+}
+
+// platform-quota: 注册默认限额行带上个人主体 ID，使 subject 维度拦截可见。
+func TestSnapshotPlatformQuotaDefaults_SetsBillingSubjectID(t *testing.T) {
+	fakeRepo := &fakeInsertRecorder{}
+	s := &AuthService{userPlatformQuotaRepo: fakeRepo, billingSubjectRepo: &fakeSubjectEnsurer{subjectID: 555}}
+	five := 5.0
+	plan := &signupGrantPlan{
+		PlatformQuotas: map[string]*DefaultPlatformQuotaSetting{"anthropic": {DailyLimitUSD: &five}},
+	}
+	if err := s.snapshotPlatformQuotaDefaults(context.Background(), &User{ID: 999}, plan); err != nil {
+		t.Fatal(err)
+	}
+	if len(fakeRepo.records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(fakeRepo.records))
+	}
+	if fakeRepo.records[0].UserID != 999 || fakeRepo.records[0].BillingSubjectID != 555 {
+		t.Errorf("record should carry user 999 + subject 555, got user=%d subject=%d",
+			fakeRepo.records[0].UserID, fakeRepo.records[0].BillingSubjectID)
+	}
+}
+
+// fail-open：主体解析失败时仍写默认限额行（subject 留空），不阻断注册。
+func TestSnapshotPlatformQuotaDefaults_SubjectEnsureErrorFailsOpen(t *testing.T) {
+	fakeRepo := &fakeInsertRecorder{}
+	s := &AuthService{userPlatformQuotaRepo: fakeRepo, billingSubjectRepo: &fakeSubjectEnsurer{err: fmt.Errorf("subject svc down")}}
+	five := 5.0
+	plan := &signupGrantPlan{
+		PlatformQuotas: map[string]*DefaultPlatformQuotaSetting{"anthropic": {DailyLimitUSD: &five}},
+	}
+	if err := s.snapshotPlatformQuotaDefaults(context.Background(), &User{ID: 999}, plan); err != nil {
+		t.Fatalf("subject ensure error should fail-open, got %v", err)
+	}
+	if len(fakeRepo.records) != 1 || fakeRepo.records[0].BillingSubjectID != 0 {
+		t.Errorf("on ensure error, record should still be written with subject=0, got %+v", fakeRepo.records)
 	}
 }
 

@@ -49,6 +49,20 @@ func (m *mockQuotaDirtyCache) BatchGetUserPlatformQuotaCache(_ context.Context, 
 	return m.getEntries, nil
 }
 
+// platform-quota: subject 维度脏集方法。本 mock 仅驱动 user 维度用例，subject 脏集恒空 →
+// flusher 的 subject 排空为 no-op，不影响既有断言。
+func (m *mockQuotaDirtyCache) PopDirtySubjectPlatformQuotaKeys(_ context.Context, _ int) ([]UserPlatformQuotaKey, error) {
+	return nil, nil
+}
+
+func (m *mockQuotaDirtyCache) ReaddDirtySubjectPlatformQuotaKeys(_ context.Context, _ []UserPlatformQuotaKey) error {
+	return nil
+}
+
+func (m *mockQuotaDirtyCache) BatchGetSubjectPlatformQuotaCache(_ context.Context, _ []UserPlatformQuotaKey) ([]*UserPlatformQuotaCacheEntry, error) {
+	return nil, nil
+}
+
 // ---------------------------------------------------------------------------
 // Mock: quotaSnapshotWriter
 // ---------------------------------------------------------------------------
@@ -59,6 +73,12 @@ type mockQuotaSnapshotWriter struct {
 }
 
 func (m *mockQuotaSnapshotWriter) BatchSnapshotUsage(_ context.Context, snaps []UserPlatformQuotaSnapshot, _ time.Time) error {
+	m.receivedSnaps = append(m.receivedSnaps, snaps...)
+	return m.returnErr
+}
+
+// platform-quota: subject 维度写入。本 mock 的 subject 脏集恒空，不会被调用；附实现以满足接口。
+func (m *mockQuotaSnapshotWriter) BatchSnapshotUsageBySubject(_ context.Context, snaps []UserPlatformQuotaSnapshot, _ time.Time) error {
 	m.receivedSnaps = append(m.receivedSnaps, snaps...)
 	return m.returnErr
 }

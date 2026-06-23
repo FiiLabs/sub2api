@@ -21,10 +21,12 @@ type APIKeyRateLimitCacheData struct {
 	Window7d int64   `json:"window_7d"`
 }
 
-// UserPlatformQuotaKey 标识一个 user×platform，用于脏集出入与批量读。
+// UserPlatformQuotaKey 标识一个 user×platform 或 subject×platform，用于脏集出入与批量读。
+// platform-quota：user 维度脏集填 UserID；subject 维度脏集填 BillingSubjectID（二者互斥使用）。
 type UserPlatformQuotaKey struct {
-	UserID   int64
-	Platform string
+	UserID           int64
+	BillingSubjectID int64
+	Platform         string
 }
 
 // UserPlatformQuotaCacheEntry Redis hash 反序列化结果。
@@ -77,6 +79,8 @@ type BillingCache interface {
 	GetUserPlatformQuotaCache(ctx context.Context, userID int64, platform string) (*UserPlatformQuotaCacheEntry, bool, error)
 	SetUserPlatformQuotaCache(ctx context.Context, userID int64, platform string, entry *UserPlatformQuotaCacheEntry, ttl time.Duration) error
 	DeleteUserPlatformQuotaCache(ctx context.Context, userID int64, platform string) error
+	// DeleteSubjectPlatformQuotaCache 删除 subject 维度 quota cache（platform-quota，admin 改限额后失效）。
+	DeleteSubjectPlatformQuotaCache(ctx context.Context, subjectID int64, platform string) error
 	// IncrUserPlatformQuotaUsageCache 在缓存命中时累加用量；缓存未命中（key 不存在）静默返回 nil。
 	// markDirty=true 时将该 key 的 member 写入 Redis 脏集，供 flusher 批量回写 DB。
 	IncrUserPlatformQuotaUsageCache(ctx context.Context, userID int64, platform string, cost float64, ttl time.Duration, markDirty bool) error
@@ -85,6 +89,12 @@ type BillingCache interface {
 	PopDirtyUserPlatformQuotaKeys(ctx context.Context, n int) ([]UserPlatformQuotaKey, error)
 	ReaddDirtyUserPlatformQuotaKeys(ctx context.Context, keys []UserPlatformQuotaKey) error
 	BatchGetUserPlatformQuotaCache(ctx context.Context, keys []UserPlatformQuotaKey) ([]*UserPlatformQuotaCacheEntry, error)
+
+	// platform-quota: subject 维度脏集读写（与 user 维度物理分离），供 flusher 在 subject 模式下使用。
+	// key 填 BillingSubjectID；BatchGet 读 subject 维度 quota cache。
+	PopDirtySubjectPlatformQuotaKeys(ctx context.Context, n int) ([]UserPlatformQuotaKey, error)
+	ReaddDirtySubjectPlatformQuotaKeys(ctx context.Context, keys []UserPlatformQuotaKey) error
+	BatchGetSubjectPlatformQuotaCache(ctx context.Context, keys []UserPlatformQuotaKey) ([]*UserPlatformQuotaCacheEntry, error)
 }
 
 // BillingSubjectCache 是 BillingCache 的可选扩展，提供以 billing subject

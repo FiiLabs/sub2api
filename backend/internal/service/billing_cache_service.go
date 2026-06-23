@@ -798,6 +798,27 @@ func (s *BillingCacheService) IncrementUserPlatformQuotaUsage(userID int64, plat
 	}
 }
 
+// IncrementSubjectPlatformQuotaUsage 同步累加 subject × platform usage 到 Redis 缓存（platform-quota）。
+// 与 IncrementUserPlatformQuotaUsage 同语义/同取舍，键为 billing_subject_id；
+// 通过 IncrSubjectPlatformQuotaUsageCache 路由到 subject Redis key（含 subject 维度脏集）。
+func (s *BillingCacheService) IncrementSubjectPlatformQuotaUsage(subjectID int64, platform string, cost float64) {
+	if s.cache == nil {
+		return
+	}
+	if platform == "" || cost <= 0 || subjectID <= 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), cacheWriteTimeout)
+	defer cancel()
+	ttl := time.Duration(s.cfg.Billing.UserPlatformQuotaCacheTTLSeconds) * time.Second
+	markDirty := s.cfg.Database.UserPlatformQuotaFlusherEnabled
+	if err := s.IncrSubjectPlatformQuotaUsageCache(ctx, subjectID, platform, cost, ttl, markDirty); err != nil {
+		logger.LegacyPrintf("service.billing_cache",
+			"ALERT: incr subject platform quota cache failed subject=%d platform=%s cost=%f: %v",
+			subjectID, platform, cost, err)
+	}
+}
+
 // ============================================
 // 统一检查方法
 // ============================================

@@ -422,6 +422,7 @@ type subscriptionInvalidateCall struct {
 }
 
 type billingCacheStub struct {
+	BillingCache  // platform-quota: 嵌入接口自动满足新增方法（未覆写者调用即 panic，本测试不触发）
 	invalidations chan subscriptionInvalidateCall
 }
 

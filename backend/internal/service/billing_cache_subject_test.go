@@ -9,6 +9,7 @@ import (
 )
 
 type billingCacheSubjectStub struct {
+	BillingCache  // platform-quota: 嵌入接口自动满足新增方法（未覆写者调用即 panic，本测试不触发）
 	balances      map[int64]float64
 	lastSubjectID int64
 }

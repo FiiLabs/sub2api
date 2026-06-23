@@ -8436,9 +8436,27 @@ func postUsageBilling(ctx context.Context, p *postUsageBillingParams, deps *bill
 	//   - flusher_enabled=true:跳过直写 DB，由 flusher 异步批量刷（markDirty 在 IncrementUserPlatformQuotaUsage 内部完成）
 	//   - 失败仅记 ALERT log + counter，不阻断主扣费流程
 	if !p.IsSubscriptionBill && p.Platform != "" && cost.ActualCost > 0 && p.User != nil && deps.userPlatformQuotaRepo != nil {
-		if deps.billingCacheService.HasUserPlatformQuotaLimit(billingCtx, p.User.ID, p.Platform) {
+		// platform-quota 灰度：QuotaSubjectScoped 开 + 已解析 billing_subject → 按 subject 累加；
+		// 否则（开关关 / subject 未解析）走旧 user 路径（kill-switch / fail-safe）。
+		subjectID := int64(0)
+		if p.APIKey != nil {
+			subjectID = p.APIKey.BillingSubjectID
+		}
+		useSubject := deps.cfg != nil && deps.cfg.Billing.QuotaSubjectScoped && subjectID > 0
+		flusherOff := deps.cfg == nil || !deps.cfg.Database.UserPlatformQuotaFlusherEnabled
+		if useSubject {
+			if deps.billingCacheService.HasSubjectPlatformQuotaLimit(billingCtx, subjectID, p.Platform) {
+				deps.billingCacheService.IncrementSubjectPlatformQuotaUsage(subjectID, p.Platform, cost.ActualCost)
+				if flusherOff {
+					if err := deps.userPlatformQuotaRepo.IncrementUsageWithResetBySubject(billingCtx, subjectID, p.Platform, cost.ActualCost, time.Now().UTC()); err != nil {
+						userPlatformQuotaDBIncrLegacyErrorTotal.Add(1)
+						logger.LegacyPrintf("service.gateway", "ALERT: legacy incr subject platform quota DB failed subject=%d platform=%s cost=%f: %v", subjectID, p.Platform, cost.ActualCost, err)
+					}
+				}
+			}
+		} else if deps.billingCacheService.HasUserPlatformQuotaLimit(billingCtx, p.User.ID, p.Platform) {
 			deps.billingCacheService.IncrementUserPlatformQuotaUsage(p.User.ID, p.Platform, cost.ActualCost)
-			if deps.cfg == nil || !deps.cfg.Database.UserPlatformQuotaFlusherEnabled {
+			if flusherOff {
 				// 降级路径:flusher 未启用时保留原有同步直写 DB
 				if err := deps.userPlatformQuotaRepo.IncrementUsageWithReset(billingCtx, p.User.ID, p.Platform, cost.ActualCost, time.Now().UTC()); err != nil {
 					userPlatformQuotaDBIncrLegacyErrorTotal.Add(1)
@@ -8616,25 +8634,48 @@ func finalizePostUsageBilling(ctx context.Context, p *postUsageBillingParams, de
 	//   - DB 异步(flusher_enabled=false):在独立 goroutine 中走 detached context,失败用 ALERT log 触发 oncall 对账
 	//   - flusher_enabled=true:不直写 DB,由 flusher 异步批量刷（markDirty 已在 IncrementUserPlatformQuotaUsage 内部完成）
 	if !p.IsSubscriptionBill && p.Platform != "" && p.Cost.ActualCost > 0 && p.User != nil && deps.userPlatformQuotaRepo != nil {
-		if deps.billingCacheService.HasUserPlatformQuotaLimit(ctx, p.User.ID, p.Platform) {
-			deps.billingCacheService.IncrementUserPlatformQuotaUsage(p.User.ID, p.Platform, p.Cost.ActualCost)
+		// platform-quota 灰度：开关开 + 已解析 billing_subject → 按 subject 累加；否则旧 user 路径。
+		subjectID := int64(0)
+		if p.APIKey != nil {
+			subjectID = p.APIKey.BillingSubjectID
+		}
+		useSubject := deps.cfg != nil && deps.cfg.Billing.QuotaSubjectScoped && subjectID > 0
+		hasLimit := false
+		if useSubject {
+			hasLimit = deps.billingCacheService.HasSubjectPlatformQuotaLimit(ctx, subjectID, p.Platform)
+		} else {
+			hasLimit = deps.billingCacheService.HasUserPlatformQuotaLimit(ctx, p.User.ID, p.Platform)
+		}
+		if hasLimit {
+			if useSubject {
+				deps.billingCacheService.IncrementSubjectPlatformQuotaUsage(subjectID, p.Platform, p.Cost.ActualCost)
+			} else {
+				deps.billingCacheService.IncrementUserPlatformQuotaUsage(p.User.ID, p.Platform, p.Cost.ActualCost)
+			}
 			if deps.cfg == nil || !deps.cfg.Database.UserPlatformQuotaFlusherEnabled {
 				// 降级路径:flusher 未启用时保留原有异步直写 DB
 				dbCtx, dbCancel := detachUpstreamContext(ctx)
 				userID, platform, cost := p.User.ID, p.Platform, p.Cost.ActualCost
+				sid, subjScoped := subjectID, useSubject
 				go func() {
 					defer func() {
 						if r := recover(); r != nil {
-							logger.LegacyPrintf("service.gateway", "ALERT: panic in user platform quota incr goroutine user=%d platform=%s: %v", userID, platform, r)
+							logger.LegacyPrintf("service.gateway", "ALERT: panic in platform quota incr goroutine subject=%d user=%d platform=%s: %v", sid, userID, platform, r)
 						}
 					}()
 					defer dbCancel()
-					if err := deps.userPlatformQuotaRepo.IncrementUsageWithReset(dbCtx, userID, platform, cost, time.Now().UTC()); err != nil {
+					var dbErr error
+					if subjScoped {
+						dbErr = deps.userPlatformQuotaRepo.IncrementUsageWithResetBySubject(dbCtx, sid, platform, cost, time.Now().UTC())
+					} else {
+						dbErr = deps.userPlatformQuotaRepo.IncrementUsageWithReset(dbCtx, userID, platform, cost, time.Now().UTC())
+					}
+					if dbErr != nil {
 						// 失败计数器:暴露给 GatewayUserPlatformQuotaIncrStats(),由 ops 面板做斜率告警。
 						userPlatformQuotaDBIncrErrorTotal.Add(1)
 						// ALERT 级别:DB 持久化失败意味着 Redis cache 失效后该笔 cost 永久丢失,
 						// 用户配额视图与实际消费会偏差,oncall 需要据此对账或人工补录。
-						logger.LegacyPrintf("service.gateway", "ALERT: incr user platform quota DB failed user=%d platform=%s cost=%f: %v", userID, platform, cost, err)
+						logger.LegacyPrintf("service.gateway", "ALERT: incr platform quota DB failed subject=%d user=%d platform=%s cost=%f: %v", sid, userID, platform, cost, dbErr)
 					}
 				}()
 			}

@@ -75,6 +75,9 @@ type AuthService struct {
 	affiliateService      *AffiliateService
 	defaultSubAssigner    DefaultSubscriptionAssigner
 	userPlatformQuotaRepo UserPlatformQuotaRepository
+	// billingSubjectRepo（platform-quota）：注册时确保个人计费主体存在，
+	// 使默认平台限额行带上 billing_subject_id（subject 维度拦截可见）。可为 nil（降级为旧 user 维度）。
+	billingSubjectRepo BillingSubjectRepository
 }
 
 type DefaultSubscriptionAssigner interface {
@@ -119,6 +122,32 @@ func NewAuthService(
 		defaultSubAssigner:    defaultSubAssigner,
 		userPlatformQuotaRepo: userPlatformQuotaRepo,
 	}
+}
+
+// ProvideAuthService 是 wire 专用构造器：在 NewAuthService 基础上注入 billingSubjectRepo
+// （platform-quota，用于注册时确保个人计费主体）。单独提供以避免改动 NewAuthService 的
+// 既有签名（大量测试直接调用 13 参版本）。
+func ProvideAuthService(
+	entClient *dbent.Client,
+	userRepo UserRepository,
+	redeemRepo RedeemCodeRepository,
+	refreshTokenCache RefreshTokenCache,
+	cfg *config.Config,
+	settingService *SettingService,
+	emailService *EmailService,
+	turnstileService *TurnstileService,
+	emailQueueService *EmailQueueService,
+	promoService *PromoService,
+	defaultSubAssigner DefaultSubscriptionAssigner,
+	affiliateService *AffiliateService,
+	userPlatformQuotaRepo UserPlatformQuotaRepository,
+	billingSubjectRepo BillingSubjectRepository,
+) *AuthService {
+	s := NewAuthService(entClient, userRepo, redeemRepo, refreshTokenCache, cfg, settingService,
+		emailService, turnstileService, emailQueueService, promoService, defaultSubAssigner,
+		affiliateService, userPlatformQuotaRepo)
+	s.billingSubjectRepo = billingSubjectRepo
+	return s
 }
 
 func (s *AuthService) EntClient() *dbent.Client {
@@ -231,7 +260,7 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 	s.postAuthUserBootstrap(ctx, user, "email", true)
 	s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 	// snapshot user × platform quota（fail-open）
-	_ = s.snapshotPlatformQuotaDefaults(ctx, user.ID, &grantPlan)
+	_ = s.snapshotPlatformQuotaDefaults(ctx, user, &grantPlan)
 	if s.affiliateService != nil {
 		if _, err := s.affiliateService.EnsureUserAffiliate(ctx, user.ID); err != nil {
 			logger.LegacyPrintf("service.auth", "[Auth] Failed to initialize affiliate profile for user %d: %v", user.ID, err)
@@ -542,7 +571,7 @@ func (s *AuthService) LoginOrRegisterOAuth(ctx context.Context, email, username 
 				s.postAuthUserBootstrap(ctx, user, signupSource, false)
 				s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 				// snapshot user × platform quota（fail-open）
-				_ = s.snapshotPlatformQuotaDefaults(ctx, user.ID, &grantPlan)
+				_ = s.snapshotPlatformQuotaDefaults(ctx, user, &grantPlan)
 			}
 		} else {
 			logger.LegacyPrintf("service.auth", "[Auth] Database error during oauth login: %v", err)
@@ -694,7 +723,7 @@ func (s *AuthService) LoginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 					s.postAuthUserBootstrap(ctx, user, signupSource, false)
 					s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 					// snapshot user × platform quota（fail-open）
-					_ = s.snapshotPlatformQuotaDefaults(ctx, user.ID, &grantPlan)
+					_ = s.snapshotPlatformQuotaDefaults(ctx, user, &grantPlan)
 					s.bindOAuthAffiliate(ctx, user.ID, affiliateCode)
 				}
 			} else {
@@ -714,7 +743,7 @@ func (s *AuthService) LoginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 					s.postAuthUserBootstrap(ctx, user, signupSource, false)
 					s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 					// snapshot user × platform quota（fail-open）
-					_ = s.snapshotPlatformQuotaDefaults(ctx, user.ID, &grantPlan)
+					_ = s.snapshotPlatformQuotaDefaults(ctx, user, &grantPlan)
 					s.bindOAuthAffiliate(ctx, user.ID, affiliateCode)
 					if invitationRedeemCode != nil {
 						if err := s.redeemRepo.Use(ctx, invitationRedeemCode.ID, user.ID); err != nil {
@@ -1622,15 +1651,26 @@ func resolvedTokenVersion(user *User) int64 {
 
 // snapshotPlatformQuotaDefaults 把 plan.PlatformQuotas（4 platform × 3 window）以
 // BulkInsertInitial 形式写入 user_platform_quotas 表。失败 fail-open（仅 warn log）。
-func (s *AuthService) snapshotPlatformQuotaDefaults(ctx context.Context, userID int64, plan *signupGrantPlan) error {
-	if s.userPlatformQuotaRepo == nil || plan == nil || len(plan.PlatformQuotas) == 0 {
+func (s *AuthService) snapshotPlatformQuotaDefaults(ctx context.Context, user *User, plan *signupGrantPlan) error {
+	if s.userPlatformQuotaRepo == nil || user == nil || plan == nil || len(plan.PlatformQuotas) == 0 {
 		return nil
+	}
+	// platform-quota: 确保个人计费主体存在，使默认限额行带上 billing_subject_id（subject 维度拦截可见）。
+	// fail-open：主体解析失败则退化为旧 user 维度行（subject 留空），绝不阻断注册。
+	var subjectID int64
+	if s.billingSubjectRepo != nil {
+		if subj, err := s.billingSubjectRepo.EnsurePersonalForUser(ctx, user); err != nil {
+			logger.LegacyPrintf("service.auth", "[Auth] Warning: ensure personal billing subject failed user=%d: %v (quota rows fall back to user dimension)", user.ID, err)
+		} else if subj != nil {
+			subjectID = subj.ID
+		}
 	}
 	records := make([]UserPlatformQuotaRecord, 0, len(plan.PlatformQuotas))
 	for platform, q := range plan.PlatformQuotas {
 		rec := UserPlatformQuotaRecord{
-			UserID:   userID,
-			Platform: platform,
+			UserID:           user.ID,
+			BillingSubjectID: subjectID,
+			Platform:         platform,
 		}
 		if q != nil {
 			rec.DailyLimitUSD = q.DailyLimitUSD
@@ -1640,7 +1680,7 @@ func (s *AuthService) snapshotPlatformQuotaDefaults(ctx context.Context, userID 
 		records = append(records, rec)
 	}
 	if err := s.userPlatformQuotaRepo.BulkInsertInitial(ctx, records); err != nil {
-		logger.LegacyPrintf("service.auth", "[Auth] Warning: snapshot platform quota failed user=%d: %v (fail-open)", userID, err)
+		logger.LegacyPrintf("service.auth", "[Auth] Warning: snapshot platform quota failed user=%d: %v (fail-open)", user.ID, err)
 		return nil // fail-open：返回 nil，让调用方继续
 	}
 	return nil

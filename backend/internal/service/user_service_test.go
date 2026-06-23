@@ -278,6 +278,7 @@ func (m *mockAuthCacheInvalidator) InvalidateAuthCacheByUserID(_ context.Context
 // --- mock: BillingCache ---
 
 type mockBillingCache struct {
+	BillingCache        // platform-quota: 嵌入接口自动满足新增方法（未覆写者调用即 panic，本测试不触发）
 	invalidateErr       error
 	invalidateCallCount atomic.Int64
 	invalidatedUserIDs  []int64

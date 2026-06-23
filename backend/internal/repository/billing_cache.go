@@ -267,10 +267,12 @@ func (c *billingCache) SetSubjectPlatformQuotaCache(ctx context.Context, subject
 func (c *billingCache) IncrSubjectPlatformQuotaUsageCache(ctx context.Context, subjectID int64, platform string, cost float64, ttl time.Duration, markDirty bool) error {
 	member := ""
 	if markDirty {
+		// platform-quota: 写入 subject 专用脏集（与 user 脏集分离），避免成员 "id:platform"
+		// 在共享脏集中被 flusher 误解析为 user_id（旧实现的潜在歧义 bug）。
 		member = userPlatformQuotaDirtyMember(subjectID, platform)
 	}
 	_, err := c.rdb.Eval(ctx, updateUserPlatformQuotaUsageScript,
-		[]string{subjectPlatformQuotaCacheKey(subjectID, platform), userPlatformQuotaDirtySetKey()},
+		[]string{subjectPlatformQuotaCacheKey(subjectID, platform), subjectPlatformQuotaDirtySetKey()},
 		strconv.FormatFloat(cost, 'f', -1, 64),
 		int(ttl.Seconds()),
 		service.UserPlatformQuotaCacheSchemaV1,
@@ -711,4 +713,95 @@ func (c *billingCache) BatchGetUserPlatformQuotaCache(ctx context.Context, keys 
 		results[i] = parseUserPlatformQuotaHash(m)
 	}
 	return results, nil
+}
+
+// ============================================================================
+// platform-quota: billing_subject 维度脏集（与 user 脏集 billing:upq:dirty 物理分离，
+// 避免脏集成员 "id:platform" 被 flusher 误解析为 user_id）。
+// ============================================================================
+
+// subjectPlatformQuotaDirtySetKey 返回 subject 维度脏集 key。
+func subjectPlatformQuotaDirtySetKey() string { return "billing:" + "upq:dirty:subj" }
+
+// parseSubjectPlatformQuotaDirtyMember 将 "subjectID:platform" 解析为带 BillingSubjectID 的 key。
+func parseSubjectPlatformQuotaDirtyMember(m string) (service.UserPlatformQuotaKey, bool) {
+	parts := strings.SplitN(m, ":", 2)
+	if len(parts) != 2 {
+		return service.UserPlatformQuotaKey{}, false
+	}
+	sid, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return service.UserPlatformQuotaKey{}, false
+	}
+	return service.UserPlatformQuotaKey{BillingSubjectID: sid, Platform: parts[1]}, true
+}
+
+// PopDirtySubjectPlatformQuotaKeys 从 subject 脏集随机弹出最多 n 个 key（成员解析为 BillingSubjectID）。
+func (c *billingCache) PopDirtySubjectPlatformQuotaKeys(ctx context.Context, n int) ([]service.UserPlatformQuotaKey, error) {
+	members, err := c.rdb.SPopN(ctx, subjectPlatformQuotaDirtySetKey(), int64(n)).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	keys := make([]service.UserPlatformQuotaKey, 0, len(members))
+	for _, m := range members {
+		k, ok := parseSubjectPlatformQuotaDirtyMember(m)
+		if !ok {
+			log.Printf("billing_cache: skipping invalid subject dirty member %q", m)
+			continue
+		}
+		keys = append(keys, k)
+	}
+	return keys, nil
+}
+
+// ReaddDirtySubjectPlatformQuotaKeys 将 keys 重新加入 subject 脏集（flush 失败时回填）。
+func (c *billingCache) ReaddDirtySubjectPlatformQuotaKeys(ctx context.Context, keys []service.UserPlatformQuotaKey) error {
+	if len(keys) == 0 {
+		return nil
+	}
+	dirtyKey := subjectPlatformQuotaDirtySetKey()
+	members := make([]any, len(keys))
+	for i, k := range keys {
+		members[i] = userPlatformQuotaDirtyMember(k.BillingSubjectID, k.Platform)
+	}
+	pipe := c.rdb.Pipeline()
+	pipe.SAdd(ctx, dirtyKey, members...)
+	pipe.Expire(ctx, dirtyKey, userPlatformQuotaDirtyTTLSeconds*time.Second)
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+// BatchGetSubjectPlatformQuotaCache 通过 Pipeline 批量 HGETALL 获取多个 subject×platform 的 quota cache。
+func (c *billingCache) BatchGetSubjectPlatformQuotaCache(ctx context.Context, keys []service.UserPlatformQuotaKey) ([]*service.UserPlatformQuotaCacheEntry, error) {
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	pipe := c.rdb.Pipeline()
+	cmds := make([]*redis.MapStringStringCmd, len(keys))
+	for i, k := range keys {
+		cmds[i] = pipe.HGetAll(ctx, subjectPlatformQuotaCacheKey(k.BillingSubjectID, k.Platform))
+	}
+	if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, redis.Nil) {
+		return nil, err
+	}
+	results := make([]*service.UserPlatformQuotaCacheEntry, len(keys))
+	for i, cmd := range cmds {
+		m, err := cmd.Result()
+		if err != nil {
+			if !errors.Is(err, redis.Nil) {
+				log.Printf("billing_cache: subject BatchGet HGETALL cmd[%d] failed: %v (skip, self-heal)", i, err)
+			}
+			continue
+		}
+		results[i] = parseUserPlatformQuotaHash(m)
+	}
+	return results, nil
+}
+
+// DeleteSubjectPlatformQuotaCache 删除 subject 维度 quota cache（admin 改限额后失效，避免读到旧 limit）。
+func (c *billingCache) DeleteSubjectPlatformQuotaCache(ctx context.Context, subjectID int64, platform string) error {
+	return c.rdb.Del(ctx, subjectPlatformQuotaCacheKey(subjectID, platform)).Err()
 }

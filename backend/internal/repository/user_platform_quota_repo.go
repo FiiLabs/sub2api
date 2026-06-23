@@ -119,20 +119,21 @@ func (r *userPlatformQuotaRepository) BulkInsertInitial(ctx context.Context, rec
 	client := clientFromContext(ctx, r.client)
 
 	var sb strings.Builder
-	_, _ = sb.WriteString("INSERT INTO user_platform_quotas (user_id, platform, daily_limit_usd, weekly_limit_usd, monthly_limit_usd, daily_usage_usd, weekly_usage_usd, monthly_usage_usd, created_at, updated_at) VALUES ")
-	args := make([]any, 0, len(records)*6)
+	// platform-quota: 同时写 billing_subject_id（个人主体），使注册默认限额行在 subject 维度可见。
+	_, _ = sb.WriteString("INSERT INTO user_platform_quotas (user_id, billing_subject_id, platform, daily_limit_usd, weekly_limit_usd, monthly_limit_usd, daily_usage_usd, weekly_usage_usd, monthly_usage_usd, created_at, updated_at) VALUES ")
+	args := make([]any, 0, len(records)*7)
 	// 统一时间戳：避免循环内多次 time.Now() 让同一批记录的 created_at/updated_at
 	// 出现亚毫秒级偏差（与 UpsertForUser 的 now := time.Now() 风格一致）。
 	now := time.Now()
 	for i, rec := range records {
-		base := i * 6
+		base := i * 7
 		if i > 0 {
 			_, _ = sb.WriteString(",")
 		}
-		fmt.Fprintf(&sb, "($%d,$%d,$%d,$%d,$%d,0,0,0,$%d,$%d)",
-			base+1, base+2, base+3, base+4, base+5, base+6, base+6)
+		fmt.Fprintf(&sb, "($%d,$%d,$%d,$%d,$%d,$%d,0,0,0,$%d,$%d)",
+			base+1, base+2, base+3, base+4, base+5, base+6, base+7, base+7)
 		args = append(args,
-			rec.UserID, rec.Platform,
+			rec.UserID, nullableInt64(rec.BillingSubjectID), rec.Platform,
 			rec.DailyLimitUSD, rec.WeeklyLimitUSD, rec.MonthlyLimitUSD,
 			now,
 		)
@@ -143,6 +144,7 @@ func (r *userPlatformQuotaRepository) BulkInsertInitial(ctx context.Context, rec
 	// - 保护管理员通过 UpsertForUser 设置的个性化 limit 不被静默覆盖
 	_, _ = sb.WriteString(` ON CONFLICT (user_id, platform) WHERE deleted_at IS NULL
 		DO UPDATE SET
+			billing_subject_id = COALESCE(user_platform_quotas.billing_subject_id, EXCLUDED.billing_subject_id),
 			daily_limit_usd   = COALESCE(user_platform_quotas.daily_limit_usd, EXCLUDED.daily_limit_usd),
 			weekly_limit_usd  = COALESCE(user_platform_quotas.weekly_limit_usd, EXCLUDED.weekly_limit_usd),
 			monthly_limit_usd = COALESCE(user_platform_quotas.monthly_limit_usd, EXCLUDED.monthly_limit_usd),
@@ -150,6 +152,14 @@ func (r *userPlatformQuotaRepository) BulkInsertInitial(ctx context.Context, rec
 
 	_, err := client.ExecContext(ctx, sb.String(), args...)
 	return err
+}
+
+// nullableInt64 把 0/负值映射为 SQL NULL（用于可空 FK 列如 billing_subject_id）。
+func nullableInt64(v int64) any {
+	if v <= 0 {
+		return nil
+	}
+	return v
 }
 
 // GetByUserPlatform 通过 ent 查询单条配额（排除软删除）。未找到返回 (nil, nil)。
@@ -429,8 +439,11 @@ func softDeleteMissingPlatforms(ctx context.Context, client *dbent.Client, userI
 // 批量重激活导致的 partial unique index（userplatformquota_user_id_platform_uq）冲突。
 // affected=0 时由调用方 UpsertForUser 走 insertLimitsRow 路径创建新行。
 func updateLimitsRow(ctx context.Context, client *dbent.Client, userID int64, rec UserPlatformQuotaRecord, now time.Time) (int64, error) {
+	// platform-quota: 顺带 COALESCE 回填 billing_subject_id（仅在原为 NULL 时），
+	// 使 admin 改限额时把历史遗留的无 subject 行补齐，subject 维度拦截可见。
 	const query = `UPDATE user_platform_quotas
 		SET daily_limit_usd = $1, weekly_limit_usd = $2, monthly_limit_usd = $3,
+		    billing_subject_id = COALESCE(billing_subject_id, (SELECT id FROM billing_subjects WHERE type = 'user' AND user_id = $5 AND deleted_at IS NULL)),
 		    deleted_at = NULL, updated_at = $4
 		WHERE user_id = $5 AND platform = $6 AND deleted_at IS NULL`
 	res, err := client.ExecContext(ctx, query,
@@ -447,10 +460,14 @@ func updateLimitsRow(ctx context.Context, client *dbent.Client, userID int64, re
 // 触发 unique constraint 违反（userplatformquota_user_id_platform_uq 部分唯一索引）。
 // affected=0 时说明另一个并发请求刚完成 INSERT，fallback 到 updateLimitsRow 覆写 limits 值。
 func insertLimitsRow(ctx context.Context, client *dbent.Client, userID int64, rec UserPlatformQuotaRecord, now time.Time) error {
+	// platform-quota: 同时写 billing_subject_id（个人主体，子查询解析），使 admin 新建的限额行在
+	// subject 维度拦截可见。个人主体在注册时已确保存在（懒创建兜底 + 迁移回填），解析不到则留 NULL。
 	const query = `INSERT INTO user_platform_quotas
-		(user_id, platform, daily_limit_usd, weekly_limit_usd, monthly_limit_usd,
+		(user_id, billing_subject_id, platform, daily_limit_usd, weekly_limit_usd, monthly_limit_usd,
 		 daily_usage_usd, weekly_usage_usd, monthly_usage_usd, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, 0, 0, 0, $6, $6)
+		VALUES ($1,
+		        (SELECT id FROM billing_subjects WHERE type = 'user' AND user_id = $1 AND deleted_at IS NULL),
+		        $2, $3, $4, $5, 0, 0, 0, $6, $6)
 		ON CONFLICT (user_id, platform) WHERE deleted_at IS NULL DO NOTHING`
 	res, err := client.ExecContext(ctx, query,
 		userID, rec.Platform,

@@ -11,10 +11,15 @@ import (
 )
 
 // quotaDirtyCache 是 flusher 依赖的窄接口（来自 BillingCache）。
+// platform-quota：含 user 与 subject 两套脏集方法，flusher 每 tick 两套都排空，
+// 兼容灰度开关任意状态及翻转过程中两套脏集的残留。
 type quotaDirtyCache interface {
 	PopDirtyUserPlatformQuotaKeys(ctx context.Context, n int) ([]UserPlatformQuotaKey, error)
 	ReaddDirtyUserPlatformQuotaKeys(ctx context.Context, keys []UserPlatformQuotaKey) error
 	BatchGetUserPlatformQuotaCache(ctx context.Context, keys []UserPlatformQuotaKey) ([]*UserPlatformQuotaCacheEntry, error)
+	PopDirtySubjectPlatformQuotaKeys(ctx context.Context, n int) ([]UserPlatformQuotaKey, error)
+	ReaddDirtySubjectPlatformQuotaKeys(ctx context.Context, keys []UserPlatformQuotaKey) error
+	BatchGetSubjectPlatformQuotaCache(ctx context.Context, keys []UserPlatformQuotaKey) ([]*UserPlatformQuotaCacheEntry, error)
 }
 
 // quotaSnapshotWriter 是 flusher 依赖的 DB 写入窄接口。
@@ -22,6 +27,7 @@ type quotaDirtyCache interface {
 // 实际实现由 repository adapter 在 B7 注入。
 type quotaSnapshotWriter interface {
 	BatchSnapshotUsage(ctx context.Context, snapshots []UserPlatformQuotaSnapshot, now time.Time) error
+	BatchSnapshotUsageBySubject(ctx context.Context, snapshots []UserPlatformQuotaSnapshot, now time.Time) error
 }
 
 // FlusherMetrics 记录 flusher 运行时指标（原子量，零值可用）。
@@ -106,8 +112,15 @@ func (s *UserPlatformQuotaUsageFlusher) updateLatencyMax(ms int64) {
 }
 
 // readdOrCountLost 尝试把 keys 回填脏集：成功计 DirtyReaddTotal，失败计 DirtyLostTotal 并 ALERT。
-func (s *UserPlatformQuotaUsageFlusher) readdOrCountLost(ctx context.Context, keys []UserPlatformQuotaKey, stage string) {
-	if err := s.cache.ReaddDirtyUserPlatformQuotaKeys(ctx, keys); err != nil {
+// subjectMode=true 回填 subject 脏集，否则 user 脏集。
+func (s *UserPlatformQuotaUsageFlusher) readdOrCountLost(ctx context.Context, keys []UserPlatformQuotaKey, stage string, subjectMode bool) {
+	var err error
+	if subjectMode {
+		err = s.cache.ReaddDirtySubjectPlatformQuotaKeys(ctx, keys)
+	} else {
+		err = s.cache.ReaddDirtyUserPlatformQuotaKeys(ctx, keys)
+	}
+	if err != nil {
 		s.metrics.DirtyLostTotal.Add(int64(len(keys)))
 		logger.LegacyPrintf("quota_flusher", "[QuotaFlusher] ALERT: Readd after %s failed, %d keys 丢出脏集(DB 镜像缺这批,Redis 仍权威,活跃 key 下次 SADD 自愈): %v", stage, len(keys), err)
 		return
@@ -118,12 +131,20 @@ func (s *UserPlatformQuotaUsageFlusher) readdOrCountLost(ctx context.Context, ke
 // flushOneBatch 处理单批：Pop → BatchGet → 组装 snaps → BatchSnapshotUsage。
 // 返回 (shouldContinue bool)：false 表示本轮循环应停止（空集/错误/最后一批）。
 // 每次调用独立创建带 timeout 的 ctx 并 defer cancel，不会在循环中累积泄漏。
-func (s *UserPlatformQuotaUsageFlusher) flushOneBatch(parentCtx context.Context) bool {
+func (s *UserPlatformQuotaUsageFlusher) flushOneBatch(parentCtx context.Context, subjectMode bool) bool {
 	ctx, cancel := context.WithTimeout(parentCtx, s.flushTimeout)
 	defer cancel()
 
-	// 1. Pop 脏集
-	keys, err := s.cache.PopDirtyUserPlatformQuotaKeys(ctx, s.batchSize)
+	// 1. Pop 脏集（user 或 subject 维度）
+	var (
+		keys []UserPlatformQuotaKey
+		err  error
+	)
+	if subjectMode {
+		keys, err = s.cache.PopDirtySubjectPlatformQuotaKeys(ctx, s.batchSize)
+	} else {
+		keys, err = s.cache.PopDirtyUserPlatformQuotaKeys(ctx, s.batchSize)
+	}
 	if err != nil {
 		s.metrics.FlushErrorTotal.Add(1)
 		logger.LegacyPrintf("quota_flusher", "[QuotaFlusher] PopDirty error: %v", err)
@@ -135,10 +156,15 @@ func (s *UserPlatformQuotaUsageFlusher) flushOneBatch(parentCtx context.Context)
 	}
 
 	// 2. 批量读 Redis 快照
-	entries, err := s.cache.BatchGetUserPlatformQuotaCache(ctx, keys)
+	var entries []*UserPlatformQuotaCacheEntry
+	if subjectMode {
+		entries, err = s.cache.BatchGetSubjectPlatformQuotaCache(ctx, keys)
+	} else {
+		entries, err = s.cache.BatchGetUserPlatformQuotaCache(ctx, keys)
+	}
 	if err != nil {
 		s.metrics.FlushErrorTotal.Add(1)
-		s.readdOrCountLost(ctx, keys, "BatchGet")
+		s.readdOrCountLost(ctx, keys, "BatchGet", subjectMode)
 		logger.LegacyPrintf("quota_flusher", "[QuotaFlusher] BatchGet error: %v", err)
 		return false
 	}
@@ -155,6 +181,7 @@ func (s *UserPlatformQuotaUsageFlusher) flushOneBatch(parentCtx context.Context)
 		}
 		snaps = append(snaps, UserPlatformQuotaSnapshot{
 			UserID:             key.UserID,
+			BillingSubjectID:   key.BillingSubjectID,
 			Platform:           key.Platform,
 			DailyUsageUSD:      e.DailyUsageUSD,
 			WeeklyUsageUSD:     e.WeeklyUsageUSD,
@@ -186,9 +213,14 @@ func (s *UserPlatformQuotaUsageFlusher) flushOneBatch(parentCtx context.Context)
 	//   - 低频 admin 操作 + 默认 flusher_enabled=false。彻底消除需 version OCC(DB 加 version 列条件 UPSERT),
 	//     成本高;启用 flusher 后如需强一致再评估。
 
-	// 5. 写入 DB
+	// 5. 写入 DB（user 或 subject 维度）
 	start := time.Now()
-	writeErr := s.quotaRepo.BatchSnapshotUsage(ctx, snaps, time.Now().UTC())
+	var writeErr error
+	if subjectMode {
+		writeErr = s.quotaRepo.BatchSnapshotUsageBySubject(ctx, snaps, time.Now().UTC())
+	} else {
+		writeErr = s.quotaRepo.BatchSnapshotUsage(ctx, snaps, time.Now().UTC())
+	}
 	s.updateLatencyMax(time.Since(start).Milliseconds())
 
 	if writeErr != nil {
@@ -204,7 +236,7 @@ func (s *UserPlatformQuotaUsageFlusher) flushOneBatch(parentCtx context.Context)
 		} else {
 			// 其他错误：回填脏集，保留下次重试
 			s.metrics.FlushErrorTotal.Add(1)
-			s.readdOrCountLost(ctx, keys, "BatchSnapshotUsage")
+			s.readdOrCountLost(ctx, keys, "BatchSnapshotUsage", subjectMode)
 			logger.LegacyPrintf("quota_flusher", "[QuotaFlusher] BatchSnapshotUsage error: %v", writeErr)
 		}
 		return false
@@ -227,17 +259,25 @@ func (s *UserPlatformQuotaUsageFlusher) flush() {
 		return
 	}
 	parentCtx := context.Background()
-	for b := 0; b < flusherMaxBatchesPerTick; b++ {
-		if !s.flushOneBatch(parentCtx) {
-			return
+	// platform-quota：每 tick 依次排空 user 与 subject 两套脏集，
+	// 兼容灰度开关任意状态及翻转过程中的残留（任一套都不会被遗漏）。
+	for _, subjectMode := range []bool{false, true} {
+		drained := false
+		for b := 0; b < flusherMaxBatchesPerTick; b++ {
+			if !s.flushOneBatch(parentCtx, subjectMode) {
+				drained = true
+				break
+			}
+		}
+		if !drained {
+			// 连续消费满 flusherMaxBatchesPerTick 批仍未取空脏集:本 tick 主动让出,剩余积压留待下一 tick。
+			// 记一条 log 便于 oncall 发现 distinct 活跃 key 远超 maxBatchesPerTick×batchSize(DB 镜像延迟上升);
+			// 可配合 Redis SCARD billing:upq:dirty / billing:upq:dirty:subj 观察脏集存量。
+			logger.LegacyPrintf("quota_flusher",
+				"[QuotaFlusher] 单 tick 达到 max batches 上限(%d × batchSize=%d, subjectMode=%v),脏集仍非空,积压顺延至下一 tick",
+				flusherMaxBatchesPerTick, s.batchSize, subjectMode)
 		}
 	}
-	// 连续消费满 flusherMaxBatchesPerTick 批仍未取空脏集:本 tick 主动让出,剩余积压留待下一 tick。
-	// 记一条 log 便于 oncall 发现 distinct 活跃 key 远超 maxBatchesPerTick×batchSize(DB 镜像延迟上升);
-	// 可配合 Redis SCARD billing:upq:dirty 观察脏集存量。
-	logger.LegacyPrintf("quota_flusher",
-		"[QuotaFlusher] 单 tick 达到 max batches 上限(%d × batchSize=%d),脏集仍非空,积压顺延至下一 tick",
-		flusherMaxBatchesPerTick, s.batchSize)
 }
 
 // tick 是 TimingWheel 回调。若 flusher 已停止则直接返回。
