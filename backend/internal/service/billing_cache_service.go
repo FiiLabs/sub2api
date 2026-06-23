@@ -830,7 +830,14 @@ func (s *BillingCacheService) CheckBillingEligibility(ctx context.Context, user 
 
 	// user × platform quota 仅在 standard（余额）模式生效；订阅模式豁免
 	if !isSubscriptionMode {
-		if err := s.checkUserPlatformQuotaEligibility(ctx, user.ID, platform, group); err != nil {
+		// platform-quota 灰度（QuotaSubjectScoped）：开关开 + 当前请求已解析到 billing_subject
+		// → 按 subject 拦截（个人主体等价 user；团队主体多成员共享限额）；
+		// 否则（开关关 / subject 未解析）兜底走 user 路径——不放行越限，且对个人工作空间行为零变化。
+		if s.cfg.Billing.QuotaSubjectScoped && apiKey != nil && apiKey.BillingSubjectID > 0 {
+			if err := s.checkSubjectPlatformQuotaEligibility(ctx, apiKey.BillingSubjectID, platform, group); err != nil {
+				return err
+			}
+		} else if err := s.checkUserPlatformQuotaEligibility(ctx, user.ID, platform, group); err != nil {
 			return err
 		}
 	}
@@ -1366,6 +1373,213 @@ func (s *BillingCacheService) checkUserPlatformQuotaEligibility(
 	return nil
 }
 
+// checkSubjectPlatformQuotaEligibility 是 checkUserPlatformQuotaEligibility 的 billing_subject 维度副本
+// （platform-quota 灰度读路径，QuotaSubjectScoped=true 时启用）。
+//
+// 与 user 版逐行对应，唯一差异是键 user_id → billing_subject_id：
+//   - 缓存读写走 GetSubjectPlatformQuotaCache / SetSubjectPlatformQuotaCache（真实 Redis 路由到 subject 键）；
+//   - DB 回源走 userPlatformQuotaRepo.GetBySubjectPlatform；
+//   - singleflight key 加 "subj:" 前缀，避免与 user 版同数值 id 撞键。
+//
+// 刻意整段复制而非抽公共函数：保证 user 版（关开关时的唯一路径）行为零变化，
+// 是"个人工作空间不变性"的最强保证；待 (4/4) 下线 user 路径后此重复随之消除。
+func (s *BillingCacheService) checkSubjectPlatformQuotaEligibility(
+	ctx context.Context,
+	subjectID int64,
+	platform string,
+	group *Group,
+) error {
+	if platform == "" || s.userPlatformQuotaRepo == nil {
+		return nil
+	}
+
+	var (
+		entry    *UserPlatformQuotaCacheEntry
+		ok       bool
+		cacheErr error
+	)
+	if s.cache != nil {
+		entry, ok, cacheErr = s.GetSubjectPlatformQuotaCache(ctx, subjectID, platform)
+	} else {
+		cacheErr = errBillingCacheUnavailable
+	}
+
+	// --- cache HIT with current schema → 直接用 entry，不查 DB ---
+	if cacheErr == nil && ok && entry != nil && entry.SchemaVersion == UserPlatformQuotaCacheSchemaV1 {
+		now := time.Now()
+		dailyUsage := entry.DailyUsageUSD
+		weeklyUsage := entry.WeeklyUsageUSD
+		monthlyUsage := entry.MonthlyUsageUSD
+		windowExpired := false
+		newDailyStart := entry.DailyWindowStart
+		newWeeklyStart := entry.WeeklyWindowStart
+		newMonthlyStart := entry.MonthlyWindowStart
+		if quotaWindowExpired(entry.DailyWindowStart, timezone.StartOfDay(now)) {
+			dailyUsage = 0
+			windowExpired = true
+			dayStart := timezone.StartOfDay(now)
+			newDailyStart = &dayStart
+		}
+		if quotaWindowExpired(entry.WeeklyWindowStart, timezone.StartOfWeek(now)) {
+			weeklyUsage = 0
+			windowExpired = true
+			weekStart := timezone.StartOfWeek(now)
+			newWeeklyStart = &weekStart
+		}
+		if monthlyQuotaWindowExpired(entry.MonthlyWindowStart, now) {
+			monthlyUsage = 0
+			windowExpired = true
+			monthStart := now
+			newMonthlyStart = &monthStart
+		}
+		isSentinel := entry.DailyLimitUSD == nil && entry.WeeklyLimitUSD == nil && entry.MonthlyLimitUSD == nil
+		if windowExpired && s.cache != nil && !isSentinel {
+			refreshed := &UserPlatformQuotaCacheEntry{
+				DailyUsageUSD:      dailyUsage,
+				WeeklyUsageUSD:     weeklyUsage,
+				MonthlyUsageUSD:    monthlyUsage,
+				SchemaVersion:      UserPlatformQuotaCacheSchemaV1,
+				DailyLimitUSD:      entry.DailyLimitUSD,
+				WeeklyLimitUSD:     entry.WeeklyLimitUSD,
+				MonthlyLimitUSD:    entry.MonthlyLimitUSD,
+				DailyWindowStart:   newDailyStart,
+				WeeklyWindowStart:  newWeeklyStart,
+				MonthlyWindowStart: newMonthlyStart,
+			}
+			ttl := time.Duration(s.cfg.Billing.UserPlatformQuotaCacheTTLSeconds) * time.Second
+			setCtx, setCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+			if setErr := s.SetSubjectPlatformQuotaCache(setCtx, subjectID, platform, refreshed, ttl); setErr != nil {
+				logger.LegacyPrintf("service.billing_cache",
+					"Warning: refresh expired subject platform quota cache failed subject=%d platform=%s: %v",
+					subjectID, platform, setErr)
+			}
+			setCancel()
+		}
+		precheckCost := precheckMinimumCost(group, groupRateMultiplier(group))
+		if entry.DailyLimitUSD != nil && dailyUsage+precheckCost > *entry.DailyLimitUSD {
+			return withWindowResetsMetadata(ErrUserPlatformDailyQuotaExhausted, nextDailyReset(now))
+		}
+		if entry.WeeklyLimitUSD != nil && weeklyUsage+precheckCost > *entry.WeeklyLimitUSD {
+			return withWindowResetsMetadata(ErrUserPlatformWeeklyQuotaExhausted, nextWeeklyReset(now))
+		}
+		if entry.MonthlyLimitUSD != nil && monthlyUsage+precheckCost > *entry.MonthlyLimitUSD {
+			return withWindowResetsMetadata(ErrUserPlatformMonthlyQuotaExhausted, nextMonthlyResetFrom(entry.MonthlyWindowStart, now))
+		}
+		return nil
+	}
+
+	// --- cache MISS、旧版 entry 或 Redis 故障 → 查 DB（singleflight 合并并发回源）---
+	sfKey := "subj:" + strconv.FormatInt(subjectID, 10) + ":" + platform
+	ch := s.quotaLoadSF.DoChan(sfKey, func() (any, error) {
+		bgCtx, bgCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer bgCancel()
+		return s.userPlatformQuotaRepo.GetBySubjectPlatform(bgCtx, subjectID, platform)
+	})
+	var (
+		v     any
+		dbErr error
+	)
+	select {
+	case res := <-ch:
+		v, dbErr = res.Val, res.Err
+	case <-ctx.Done():
+		logger.LegacyPrintf("service.billing_cache", "Warning: subject platform quota check ctx cancelled subject=%d platform=%s: %v (fail-open)", subjectID, platform, ctx.Err())
+		return nil
+	}
+	if dbErr != nil {
+		logger.LegacyPrintf("service.billing_cache", "Warning: load subject platform quota failed subject=%d platform=%s: %v (fail-open)", subjectID, platform, dbErr)
+		return nil
+	}
+	rec, _ := v.(*UserPlatformQuotaRecord)
+	if rec == nil {
+		if s.cache != nil && cacheErr == nil {
+			now := time.Now()
+			startOfDay := timezone.StartOfDay(now)
+			startOfWeek := timezone.StartOfWeek(now)
+			sentinel := &UserPlatformQuotaCacheEntry{
+				SchemaVersion:      UserPlatformQuotaCacheSchemaV1,
+				DailyWindowStart:   &startOfDay,
+				WeeklyWindowStart:  &startOfWeek,
+				MonthlyWindowStart: &now,
+			}
+			sentinelTTL := time.Duration(s.cfg.Billing.UserPlatformQuotaSentinelTTLSeconds) * time.Second
+			if sentinelTTL <= 0 {
+				sentinelTTL = time.Hour
+			}
+			setCtx, setCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+			if setErr := s.SetSubjectPlatformQuotaCache(setCtx, subjectID, platform, sentinel, sentinelTTL); setErr != nil {
+				userPlatformQuotaSentinelSetCacheErrorTotal.Add(1)
+				logger.LegacyPrintf("service.billing_cache", "Warning: set sentinel subject quota cache failed subject=%d platform=%s: %v", subjectID, platform, setErr)
+			}
+			setCancel()
+		}
+		return nil
+	}
+
+	now := time.Now()
+	dailyUsage := rec.DailyUsageUSD
+	weeklyUsage := rec.WeeklyUsageUSD
+	monthlyUsage := rec.MonthlyUsageUSD
+	if quotaWindowExpired(rec.DailyWindowStart, timezone.StartOfDay(now)) {
+		dailyUsage = 0
+	}
+	if quotaWindowExpired(rec.WeeklyWindowStart, timezone.StartOfWeek(now)) {
+		weeklyUsage = 0
+	}
+	if monthlyQuotaWindowExpired(rec.MonthlyWindowStart, now) {
+		monthlyUsage = 0
+	}
+
+	// Redis 故障时 fail-open：不回填，直接用 DB 数据做一次性检查
+	if cacheErr != nil {
+		precheckCost := precheckMinimumCost(group, groupRateMultiplier(group))
+		if rec.DailyLimitUSD != nil && dailyUsage+precheckCost > *rec.DailyLimitUSD {
+			return withWindowResetsMetadata(ErrUserPlatformDailyQuotaExhausted, nextDailyReset(now))
+		}
+		if rec.WeeklyLimitUSD != nil && weeklyUsage+precheckCost > *rec.WeeklyLimitUSD {
+			return withWindowResetsMetadata(ErrUserPlatformWeeklyQuotaExhausted, nextWeeklyReset(now))
+		}
+		if rec.MonthlyLimitUSD != nil && monthlyUsage+precheckCost > *rec.MonthlyLimitUSD {
+			return withWindowResetsMetadata(ErrUserPlatformMonthlyQuotaExhausted, nextMonthlyResetFrom(rec.MonthlyWindowStart, now))
+		}
+		return nil
+	}
+
+	// cache MISS 或旧版 entry → 回填完整 entry（含 limits 和 window_start）
+	newEntry := &UserPlatformQuotaCacheEntry{
+		DailyUsageUSD:      dailyUsage,
+		WeeklyUsageUSD:     weeklyUsage,
+		MonthlyUsageUSD:    monthlyUsage,
+		SchemaVersion:      UserPlatformQuotaCacheSchemaV1,
+		DailyLimitUSD:      rec.DailyLimitUSD,
+		WeeklyLimitUSD:     rec.WeeklyLimitUSD,
+		MonthlyLimitUSD:    rec.MonthlyLimitUSD,
+		DailyWindowStart:   rec.DailyWindowStart,
+		WeeklyWindowStart:  rec.WeeklyWindowStart,
+		MonthlyWindowStart: rec.MonthlyWindowStart,
+	}
+	if s.cache != nil {
+		ttl := time.Duration(s.cfg.Billing.UserPlatformQuotaCacheTTLSeconds) * time.Second
+		setCtx, setCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		if setErr := s.SetSubjectPlatformQuotaCache(setCtx, subjectID, platform, newEntry, ttl); setErr != nil {
+			logger.LegacyPrintf("service.billing_cache", "Warning: set subject platform quota cache failed subject=%d platform=%s: %v", subjectID, platform, setErr)
+		}
+		setCancel()
+	}
+
+	precheckCost := precheckMinimumCost(group, groupRateMultiplier(group))
+	if rec.DailyLimitUSD != nil && dailyUsage+precheckCost > *rec.DailyLimitUSD {
+		return withWindowResetsMetadata(ErrUserPlatformDailyQuotaExhausted, nextDailyReset(now))
+	}
+	if rec.WeeklyLimitUSD != nil && weeklyUsage+precheckCost > *rec.WeeklyLimitUSD {
+		return withWindowResetsMetadata(ErrUserPlatformWeeklyQuotaExhausted, nextWeeklyReset(now))
+	}
+	if rec.MonthlyLimitUSD != nil && monthlyUsage+precheckCost > *rec.MonthlyLimitUSD {
+		return withWindowResetsMetadata(ErrUserPlatformMonthlyQuotaExhausted, nextMonthlyResetFrom(rec.MonthlyWindowStart, now))
+	}
+	return nil
+}
+
 // withWindowResetsMetadata 给 quota error 附加 window_resets_at metadata（RFC3339）。
 func withWindowResetsMetadata(err error, resetAt time.Time) error {
 	appErr, ok := err.(*infraerrors.ApplicationError)
@@ -1429,6 +1643,23 @@ func (s *BillingCacheService) HasUserPlatformQuotaLimit(ctx context.Context, use
 		return true
 	}
 	entry, ok, err := s.cache.GetUserPlatformQuotaCache(ctx, userID, platform)
+	if err != nil || !ok || entry == nil {
+		return true
+	}
+	return entry.DailyLimitUSD != nil || entry.WeeklyLimitUSD != nil || entry.MonthlyLimitUSD != nil
+}
+
+// HasSubjectPlatformQuotaLimit 是 HasUserPlatformQuotaLimit 的 billing_subject 维度版本（platform-quota）。
+// 写入点守卫的 subject 版：判断该 subject×platform 是否设了任一非 nil limit。
+// 由 (4/4) 切写路径时启用；本 PR 仅新增、未接线。fail-safe：任何不确定（simple 模式除外）返回 true。
+func (s *BillingCacheService) HasSubjectPlatformQuotaLimit(ctx context.Context, subjectID int64, platform string) bool {
+	if s.cfg.RunMode == config.RunModeSimple {
+		return false
+	}
+	if s.cache == nil {
+		return true
+	}
+	entry, ok, err := s.GetSubjectPlatformQuotaCache(ctx, subjectID, platform)
 	if err != nil || !ok || entry == nil {
 		return true
 	}
