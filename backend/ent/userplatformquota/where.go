@@ -280,6 +280,16 @@ func UserIDNotIn(vs ...int64) predicate.UserPlatformQuota {
 	return predicate.UserPlatformQuota(sql.FieldNotIn(FieldUserID, vs...))
 }
 
+// UserIDIsNil applies the IsNil predicate on the "user_id" field.
+func UserIDIsNil() predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldIsNull(FieldUserID))
+}
+
+// UserIDNotNil applies the NotNil predicate on the "user_id" field.
+func UserIDNotNil() predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldNotNull(FieldUserID))
+}
+
 // BillingSubjectIDEQ applies the EQ predicate on the "billing_subject_id" field.
 func BillingSubjectIDEQ(v int64) predicate.UserPlatformQuota {
 	return predicate.UserPlatformQuota(sql.FieldEQ(FieldBillingSubjectID, v))

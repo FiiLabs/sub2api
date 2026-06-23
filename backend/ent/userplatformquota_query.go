@@ -453,7 +453,10 @@ func (_q *UserPlatformQuotaQuery) loadUser(ctx context.Context, query *UserQuery
 	ids := make([]int64, 0, len(nodes))
 	nodeids := make(map[int64][]*UserPlatformQuota)
 	for i := range nodes {
-		fk := nodes[i].UserID
+		if nodes[i].UserID == nil {
+			continue
+		}
+		fk := *nodes[i].UserID
 		if _, ok := nodeids[fk]; !ok {
 			ids = append(ids, fk)
 		}

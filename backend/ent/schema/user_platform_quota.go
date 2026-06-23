@@ -33,7 +33,11 @@ func (UserPlatformQuota) Mixin() []ent.Mixin {
 
 func (UserPlatformQuota) Fields() []ent.Field {
 	return []ent.Field{
-		field.Int64("user_id"),
+		// platform-quota: user_id 改可空——团队 quota 行无单一 user
+		// （user_id = NULL, billing_subject_id = 团队主体）。个人主体行 user_id 仍非空。
+		field.Int64("user_id").
+			Optional().
+			Nillable(),
 		field.Int64("billing_subject_id").
 			Optional().
 			Nillable(),
@@ -97,11 +101,11 @@ func (UserPlatformQuota) Fields() []ent.Field {
 
 func (UserPlatformQuota) Edges() []ent.Edge {
 	return []ent.Edge{
+		// platform-quota: 去掉 Required()——团队 quota 行 user_id 为空，无 user 边。
 		edge.From("user", User.Type).
 			Ref("platform_quotas").
 			Field("user_id").
-			Unique().
-			Required(),
+			Unique(),
 		edge.From("billing_subject", BillingSubject.Type).
 			Ref("platform_quotas").
 			Field("billing_subject_id").
@@ -116,6 +120,10 @@ func (UserPlatformQuota) Indexes() []ent.Index {
 			Unique().
 			Annotations(entsql.IndexWhere("deleted_at IS NULL")),
 		index.Fields("user_id"),
-		index.Fields("billing_subject_id", "platform"),
+		// platform-quota: subject 维度部分唯一索引（模型对齐 migration 153）。
+		// 软删除友好 + 仅对已设 subject 的行唯一；团队主体多成员共享同一行。
+		index.Fields("billing_subject_id", "platform").
+			Unique().
+			Annotations(entsql.IndexWhere("billing_subject_id IS NOT NULL AND deleted_at IS NULL")),
 	}
 }

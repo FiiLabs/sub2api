@@ -72,6 +72,14 @@ func (_c *UserPlatformQuotaCreate) SetUserID(v int64) *UserPlatformQuotaCreate {
 	return _c
 }
 
+// SetNillableUserID sets the "user_id" field if the given value is not nil.
+func (_c *UserPlatformQuotaCreate) SetNillableUserID(v *int64) *UserPlatformQuotaCreate {
+	if v != nil {
+		_c.SetUserID(*v)
+	}
+	return _c
+}
+
 // SetBillingSubjectID sets the "billing_subject_id" field.
 func (_c *UserPlatformQuotaCreate) SetBillingSubjectID(v int64) *UserPlatformQuotaCreate {
 	_c.mutation.SetBillingSubjectID(v)
@@ -302,9 +310,6 @@ func (_c *UserPlatformQuotaCreate) check() error {
 	if _, ok := _c.mutation.UpdatedAt(); !ok {
 		return &ValidationError{Name: "updated_at", err: errors.New(`ent: missing required field "UserPlatformQuota.updated_at"`)}
 	}
-	if _, ok := _c.mutation.UserID(); !ok {
-		return &ValidationError{Name: "user_id", err: errors.New(`ent: missing required field "UserPlatformQuota.user_id"`)}
-	}
 	if _, ok := _c.mutation.Platform(); !ok {
 		return &ValidationError{Name: "platform", err: errors.New(`ent: missing required field "UserPlatformQuota.platform"`)}
 	}
@@ -321,9 +326,6 @@ func (_c *UserPlatformQuotaCreate) check() error {
 	}
 	if _, ok := _c.mutation.MonthlyUsageUsd(); !ok {
 		return &ValidationError{Name: "monthly_usage_usd", err: errors.New(`ent: missing required field "UserPlatformQuota.monthly_usage_usd"`)}
-	}
-	if len(_c.mutation.UserIDs()) == 0 {
-		return &ValidationError{Name: "user", err: errors.New(`ent: missing required edge "UserPlatformQuota.user"`)}
 	}
 	return nil
 }
@@ -418,7 +420,7 @@ func (_c *UserPlatformQuotaCreate) createSpec() (*UserPlatformQuota, *sqlgraph.C
 		for _, k := range nodes {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
-		_node.UserID = nodes[0]
+		_node.UserID = &nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	if nodes := _c.mutation.BillingSubjectIDs(); len(nodes) > 0 {
@@ -529,6 +531,12 @@ func (u *UserPlatformQuotaUpsert) SetUserID(v int64) *UserPlatformQuotaUpsert {
 // UpdateUserID sets the "user_id" field to the value that was provided on create.
 func (u *UserPlatformQuotaUpsert) UpdateUserID() *UserPlatformQuotaUpsert {
 	u.SetExcluded(userplatformquota.FieldUserID)
+	return u
+}
+
+// ClearUserID clears the value of the "user_id" field.
+func (u *UserPlatformQuotaUpsert) ClearUserID() *UserPlatformQuotaUpsert {
+	u.SetNull(userplatformquota.FieldUserID)
 	return u
 }
 
@@ -833,6 +841,13 @@ func (u *UserPlatformQuotaUpsertOne) SetUserID(v int64) *UserPlatformQuotaUpsert
 func (u *UserPlatformQuotaUpsertOne) UpdateUserID() *UserPlatformQuotaUpsertOne {
 	return u.Update(func(s *UserPlatformQuotaUpsert) {
 		s.UpdateUserID()
+	})
+}
+
+// ClearUserID clears the value of the "user_id" field.
+func (u *UserPlatformQuotaUpsertOne) ClearUserID() *UserPlatformQuotaUpsertOne {
+	return u.Update(func(s *UserPlatformQuotaUpsert) {
+		s.ClearUserID()
 	})
 }
 
@@ -1338,6 +1353,13 @@ func (u *UserPlatformQuotaUpsertBulk) SetUserID(v int64) *UserPlatformQuotaUpser
 func (u *UserPlatformQuotaUpsertBulk) UpdateUserID() *UserPlatformQuotaUpsertBulk {
 	return u.Update(func(s *UserPlatformQuotaUpsert) {
 		s.UpdateUserID()
+	})
+}
+
+// ClearUserID clears the value of the "user_id" field.
+func (u *UserPlatformQuotaUpsertBulk) ClearUserID() *UserPlatformQuotaUpsertBulk {
+	return u.Update(func(s *UserPlatformQuotaUpsert) {
+		s.ClearUserID()
 	})
 }
 

@@ -26,7 +26,7 @@ type UserPlatformQuota struct {
 	// DeletedAt holds the value of the "deleted_at" field.
 	DeletedAt *time.Time `json:"deleted_at,omitempty"`
 	// UserID holds the value of the "user_id" field.
-	UserID int64 `json:"user_id,omitempty"`
+	UserID *int64 `json:"user_id,omitempty"`
 	// BillingSubjectID holds the value of the "billing_subject_id" field.
 	BillingSubjectID *int64 `json:"billing_subject_id,omitempty"`
 	// Platform holds the value of the "platform" field.
@@ -145,7 +145,8 @@ func (_m *UserPlatformQuota) assignValues(columns []string, values []any) error 
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field user_id", values[i])
 			} else if value.Valid {
-				_m.UserID = value.Int64
+				_m.UserID = new(int64)
+				*_m.UserID = value.Int64
 			}
 		case userplatformquota.FieldBillingSubjectID:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -277,8 +278,10 @@ func (_m *UserPlatformQuota) String() string {
 		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteString(", ")
-	builder.WriteString("user_id=")
-	builder.WriteString(fmt.Sprintf("%v", _m.UserID))
+	if v := _m.UserID; v != nil {
+		builder.WriteString("user_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	if v := _m.BillingSubjectID; v != nil {
 		builder.WriteString("billing_subject_id=")

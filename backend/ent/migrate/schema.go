@@ -2041,7 +2041,7 @@ var (
 		{Name: "weekly_window_start", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "monthly_window_start", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "billing_subject_id", Type: field.TypeInt64, Nullable: true},
-		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "user_id", Type: field.TypeInt64, Nullable: true},
 	}
 	// UserPlatformQuotasTable holds the schema information for the "user_platform_quotas" table.
 	UserPlatformQuotasTable = &schema.Table{
@@ -2059,7 +2059,7 @@ var (
 				Symbol:     "user_platform_quotas_users_platform_quotas",
 				Columns:    []*schema.Column{UserPlatformQuotasColumns[15]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
-				OnDelete:   schema.NoAction,
+				OnDelete:   schema.SetNull,
 			},
 		},
 		Indexes: []*schema.Index{
@@ -2078,8 +2078,11 @@ var (
 			},
 			{
 				Name:    "userplatformquota_billing_subject_id_platform",
-				Unique:  false,
+				Unique:  true,
 				Columns: []*schema.Column{UserPlatformQuotasColumns[14], UserPlatformQuotasColumns[4]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "billing_subject_id IS NOT NULL AND deleted_at IS NULL",
+				},
 			},
 		},
 	}

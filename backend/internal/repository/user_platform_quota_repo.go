@@ -295,8 +295,14 @@ func (r *userPlatformQuotaRepository) withTx(ctx context.Context, fn func(txCtx 
 // entQuotaToRecord 将 ent entity 映射为 repository record。
 // 注意 ent 生成字段名为 DailyLimitUsd（非 DailyLimitUSD）。
 func entQuotaToRecord(e *dbent.UserPlatformQuota) *UserPlatformQuotaRecord {
+	// platform-quota: user_id 改 Nillable 后为 *int64。个人主体行非空；
+	// 团队行（user_id=NULL）只会经 subject 维度查询返回，此处 nil 兜底为 0。
+	var userID int64
+	if e.UserID != nil {
+		userID = *e.UserID
+	}
 	return &UserPlatformQuotaRecord{
-		UserID:             e.UserID,
+		UserID:             userID,
 		Platform:           e.Platform,
 		DailyLimitUSD:      e.DailyLimitUsd,
 		WeeklyLimitUSD:     e.WeeklyLimitUsd,

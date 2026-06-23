@@ -52126,7 +52126,7 @@ func (m *UserPlatformQuotaMutation) UserID() (r int64, exists bool) {
 // OldUserID returns the old "user_id" field's value of the UserPlatformQuota entity.
 // If the UserPlatformQuota object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *UserPlatformQuotaMutation) OldUserID(ctx context.Context) (v int64, err error) {
+func (m *UserPlatformQuotaMutation) OldUserID(ctx context.Context) (v *int64, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldUserID is only allowed on UpdateOne operations")
 	}
@@ -52140,9 +52140,22 @@ func (m *UserPlatformQuotaMutation) OldUserID(ctx context.Context) (v int64, err
 	return oldValue.UserID, nil
 }
 
+// ClearUserID clears the value of the "user_id" field.
+func (m *UserPlatformQuotaMutation) ClearUserID() {
+	m.user = nil
+	m.clearedFields[userplatformquota.FieldUserID] = struct{}{}
+}
+
+// UserIDCleared returns if the "user_id" field was cleared in this mutation.
+func (m *UserPlatformQuotaMutation) UserIDCleared() bool {
+	_, ok := m.clearedFields[userplatformquota.FieldUserID]
+	return ok
+}
+
 // ResetUserID resets all changes to the "user_id" field.
 func (m *UserPlatformQuotaMutation) ResetUserID() {
 	m.user = nil
+	delete(m.clearedFields, userplatformquota.FieldUserID)
 }
 
 // SetBillingSubjectID sets the "billing_subject_id" field.
@@ -52763,7 +52776,7 @@ func (m *UserPlatformQuotaMutation) ClearUser() {
 
 // UserCleared reports if the "user" edge to the User entity was cleared.
 func (m *UserPlatformQuotaMutation) UserCleared() bool {
-	return m.cleareduser
+	return m.UserIDCleared() || m.cleareduser
 }
 
 // UserIDs returns the "user" edge IDs in the mutation.
@@ -53188,6 +53201,9 @@ func (m *UserPlatformQuotaMutation) ClearedFields() []string {
 	if m.FieldCleared(userplatformquota.FieldDeletedAt) {
 		fields = append(fields, userplatformquota.FieldDeletedAt)
 	}
+	if m.FieldCleared(userplatformquota.FieldUserID) {
+		fields = append(fields, userplatformquota.FieldUserID)
+	}
 	if m.FieldCleared(userplatformquota.FieldBillingSubjectID) {
 		fields = append(fields, userplatformquota.FieldBillingSubjectID)
 	}
@@ -53225,6 +53241,9 @@ func (m *UserPlatformQuotaMutation) ClearField(name string) error {
 	switch name {
 	case userplatformquota.FieldDeletedAt:
 		m.ClearDeletedAt()
+		return nil
+	case userplatformquota.FieldUserID:
+		m.ClearUserID()
 		return nil
 	case userplatformquota.FieldBillingSubjectID:
 		m.ClearBillingSubjectID()

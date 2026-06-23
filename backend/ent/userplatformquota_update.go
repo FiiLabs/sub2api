@@ -70,6 +70,12 @@ func (_u *UserPlatformQuotaUpdate) SetNillableUserID(v *int64) *UserPlatformQuot
 	return _u
 }
 
+// ClearUserID clears the value of the "user_id" field.
+func (_u *UserPlatformQuotaUpdate) ClearUserID() *UserPlatformQuotaUpdate {
+	_u.mutation.ClearUserID()
+	return _u
+}
+
 // SetBillingSubjectID sets the "billing_subject_id" field.
 func (_u *UserPlatformQuotaUpdate) SetBillingSubjectID(v int64) *UserPlatformQuotaUpdate {
 	_u.mutation.SetBillingSubjectID(v)
@@ -384,9 +390,6 @@ func (_u *UserPlatformQuotaUpdate) check() error {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "UserPlatformQuota.platform": %w`, err)}
 		}
 	}
-	if _u.mutation.UserCleared() && len(_u.mutation.UserIDs()) > 0 {
-		return errors.New(`ent: clearing a required unique edge "UserPlatformQuota.user"`)
-	}
 	return nil
 }
 
@@ -592,6 +595,12 @@ func (_u *UserPlatformQuotaUpdateOne) SetNillableUserID(v *int64) *UserPlatformQ
 	if v != nil {
 		_u.SetUserID(*v)
 	}
+	return _u
+}
+
+// ClearUserID clears the value of the "user_id" field.
+func (_u *UserPlatformQuotaUpdateOne) ClearUserID() *UserPlatformQuotaUpdateOne {
+	_u.mutation.ClearUserID()
 	return _u
 }
 
@@ -921,9 +930,6 @@ func (_u *UserPlatformQuotaUpdateOne) check() error {
 		if err := userplatformquota.PlatformValidator(v); err != nil {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "UserPlatformQuota.platform": %w`, err)}
 		}
-	}
-	if _u.mutation.UserCleared() && len(_u.mutation.UserIDs()) > 0 {
-		return errors.New(`ent: clearing a required unique edge "UserPlatformQuota.user"`)
 	}
 	return nil
 }
