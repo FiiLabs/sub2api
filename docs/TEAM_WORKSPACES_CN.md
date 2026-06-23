@@ -29,10 +29,9 @@ Sub2API 支持个人工作空间和团队工作空间。
 
 ## 已知限制
 
-- **按平台的 USD 限额暂未按团队计费主体生效。** 日/周/月平台限额（`user_platform_quotas`）
-  目前仍以 `user_id` 为键，因此只对操作者本人生效，而非整个团队账单主体。该表已有
-  `billing_subject_id` 列、缓存层也提供了按计费主体的辅助方法，但存储身份
-  （`UNIQUE (user_id, platform)`、`user_id` 非空）以及拦截与回写（flusher）路径仍按用户计费。
-  个人工作空间不受影响。要让平台限额按团队共享，需要做一次表身份模型变更
-  （`user_id` 改可空、新增 `(billing_subject_id, platform)` 唯一索引、重写所有冲突目标、
-  管理端改为按计费主体管理、并做数据回填），该工作推迟到后续版本。
+- **按平台的 USD 限额已改为按团队计费主体生效（灰度中）。** 日/周/月平台限额（`user_platform_quotas`）
+  现可按 `billing_subject_id` 拦截与回写：团队成员消耗共享团队主体限额，个人工作空间行为不变。
+  由开关 `billing.quota_subject_scoped` 控制（默认开）；设为 false 即整体回退到历史 `user_id` 维度（kill-switch）。
+  实现见 [impl/platform-quota-subject.md](./impl/platform-quota-subject.md)（`user_id` 已改可空、新增
+  `(billing_subject_id, platform)` 部分唯一索引、拦截/回写/注册/管理端全切、历史已回填）。
+  仍待：staging 集成验证后删除开关与旧 user 路径收尾（见该方案 §8）。

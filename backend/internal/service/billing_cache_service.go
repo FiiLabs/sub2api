@@ -359,12 +359,11 @@ func (s *BillingCacheService) InvalidateSubjectBalance(ctx context.Context, subj
 	return s.cache.InvalidateUserBalance(ctx, subjectID)
 }
 
-// 已知限制（暂缓项，见 docs/TEAM_WORKSPACES.md「Known limitations」）：
-// 以下 Subject×platform 配额缓存方法已就绪，但平台配额的存储身份仍是
-// (user_id, platform)（user_id 非空、唯一索引在 user_id 上），且热路径
-// checkUserPlatformQuotaEligibility / IncrementUserPlatformQuotaUsage 与 flusher
-// 仍按 user 计费。因此这些 Subject 方法尚未接入实际的拦截与回写路径——团队级平台
-// 配额需要先做表身份模型变更后再启用。请勿误以为调用它们即可让团队配额生效。
+// platform-quota（已接入）：以下 Subject×platform 配额缓存方法现已用于实际拦截与回写。
+// 当 config.Billing.QuotaSubjectScoped=true（默认）时，preflight（checkSubjectPlatformQuotaEligibility）
+// 与写回（IncrementSubjectPlatformQuotaUsage / flusher subject 脏集）均按 billing_subject 计费，
+// 团队成员消耗共享团队主体限额；设为 false 则整体回退到 user 维度（kill-switch）。
+// 旧 user 维度方法暂保留供回退，待 staging 验证后由小 PR 下线（见 docs/impl/platform-quota-subject.md §8）。
 
 // GetSubjectPlatformQuotaCache 读取计费主体 × platform 配额缓存。
 func (s *BillingCacheService) GetSubjectPlatformQuotaCache(ctx context.Context, subjectID int64, platform string) (*UserPlatformQuotaCacheEntry, bool, error) {
