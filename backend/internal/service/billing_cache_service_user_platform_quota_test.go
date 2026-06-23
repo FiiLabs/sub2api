@@ -93,6 +93,31 @@ func (f *fakeQuotaRepo) BatchSnapshotUsage(_ context.Context, _ []UserPlatformQu
 	return nil
 }
 
+// platform-quota: subject 维度方法。GetBySubjectPlatform 复用 f.rec，便于 subject 路径单测。
+func (f *fakeQuotaRepo) GetBySubjectPlatform(_ context.Context, _ int64, _ string) (*UserPlatformQuotaRecord, error) {
+	return f.rec, nil
+}
+
+func (f *fakeQuotaRepo) IncrementUsageWithResetBySubject(_ context.Context, _ int64, _ string, _ float64, _ time.Time) error {
+	return nil
+}
+
+func (f *fakeQuotaRepo) ListBySubject(_ context.Context, _ int64) ([]UserPlatformQuotaRecord, error) {
+	return nil, nil
+}
+
+func (f *fakeQuotaRepo) UpsertForSubject(_ context.Context, _ int64, _ []UserPlatformQuotaRecord) error {
+	return nil
+}
+
+func (f *fakeQuotaRepo) ResetExpiredWindowBySubject(_ context.Context, _ int64, _ string, _ string, _ time.Time) error {
+	return nil
+}
+
+func (f *fakeQuotaRepo) BatchSnapshotUsageBySubject(_ context.Context, _ []UserPlatformQuotaSnapshot, _ time.Time) error {
+	return nil
+}
+
 // fakeFullCache 同时支持 Get + Set + Incr + Delete + Pop/Readd/BatchGet（脏集读写）。
 // mu 保护 entry 和 deleteCalls，防止异步 goroutine 与主 goroutine 之间的 data race。
 type fakeFullCache struct {

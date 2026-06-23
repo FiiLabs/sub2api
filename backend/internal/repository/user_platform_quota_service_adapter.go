@@ -49,6 +49,7 @@ func (a *userPlatformQuotaServiceAdapter) ListByUser(ctx context.Context, userID
 	for i, r := range rows {
 		out[i] = service.UserPlatformQuotaRecord{
 			UserID:             r.UserID,
+			BillingSubjectID:   r.BillingSubjectID,
 			Platform:           r.Platform,
 			DailyLimitUSD:      r.DailyLimitUSD,
 			WeeklyLimitUSD:     r.WeeklyLimitUSD,
@@ -69,11 +70,12 @@ func (a *userPlatformQuotaServiceAdapter) BulkInsertInitial(ctx context.Context,
 	repoRecords := make([]UserPlatformQuotaRecord, len(records))
 	for i, r := range records {
 		repoRecords[i] = UserPlatformQuotaRecord{
-			UserID:          r.UserID,
-			Platform:        r.Platform,
-			DailyLimitUSD:   r.DailyLimitUSD,
-			WeeklyLimitUSD:  r.WeeklyLimitUSD,
-			MonthlyLimitUSD: r.MonthlyLimitUSD,
+			UserID:           r.UserID,
+			BillingSubjectID: r.BillingSubjectID,
+			Platform:         r.Platform,
+			DailyLimitUSD:    r.DailyLimitUSD,
+			WeeklyLimitUSD:   r.WeeklyLimitUSD,
+			MonthlyLimitUSD:  r.MonthlyLimitUSD,
 		}
 	}
 	return a.inner.BulkInsertInitial(ctx, repoRecords)
@@ -101,6 +103,7 @@ func (a *userPlatformQuotaServiceAdapter) BatchSnapshotUsage(ctx context.Context
 	for i, s := range snapshots {
 		repoSnaps[i] = UserPlatformQuotaSnapshot{
 			UserID:             s.UserID,
+			BillingSubjectID:   s.BillingSubjectID,
 			Platform:           s.Platform,
 			DailyUsageUSD:      s.DailyUsageUSD,
 			WeeklyUsageUSD:     s.WeeklyUsageUSD,
@@ -111,6 +114,52 @@ func (a *userPlatformQuotaServiceAdapter) BatchSnapshotUsage(ctx context.Context
 		}
 	}
 	err := a.inner.BatchSnapshotUsage(ctx, repoSnaps, now)
+	if errors.Is(err, ErrUserPlatformQuotaFKViolation) {
+		return fmt.Errorf("%w: %v", service.ErrUserPlatformQuotaFKViolation, err)
+	}
+	return err
+}
+
+// ── platform-quota: billing_subject 维度方法（转发 + 类型转换，语义同对应 user 版）──
+
+func (a *userPlatformQuotaServiceAdapter) GetBySubjectPlatform(ctx context.Context, subjectID int64, platform string) (*service.UserPlatformQuotaRecord, error) {
+	rec, err := a.inner.GetBySubjectPlatform(ctx, subjectID, platform)
+	if err != nil || rec == nil {
+		return nil, err
+	}
+	return toServiceRecord(rec), nil
+}
+
+func (a *userPlatformQuotaServiceAdapter) IncrementUsageWithResetBySubject(ctx context.Context, subjectID int64, platform string, cost float64, now time.Time) error {
+	return a.inner.IncrementUsageWithResetBySubject(ctx, subjectID, platform, cost, now)
+}
+
+func (a *userPlatformQuotaServiceAdapter) ListBySubject(ctx context.Context, subjectID int64) ([]service.UserPlatformQuotaRecord, error) {
+	rows, err := a.inner.ListBySubject(ctx, subjectID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]service.UserPlatformQuotaRecord, len(rows))
+	for i, r := range rows {
+		out[i] = toServiceRecordValue(r)
+	}
+	return out, nil
+}
+
+func (a *userPlatformQuotaServiceAdapter) UpsertForSubject(ctx context.Context, subjectID int64, records []service.UserPlatformQuotaRecord) error {
+	return a.inner.UpsertForSubject(ctx, subjectID, toRepoRecords(records))
+}
+
+func (a *userPlatformQuotaServiceAdapter) ResetExpiredWindowBySubject(ctx context.Context, subjectID int64, platform string, window string, newStart time.Time) error {
+	err := a.inner.ResetExpiredWindowBySubject(ctx, subjectID, platform, window, newStart)
+	if errors.Is(err, ErrUserPlatformQuotaNotFound) {
+		return fmt.Errorf("%w: %w", service.ErrUserPlatformQuotaNotFound, err)
+	}
+	return err
+}
+
+func (a *userPlatformQuotaServiceAdapter) BatchSnapshotUsageBySubject(ctx context.Context, snapshots []service.UserPlatformQuotaSnapshot, now time.Time) error {
+	err := a.inner.BatchSnapshotUsageBySubject(ctx, toRepoSnapshots(snapshots), now)
 	if errors.Is(err, ErrUserPlatformQuotaFKViolation) {
 		return fmt.Errorf("%w: %v", service.ErrUserPlatformQuotaFKViolation, err)
 	}
@@ -145,6 +194,7 @@ func (a *genericUserPlatformQuotaAdapter) ListByUser(ctx context.Context, userID
 	for i, r := range rows {
 		out[i] = service.UserPlatformQuotaRecord{
 			UserID:             r.UserID,
+			BillingSubjectID:   r.BillingSubjectID,
 			Platform:           r.Platform,
 			DailyLimitUSD:      r.DailyLimitUSD,
 			WeeklyLimitUSD:     r.WeeklyLimitUSD,
@@ -165,11 +215,12 @@ func (a *genericUserPlatformQuotaAdapter) BulkInsertInitial(ctx context.Context,
 	repoRecords := make([]UserPlatformQuotaRecord, len(records))
 	for i, r := range records {
 		repoRecords[i] = UserPlatformQuotaRecord{
-			UserID:          r.UserID,
-			Platform:        r.Platform,
-			DailyLimitUSD:   r.DailyLimitUSD,
-			WeeklyLimitUSD:  r.WeeklyLimitUSD,
-			MonthlyLimitUSD: r.MonthlyLimitUSD,
+			UserID:           r.UserID,
+			BillingSubjectID: r.BillingSubjectID,
+			Platform:         r.Platform,
+			DailyLimitUSD:    r.DailyLimitUSD,
+			WeeklyLimitUSD:   r.WeeklyLimitUSD,
+			MonthlyLimitUSD:  r.MonthlyLimitUSD,
 		}
 	}
 	return a.inner.BulkInsertInitial(ctx, repoRecords)
@@ -197,6 +248,7 @@ func (a *genericUserPlatformQuotaAdapter) BatchSnapshotUsage(ctx context.Context
 	for i, s := range snapshots {
 		repoSnaps[i] = UserPlatformQuotaSnapshot{
 			UserID:             s.UserID,
+			BillingSubjectID:   s.BillingSubjectID,
 			Platform:           s.Platform,
 			DailyUsageUSD:      s.DailyUsageUSD,
 			WeeklyUsageUSD:     s.WeeklyUsageUSD,
@@ -213,10 +265,81 @@ func (a *genericUserPlatformQuotaAdapter) BatchSnapshotUsage(ctx context.Context
 	return err
 }
 
+// ── platform-quota: billing_subject 维度方法（通用 adapter，转发 + 类型转换）──
+
+func (a *genericUserPlatformQuotaAdapter) GetBySubjectPlatform(ctx context.Context, subjectID int64, platform string) (*service.UserPlatformQuotaRecord, error) {
+	rec, err := a.inner.GetBySubjectPlatform(ctx, subjectID, platform)
+	if err != nil || rec == nil {
+		return nil, err
+	}
+	return toServiceRecord(rec), nil
+}
+
+func (a *genericUserPlatformQuotaAdapter) IncrementUsageWithResetBySubject(ctx context.Context, subjectID int64, platform string, cost float64, now time.Time) error {
+	return a.inner.IncrementUsageWithResetBySubject(ctx, subjectID, platform, cost, now)
+}
+
+func (a *genericUserPlatformQuotaAdapter) ListBySubject(ctx context.Context, subjectID int64) ([]service.UserPlatformQuotaRecord, error) {
+	rows, err := a.inner.ListBySubject(ctx, subjectID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]service.UserPlatformQuotaRecord, len(rows))
+	for i, r := range rows {
+		out[i] = toServiceRecordValue(r)
+	}
+	return out, nil
+}
+
+func (a *genericUserPlatformQuotaAdapter) UpsertForSubject(ctx context.Context, subjectID int64, records []service.UserPlatformQuotaRecord) error {
+	return a.inner.UpsertForSubject(ctx, subjectID, toRepoRecords(records))
+}
+
+func (a *genericUserPlatformQuotaAdapter) ResetExpiredWindowBySubject(ctx context.Context, subjectID int64, platform string, window string, newStart time.Time) error {
+	err := a.inner.ResetExpiredWindowBySubject(ctx, subjectID, platform, window, newStart)
+	if errors.Is(err, ErrUserPlatformQuotaNotFound) {
+		return fmt.Errorf("%w: %w", service.ErrUserPlatformQuotaNotFound, err)
+	}
+	return err
+}
+
+func (a *genericUserPlatformQuotaAdapter) BatchSnapshotUsageBySubject(ctx context.Context, snapshots []service.UserPlatformQuotaSnapshot, now time.Time) error {
+	err := a.inner.BatchSnapshotUsageBySubject(ctx, toRepoSnapshots(snapshots), now)
+	if errors.Is(err, ErrUserPlatformQuotaFKViolation) {
+		return fmt.Errorf("%w: %v", service.ErrUserPlatformQuotaFKViolation, err)
+	}
+	return err
+}
+
+// toServiceRecordValue 是 toServiceRecord 的值版本（用于 ListBySubject 映射）。
+func toServiceRecordValue(rec UserPlatformQuotaRecord) service.UserPlatformQuotaRecord {
+	return *toServiceRecord(&rec)
+}
+
+// toRepoSnapshots 将 []service.UserPlatformQuotaSnapshot 转换为 repository 层切片（含 BillingSubjectID）。
+func toRepoSnapshots(snapshots []service.UserPlatformQuotaSnapshot) []UserPlatformQuotaSnapshot {
+	repoSnaps := make([]UserPlatformQuotaSnapshot, len(snapshots))
+	for i, s := range snapshots {
+		repoSnaps[i] = UserPlatformQuotaSnapshot{
+			UserID:             s.UserID,
+			BillingSubjectID:   s.BillingSubjectID,
+			Platform:           s.Platform,
+			DailyUsageUSD:      s.DailyUsageUSD,
+			WeeklyUsageUSD:     s.WeeklyUsageUSD,
+			MonthlyUsageUSD:    s.MonthlyUsageUSD,
+			DailyWindowStart:   s.DailyWindowStart,
+			WeeklyWindowStart:  s.WeeklyWindowStart,
+			MonthlyWindowStart: s.MonthlyWindowStart,
+		}
+	}
+	return repoSnaps
+}
+
 // toServiceRecord 将 repository.UserPlatformQuotaRecord 转换为 service.UserPlatformQuotaRecord。
 func toServiceRecord(rec *UserPlatformQuotaRecord) *service.UserPlatformQuotaRecord {
 	return &service.UserPlatformQuotaRecord{
 		UserID:             rec.UserID,
+		BillingSubjectID:   rec.BillingSubjectID,
 		Platform:           rec.Platform,
 		DailyLimitUSD:      rec.DailyLimitUSD,
 		WeeklyLimitUSD:     rec.WeeklyLimitUSD,
@@ -236,6 +359,7 @@ func toRepoRecords(records []service.UserPlatformQuotaRecord) []UserPlatformQuot
 	for i, r := range records {
 		out[i] = UserPlatformQuotaRecord{
 			UserID:             r.UserID,
+			BillingSubjectID:   r.BillingSubjectID,
 			Platform:           r.Platform,
 			DailyLimitUSD:      r.DailyLimitUSD,
 			WeeklyLimitUSD:     r.WeeklyLimitUSD,

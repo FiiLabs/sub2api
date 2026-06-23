@@ -16,7 +16,10 @@ import (
 // UserPlatformQuotaRecord 是 repository 层的传输结构体，
 // 与 ent.UserPlatformQuota 实体解耦，供业务层使用。
 type UserPlatformQuotaRecord struct {
-	UserID             int64
+	UserID int64
+	// BillingSubjectID 计费主体 ID（platform-quota）：个人主体行与 UserID 一一对应，
+	// 团队主体行 UserID 为空（0）。0 表示未关联主体（旧行回填前/通用 fake）。
+	BillingSubjectID   int64
 	Platform           string
 	DailyLimitUSD      *float64
 	WeeklyLimitUSD     *float64
@@ -38,7 +41,9 @@ var ErrUserPlatformQuotaFKViolation = errors.New("user platform quota snapshot F
 // UserPlatformQuotaSnapshot 是 BatchSnapshotUsage 的输入结构体，
 // 表示 Redis 当前窗口快照（用于绝对值覆盖写入 DB）。
 type UserPlatformQuotaSnapshot struct {
-	UserID             int64
+	UserID int64
+	// BillingSubjectID 计费主体 ID（platform-quota）：BatchSnapshotUsageBySubject 按此键 UPSERT。
+	BillingSubjectID   int64
 	Platform           string
 	DailyUsageUSD      float64
 	WeeklyUsageUSD     float64
@@ -66,6 +71,24 @@ type UserPlatformQuotaRepository interface {
 	// usage/window_start 直接取 EXCLUDED(Redis 当前窗口快照),无 CASE。整批共用 now 作 created/updated_at。
 	// 要求 snapshots 内 (user,platform) 不重复。FK 违反返回 ErrUserPlatformQuotaFKViolation。
 	BatchSnapshotUsage(ctx context.Context, snapshots []UserPlatformQuotaSnapshot, now time.Time) error
+
+	// ── platform-quota: billing_subject 维度方法（与 user 版并存，灰度切换/回退用）──
+	// 语义与对应 user 版逐一对应，仅把存储/查询键从 user_id 换成 billing_subject_id，
+	// UPSERT 命中 migration 153 的 (billing_subject_id, platform) 部分唯一索引。
+
+	// GetBySubjectPlatform 查询单条配额记录，未找到时返回 (nil, nil)。
+	GetBySubjectPlatform(ctx context.Context, subjectID int64, platform string) (*UserPlatformQuotaRecord, error)
+	// ListBySubject 查询计费主体的所有平台配额记录（排除软删除）。
+	ListBySubject(ctx context.Context, subjectID int64) ([]UserPlatformQuotaRecord, error)
+	// IncrementUsageWithResetBySubject 原子累加用量，窗口过期先重置再累加；fail-open 建行时 user_id 留空。
+	IncrementUsageWithResetBySubject(ctx context.Context, subjectID int64, platform string, cost float64, now time.Time) error
+	// ResetExpiredWindowBySubject 无条件重置指定窗口；未命中活跃记录返回 ErrUserPlatformQuotaNotFound。
+	ResetExpiredWindowBySubject(ctx context.Context, subjectID int64, platform string, window string, newStart time.Time) error
+	// UpsertForSubject 全量替换该计费主体所有平台限额配置（语义同 UpsertForUser）。
+	UpsertForSubject(ctx context.Context, subjectID int64, records []UserPlatformQuotaRecord) error
+	// BatchSnapshotUsageBySubject 按 (billing_subject_id, platform) 绝对值覆盖写入整批快照。
+	// 要求 snapshots 内 (subject,platform) 不重复；FK 违反返回 ErrUserPlatformQuotaFKViolation。
+	BatchSnapshotUsageBySubject(ctx context.Context, snapshots []UserPlatformQuotaSnapshot, now time.Time) error
 }
 
 type userPlatformQuotaRepository struct {
@@ -301,8 +324,13 @@ func entQuotaToRecord(e *dbent.UserPlatformQuota) *UserPlatformQuotaRecord {
 	if e.UserID != nil {
 		userID = *e.UserID
 	}
+	var subjectID int64
+	if e.BillingSubjectID != nil {
+		subjectID = *e.BillingSubjectID
+	}
 	return &UserPlatformQuotaRecord{
 		UserID:             userID,
+		BillingSubjectID:   subjectID,
 		Platform:           e.Platform,
 		DailyLimitUSD:      e.DailyLimitUsd,
 		WeeklyLimitUSD:     e.WeeklyLimitUsd,
@@ -494,6 +522,288 @@ func (r *userPlatformQuotaRepository) BatchSnapshotUsage(ctx context.Context, sn
 
 		_, _ = sb.WriteString(
 			" ON CONFLICT (user_id, platform) WHERE deleted_at IS NULL DO UPDATE SET" +
+				"  daily_usage_usd      = EXCLUDED.daily_usage_usd," +
+				"  weekly_usage_usd     = EXCLUDED.weekly_usage_usd," +
+				"  monthly_usage_usd    = EXCLUDED.monthly_usage_usd," +
+				"  daily_window_start   = EXCLUDED.daily_window_start," +
+				"  weekly_window_start  = EXCLUDED.weekly_window_start," +
+				"  monthly_window_start = EXCLUDED.monthly_window_start," +
+				"  updated_at           = EXCLUDED.updated_at")
+
+		if _, err := client.ExecContext(ctx, sb.String(), args...); err != nil {
+			var pqErr *pq.Error
+			if errors.As(err, &pqErr) && pqErr.Code == "23503" {
+				return ErrUserPlatformQuotaFKViolation
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+// ============================================================================
+// platform-quota: billing_subject 维度实现（与上方 user 版逐一对应，加法并存）
+//
+// 唯一区别是存储/查询键 user_id → billing_subject_id；UPSERT 的 ON CONFLICT 命中
+// migration 153 的部分唯一索引 (billing_subject_id, platform)
+// WHERE billing_subject_id IS NOT NULL AND deleted_at IS NULL。
+// fail-open 建行 / INSERT 均不写 user_id（团队行无单一 user，留 NULL）。
+// ============================================================================
+
+// subjectConflictTarget 是 subject 维度 UPSERT 的 ON CONFLICT 子句，
+// 须与 migration 153 的部分唯一索引谓词逐字一致，否则 Postgres 无法推断索引。
+const subjectConflictTarget = " ON CONFLICT (billing_subject_id, platform) WHERE billing_subject_id IS NOT NULL AND deleted_at IS NULL "
+
+// GetBySubjectPlatform 通过 ent 查询单条配额（排除软删除）。未找到返回 (nil, nil)。
+func (r *userPlatformQuotaRepository) GetBySubjectPlatform(ctx context.Context, subjectID int64, platform string) (*UserPlatformQuotaRecord, error) {
+	client := clientFromContext(ctx, r.client)
+	entity, err := client.UserPlatformQuota.Query().
+		Where(
+			userplatformquota.BillingSubjectIDEQ(subjectID),
+			userplatformquota.PlatformEQ(platform),
+			userplatformquota.DeletedAtIsNil(),
+		).
+		Only(ctx)
+	if dbent.IsNotFound(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return entQuotaToRecord(entity), nil
+}
+
+// ListBySubject 查询计费主体的所有平台配额记录（排除软删除）。
+func (r *userPlatformQuotaRepository) ListBySubject(ctx context.Context, subjectID int64) ([]UserPlatformQuotaRecord, error) {
+	client := clientFromContext(ctx, r.client)
+	rows, err := client.UserPlatformQuota.Query().
+		Where(
+			userplatformquota.BillingSubjectIDEQ(subjectID),
+			userplatformquota.DeletedAtIsNil(),
+		).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]UserPlatformQuotaRecord, 0, len(rows))
+	for _, e := range rows {
+		out = append(out, *entQuotaToRecord(e))
+	}
+	return out, nil
+}
+
+// IncrementUsageWithResetBySubject 语义同 IncrementUsageWithReset，键为 billing_subject_id。
+func (r *userPlatformQuotaRepository) IncrementUsageWithResetBySubject(ctx context.Context, subjectID int64, platform string, cost float64, now time.Time) error {
+	return r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		existing, err := txClient.UserPlatformQuota.Query().
+			Where(
+				userplatformquota.BillingSubjectIDEQ(subjectID),
+				userplatformquota.PlatformEQ(platform),
+				userplatformquota.DeletedAtIsNil(),
+			).
+			ForUpdate().
+			Only(txCtx)
+		if dbent.IsNotFound(err) {
+			// fail-open 建行：limit_* 保留 NULL（无限额），user_id 留空。
+			// DO UPDATE 累加（而非裸 INSERT）以兼容并发下另一请求刚建行的竞态。
+			insertSQL := `INSERT INTO user_platform_quotas
+				(billing_subject_id, platform, daily_usage_usd, weekly_usage_usd, monthly_usage_usd,
+				 daily_window_start, weekly_window_start, monthly_window_start, created_at, updated_at)
+				VALUES ($1, $2, $3, $3, $3, $4, $5, $6, $7, $7)` +
+				subjectConflictTarget + `DO UPDATE SET
+					daily_usage_usd   = user_platform_quotas.daily_usage_usd   + EXCLUDED.daily_usage_usd,
+					weekly_usage_usd  = user_platform_quotas.weekly_usage_usd  + EXCLUDED.weekly_usage_usd,
+					monthly_usage_usd = user_platform_quotas.monthly_usage_usd + EXCLUDED.monthly_usage_usd,
+					updated_at        = EXCLUDED.updated_at`
+			_, e := txClient.ExecContext(txCtx, insertSQL,
+				subjectID, platform, cost,
+				timezone.StartOfDay(now), timezone.StartOfWeek(now), now, now)
+			return e
+		}
+		if err != nil {
+			return err
+		}
+
+		newDaily := maybeReset(existing.DailyUsageUsd, existing.DailyWindowStart, timezone.StartOfDay(now), cost)
+		newWeekly := maybeReset(existing.WeeklyUsageUsd, existing.WeeklyWindowStart, timezone.StartOfWeek(now), cost)
+		newMonthly, newMonthlyStart := monthlyMaybeReset(existing.MonthlyUsageUsd, existing.MonthlyWindowStart, cost, now)
+
+		_, e := existing.Update().
+			SetDailyUsageUsd(newDaily).
+			SetWeeklyUsageUsd(newWeekly).
+			SetMonthlyUsageUsd(newMonthly).
+			SetDailyWindowStart(timezone.StartOfDay(now)).
+			SetWeeklyWindowStart(timezone.StartOfWeek(now)).
+			SetMonthlyWindowStart(newMonthlyStart).
+			Save(txCtx)
+		return e
+	})
+}
+
+// ResetExpiredWindowBySubject 语义同 ResetExpiredWindow，键为 billing_subject_id。
+// 未命中活跃记录时返回 ErrUserPlatformQuotaNotFound。
+func (r *userPlatformQuotaRepository) ResetExpiredWindowBySubject(ctx context.Context, subjectID int64, platform string, window string, newStart time.Time) error {
+	client := clientFromContext(ctx, r.client)
+	upd := client.UserPlatformQuota.Update().
+		Where(
+			userplatformquota.BillingSubjectIDEQ(subjectID),
+			userplatformquota.PlatformEQ(platform),
+			userplatformquota.DeletedAtIsNil(),
+		)
+	switch window {
+	case "daily":
+		upd = upd.SetDailyUsageUsd(0).SetDailyWindowStart(newStart)
+	case "weekly":
+		upd = upd.SetWeeklyUsageUsd(0).SetWeeklyWindowStart(newStart)
+	case "monthly":
+		upd = upd.SetMonthlyUsageUsd(0).SetMonthlyWindowStart(newStart)
+	default:
+		return fmt.Errorf("unknown window %q", window)
+	}
+	n, err := upd.Save(ctx)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrUserPlatformQuotaNotFound
+	}
+	return nil
+}
+
+// UpsertForSubject 全量替换该计费主体所有平台限额（事务内），语义同 UpsertForUser。
+func (r *userPlatformQuotaRepository) UpsertForSubject(ctx context.Context, subjectID int64, records []UserPlatformQuotaRecord) error {
+	return r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		platforms := make([]string, 0, len(records))
+		for _, rec := range records {
+			platforms = append(platforms, rec.Platform)
+		}
+		now := time.Now()
+		if err := softDeleteMissingPlatformsBySubject(txCtx, txClient, subjectID, platforms, now); err != nil {
+			return err
+		}
+		for _, rec := range records {
+			affected, err := updateLimitsRowBySubject(txCtx, txClient, subjectID, rec, now)
+			if err != nil {
+				return err
+			}
+			if affected == 0 {
+				if err := insertLimitsRowBySubject(txCtx, txClient, subjectID, rec, now); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+}
+
+// softDeleteMissingPlatformsBySubject 软删除该主体所有不在 keepPlatforms 中的 active 行。
+func softDeleteMissingPlatformsBySubject(ctx context.Context, client *dbent.Client, subjectID int64, keepPlatforms []string, now time.Time) error {
+	var (
+		query string
+		args  []any
+	)
+	if len(keepPlatforms) == 0 {
+		query = `UPDATE user_platform_quotas SET deleted_at = $2, updated_at = $2
+		         WHERE billing_subject_id = $1 AND deleted_at IS NULL`
+		args = []any{subjectID, now}
+	} else {
+		placeholders := make([]string, len(keepPlatforms))
+		args = make([]any, 0, len(keepPlatforms)+2)
+		args = append(args, subjectID, now)
+		for i, p := range keepPlatforms {
+			placeholders[i] = fmt.Sprintf("$%d", i+3)
+			args = append(args, p)
+		}
+		query = fmt.Sprintf(`UPDATE user_platform_quotas SET deleted_at = $2, updated_at = $2
+		         WHERE billing_subject_id = $1 AND deleted_at IS NULL AND platform NOT IN (%s)`,
+			strings.Join(placeholders, ","))
+	}
+	_, err := client.ExecContext(ctx, query, args...)
+	return err
+}
+
+// updateLimitsRowBySubject 尝试 UPDATE active 行（deleted_at IS NULL），返回受影响行数。
+func updateLimitsRowBySubject(ctx context.Context, client *dbent.Client, subjectID int64, rec UserPlatformQuotaRecord, now time.Time) (int64, error) {
+	const query = `UPDATE user_platform_quotas
+		SET daily_limit_usd = $1, weekly_limit_usd = $2, monthly_limit_usd = $3,
+		    deleted_at = NULL, updated_at = $4
+		WHERE billing_subject_id = $5 AND platform = $6 AND deleted_at IS NULL`
+	res, err := client.ExecContext(ctx, query,
+		rec.DailyLimitUSD, rec.WeeklyLimitUSD, rec.MonthlyLimitUSD, now,
+		subjectID, rec.Platform)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// insertLimitsRowBySubject 插入新限额行（usage 默认 0，window_start 默认 NULL，user_id 留空）。
+// ON CONFLICT DO NOTHING 守卫并发新建；affected=0 时 fallback 到 updateLimitsRowBySubject。
+func insertLimitsRowBySubject(ctx context.Context, client *dbent.Client, subjectID int64, rec UserPlatformQuotaRecord, now time.Time) error {
+	query := `INSERT INTO user_platform_quotas
+		(billing_subject_id, platform, daily_limit_usd, weekly_limit_usd, monthly_limit_usd,
+		 daily_usage_usd, weekly_usage_usd, monthly_usage_usd, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, 0, 0, 0, $6, $6)` +
+		subjectConflictTarget + `DO NOTHING`
+	res, err := client.ExecContext(ctx, query,
+		subjectID, rec.Platform,
+		rec.DailyLimitUSD, rec.WeeklyLimitUSD, rec.MonthlyLimitUSD,
+		now)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		_, err = updateLimitsRowBySubject(ctx, client, subjectID, rec, now)
+		return err
+	}
+	return nil
+}
+
+// BatchSnapshotUsageBySubject 语义同 BatchSnapshotUsage，键为 billing_subject_id（user_id 留空）。
+// 要求 snapshots 内 (subject,platform) 不重复；FK 违反返回 ErrUserPlatformQuotaFKViolation。
+func (r *userPlatformQuotaRepository) BatchSnapshotUsageBySubject(ctx context.Context, snapshots []UserPlatformQuotaSnapshot, now time.Time) error {
+	if len(snapshots) == 0 {
+		return nil
+	}
+
+	client := clientFromContext(ctx, r.client)
+
+	for start := 0; start < len(snapshots); start += batchRows {
+		end := start + batchRows
+		if end > len(snapshots) {
+			end = len(snapshots)
+		}
+		batch := snapshots[start:end]
+
+		var sb strings.Builder
+		_, _ = sb.WriteString(
+			"INSERT INTO user_platform_quotas" +
+				" (billing_subject_id, platform, daily_usage_usd, weekly_usage_usd, monthly_usage_usd," +
+				" daily_window_start, weekly_window_start, monthly_window_start, created_at, updated_at)" +
+				" VALUES ")
+
+		// $1 = now（共用）；每行 8 个 per-row 参，从 $2 起连续编号。
+		args := []any{now}
+		for i, s := range batch {
+			if i > 0 {
+				_, _ = sb.WriteString(",")
+			}
+			b := len(args)
+			fmt.Fprintf(&sb, "($%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$1,$1)",
+				b+1, b+2, b+3, b+4, b+5, b+6, b+7, b+8)
+			args = append(args,
+				s.BillingSubjectID, s.Platform,
+				s.DailyUsageUSD, s.WeeklyUsageUSD, s.MonthlyUsageUSD,
+				s.DailyWindowStart, s.WeeklyWindowStart, s.MonthlyWindowStart,
+			)
+		}
+
+		_, _ = sb.WriteString(
+			subjectConflictTarget + "DO UPDATE SET" +
 				"  daily_usage_usd      = EXCLUDED.daily_usage_usd," +
 				"  weekly_usage_usd     = EXCLUDED.weekly_usage_usd," +
 				"  monthly_usage_usd    = EXCLUDED.monthly_usage_usd," +

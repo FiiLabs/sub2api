@@ -109,6 +109,31 @@ func (s *userPlatformQuotaRepoStub) BatchSnapshotUsage(_ context.Context, _ []Us
 	return nil
 }
 
+// platform-quota: subject 维度方法（注册路径不涉及，沿用 panic 守卫）。
+func (s *userPlatformQuotaRepoStub) GetBySubjectPlatform(context.Context, int64, string) (*UserPlatformQuotaRecord, error) {
+	panic("unexpected GetBySubjectPlatform call")
+}
+
+func (s *userPlatformQuotaRepoStub) ListBySubject(context.Context, int64) ([]UserPlatformQuotaRecord, error) {
+	panic("unexpected ListBySubject call")
+}
+
+func (s *userPlatformQuotaRepoStub) IncrementUsageWithResetBySubject(context.Context, int64, string, float64, time.Time) error {
+	panic("unexpected IncrementUsageWithResetBySubject call")
+}
+
+func (s *userPlatformQuotaRepoStub) UpsertForSubject(context.Context, int64, []UserPlatformQuotaRecord) error {
+	panic("unexpected UpsertForSubject call")
+}
+
+func (s *userPlatformQuotaRepoStub) ResetExpiredWindowBySubject(context.Context, int64, string, string, time.Time) error {
+	panic("unexpected ResetExpiredWindowBySubject call")
+}
+
+func (s *userPlatformQuotaRepoStub) BatchSnapshotUsageBySubject(_ context.Context, _ []UserPlatformQuotaSnapshot, _ time.Time) error {
+	return nil
+}
+
 func (s *defaultSubscriptionAssignerStub) AssignOrExtendSubscription(_ context.Context, input *AssignSubscriptionInput) (*UserSubscription, bool, error) {
 	if input != nil {
 		s.calls = append(s.calls, *input)

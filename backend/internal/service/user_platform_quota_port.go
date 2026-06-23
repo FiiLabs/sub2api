@@ -18,7 +18,9 @@ var ErrUserPlatformQuotaFKViolation = errors.New("user platform quota snapshot F
 // UserPlatformQuotaSnapshot 是 service 层 flusher 向 DB 写入快照时使用的传输结构。
 // 字段语义与 repository.UserPlatformQuotaSnapshot 完全对应，由 adapter 负责转换。
 type UserPlatformQuotaSnapshot struct {
-	UserID             int64
+	UserID int64
+	// BillingSubjectID 计费主体 ID（platform-quota）：subject 维度 flusher 按此键回写。
+	BillingSubjectID   int64
 	Platform           string
 	DailyUsageUSD      float64
 	WeeklyUsageUSD     float64
@@ -30,14 +32,16 @@ type UserPlatformQuotaSnapshot struct {
 
 // UserPlatformQuotaRecord service 层传输结构体（与 repository 层解耦）。
 type UserPlatformQuotaRecord struct {
-	UserID          int64
-	Platform        string
-	DailyLimitUSD   *float64
-	WeeklyLimitUSD  *float64
-	MonthlyLimitUSD *float64
-	DailyUsageUSD   float64
-	WeeklyUsageUSD  float64
-	MonthlyUsageUSD float64
+	UserID int64
+	// BillingSubjectID 计费主体 ID（platform-quota）：个人主体行与 UserID 一一对应，团队主体行 UserID 为空。
+	BillingSubjectID int64
+	Platform         string
+	DailyLimitUSD    *float64
+	WeeklyLimitUSD   *float64
+	MonthlyLimitUSD  *float64
+	DailyUsageUSD    float64
+	WeeklyUsageUSD   float64
+	MonthlyUsageUSD  float64
 	// 窗口起始时间（可选，用于未来 reset 校验）
 	DailyWindowStart   *time.Time
 	WeeklyWindowStart  *time.Time
@@ -66,4 +70,18 @@ type UserPlatformQuotaRepository interface {
 	ResetExpiredWindow(ctx context.Context, userID int64, platform string, window string, newStart time.Time) error
 	// BatchSnapshotUsage 绝对值覆盖写入整批 usage 快照。FK 违反返回 ErrUserPlatformQuotaFKViolation。
 	BatchSnapshotUsage(ctx context.Context, snapshots []UserPlatformQuotaSnapshot, now time.Time) error
+
+	// ── platform-quota: billing_subject 维度方法（与 user 版并存，灰度切换/回退用）──
+	// GetBySubjectPlatform 查询单条配额记录，未找到时返回 (nil, nil)。
+	GetBySubjectPlatform(ctx context.Context, subjectID int64, platform string) (*UserPlatformQuotaRecord, error)
+	// IncrementUsageWithResetBySubject 原子累加用量，窗口过期先重置再累加（键为 billing_subject_id）。
+	IncrementUsageWithResetBySubject(ctx context.Context, subjectID int64, platform string, cost float64, now time.Time) error
+	// ListBySubject 查询计费主体的所有平台配额记录。
+	ListBySubject(ctx context.Context, subjectID int64) ([]UserPlatformQuotaRecord, error)
+	// UpsertForSubject 全量替换该计费主体所有平台限额配置（语义同 UpsertForUser）。
+	UpsertForSubject(ctx context.Context, subjectID int64, records []UserPlatformQuotaRecord) error
+	// ResetExpiredWindowBySubject 重置指定窗口的用量与起始时间（键为 billing_subject_id）。
+	ResetExpiredWindowBySubject(ctx context.Context, subjectID int64, platform string, window string, newStart time.Time) error
+	// BatchSnapshotUsageBySubject 按 billing_subject_id 绝对值覆盖写入整批 usage 快照。FK 违反返回 ErrUserPlatformQuotaFKViolation。
+	BatchSnapshotUsageBySubject(ctx context.Context, snapshots []UserPlatformQuotaSnapshot, now time.Time) error
 }

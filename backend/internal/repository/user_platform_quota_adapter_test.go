@@ -42,6 +42,26 @@ func (f *fakeRepoForAdapter) BatchSnapshotUsage(_ context.Context, _ []UserPlatf
 	return nil
 }
 
+// platform-quota: subject 维度方法（adapter 转发测试不涉及，no-op 满足接口）。
+func (f *fakeRepoForAdapter) GetBySubjectPlatform(_ context.Context, _ int64, _ string) (*UserPlatformQuotaRecord, error) {
+	return nil, nil
+}
+func (f *fakeRepoForAdapter) ListBySubject(_ context.Context, _ int64) ([]UserPlatformQuotaRecord, error) {
+	return nil, nil
+}
+func (f *fakeRepoForAdapter) IncrementUsageWithResetBySubject(_ context.Context, _ int64, _ string, _ float64, _ time.Time) error {
+	return nil
+}
+func (f *fakeRepoForAdapter) ResetExpiredWindowBySubject(_ context.Context, _ int64, _ string, _ string, _ time.Time) error {
+	return nil
+}
+func (f *fakeRepoForAdapter) UpsertForSubject(_ context.Context, _ int64, _ []UserPlatformQuotaRecord) error {
+	return nil
+}
+func (f *fakeRepoForAdapter) BatchSnapshotUsageBySubject(_ context.Context, _ []UserPlatformQuotaSnapshot, _ time.Time) error {
+	return nil
+}
+
 func TestGenericAdapter_UpsertForUser_ForwardsRecords(t *testing.T) {
 	fake := &fakeRepoForAdapter{}
 	adapter := NewUserPlatformQuotaServiceAdapter(fake)

@@ -47,6 +47,31 @@ func (f *fakeInsertRecorder) BatchSnapshotUsage(_ context.Context, _ []UserPlatf
 	return nil
 }
 
+// platform-quota: subject 维度方法（本测试不涉及，no-op 满足接口）。
+func (f *fakeInsertRecorder) GetBySubjectPlatform(_ context.Context, _ int64, _ string) (*UserPlatformQuotaRecord, error) {
+	return nil, nil
+}
+
+func (f *fakeInsertRecorder) IncrementUsageWithResetBySubject(_ context.Context, _ int64, _ string, _ float64, _ time.Time) error {
+	return nil
+}
+
+func (f *fakeInsertRecorder) ListBySubject(_ context.Context, _ int64) ([]UserPlatformQuotaRecord, error) {
+	return nil, nil
+}
+
+func (f *fakeInsertRecorder) UpsertForSubject(_ context.Context, _ int64, _ []UserPlatformQuotaRecord) error {
+	return nil
+}
+
+func (f *fakeInsertRecorder) ResetExpiredWindowBySubject(_ context.Context, _ int64, _ string, _ string, _ time.Time) error {
+	return nil
+}
+
+func (f *fakeInsertRecorder) BatchSnapshotUsageBySubject(_ context.Context, _ []UserPlatformQuotaSnapshot, _ time.Time) error {
+	return nil
+}
+
 func TestSnapshotPlatformQuotaDefaults_PassesToRepoBulkInsert(t *testing.T) {
 	fakeRepo := &fakeInsertRecorder{}
 	s := &AuthService{userPlatformQuotaRepo: fakeRepo}
