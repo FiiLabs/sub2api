@@ -113,3 +113,20 @@ func TestGetSubjectBalance_CacheMiss_FallsBackToDB(t *testing.T) {
 		t.Errorf("expected cache repopulation with %v, got setCalls=%d lastSet=%v", bal, cache.setCalls, cache.lastSet)
 	}
 }
+
+func TestCheckSubjectBalanceEligibility_AllowsWhenFunded(t *testing.T) {
+	cache := &fakeSubjectBalanceCache{cached: 10}
+	s := newSubjectBalanceService(cache, &fakeSubjectRepo{})
+	if err := s.checkSubjectBalanceEligibility(context.Background(), 7, nil); err != nil {
+		t.Errorf("expected nil, got %v", err)
+	}
+}
+
+func TestCheckSubjectBalanceEligibility_BlocksWhenZero(t *testing.T) {
+	cache := &fakeSubjectBalanceCache{cached: 0}
+	s := newSubjectBalanceService(cache, &fakeSubjectRepo{})
+	err := s.checkSubjectBalanceEligibility(context.Background(), 7, nil)
+	if !errors.Is(err, ErrInsufficientBalance) {
+		t.Errorf("expected ErrInsufficientBalance, got %v", err)
+	}
+}

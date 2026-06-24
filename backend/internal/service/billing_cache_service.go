@@ -889,7 +889,13 @@ func (s *BillingCacheService) CheckBillingEligibility(ctx context.Context, user 
 			return err
 		}
 	} else {
-		if err := s.checkBalanceEligibility(ctx, user.ID, group); err != nil {
+		// 余额模式灰度（QuotaSubjectScoped）：开关开 + 已解析 billing_subject → 检查 subject 余额；
+		// 否则（开关关 / subject 未解析）回退 user 余额（kill-switch / fail-safe，与平台限额分流口径一致）。
+		if s.cfg.Billing.QuotaSubjectScoped && apiKey != nil && apiKey.BillingSubjectID > 0 {
+			if err := s.checkSubjectBalanceEligibility(ctx, apiKey.BillingSubjectID, group); err != nil {
+				return err
+			}
+		} else if err := s.checkBalanceEligibility(ctx, user.ID, group); err != nil {
 			return err
 		}
 	}
@@ -1025,6 +1031,25 @@ func (s *BillingCacheService) checkBalanceEligibility(ctx context.Context, userI
 		return ErrInsufficientBalance
 	}
 
+	return nil
+}
+
+// checkSubjectBalanceEligibility 检查 billing_subject 余额模式资格（checkBalanceEligibility 的 subject 维度版）。
+func (s *BillingCacheService) checkSubjectBalanceEligibility(ctx context.Context, subjectID int64, group *Group) error {
+	balance, err := s.GetSubjectBalance(ctx, subjectID)
+	if err != nil {
+		if s.circuitBreaker != nil {
+			s.circuitBreaker.OnFailure(err)
+		}
+		logger.LegacyPrintf("service.billing_cache", "ALERT: billing balance check failed for subject %d: %v", subjectID, err)
+		return ErrBillingServiceUnavailable.WithCause(err)
+	}
+	if s.circuitBreaker != nil {
+		s.circuitBreaker.OnSuccess()
+	}
+	if balance < precheckMinimumCost(group, groupRateMultiplier(group)) {
+		return ErrInsufficientBalance
+	}
 	return nil
 }
 
