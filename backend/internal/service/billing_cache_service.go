@@ -57,6 +57,7 @@ const (
 	cacheWriteUpdateSubscriptionUsage
 	cacheWriteDeductBalance
 	cacheWriteUpdateRateLimitUsage
+	cacheWriteDeductSubjectBalance
 )
 
 // 异步缓存写入工作池配置
@@ -84,6 +85,7 @@ const (
 type cacheWriteTask struct {
 	kind             cacheWriteKind
 	userID           int64
+	subjectID        int64
 	groupID          int64
 	apiKeyID         int64
 	balance          float64
@@ -237,6 +239,10 @@ func (s *BillingCacheService) cacheWriteWorker(ch <-chan cacheWriteTask) {
 				if err := s.cache.UpdateAPIKeyRateLimitUsage(ctx, task.apiKeyID, task.amount); err != nil {
 					logger.LegacyPrintf("service.billing_cache", "Warning: update rate limit usage cache failed for api key %d: %v", task.apiKeyID, err)
 				}
+			}
+		case cacheWriteDeductSubjectBalance:
+			if err := s.DeductSubjectBalance(ctx, task.subjectID, task.amount); err != nil {
+				logger.LegacyPrintf("service.billing_cache", "Warning: deduct subject balance cache failed for subject %d: %v", task.subjectID, err)
 			}
 		}
 		cancel()
@@ -533,6 +539,25 @@ func (s *BillingCacheService) QueueDeductBalance(userID int64, amount float64) {
 	defer cancel()
 	if err := s.DeductBalanceCache(ctx, userID, amount); err != nil {
 		logger.LegacyPrintf("service.billing_cache", "Warning: deduct balance cache fallback failed for user %d: %v", userID, err)
+	}
+}
+
+// QueueDeductSubjectBalance 异步扣减计费主体余额缓存（QueueDeductBalance 的 subject 维度版）。
+func (s *BillingCacheService) QueueDeductSubjectBalance(subjectID int64, amount float64) {
+	if s.cache == nil || subjectID <= 0 {
+		return
+	}
+	if s.enqueueCacheWrite(cacheWriteTask{
+		kind:      cacheWriteDeductSubjectBalance,
+		subjectID: subjectID,
+		amount:    amount,
+	}) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), cacheWriteTimeout)
+	defer cancel()
+	if err := s.DeductSubjectBalance(ctx, subjectID, amount); err != nil {
+		logger.LegacyPrintf("service.billing_cache", "Warning: deduct subject balance cache fallback failed for subject %d: %v", subjectID, err)
 	}
 }
 

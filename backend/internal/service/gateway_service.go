@@ -8404,6 +8404,8 @@ func postUsageBilling(ctx context.Context, p *postUsageBillingParams, deps *bill
 		}
 	} else {
 		if cost.ActualCost > 0 {
+			// NOTE: 降级/测试兜底路径（统一计费仓储为 nil 时才触发）保持 user 维度扣减，
+			// 等价于 subject 化前的历史行为，作为 fail-safe 接受；生产正常路径走 repo.Apply（已 subject 化）。
 			if err := deps.userRepo.DeductBalance(billingCtx, p.User.ID, cost.ActualCost); err != nil {
 				slog.Error("deduct balance failed", "user_id", p.User.ID, "error", err)
 			}
@@ -8503,6 +8505,16 @@ func resolveUsageBillingPayloadFingerprint(ctx context.Context, requestPayloadHa
 	return ""
 }
 
+// resolveBalanceSubjectID 返回余额扣减/缓存应作用的 billing_subject id：
+// 仅当开关开 + key 已解析到真实 billing_subject 时返回该 subject id，否则返回 0（维持 user 维度扣减）。
+// 注意：绝不用 nonZeroBillingSubjectID 的结果（其在未解析时回退成 user.ID）。
+func resolveBalanceSubjectID(cfg *config.Config, apiKey *APIKey) int64 {
+	if cfg != nil && cfg.Billing.QuotaSubjectScoped && apiKey != nil && apiKey.BillingSubjectID > 0 {
+		return apiKey.BillingSubjectID
+	}
+	return 0
+}
+
 // nonZeroBillingSubjectID 返回有效的计费主体 ID：当 subjectID > 0 时直接使用，
 // 否则回退到用户 ID（个人工作区计费主体即用户自身）。
 func nonZeroBillingSubjectID(subjectID, fallbackUserID int64) int64 {
@@ -8583,6 +8595,8 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 		postUsageBilling(ctx, p, deps)
 		return true, nil
 	}
+	// 消费侧 subject 化：余额从 key 所属 billing_subject 扣减（gating QuotaSubjectScoped）。
+	cmd.BalanceSubjectID = resolveBalanceSubjectID(deps.cfg, p.APIKey)
 
 	billingCtx, cancel := detachedBillingContext(ctx)
 	defer cancel()
@@ -8617,7 +8631,12 @@ func finalizePostUsageBilling(ctx context.Context, p *postUsageBillingParams, de
 			deps.billingCacheService.QueueUpdateSubscriptionUsage(p.User.ID, *p.APIKey.GroupID, p.Cost.ActualCost)
 		}
 	} else if p.Cost.ActualCost > 0 && p.User != nil {
-		deps.billingCacheService.QueueDeductBalance(p.User.ID, p.Cost.ActualCost)
+		// 与 DB 扣减口径一致：subject 化时扣主体余额缓存，否则扣 user 余额缓存。
+		if subjectID := resolveBalanceSubjectID(deps.cfg, p.APIKey); subjectID > 0 {
+			deps.billingCacheService.QueueDeductSubjectBalance(subjectID, p.Cost.ActualCost)
+		} else {
+			deps.billingCacheService.QueueDeductBalance(p.User.ID, p.Cost.ActualCost)
+		}
 	}
 
 	if p.Cost.ActualCost > 0 && p.APIKey != nil && p.APIKey.HasRateLimits() {
