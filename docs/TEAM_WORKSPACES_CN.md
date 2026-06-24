@@ -31,7 +31,7 @@ Sub2API 支持个人工作空间和团队工作空间。
 
 ## 角色行为强制现状与待决策（RBAC 落地扫描）
 
-> 扫描时间 2026-06-24，基于 `team-workspaces` 分支当前代码。✅=已按设计强制；⚠️=未强制/与设计有出入（需决策）。
+> 扫描时间 2026-06-24（初版）。**更新 2026-06-24：CPO v1.0 六议题已逐条裁定并落地——原 ⚠️（未强制）项均已强制，详见下表与「CPO 裁决与落地状态」。** ✅=已按设计强制。基于 `team-workspaces` 分支。
 
 ### 实际强制矩阵
 
@@ -41,21 +41,26 @@ Sub2API 支持个人工作空间和团队工作空间。
 | 移交所有权 | ✅ owner-only（校验 `team.owner_user_id`） | ✅ | ✗ | ✗ | ✗ | ✗ |
 | API Key 建/列/查/改/删 | ✅ 服务层强制 `team.keys.manage`（5 个操作统一过） | ✅ | ✅ | ✗ | ✅ | ✗ |
 | 用量 / Dashboard 读取 | 隐式按主体过滤（未显式校验，但全角色本就有 `team.usage.view`，无越权） | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **兑换码充值到团队余额** | ⚠️ **无任何权限校验** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 团队充值（在线支付） | ⚠️ 团队工作空间被整体禁用（"Team payments are not available yet"） | — | — | — | — | — |
-| 团队订阅查看 | ⚠️ 接口硬编码读个人，不识别团队主体（团队下看不到团队订阅） | — | — | — | — | — |
-| 解散团队 / 修改团队设置 | ⚠️ 无用户端入口（仅平台管理员后台可改，不走团队角色） | — | — | — | — | — |
+| **兑换码充值到团队余额** | ✅ 服务前置 `RequireTeamBillingManage`（团队需 `team.billing.manage`）+ 入账写 `redeem_audit_logs` 审计流水 | ✅ | ✅ | ✅ | ✗ | ✗ |
+| 团队充值（在线支付） | ✅ 已放开；`/payment` 组中间件按 `team.billing.manage` 强制（与兑换共用同一导出闸 `RequireTeamBillingManage`） | ✅ | ✅ | ✅ | ✗ | ✗ |
+| 团队订阅查看 | ✅ 4 接口按 `subject.BillingSubjectID` 路由（gating `QuotaSubjectScoped`）；查看 = 全角色 | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 修改团队设置（改名） | ✅ `Require(team.settings.manage)`，`PATCH /teams/:id` | ✅ | ✅ | ✗ | ✗ | ✗ |
+| 解散团队 | ✅ owner-only `Require(team.dissolve)`，`DELETE /teams/:id`（余额>0 或有启用中 Key 则拒，安全最小） | ✅ | ✗ | ✗ | ✗ | ✗ |
 
 **防越权（已验证健全）**：成员类操作用 `Require(actorUserID, URL里的teamID, 权限)` 按库里该 actor 在该 team 的**实际角色**校验，不信任前端传的"当前工作空间"头，因此「对 A 团队是 owner、却拿去操作 B 团队」会被拒。
 
-### 待决策清单（建议 CPO 逐条裁决）
+### CPO 裁决与落地状态（v1.0，2026-06-24）
 
-1. **developer 可全权管理 API Key（建/删/改额度，含他人所建的团队 Key）**——这是目前"普通成员能建 Key"的来源。是否符合预期？或应收紧为：developer 仅能建/管自己所建的 Key，删改他人 Key 仅 owner/admin？（注：当前团队 Key 不区分"个人所属"，同主体内互可见可改。）
-2. **兑换码可被任意成员（含 viewer）充值进团队余额，且无"谁兑换"的归属审计**——是否限制为 owner/admin/billing（`team.billing.manage`）？这是本轮扫描中唯一的真实越权点。
-3. **团队在线支付当前整体禁用**——何时开放、由哪些角色发起（建议 `team.billing.manage`）？
-4. **团队订阅当前不支持**（团队工作空间下读到的是个人订阅）——是否纳入团队主体？由哪些角色可见/购买？
-5. **解散团队 / 修改团队设置无用户端入口**——是否开放给 owner（解散）/ owner+admin（设置）？目前仅平台管理员可操作。
-6. **用量/Dashboard 全角色可见**（viewer 亦可）——确认是否需要更细的可见性分级。
+> 裁决依据 [Gateway-Workspace-Function-Definition.md](./Gateway-Workspace-Function-Definition.md)。6 议题已逐条裁定并落地（工作项 `read-side-subject` / `workspace-rbac-fixups`）。
+
+1. **developer 可全权管理团队所有 Key（含他人所建）** —— 裁决：**维持共享模型**（团队 Key 属团队主体，凡有 `team.keys.manage` 者皆可建/列/改/删）。无需改动；需收紧的客户用「暂停成员」或降级 viewer 控制。
+2. **兑换码任意成员可充值、无归属审计** —— 裁决：**收紧 + 补审计**。已落地：兑换前置 `team.billing.manage` 校验（commit `88b91021`）+ `redeem_audit_logs` 审计流水（who/when/code/amount/subject，事务内，commit `085840e7`+`dde92b2c`）。
+3. **团队在线支付禁用** —— 裁决：**开放，限 `team.billing.manage` 发起**。已落地（commit `2ab7e34d`，本轮并入，覆盖原「排入 Phase 2」时序）；后端订单创建/列表/履约本就按团队主体归属。
+4. **团队订阅读到个人订阅（归属错误）** —— 裁决：**纳入团队主体**（查看=全角色 `usage.view`，购买/变更=`team.billing.manage`）。已落地：4 个 GET 接口按 `subject.BillingSubjectID` 路由 + 迁移兜底回填（commit `892f13eb`）；订阅变更走兑换码，其 billing 闸见议题 2。
+5. **解散/团队设置无用户端入口** —— 裁决：**开放**（设置=owner+admin，解散=owner only）。已落地：权限 key 对齐 `team.dissolve`/`team.ownership.transfer`（commit `38e25c4a`）；团队设置改名 `PATCH /teams/:id`（commit `c980748b`）；解散 `DELETE /teams/:id` owner-only 安全最小（余额>0 或有启用中 Key 则拒，单事务软删 成员→团队→计费主体，commit `db979bbb`）。
+6. **用量/Dashboard 全角色可见** —— 裁决：**维持全角色可见**。无需改动。
+
+**贯穿落地**：所有 `team.billing.manage` 入口（兑换 / 在线支付 / 订阅购买）共用同一导出闸 `handler.RequireTeamBillingManage`，避免逐接口口径漂移。读侧收尾（T0.4）另已修复：个人 `/keys` 不再串入团队 Key、团队 `platform-quotas` 不再恒空（按账单主体读，gating `QuotaSubjectScoped`）。
 
 ## 已知限制
 
