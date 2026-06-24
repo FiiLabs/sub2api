@@ -169,6 +169,36 @@ func (r *userSubscriptionRepository) ListActiveByUserID(ctx context.Context, use
 	return userSubscriptionEntitiesToService(subs), nil
 }
 
+func (r *userSubscriptionRepository) ListByBillingSubjectID(ctx context.Context, billingSubjectID int64) ([]service.UserSubscription, error) {
+	client := clientFromContext(ctx, r.client)
+	subs, err := client.UserSubscription.Query().
+		Where(usersubscription.BillingSubjectIDEQ(billingSubjectID)).
+		WithGroup().
+		Order(dbent.Desc(usersubscription.FieldCreatedAt)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return userSubscriptionEntitiesToService(subs), nil
+}
+
+func (r *userSubscriptionRepository) ListActiveByBillingSubjectID(ctx context.Context, billingSubjectID int64) ([]service.UserSubscription, error) {
+	client := clientFromContext(ctx, r.client)
+	subs, err := client.UserSubscription.Query().
+		Where(
+			usersubscription.BillingSubjectIDEQ(billingSubjectID),
+			usersubscription.StatusEQ(service.SubscriptionStatusActive),
+			usersubscription.ExpiresAtGT(time.Now()),
+		).
+		WithGroup().
+		Order(dbent.Desc(usersubscription.FieldCreatedAt)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return userSubscriptionEntitiesToService(subs), nil
+}
+
 func (r *userSubscriptionRepository) ListByGroupID(ctx context.Context, groupID int64, params pagination.PaginationParams) ([]service.UserSubscription, *pagination.PaginationResult, error) {
 	client := clientFromContext(ctx, r.client)
 	q := client.UserSubscription.Query().Where(usersubscription.GroupIDEQ(groupID))

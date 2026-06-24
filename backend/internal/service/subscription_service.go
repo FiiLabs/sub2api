@@ -45,6 +45,7 @@ type SubscriptionService struct {
 	userSubRepo         UserSubscriptionRepository
 	billingCacheService *BillingCacheService
 	entClient           *dbent.Client
+	cfg                 *config.Config
 
 	// L1 缓存：加速中间件热路径的订阅查询
 	subCacheL1     *ristretto.Cache
@@ -62,6 +63,7 @@ func NewSubscriptionService(groupRepo GroupRepository, userSubRepo UserSubscript
 		userSubRepo:         userSubRepo,
 		billingCacheService: billingCacheService,
 		entClient:           entClient,
+		cfg:                 cfg,
 	}
 	svc.initSubCache(cfg)
 	svc.initMaintenanceQueue(cfg)
@@ -670,6 +672,41 @@ func (s *SubscriptionService) ListUserSubscriptions(ctx context.Context, userID 
 // ListActiveUserSubscriptions 获取用户的所有有效订阅
 func (s *SubscriptionService) ListActiveUserSubscriptions(ctx context.Context, userID int64) ([]UserSubscription, error) {
 	subs, err := s.userSubRepo.ListActiveByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	normalizeExpiredWindows(subs)
+	return subs, nil
+}
+
+// ListSubscriptionsForSubject 按「生效计费主体」列出订阅（QuotaSubjectScoped 灰度）：
+// 开关开 + 已解析 subject → 按 billing_subject 路由（团队只见团队订阅、个人只见个人订阅，
+// 修复「团队下看到个人订阅」）；否则回退按 user 路由（kill-switch / 兼容）。
+func (s *SubscriptionService) ListSubscriptionsForSubject(ctx context.Context, userID, subjectID int64) ([]UserSubscription, error) {
+	var subs []UserSubscription
+	var err error
+	if s.cfg != nil && s.cfg.Billing.QuotaSubjectScoped && subjectID > 0 {
+		subs, err = s.userSubRepo.ListByBillingSubjectID(ctx, subjectID)
+	} else {
+		subs, err = s.userSubRepo.ListByUserID(ctx, userID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	normalizeExpiredWindows(subs)
+	normalizeSubscriptionStatus(subs)
+	return subs, nil
+}
+
+// ListActiveSubscriptionsForSubject 同上，但只列有效订阅。
+func (s *SubscriptionService) ListActiveSubscriptionsForSubject(ctx context.Context, userID, subjectID int64) ([]UserSubscription, error) {
+	var subs []UserSubscription
+	var err error
+	if s.cfg != nil && s.cfg.Billing.QuotaSubjectScoped && subjectID > 0 {
+		subs, err = s.userSubRepo.ListActiveByBillingSubjectID(ctx, subjectID)
+	} else {
+		subs, err = s.userSubRepo.ListActiveByUserID(ctx, userID)
+	}
 	if err != nil {
 		return nil, err
 	}

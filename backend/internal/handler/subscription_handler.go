@@ -51,7 +51,7 @@ func (h *SubscriptionHandler) List(c *gin.Context) {
 		return
 	}
 
-	subscriptions, err := h.subscriptionService.ListUserSubscriptions(c.Request.Context(), subject.UserID)
+	subscriptions, err := h.subscriptionService.ListSubscriptionsForSubject(c.Request.Context(), subject.UserID, subject.BillingSubjectID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -73,7 +73,7 @@ func (h *SubscriptionHandler) GetActive(c *gin.Context) {
 		return
 	}
 
-	subscriptions, err := h.subscriptionService.ListActiveUserSubscriptions(c.Request.Context(), subject.UserID)
+	subscriptions, err := h.subscriptionService.ListActiveSubscriptionsForSubject(c.Request.Context(), subject.UserID, subject.BillingSubjectID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -96,7 +96,7 @@ func (h *SubscriptionHandler) GetProgress(c *gin.Context) {
 	}
 
 	// Get all active subscriptions with progress
-	subscriptions, err := h.subscriptionService.ListActiveUserSubscriptions(c.Request.Context(), subject.UserID)
+	subscriptions, err := h.subscriptionService.ListActiveSubscriptionsForSubject(c.Request.Context(), subject.UserID, subject.BillingSubjectID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -129,7 +129,7 @@ func (h *SubscriptionHandler) GetSummary(c *gin.Context) {
 	}
 
 	// Get all active subscriptions
-	subscriptions, err := h.subscriptionService.ListActiveUserSubscriptions(c.Request.Context(), subject.UserID)
+	subscriptions, err := h.subscriptionService.ListActiveSubscriptionsForSubject(c.Request.Context(), subject.UserID, subject.BillingSubjectID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
