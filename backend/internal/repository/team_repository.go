@@ -738,6 +738,68 @@ func (r *teamRepository) UpdateTeam(ctx context.Context, teamID int64, name *str
 	return teamEntityToService(updated), nil
 }
 
+// CountActiveAPIKeysByBillingSubjectID 统计该计费主体名下「启用中」（status=active 且未软删）
+// 的 API Key 数，用于解散团队的前置校验（仍有活跃 key 时拒绝）。
+func (r *teamRepository) CountActiveAPIKeysByBillingSubjectID(ctx context.Context, billingSubjectID int64) (int, error) {
+	client := clientFromContext(ctx, r.client)
+	return client.APIKey.Query().
+		Where(
+			apikey.BillingSubjectIDEQ(billingSubjectID),
+			apikey.StatusEQ(service.StatusActive),
+			apikey.DeletedAtIsNil(),
+		).
+		Count(ctx)
+}
+
+// DissolveTeam 在单事务内软删团队成员、团队与团队计费主体（高危不可逆）。
+//
+// 软删顺序至关重要：必须先软删团队，再软删其计费主体。migration 150 的触发器
+// billing_subjects_referenced_invariant 禁止「失效（含置 deleted_at）仍被未删除团队引用的
+// 计费主体」；团队先软删后，该主体不再被任何未删除团队引用，对主体的软删才能通过校验。
+// 顺序：成员 → 团队 → 计费主体。
+func (r *teamRepository) DissolveTeam(ctx context.Context, teamID int64) error {
+	tx, err := r.client.Tx(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	team, err := tx.Team.Query().Where(dbteam.IDEQ(teamID), dbteam.DeletedAtIsNil()).Only(ctx)
+	if err != nil {
+		return service.ErrTeamNotFound
+	}
+	now := time.Now()
+
+	// 1) 软删全部未删除成员（先于团队，保持引用图收敛）。
+	if _, err := tx.TeamMember.Update().
+		Where(teammember.TeamIDEQ(teamID), teammember.DeletedAtIsNil()).
+		SetStatus(domain.TeamMemberStatusLeft).
+		SetDeletedAt(now).
+		Save(ctx); err != nil {
+		return err
+	}
+
+	// 2) 软删团队 + 置 disabled。此后该团队不再「引用」其计费主体，解除触发器对主体的保护。
+	if _, err := tx.Team.UpdateOneID(teamID).
+		SetStatus(domain.TeamStatusDisabled).
+		SetDeletedAt(now).
+		Save(ctx); err != nil {
+		return err
+	}
+
+	// 3) 软删 + 停用团队计费主体（必须在团队软删之后，否则 billing_subjects_referenced_invariant 触发器拒绝）。
+	if team.BillingSubjectID != nil {
+		if _, err := tx.BillingSubject.UpdateOneID(*team.BillingSubjectID).
+			SetStatus(domain.TeamStatusDisabled).
+			SetDeletedAt(now).
+			Save(ctx); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
 func adminTeamSummaryFromEntity(row *dbent.Team) *service.AdminTeamSummary {
 	if row == nil {
 		return nil

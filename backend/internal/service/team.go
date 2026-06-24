@@ -34,6 +34,11 @@ var (
 	// ErrTeamOwnerImmutable is returned when an admin attempts to modify or remove
 	// the team owner's membership (ownership is managed separately, not here).
 	ErrTeamOwnerImmutable = infraerrors.BadRequest("TEAM_OWNER_IMMUTABLE", "team owner membership cannot be modified here")
+
+	// ErrTeamDissolveHasBalance / ErrTeamDissolveHasActiveKeys 是解散团队的安全最小语义守卫：
+	// 团队主体仍有余额、或仍有启用中团队 API Key 时拒绝解散，要求调用方先清理。
+	ErrTeamDissolveHasBalance    = infraerrors.Conflict("TEAM_DISSOLVE_HAS_BALANCE", "team has remaining balance; zero it before dissolving")
+	ErrTeamDissolveHasActiveKeys = infraerrors.Conflict("TEAM_DISSOLVE_HAS_ACTIVE_KEYS", "team has active API keys; delete them before dissolving")
 )
 
 type Team struct {
@@ -197,6 +202,10 @@ type TeamRepository interface {
 	AdminGetTeamSummary(ctx context.Context, teamID int64) (*AdminTeamSummary, error)
 	AddMember(ctx context.Context, teamID, userID int64, role string, invitedByUserID int64) (*TeamMember, error)
 	UpdateTeam(ctx context.Context, teamID int64, name *string, status *string) (*Team, error)
+	// CountActiveAPIKeysByBillingSubjectID 统计该计费主体名下「启用中」的 API Key 数（解散前置校验）。
+	CountActiveAPIKeysByBillingSubjectID(ctx context.Context, billingSubjectID int64) (int, error)
+	// DissolveTeam 在单事务内软删团队成员、团队与团队计费主体（高危不可逆，调用方须已校验 owner + 前置条件）。
+	DissolveTeam(ctx context.Context, teamID int64) error
 }
 
 // TeamInviteNotifier delivers a team invitation to the invitee's email. It is a
@@ -672,6 +681,36 @@ func (s *TeamService) UpdateTeamSettings(ctx context.Context, actorUserID, teamI
 		return nil, infraerrors.BadRequest("TEAM_UPDATE_EMPTY", "team update is empty")
 	}
 	return s.repo.UpdateTeam(ctx, teamID, name, nil)
+}
+
+// DissolveTeam 解散团队（owner only，高危不可逆，安全最小语义）：
+//   - 余额 > 0 或仍有启用中团队 API Key → 拒绝，要求先清理；
+//   - 否则同事务软删 成员 → 团队 → 团队计费主体。
+func (s *TeamService) DissolveTeam(ctx context.Context, actorUserID, teamID int64) error {
+	if _, err := s.Require(ctx, actorUserID, teamID, domain.TeamPermissionDissolveTeam); err != nil {
+		return err
+	}
+	team, err := s.repo.GetTeamByID(ctx, teamID)
+	if err != nil {
+		return err
+	}
+	if team.BillingSubjectID != nil && *team.BillingSubjectID > 0 {
+		subj, err := s.billingSubject.GetByID(ctx, *team.BillingSubjectID)
+		if err != nil {
+			return err
+		}
+		if subj != nil && subj.Balance > 0 {
+			return ErrTeamDissolveHasBalance
+		}
+		count, err := s.repo.CountActiveAPIKeysByBillingSubjectID(ctx, *team.BillingSubjectID)
+		if err != nil {
+			return err
+		}
+		if count > 0 {
+			return ErrTeamDissolveHasActiveKeys
+		}
+	}
+	return s.repo.DissolveTeam(ctx, teamID)
 }
 
 // AdminUpdateTeam updates a team's name and/or status. An empty update is

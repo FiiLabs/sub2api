@@ -345,6 +345,26 @@ func (r *teamRepoMemory) UpdateTeam(ctx context.Context, teamID int64, name *str
 	return &t, nil
 }
 
+// CountActiveAPIKeysByBillingSubjectID 内存桩不跟踪 API Key，恒返回 0。
+func (r *teamRepoMemory) CountActiveAPIKeysByBillingSubjectID(ctx context.Context, billingSubjectID int64) (int, error) {
+	return 0, nil
+}
+
+// DissolveTeam 内存桩解散：成员标记为 left（与 RemoveMember 一致的软删标记），
+// 团队从 map 移除（模拟软删后不可再查到）。
+func (r *teamRepoMemory) DissolveTeam(ctx context.Context, teamID int64) error {
+	if _, ok := r.teams[teamID]; !ok {
+		return ErrTeamNotFound
+	}
+	members := r.members[teamID]
+	for i := range members {
+		members[i].Status = domain.TeamMemberStatusLeft
+	}
+	r.members[teamID] = members
+	delete(r.teams, teamID)
+	return nil
+}
+
 func teamTestPtrTime(t time.Time) *time.Time { return &t }
 
 func TestTeamServiceListMembersRequiresViewPermission(t *testing.T) {

@@ -22,6 +22,7 @@ type TeamHTTPService interface {
 	AcceptInvitation(ctx context.Context, actorUserID int64, plainToken string) (*service.TeamMember, error)
 	TransferOwnership(ctx context.Context, actorUserID, teamID, newOwnerUserID int64) error
 	UpdateTeamSettings(ctx context.Context, actorUserID, teamID int64, input service.UpdateTeamSettingsInput) (*service.Team, error)
+	DissolveTeam(ctx context.Context, actorUserID, teamID int64) error
 	// GetTeam loads a team by id (used to return the joined team summary on accept).
 	GetTeam(ctx context.Context, teamID int64) (*service.Team, error)
 }
@@ -406,4 +407,23 @@ func (h *TeamHandler) TransferOwnership(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"message": "ownership transferred"})
+}
+
+// DissolveTeam handles DELETE /teams/:id. Owner-only (team.dissolve); irreversible.
+func (h *TeamHandler) DissolveTeam(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	teamID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || teamID <= 0 {
+		response.BadRequest(c, "Invalid team ID")
+		return
+	}
+	if err := h.teamService.DissolveTeam(c.Request.Context(), subject.UserID, teamID); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "team dissolved"})
 }

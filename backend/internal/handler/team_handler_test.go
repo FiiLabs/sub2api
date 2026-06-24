@@ -90,6 +90,10 @@ func (a teamHandlerServiceAdapter) UpdateTeamSettings(_ context.Context, _, team
 	return t, nil
 }
 
+func (a teamHandlerServiceAdapter) DissolveTeam(_ context.Context, _, _ int64) error {
+	return nil
+}
+
 type teamMemberHandlerServiceStub struct {
 	workspaces  []service.WorkspaceSubject
 	members     []service.TeamMember
@@ -104,6 +108,9 @@ type teamMemberHandlerServiceStub struct {
 
 	transferArgs [3]int64 // actorUserID, teamID, newOwnerUserID
 	transferErr  error
+
+	dissolveArgs [2]int64 // actorUserID, teamID
+	dissolveErr  error
 }
 
 func (s *teamMemberHandlerServiceStub) ListWorkspaces(_ context.Context, userID int64) ([]service.WorkspaceSubject, error) {
@@ -174,6 +181,11 @@ func (s *teamMemberHandlerServiceStub) UpdateTeamSettings(_ context.Context, _, 
 		t.Name = *input.Name
 	}
 	return t, nil
+}
+
+func (s *teamMemberHandlerServiceStub) DissolveTeam(_ context.Context, actorUserID, teamID int64) error {
+	s.dissolveArgs = [2]int64{actorUserID, teamID}
+	return s.dissolveErr
 }
 
 func TestTeamHandlerListMembersRequiresTeamPermission(t *testing.T) {

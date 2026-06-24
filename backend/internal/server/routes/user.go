@@ -95,6 +95,7 @@ func RegisterUserRoutes(
 			teams.PATCH("/:id/members/:user_id", h.Team.UpdateMember)
 			teams.DELETE("/:id/members/:user_id", h.Team.RemoveMember)
 			teams.PATCH("/:id", h.Team.UpdateTeamSettings)
+			teams.DELETE("/:id", h.Team.DissolveTeam)
 			teams.POST("/:id/transfer-ownership", h.Team.TransferOwnership)
 		}
 
