@@ -229,7 +229,9 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 }
 
 func (r *apiKeyRepository) Update(ctx context.Context, key *service.APIKey) error {
-	return r.updateAPIKey(ctx, key, nil)
+	// 不传 extraPredicates：裸 nil 会被收进变参成为 []predicate.APIKey{nil}（含一个 nil 谓词），
+	// 流入 Update().Where(...) 后在 ent sqlSave 调用 nil 谓词时空指针 panic。
+	return r.updateAPIKey(ctx, key)
 }
 
 func (r *apiKeyRepository) UpdateByBillingSubjectID(ctx context.Context, key *service.APIKey, billingSubjectID int64) error {
