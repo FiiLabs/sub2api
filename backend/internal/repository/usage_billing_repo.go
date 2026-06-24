@@ -113,7 +113,14 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 	}
 
 	if cmd.BalanceCost > 0 {
-		newBalance, err := deductUsageBillingBalance(ctx, tx, cmd.UserID, cmd.BalanceCost)
+		var newBalance float64
+		var err error
+		if cmd.BalanceSubjectID > 0 {
+			// 消费侧 subject 化：从 billing_subject 扣减（个人主体=个人钱包，团队主体=团队钱包）。
+			newBalance, err = deductUsageBillingSubjectBalance(ctx, tx, cmd.BalanceSubjectID, cmd.BalanceCost)
+		} else {
+			newBalance, err = deductUsageBillingBalance(ctx, tx, cmd.UserID, cmd.BalanceCost)
+		}
 		if err != nil {
 			return err
 		}
@@ -182,6 +189,24 @@ func deductUsageBillingBalance(ctx context.Context, tx *sql.Tx, userID int64, am
 		WHERE id = $2 AND deleted_at IS NULL
 		RETURNING balance
 	`, amount, userID).Scan(&newBalance)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, service.ErrUserNotFound
+	}
+	if err != nil {
+		return 0, err
+	}
+	return newBalance, nil
+}
+
+func deductUsageBillingSubjectBalance(ctx context.Context, tx *sql.Tx, subjectID int64, amount float64) (float64, error) {
+	var newBalance float64
+	err := tx.QueryRowContext(ctx, `
+		UPDATE billing_subjects
+		SET balance = balance - $1,
+			updated_at = NOW()
+		WHERE id = $2 AND deleted_at IS NULL
+		RETURNING balance
+	`, amount, subjectID).Scan(&newBalance)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, service.ErrUserNotFound
 	}

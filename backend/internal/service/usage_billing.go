@@ -36,6 +36,9 @@ type UsageBillingCommand struct {
 	MediaType           string
 
 	BalanceCost         float64
+	// BalanceSubjectID >0 时表示余额从该 billing_subject 扣减（消费侧 subject 化）；
+	// 0 维持从 users.balance 扣（legacy / 开关关 / subject 未解析）。
+	BalanceSubjectID    int64
 	SubscriptionCost    float64
 	APIKeyQuotaCost     float64
 	APIKeyRateLimitCost float64
