@@ -1176,3 +1176,11 @@ func (r *stubUserSubscriptionRepo) IncrementUsage(ctx context.Context, id int64,
 func (r *stubUserSubscriptionRepo) BatchUpdateExpiredStatus(ctx context.Context) (int64, error) {
 	return 0, errors.New("not implemented")
 }
+
+func (r *stubUserSubscriptionRepo) ListByBillingSubjectID(ctx context.Context, billingSubjectID int64) ([]service.UserSubscription, error) {
+	return nil, nil
+}
+
+func (r *stubUserSubscriptionRepo) ListActiveByBillingSubjectID(ctx context.Context, billingSubjectID int64) ([]service.UserSubscription, error) {
+	return nil, nil
+}

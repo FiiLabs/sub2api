@@ -257,14 +257,17 @@ func TestAPIContracts(t *testing.T) {
 			name: "GET /api/v1/keys (paginated)",
 			setup: func(t *testing.T, deps *contractDeps) {
 				t.Helper()
+				// BillingSubjectID 需与 jwtAuth stub 的 BillingSubjectID(1) 一致，
+				// ListForSubject 已改为按 billing_subject_id 过滤（Task 5）。
 				deps.apiKeyRepo.MustSeed(&service.APIKey{
-					ID:        100,
-					UserID:    1,
-					Key:       "sk_custom_1234567890",
-					Name:      "Key One",
-					Status:    service.StatusActive,
-					CreatedAt: deps.now,
-					UpdatedAt: deps.now,
+					ID:               100,
+					UserID:           1,
+					BillingSubjectID: 1,
+					Key:              "sk_custom_1234567890",
+					Name:             "Key One",
+					Status:           service.StatusActive,
+					CreatedAt:        deps.now,
+					UpdatedAt:        deps.now,
 				})
 			},
 			method:     http.MethodGet,
@@ -278,7 +281,7 @@ func TestAPIContracts(t *testing.T) {
 						{
 							"id": 100,
 							"user_id": 1,
-							"billing_subject_id": 0,
+							"billing_subject_id": 1,
 							"key": "sk_custom_1234567890",
 							"name": "Key One",
 							"group_id": null,
@@ -2049,6 +2052,12 @@ func (stubUserSubscriptionRepo) IncrementUsage(ctx context.Context, id int64, co
 func (stubUserSubscriptionRepo) BatchUpdateExpiredStatus(ctx context.Context) (int64, error) {
 	return 0, errors.New("not implemented")
 }
+func (stubUserSubscriptionRepo) ListByBillingSubjectID(ctx context.Context, billingSubjectID int64) ([]service.UserSubscription, error) {
+	return nil, nil
+}
+func (stubUserSubscriptionRepo) ListActiveByBillingSubjectID(ctx context.Context, billingSubjectID int64) ([]service.UserSubscription, error) {
+	return nil, nil
+}
 
 type stubApiKeyRepo struct {
 	now time.Time
@@ -2294,6 +2303,56 @@ func (r *stubApiKeyRepo) ResetRateLimitWindows(ctx context.Context, id int64) er
 }
 func (r *stubApiKeyRepo) GetRateLimitData(ctx context.Context, id int64) (*service.APIKeyRateLimitData, error) {
 	return nil, nil
+}
+
+// ListByBillingSubjectID 实现 billingSubjectAPIKeyRepository（Task 5 新增），
+// 按 BillingSubjectID 过滤；billingSubjectID == 0 时退回按 UserID = 1 列出（测试兼容）。
+func (r *stubApiKeyRepo) ListByBillingSubjectID(ctx context.Context, billingSubjectID int64, params pagination.PaginationParams, _ service.APIKeyListFilters) ([]service.APIKey, *pagination.PaginationResult, error) {
+	ids := make([]int64, 0, len(r.byID))
+	for id, key := range r.byID {
+		if key.BillingSubjectID == billingSubjectID {
+			ids = append(ids, id)
+		}
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] > ids[j] })
+
+	start := params.Offset()
+	if start > len(ids) {
+		start = len(ids)
+	}
+	end := start + params.Limit()
+	if end > len(ids) {
+		end = len(ids)
+	}
+
+	out := make([]service.APIKey, 0, end-start)
+	for _, id := range ids[start:end] {
+		clone := *r.byID[id]
+		out = append(out, clone)
+	}
+
+	total := int64(len(ids))
+	pageSize := params.Limit()
+	pages := int(math.Ceil(float64(total) / float64(pageSize)))
+	if pages < 1 {
+		pages = 1
+	}
+	return out, &pagination.PaginationResult{
+		Total:    total,
+		Page:     params.Page,
+		PageSize: pageSize,
+		Pages:    pages,
+	}, nil
+}
+
+// GetByIDForBillingSubjectID 实现 billingSubjectAPIKeyRepository（Task 5 新增）。
+func (r *stubApiKeyRepo) GetByIDForBillingSubjectID(ctx context.Context, id, billingSubjectID int64) (*service.APIKey, error) {
+	key, ok := r.byID[id]
+	if !ok || key.BillingSubjectID != billingSubjectID {
+		return nil, service.ErrAPIKeyNotFound
+	}
+	clone := *key
+	return &clone, nil
 }
 
 type stubUsageLogRepo struct {
