@@ -22,24 +22,26 @@ const (
 	TeamRoleDeveloper = "developer"
 	TeamRoleViewer    = "viewer"
 
-	TeamPermissionViewUsage      = "team.usage.view"
-	TeamPermissionManageKeys     = "team.keys.manage"
-	TeamPermissionManageMembers  = "team.members.manage"
-	TeamPermissionManageBilling  = "team.billing.manage"
-	TeamPermissionManageSettings = "team.settings.manage"
-	TeamPermissionDeleteTeam     = "team.delete"
+	TeamPermissionViewUsage         = "team.usage.view"
+	TeamPermissionManageKeys        = "team.keys.manage"
+	TeamPermissionManageMembers     = "team.members.manage"
+	TeamPermissionManageBilling     = "team.billing.manage"
+	TeamPermissionManageSettings    = "team.settings.manage"
+	TeamPermissionDissolveTeam      = "team.dissolve"
+	TeamPermissionTransferOwnership = "team.ownership.transfer"
 )
 
 func TeamRolePermissions(role string) map[string]bool {
 	switch role {
 	case TeamRoleOwner:
 		return map[string]bool{
-			TeamPermissionViewUsage:      true,
-			TeamPermissionManageKeys:     true,
-			TeamPermissionManageMembers:  true,
-			TeamPermissionManageBilling:  true,
-			TeamPermissionManageSettings: true,
-			TeamPermissionDeleteTeam:     true,
+			TeamPermissionViewUsage:         true,
+			TeamPermissionManageKeys:        true,
+			TeamPermissionManageMembers:     true,
+			TeamPermissionManageBilling:     true,
+			TeamPermissionManageSettings:    true,
+			TeamPermissionDissolveTeam:      true,
+			TeamPermissionTransferOwnership: true,
 		}
 	case TeamRoleAdmin:
 		return map[string]bool{

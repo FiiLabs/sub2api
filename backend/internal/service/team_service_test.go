@@ -529,7 +529,7 @@ func TestTeamServiceCanChecksRolePermissions(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, can)
 
-	can, err = svc.Can(context.Background(), 7, team.ID, domain.TeamPermissionDeleteTeam)
+	can, err = svc.Can(context.Background(), 7, team.ID, domain.TeamPermissionDissolveTeam)
 	require.NoError(t, err)
 	require.True(t, can)
 }
