@@ -28,6 +28,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/promocode"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
+	"github.com/Wei-Shaw/sub2api/ent/redeemauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/schema"
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
@@ -1475,6 +1476,24 @@ func init() {
 	proxyDescExpiryWarnDays := proxyFields[10].Descriptor()
 	// proxy.DefaultExpiryWarnDays holds the default value on creation for the expiry_warn_days field.
 	proxy.DefaultExpiryWarnDays = proxyDescExpiryWarnDays.Default.(int)
+	redeemauditlogFields := schema.RedeemAuditLog{}.Fields()
+	_ = redeemauditlogFields
+	// redeemauditlogDescCode is the schema descriptor for code field.
+	redeemauditlogDescCode := redeemauditlogFields[1].Descriptor()
+	// redeemauditlog.CodeValidator is a validator for the "code" field. It is called by the builders before save.
+	redeemauditlog.CodeValidator = redeemauditlogDescCode.Validators[0].(func(string) error)
+	// redeemauditlogDescCodeType is the schema descriptor for code_type field.
+	redeemauditlogDescCodeType := redeemauditlogFields[4].Descriptor()
+	// redeemauditlog.CodeTypeValidator is a validator for the "code_type" field. It is called by the builders before save.
+	redeemauditlog.CodeTypeValidator = redeemauditlogDescCodeType.Validators[0].(func(string) error)
+	// redeemauditlogDescAmount is the schema descriptor for amount field.
+	redeemauditlogDescAmount := redeemauditlogFields[5].Descriptor()
+	// redeemauditlog.DefaultAmount holds the default value on creation for the amount field.
+	redeemauditlog.DefaultAmount = redeemauditlogDescAmount.Default.(float64)
+	// redeemauditlogDescCreatedAt is the schema descriptor for created_at field.
+	redeemauditlogDescCreatedAt := redeemauditlogFields[6].Descriptor()
+	// redeemauditlog.DefaultCreatedAt holds the default value on creation for the created_at field.
+	redeemauditlog.DefaultCreatedAt = redeemauditlogDescCreatedAt.Default.(func() time.Time)
 	redeemcodeFields := schema.RedeemCode{}.Fields()
 	_ = redeemcodeFields
 	// redeemcodeDescCode is the schema descriptor for code field.

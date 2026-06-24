@@ -36,6 +36,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/promocode"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
+	"github.com/Wei-Shaw/sub2api/ent/redeemauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
@@ -87,6 +88,7 @@ const (
 	TypePromoCode                     = "PromoCode"
 	TypePromoCodeUsage                = "PromoCodeUsage"
 	TypeProxy                         = "Proxy"
+	TypeRedeemAuditLog                = "RedeemAuditLog"
 	TypeRedeemCode                    = "RedeemCode"
 	TypeSecuritySecret                = "SecuritySecret"
 	TypeSetting                       = "Setting"
@@ -32409,6 +32411,814 @@ func (m *ProxyMutation) ResetEdge(name string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown Proxy edge %s", name)
+}
+
+// RedeemAuditLogMutation represents an operation that mutates the RedeemAuditLog nodes in the graph.
+type RedeemAuditLogMutation struct {
+	config
+	op                    Op
+	typ                   string
+	id                    *int64
+	redeem_code_id        *int64
+	addredeem_code_id     *int64
+	code                  *string
+	actor_user_id         *int64
+	addactor_user_id      *int64
+	billing_subject_id    *int64
+	addbilling_subject_id *int64
+	code_type             *string
+	amount                *float64
+	addamount             *float64
+	created_at            *time.Time
+	clearedFields         map[string]struct{}
+	done                  bool
+	oldValue              func(context.Context) (*RedeemAuditLog, error)
+	predicates            []predicate.RedeemAuditLog
+}
+
+var _ ent.Mutation = (*RedeemAuditLogMutation)(nil)
+
+// redeemauditlogOption allows management of the mutation configuration using functional options.
+type redeemauditlogOption func(*RedeemAuditLogMutation)
+
+// newRedeemAuditLogMutation creates new mutation for the RedeemAuditLog entity.
+func newRedeemAuditLogMutation(c config, op Op, opts ...redeemauditlogOption) *RedeemAuditLogMutation {
+	m := &RedeemAuditLogMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeRedeemAuditLog,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withRedeemAuditLogID sets the ID field of the mutation.
+func withRedeemAuditLogID(id int64) redeemauditlogOption {
+	return func(m *RedeemAuditLogMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *RedeemAuditLog
+		)
+		m.oldValue = func(ctx context.Context) (*RedeemAuditLog, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().RedeemAuditLog.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withRedeemAuditLog sets the old RedeemAuditLog of the mutation.
+func withRedeemAuditLog(node *RedeemAuditLog) redeemauditlogOption {
+	return func(m *RedeemAuditLogMutation) {
+		m.oldValue = func(context.Context) (*RedeemAuditLog, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m RedeemAuditLogMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m RedeemAuditLogMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *RedeemAuditLogMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *RedeemAuditLogMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().RedeemAuditLog.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetRedeemCodeID sets the "redeem_code_id" field.
+func (m *RedeemAuditLogMutation) SetRedeemCodeID(i int64) {
+	m.redeem_code_id = &i
+	m.addredeem_code_id = nil
+}
+
+// RedeemCodeID returns the value of the "redeem_code_id" field in the mutation.
+func (m *RedeemAuditLogMutation) RedeemCodeID() (r int64, exists bool) {
+	v := m.redeem_code_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRedeemCodeID returns the old "redeem_code_id" field's value of the RedeemAuditLog entity.
+// If the RedeemAuditLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RedeemAuditLogMutation) OldRedeemCodeID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRedeemCodeID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRedeemCodeID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRedeemCodeID: %w", err)
+	}
+	return oldValue.RedeemCodeID, nil
+}
+
+// AddRedeemCodeID adds i to the "redeem_code_id" field.
+func (m *RedeemAuditLogMutation) AddRedeemCodeID(i int64) {
+	if m.addredeem_code_id != nil {
+		*m.addredeem_code_id += i
+	} else {
+		m.addredeem_code_id = &i
+	}
+}
+
+// AddedRedeemCodeID returns the value that was added to the "redeem_code_id" field in this mutation.
+func (m *RedeemAuditLogMutation) AddedRedeemCodeID() (r int64, exists bool) {
+	v := m.addredeem_code_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRedeemCodeID resets all changes to the "redeem_code_id" field.
+func (m *RedeemAuditLogMutation) ResetRedeemCodeID() {
+	m.redeem_code_id = nil
+	m.addredeem_code_id = nil
+}
+
+// SetCode sets the "code" field.
+func (m *RedeemAuditLogMutation) SetCode(s string) {
+	m.code = &s
+}
+
+// Code returns the value of the "code" field in the mutation.
+func (m *RedeemAuditLogMutation) Code() (r string, exists bool) {
+	v := m.code
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCode returns the old "code" field's value of the RedeemAuditLog entity.
+// If the RedeemAuditLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RedeemAuditLogMutation) OldCode(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCode: %w", err)
+	}
+	return oldValue.Code, nil
+}
+
+// ResetCode resets all changes to the "code" field.
+func (m *RedeemAuditLogMutation) ResetCode() {
+	m.code = nil
+}
+
+// SetActorUserID sets the "actor_user_id" field.
+func (m *RedeemAuditLogMutation) SetActorUserID(i int64) {
+	m.actor_user_id = &i
+	m.addactor_user_id = nil
+}
+
+// ActorUserID returns the value of the "actor_user_id" field in the mutation.
+func (m *RedeemAuditLogMutation) ActorUserID() (r int64, exists bool) {
+	v := m.actor_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldActorUserID returns the old "actor_user_id" field's value of the RedeemAuditLog entity.
+// If the RedeemAuditLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RedeemAuditLogMutation) OldActorUserID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldActorUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldActorUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldActorUserID: %w", err)
+	}
+	return oldValue.ActorUserID, nil
+}
+
+// AddActorUserID adds i to the "actor_user_id" field.
+func (m *RedeemAuditLogMutation) AddActorUserID(i int64) {
+	if m.addactor_user_id != nil {
+		*m.addactor_user_id += i
+	} else {
+		m.addactor_user_id = &i
+	}
+}
+
+// AddedActorUserID returns the value that was added to the "actor_user_id" field in this mutation.
+func (m *RedeemAuditLogMutation) AddedActorUserID() (r int64, exists bool) {
+	v := m.addactor_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetActorUserID resets all changes to the "actor_user_id" field.
+func (m *RedeemAuditLogMutation) ResetActorUserID() {
+	m.actor_user_id = nil
+	m.addactor_user_id = nil
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (m *RedeemAuditLogMutation) SetBillingSubjectID(i int64) {
+	m.billing_subject_id = &i
+	m.addbilling_subject_id = nil
+}
+
+// BillingSubjectID returns the value of the "billing_subject_id" field in the mutation.
+func (m *RedeemAuditLogMutation) BillingSubjectID() (r int64, exists bool) {
+	v := m.billing_subject_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBillingSubjectID returns the old "billing_subject_id" field's value of the RedeemAuditLog entity.
+// If the RedeemAuditLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RedeemAuditLogMutation) OldBillingSubjectID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBillingSubjectID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBillingSubjectID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBillingSubjectID: %w", err)
+	}
+	return oldValue.BillingSubjectID, nil
+}
+
+// AddBillingSubjectID adds i to the "billing_subject_id" field.
+func (m *RedeemAuditLogMutation) AddBillingSubjectID(i int64) {
+	if m.addbilling_subject_id != nil {
+		*m.addbilling_subject_id += i
+	} else {
+		m.addbilling_subject_id = &i
+	}
+}
+
+// AddedBillingSubjectID returns the value that was added to the "billing_subject_id" field in this mutation.
+func (m *RedeemAuditLogMutation) AddedBillingSubjectID() (r int64, exists bool) {
+	v := m.addbilling_subject_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (m *RedeemAuditLogMutation) ClearBillingSubjectID() {
+	m.billing_subject_id = nil
+	m.addbilling_subject_id = nil
+	m.clearedFields[redeemauditlog.FieldBillingSubjectID] = struct{}{}
+}
+
+// BillingSubjectIDCleared returns if the "billing_subject_id" field was cleared in this mutation.
+func (m *RedeemAuditLogMutation) BillingSubjectIDCleared() bool {
+	_, ok := m.clearedFields[redeemauditlog.FieldBillingSubjectID]
+	return ok
+}
+
+// ResetBillingSubjectID resets all changes to the "billing_subject_id" field.
+func (m *RedeemAuditLogMutation) ResetBillingSubjectID() {
+	m.billing_subject_id = nil
+	m.addbilling_subject_id = nil
+	delete(m.clearedFields, redeemauditlog.FieldBillingSubjectID)
+}
+
+// SetCodeType sets the "code_type" field.
+func (m *RedeemAuditLogMutation) SetCodeType(s string) {
+	m.code_type = &s
+}
+
+// CodeType returns the value of the "code_type" field in the mutation.
+func (m *RedeemAuditLogMutation) CodeType() (r string, exists bool) {
+	v := m.code_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCodeType returns the old "code_type" field's value of the RedeemAuditLog entity.
+// If the RedeemAuditLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RedeemAuditLogMutation) OldCodeType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCodeType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCodeType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCodeType: %w", err)
+	}
+	return oldValue.CodeType, nil
+}
+
+// ResetCodeType resets all changes to the "code_type" field.
+func (m *RedeemAuditLogMutation) ResetCodeType() {
+	m.code_type = nil
+}
+
+// SetAmount sets the "amount" field.
+func (m *RedeemAuditLogMutation) SetAmount(f float64) {
+	m.amount = &f
+	m.addamount = nil
+}
+
+// Amount returns the value of the "amount" field in the mutation.
+func (m *RedeemAuditLogMutation) Amount() (r float64, exists bool) {
+	v := m.amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAmount returns the old "amount" field's value of the RedeemAuditLog entity.
+// If the RedeemAuditLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RedeemAuditLogMutation) OldAmount(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAmount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAmount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAmount: %w", err)
+	}
+	return oldValue.Amount, nil
+}
+
+// AddAmount adds f to the "amount" field.
+func (m *RedeemAuditLogMutation) AddAmount(f float64) {
+	if m.addamount != nil {
+		*m.addamount += f
+	} else {
+		m.addamount = &f
+	}
+}
+
+// AddedAmount returns the value that was added to the "amount" field in this mutation.
+func (m *RedeemAuditLogMutation) AddedAmount() (r float64, exists bool) {
+	v := m.addamount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetAmount resets all changes to the "amount" field.
+func (m *RedeemAuditLogMutation) ResetAmount() {
+	m.amount = nil
+	m.addamount = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *RedeemAuditLogMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *RedeemAuditLogMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the RedeemAuditLog entity.
+// If the RedeemAuditLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RedeemAuditLogMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *RedeemAuditLogMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// Where appends a list predicates to the RedeemAuditLogMutation builder.
+func (m *RedeemAuditLogMutation) Where(ps ...predicate.RedeemAuditLog) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the RedeemAuditLogMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *RedeemAuditLogMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.RedeemAuditLog, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *RedeemAuditLogMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *RedeemAuditLogMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (RedeemAuditLog).
+func (m *RedeemAuditLogMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *RedeemAuditLogMutation) Fields() []string {
+	fields := make([]string, 0, 7)
+	if m.redeem_code_id != nil {
+		fields = append(fields, redeemauditlog.FieldRedeemCodeID)
+	}
+	if m.code != nil {
+		fields = append(fields, redeemauditlog.FieldCode)
+	}
+	if m.actor_user_id != nil {
+		fields = append(fields, redeemauditlog.FieldActorUserID)
+	}
+	if m.billing_subject_id != nil {
+		fields = append(fields, redeemauditlog.FieldBillingSubjectID)
+	}
+	if m.code_type != nil {
+		fields = append(fields, redeemauditlog.FieldCodeType)
+	}
+	if m.amount != nil {
+		fields = append(fields, redeemauditlog.FieldAmount)
+	}
+	if m.created_at != nil {
+		fields = append(fields, redeemauditlog.FieldCreatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *RedeemAuditLogMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case redeemauditlog.FieldRedeemCodeID:
+		return m.RedeemCodeID()
+	case redeemauditlog.FieldCode:
+		return m.Code()
+	case redeemauditlog.FieldActorUserID:
+		return m.ActorUserID()
+	case redeemauditlog.FieldBillingSubjectID:
+		return m.BillingSubjectID()
+	case redeemauditlog.FieldCodeType:
+		return m.CodeType()
+	case redeemauditlog.FieldAmount:
+		return m.Amount()
+	case redeemauditlog.FieldCreatedAt:
+		return m.CreatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *RedeemAuditLogMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case redeemauditlog.FieldRedeemCodeID:
+		return m.OldRedeemCodeID(ctx)
+	case redeemauditlog.FieldCode:
+		return m.OldCode(ctx)
+	case redeemauditlog.FieldActorUserID:
+		return m.OldActorUserID(ctx)
+	case redeemauditlog.FieldBillingSubjectID:
+		return m.OldBillingSubjectID(ctx)
+	case redeemauditlog.FieldCodeType:
+		return m.OldCodeType(ctx)
+	case redeemauditlog.FieldAmount:
+		return m.OldAmount(ctx)
+	case redeemauditlog.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown RedeemAuditLog field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *RedeemAuditLogMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case redeemauditlog.FieldRedeemCodeID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRedeemCodeID(v)
+		return nil
+	case redeemauditlog.FieldCode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCode(v)
+		return nil
+	case redeemauditlog.FieldActorUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetActorUserID(v)
+		return nil
+	case redeemauditlog.FieldBillingSubjectID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBillingSubjectID(v)
+		return nil
+	case redeemauditlog.FieldCodeType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCodeType(v)
+		return nil
+	case redeemauditlog.FieldAmount:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAmount(v)
+		return nil
+	case redeemauditlog.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown RedeemAuditLog field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *RedeemAuditLogMutation) AddedFields() []string {
+	var fields []string
+	if m.addredeem_code_id != nil {
+		fields = append(fields, redeemauditlog.FieldRedeemCodeID)
+	}
+	if m.addactor_user_id != nil {
+		fields = append(fields, redeemauditlog.FieldActorUserID)
+	}
+	if m.addbilling_subject_id != nil {
+		fields = append(fields, redeemauditlog.FieldBillingSubjectID)
+	}
+	if m.addamount != nil {
+		fields = append(fields, redeemauditlog.FieldAmount)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *RedeemAuditLogMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case redeemauditlog.FieldRedeemCodeID:
+		return m.AddedRedeemCodeID()
+	case redeemauditlog.FieldActorUserID:
+		return m.AddedActorUserID()
+	case redeemauditlog.FieldBillingSubjectID:
+		return m.AddedBillingSubjectID()
+	case redeemauditlog.FieldAmount:
+		return m.AddedAmount()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *RedeemAuditLogMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case redeemauditlog.FieldRedeemCodeID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRedeemCodeID(v)
+		return nil
+	case redeemauditlog.FieldActorUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddActorUserID(v)
+		return nil
+	case redeemauditlog.FieldBillingSubjectID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddBillingSubjectID(v)
+		return nil
+	case redeemauditlog.FieldAmount:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAmount(v)
+		return nil
+	}
+	return fmt.Errorf("unknown RedeemAuditLog numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *RedeemAuditLogMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(redeemauditlog.FieldBillingSubjectID) {
+		fields = append(fields, redeemauditlog.FieldBillingSubjectID)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *RedeemAuditLogMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *RedeemAuditLogMutation) ClearField(name string) error {
+	switch name {
+	case redeemauditlog.FieldBillingSubjectID:
+		m.ClearBillingSubjectID()
+		return nil
+	}
+	return fmt.Errorf("unknown RedeemAuditLog nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *RedeemAuditLogMutation) ResetField(name string) error {
+	switch name {
+	case redeemauditlog.FieldRedeemCodeID:
+		m.ResetRedeemCodeID()
+		return nil
+	case redeemauditlog.FieldCode:
+		m.ResetCode()
+		return nil
+	case redeemauditlog.FieldActorUserID:
+		m.ResetActorUserID()
+		return nil
+	case redeemauditlog.FieldBillingSubjectID:
+		m.ResetBillingSubjectID()
+		return nil
+	case redeemauditlog.FieldCodeType:
+		m.ResetCodeType()
+		return nil
+	case redeemauditlog.FieldAmount:
+		m.ResetAmount()
+		return nil
+	case redeemauditlog.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown RedeemAuditLog field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *RedeemAuditLogMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *RedeemAuditLogMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *RedeemAuditLogMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *RedeemAuditLogMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *RedeemAuditLogMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *RedeemAuditLogMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *RedeemAuditLogMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown RedeemAuditLog unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *RedeemAuditLogMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown RedeemAuditLog edge %s", name)
 }
 
 // RedeemCodeMutation represents an operation that mutates the RedeemCode nodes in the graph.

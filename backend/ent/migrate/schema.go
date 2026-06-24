@@ -1297,6 +1297,40 @@ var (
 			},
 		},
 	}
+	// RedeemAuditLogsColumns holds the columns for the "redeem_audit_logs" table.
+	RedeemAuditLogsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "redeem_code_id", Type: field.TypeInt64},
+		{Name: "code", Type: field.TypeString, Size: 64},
+		{Name: "actor_user_id", Type: field.TypeInt64},
+		{Name: "billing_subject_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "code_type", Type: field.TypeString, Size: 20},
+		{Name: "amount", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+	}
+	// RedeemAuditLogsTable holds the schema information for the "redeem_audit_logs" table.
+	RedeemAuditLogsTable = &schema.Table{
+		Name:       "redeem_audit_logs",
+		Columns:    RedeemAuditLogsColumns,
+		PrimaryKey: []*schema.Column{RedeemAuditLogsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "redeemauditlog_redeem_code_id",
+				Unique:  false,
+				Columns: []*schema.Column{RedeemAuditLogsColumns[1]},
+			},
+			{
+				Name:    "redeemauditlog_actor_user_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{RedeemAuditLogsColumns[3], RedeemAuditLogsColumns[7]},
+			},
+			{
+				Name:    "redeemauditlog_billing_subject_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{RedeemAuditLogsColumns[4], RedeemAuditLogsColumns[7]},
+			},
+		},
+	}
 	// RedeemCodesColumns holds the columns for the "redeem_codes" table.
 	RedeemCodesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -2212,6 +2246,7 @@ var (
 		PromoCodesTable,
 		PromoCodeUsagesTable,
 		ProxiesTable,
+		RedeemAuditLogsTable,
 		RedeemCodesTable,
 		SecuritySecretsTable,
 		SettingsTable,
@@ -2328,6 +2363,9 @@ func init() {
 	ProxiesTable.ForeignKeys[0].RefTable = ProxiesTable
 	ProxiesTable.Annotation = &entsql.Annotation{
 		Table: "proxies",
+	}
+	RedeemAuditLogsTable.Annotation = &entsql.Annotation{
+		Table: "redeem_audit_logs",
 	}
 	RedeemCodesTable.ForeignKeys[0].RefTable = GroupsTable
 	RedeemCodesTable.ForeignKeys[1].RefTable = UsersTable
