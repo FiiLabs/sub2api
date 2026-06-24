@@ -136,13 +136,15 @@ func TestDeleteAPIKeyForTeamSubjectUsesScopedAuditDelete(t *testing.T) {
 }
 
 type teamAPIKeyRepoStub struct {
-	key           *APIKey
-	created       *APIKey
-	updated       []*APIKey
-	deleted       []int64
-	scopedGets    []scopedGetCall
-	scopedUpdated []scopedUpdateCall
-	scopedDeleted []scopedDeleteCall
+	key              *APIKey
+	created          *APIKey
+	updated          []*APIKey
+	deleted          []int64
+	scopedGets       []scopedGetCall
+	scopedUpdated    []scopedUpdateCall
+	scopedDeleted    []scopedDeleteCall
+	listUserCalls    []int64
+	listSubjectCalls []int64
 }
 
 type scopedGetCall struct {
@@ -210,11 +212,13 @@ func (r *teamAPIKeyRepoStub) DeleteWithAuditByBillingSubjectID(_ context.Context
 	r.scopedDeleted = append(r.scopedDeleted, scopedDeleteCall{id: id, billingSubjectID: billingSubjectID})
 	return nil
 }
-func (r *teamAPIKeyRepoStub) ListByUserID(context.Context, int64, pagination.PaginationParams, APIKeyListFilters) ([]APIKey, *pagination.PaginationResult, error) {
-	panic("unexpected ListByUserID")
+func (r *teamAPIKeyRepoStub) ListByUserID(_ context.Context, userID int64, _ pagination.PaginationParams, _ APIKeyListFilters) ([]APIKey, *pagination.PaginationResult, error) {
+	r.listUserCalls = append(r.listUserCalls, userID)
+	return nil, &pagination.PaginationResult{}, nil
 }
-func (r *teamAPIKeyRepoStub) ListByBillingSubjectID(context.Context, int64, pagination.PaginationParams, APIKeyListFilters) ([]APIKey, *pagination.PaginationResult, error) {
-	panic("unexpected ListByBillingSubjectID")
+func (r *teamAPIKeyRepoStub) ListByBillingSubjectID(_ context.Context, billingSubjectID int64, _ pagination.PaginationParams, _ APIKeyListFilters) ([]APIKey, *pagination.PaginationResult, error) {
+	r.listSubjectCalls = append(r.listSubjectCalls, billingSubjectID)
+	return nil, &pagination.PaginationResult{}, nil
 }
 func (r *teamAPIKeyRepoStub) VerifyOwnership(context.Context, int64, []int64) ([]int64, error) {
 	panic("unexpected VerifyOwnership")
@@ -270,4 +274,35 @@ type teamAPIKeyUserRepoStub struct {
 func (r *teamAPIKeyUserRepoStub) GetByID(context.Context, int64) (*User, error) {
 	clone := *r.user
 	return &clone, nil
+}
+
+func TestListForSubjectPersonalUsesBillingSubject(t *testing.T) {
+	repo := &teamAPIKeyRepoStub{}
+	svc := &APIKeyService{apiKeyRepo: repo}
+
+	_, _, err := svc.ListForSubject(context.Background(), SubjectResourceContext{
+		ActorUserID:      42,
+		BillingSubjectID: 500, // 个人主体 id（刻意 != ActorUserID，证明用的是 subject 而非 user）
+		SubjectType:      domain.BillingSubjectTypeUser,
+	}, pagination.PaginationParams{Page: 1, PageSize: 20}, APIKeyListFilters{})
+
+	require.NoError(t, err)
+	require.Equal(t, []int64{500}, repo.listSubjectCalls)
+	require.Empty(t, repo.listUserCalls)
+}
+
+func TestListForSubjectTeamUsesBillingSubject(t *testing.T) {
+	repo := &teamAPIKeyRepoStub{}
+	svc := &APIKeyService{apiKeyRepo: repo}
+
+	_, _, err := svc.ListForSubject(context.Background(), SubjectResourceContext{
+		ActorUserID:      42,
+		BillingSubjectID: 900,
+		SubjectType:      domain.BillingSubjectTypeTeam,
+		Permissions:      map[string]bool{domain.TeamPermissionManageKeys: true},
+	}, pagination.PaginationParams{Page: 1, PageSize: 20}, APIKeyListFilters{})
+
+	require.NoError(t, err)
+	require.Equal(t, []int64{900}, repo.listSubjectCalls)
+	require.Empty(t, repo.listUserCalls)
 }

@@ -468,9 +468,8 @@ func (s *APIKeyService) ListForSubject(ctx context.Context, subject SubjectResou
 	if err := validateAPIKeySubjectContext(subject); err != nil {
 		return nil, nil, err
 	}
-	if subject.SubjectType != domain.BillingSubjectTypeTeam {
-		return s.List(ctx, subject.ActorUserID, params, filters)
-	}
+	// 统一按 billing_subject 列出（个人与团队同口径）。个人 key 的 billing_subject_id 已由
+	// migration 150 回填，按 subject 查可避免把该用户在各团队创建的 key 串进其「个人」列表。
 	repo, ok := s.apiKeyRepo.(billingSubjectAPIKeyRepository)
 	if !ok {
 		return nil, nil, infraerrors.InternalServer("API_KEY_SUBJECT_REPOSITORY_UNAVAILABLE", "api key subject repository is unavailable")
