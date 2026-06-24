@@ -56,7 +56,16 @@ func (h *UserHandler) GetMyPlatformQuotas(c *gin.Context) {
 		response.Success(c, map[string]any{"platform_quotas": []any{}})
 		return
 	}
-	records, err := h.userPlatformQuotaRepo.ListByUser(c.Request.Context(), subject.UserID)
+	// platform-quota 读侧 subject 化（QuotaSubjectScoped 灰度，与写侧/preflight 口径一致）：
+	// 开关开 + 已解析 billing_subject → 按主体查（团队行 user_id=NULL，只能按 subject 取到；
+	// 个人行的 billing_subject_id 已由 migration 150 回填）；否则回退 user 维度（kill-switch）。
+	var records []service.UserPlatformQuotaRecord
+	var err error
+	if h.userService != nil && h.userService.QuotaSubjectScoped() && subject.BillingSubjectID > 0 {
+		records, err = h.userPlatformQuotaRepo.ListBySubject(c.Request.Context(), subject.BillingSubjectID)
+	} else {
+		records, err = h.userPlatformQuotaRepo.ListByUser(c.Request.Context(), subject.UserID)
+	}
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

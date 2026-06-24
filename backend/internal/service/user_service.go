@@ -243,6 +243,12 @@ func (s *UserService) GetFirstAdmin(ctx context.Context) (*User, error) {
 	return admin, nil
 }
 
+// QuotaSubjectScoped 暴露 billing_subject 维度灰度开关，供 handler 在 user/subject 读路径间分流。
+// cfg 为 nil（测试/降级）时返回 false（fail-safe，回退 user 维度）。
+func (s *UserService) QuotaSubjectScoped() bool {
+	return s.cfg != nil && s.cfg.Billing.QuotaSubjectScoped
+}
+
 // DisplayBalance 返回用于展示的余额：开关开时返回「生效计费主体」余额
 //   - subjectID>0：用该主体（用户接口由 SubjectContextMiddleware 解析的 subject，网关用 key 的 subject）
 //   - subjectID<=0：用个人主体（无工作区上下文的入口，如 /auth/me）
