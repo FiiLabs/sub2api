@@ -43,6 +43,12 @@ func (h *RedeemHandler) Redeem(c *gin.Context) {
 		response.Unauthorized(c, "User not authenticated")
 		return
 	}
+	// 团队主体下兑换属「计费管理」操作，需 team.billing.manage（owner/admin/billing）；个人主体放行。
+	// 走共享权限闸，与在线支付/订阅购买保持同一口径。
+	if err := RequireTeamBillingManage(subject); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
 
 	var req RedeemRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
