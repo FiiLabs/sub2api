@@ -61,7 +61,7 @@ func (h *UserHandler) GetMyPlatformQuotas(c *gin.Context) {
 	// 个人行的 billing_subject_id 已由 migration 150 回填）；否则回退 user 维度（kill-switch）。
 	var records []service.UserPlatformQuotaRecord
 	var err error
-	if h.userService != nil && h.userService.QuotaSubjectScoped() && subject.BillingSubjectID > 0 {
+	if h.userService.QuotaSubjectScoped() && subject.BillingSubjectID > 0 {
 		records, err = h.userPlatformQuotaRepo.ListBySubject(c.Request.Context(), subject.BillingSubjectID)
 	} else {
 		records, err = h.userPlatformQuotaRepo.ListByUser(c.Request.Context(), subject.UserID)

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler/quotaview"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -30,7 +31,7 @@ func (f *fakeQuotaRepoForUserHandler) ListByUser(_ context.Context, _ int64) ([]
 
 func TestGetMyPlatformQuotas_EmptyReturns200WithEmptyArray(t *testing.T) {
 	repo := &fakeQuotaRepoForUserHandler{records: nil}
-	h := &UserHandler{userPlatformQuotaRepo: repo}
+	h := NewUserHandler(service.NewUserService(nil, nil, nil, nil, nil, &config.Config{}), nil, nil, nil, nil, repo)
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -68,7 +69,7 @@ func TestGetMyPlatformQuotas_D14_LazyZeroForExpiredWindow(t *testing.T) {
 		DailyUsageUSD:    3.0,
 		DailyWindowStart: &pastStart,
 	}}}
-	h := &UserHandler{userPlatformQuotaRepo: repo}
+	h := NewUserHandler(service.NewUserService(nil, nil, nil, nil, nil, &config.Config{}), nil, nil, nil, nil, repo)
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -91,7 +92,7 @@ func TestGetMyPlatformQuotas_D14_LazyZeroForExpiredWindow(t *testing.T) {
 }
 
 func TestGetMyPlatformQuotas_NilRepo_Returns200Empty(t *testing.T) {
-	h := &UserHandler{userPlatformQuotaRepo: nil}
+	h := NewUserHandler(service.NewUserService(nil, nil, nil, nil, nil, &config.Config{}), nil, nil, nil, nil, nil)
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -104,7 +105,7 @@ func TestGetMyPlatformQuotas_NilRepo_Returns200Empty(t *testing.T) {
 }
 
 func TestGetMyPlatformQuotas_NoAuth_Returns401(t *testing.T) {
-	h := &UserHandler{userPlatformQuotaRepo: nil}
+	h := NewUserHandler(service.NewUserService(nil, nil, nil, nil, nil, &config.Config{}), nil, nil, nil, nil, nil)
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
