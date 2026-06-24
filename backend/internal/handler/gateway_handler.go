@@ -1427,14 +1427,15 @@ func (h *GatewayHandler) usageUnrestricted(c *gin.Context, ctx context.Context, 
 		h.errorResponse(c, http.StatusInternalServerError, "api_error", "Failed to get user info")
 		return
 	}
+	displayBalance := h.userService.DisplayBalance(ctx, subject.UserID, apiKey.BillingSubjectID, latestUser.Balance)
 
 	resp := gin.H{
 		"mode":      "unrestricted",
 		"isValid":   true,
 		"planName":  "钱包余额",
-		"remaining": latestUser.Balance,
+		"remaining": displayBalance,
 		"unit":      "USD",
-		"balance":   latestUser.Balance,
+		"balance":   displayBalance,
 	}
 	if usageData != nil {
 		resp["usage"] = usageData

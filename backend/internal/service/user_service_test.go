@@ -353,7 +353,7 @@ func (m *mockBillingCache) BatchGetUserPlatformQuotaCache(context.Context, []Use
 func TestUpdateBalance_Success(t *testing.T) {
 	repo := &mockUserRepo{}
 	cache := &mockBillingCache{}
-	svc := NewUserService(repo, nil, nil, cache)
+	svc := NewUserService(repo, nil, nil, cache, nil, nil)
 
 	err := svc.UpdateBalance(context.Background(), 42, 100.0)
 	require.NoError(t, err)
@@ -390,7 +390,7 @@ func TestGetProfileIdentitySummaries_AllowsUnbindWhenAnotherLoginMethodRemains(t
 			},
 		},
 	}
-	svc := NewUserService(repo, nil, nil, nil)
+	svc := NewUserService(repo, nil, nil, nil, nil, nil)
 
 	summaries, err := svc.GetProfileIdentitySummaries(context.Background(), 7, repo.getByIDUser)
 
@@ -415,7 +415,7 @@ func TestUnbindUserAuthProviderRejectsLastRemainingLoginMethod(t *testing.T) {
 			},
 		},
 	}
-	svc := NewUserService(repo, nil, nil, nil)
+	svc := NewUserService(repo, nil, nil, nil, nil, nil)
 
 	_, err := svc.UnbindUserAuthProvider(context.Background(), 9, "linuxdo")
 
@@ -438,7 +438,7 @@ func TestGetProfileIdentitySummaries_DoesNotTreatOAuthOnlyCompatEmailAsAlternati
 			},
 		},
 	}
-	svc := NewUserService(repo, nil, nil, nil)
+	svc := NewUserService(repo, nil, nil, nil, nil, nil)
 
 	summaries, err := svc.GetProfileIdentitySummaries(context.Background(), 10, repo.getByIDUser)
 
@@ -474,7 +474,7 @@ func TestGetProfileIdentitySummaries_DoesNotTreatCompatBackfilledEmailIdentityAs
 			},
 		},
 	}
-	svc := NewUserService(repo, nil, nil, nil)
+	svc := NewUserService(repo, nil, nil, nil, nil, nil)
 
 	summaries, err := svc.GetProfileIdentitySummaries(context.Background(), 11, repo.getByIDUser)
 
@@ -507,7 +507,7 @@ func TestUnbindUserAuthProviderRemovesProviderAndReturnsUpdatedProfile(t *testin
 		},
 	}
 	invalidator := &mockAuthCacheInvalidator{}
-	svc := NewUserService(repo, nil, invalidator, nil)
+	svc := NewUserService(repo, nil, invalidator, nil, nil, nil)
 
 	user, err := svc.UnbindUserAuthProvider(context.Background(), 12, "linuxdo")
 
@@ -541,7 +541,7 @@ func TestGetProfileIdentitySummaries_HidesBindActionWhenProviderExplicitlyDisabl
 			SettingKeyLinuxDoConnectEnabled: "false",
 		},
 	}
-	svc := NewUserService(repo, settingRepo, nil, nil)
+	svc := NewUserService(repo, settingRepo, nil, nil, nil, nil)
 
 	summaries, err := svc.GetProfileIdentitySummaries(context.Background(), 15, repo.getByIDUser)
 
@@ -565,7 +565,7 @@ func TestGetProfileIdentitySummaries_UsesBindStartRoute(t *testing.T) {
 			},
 		},
 	}
-	svc := NewUserService(repo, nil, nil, nil)
+	svc := NewUserService(repo, nil, nil, nil, nil, nil)
 
 	summaries, err := svc.GetProfileIdentitySummaries(context.Background(), 16, repo.getByIDUser)
 
@@ -589,7 +589,7 @@ func TestGetProfileIdentitySummaries_UsesBindStartRoute(t *testing.T) {
 
 func TestUpdateBalance_NilBillingCache_NoPanic(t *testing.T) {
 	repo := &mockUserRepo{}
-	svc := NewUserService(repo, nil, nil, nil) // billingCache = nil
+	svc := NewUserService(repo, nil, nil, nil, nil, nil) // billingCache = nil
 
 	err := svc.UpdateBalance(context.Background(), 1, 50.0)
 	require.NoError(t, err, "billingCache 为 nil 时不应 panic")
@@ -598,7 +598,7 @@ func TestUpdateBalance_NilBillingCache_NoPanic(t *testing.T) {
 func TestUpdateBalance_CacheFailure_DoesNotAffectReturn(t *testing.T) {
 	repo := &mockUserRepo{}
 	cache := &mockBillingCache{invalidateErr: errors.New("redis connection refused")}
-	svc := NewUserService(repo, nil, nil, cache)
+	svc := NewUserService(repo, nil, nil, cache, nil, nil)
 
 	err := svc.UpdateBalance(context.Background(), 99, 200.0)
 	require.NoError(t, err, "缓存失效失败不应影响主流程返回值")
@@ -617,7 +617,7 @@ func TestTouchLastActive_UpdatesWhenStale(t *testing.T) {
 			LastActiveAt: &stale,
 		},
 	}
-	svc := NewUserService(repo, nil, nil, nil)
+	svc := NewUserService(repo, nil, nil, nil, nil, nil)
 
 	svc.TouchLastActive(context.Background(), 42)
 
@@ -634,7 +634,7 @@ func TestTouchLastActive_SkipsWhenRecent(t *testing.T) {
 			LastActiveAt: &recent,
 		},
 	}
-	svc := NewUserService(repo, nil, nil, nil)
+	svc := NewUserService(repo, nil, nil, nil, nil, nil)
 
 	svc.TouchLastActive(context.Background(), 42)
 
@@ -645,7 +645,7 @@ func TestTouchLastActive_SkipsWhenRecent(t *testing.T) {
 func TestUpdateBalance_RepoError_ReturnsError(t *testing.T) {
 	repo := &mockUserRepo{updateBalanceErr: errors.New("database error")}
 	cache := &mockBillingCache{}
-	svc := NewUserService(repo, nil, nil, cache)
+	svc := NewUserService(repo, nil, nil, cache, nil, nil)
 
 	err := svc.UpdateBalance(context.Background(), 1, 100.0)
 	require.Error(t, err, "repo 失败时应返回错误")
@@ -661,7 +661,7 @@ func TestUpdateBalance_WithAuthCacheInvalidator(t *testing.T) {
 	repo := &mockUserRepo{}
 	auth := &mockAuthCacheInvalidator{}
 	cache := &mockBillingCache{}
-	svc := NewUserService(repo, nil, auth, cache)
+	svc := NewUserService(repo, nil, auth, cache, nil, nil)
 
 	err := svc.UpdateBalance(context.Background(), 77, 300.0)
 	require.NoError(t, err)
@@ -682,7 +682,7 @@ func TestNewUserService_FieldsAssignment(t *testing.T) {
 	auth := &mockAuthCacheInvalidator{}
 	cache := &mockBillingCache{}
 
-	svc := NewUserService(repo, nil, auth, cache)
+	svc := NewUserService(repo, nil, auth, cache, nil, nil)
 	require.NotNil(t, svc)
 	require.Equal(t, repo, svc.userRepo)
 	require.Equal(t, auth, svc.authCacheInvalidator)
@@ -700,7 +700,7 @@ func TestUpdateProfile_StoresInlineAvatarWithinLimit(t *testing.T) {
 			Username: "avatar-user",
 		},
 	}
-	svc := NewUserService(repo, nil, nil, nil)
+	svc := NewUserService(repo, nil, nil, nil, nil, nil)
 
 	updated, err := svc.UpdateProfile(context.Background(), 7, UpdateProfileRequest{
 		AvatarURL: &dataURL,
@@ -751,7 +751,7 @@ func TestUpdateProfile_CompressesInlineAvatarToTwentyKilobytes(t *testing.T) {
 			Username: "avatar-compress",
 		},
 	}
-	svc := NewUserService(repo, nil, nil, nil)
+	svc := NewUserService(repo, nil, nil, nil, nil, nil)
 
 	updated, err := svc.UpdateProfile(context.Background(), 17, UpdateProfileRequest{
 		AvatarURL: &dataURL,
@@ -779,7 +779,7 @@ func TestUpdateProfile_RejectsInlineAvatarOverLimit(t *testing.T) {
 			Username: "too-large",
 		},
 	}
-	svc := NewUserService(repo, nil, nil, nil)
+	svc := NewUserService(repo, nil, nil, nil, nil, nil)
 
 	_, err := svc.UpdateProfile(context.Background(), 8, UpdateProfileRequest{
 		AvatarURL: &dataURL,
@@ -799,7 +799,7 @@ func TestUpdateProfile_StoresRemoteAvatarURL(t *testing.T) {
 			Username: "remote-avatar",
 		},
 	}
-	svc := NewUserService(repo, nil, nil, nil)
+	svc := NewUserService(repo, nil, nil, nil, nil, nil)
 
 	updated, err := svc.UpdateProfile(context.Background(), 9, UpdateProfileRequest{
 		AvatarURL: &remoteURL,
@@ -824,7 +824,7 @@ func TestUpdateProfile_DeletesAvatarOnEmptyString(t *testing.T) {
 			AvatarSource: "remote_url",
 		},
 	}
-	svc := NewUserService(repo, nil, nil, nil)
+	svc := NewUserService(repo, nil, nil, nil, nil, nil)
 
 	updated, err := svc.UpdateProfile(context.Background(), 10, UpdateProfileRequest{
 		AvatarURL: &empty,
@@ -848,7 +848,7 @@ func TestUpdateProfile_RollsBackAvatarMutationWhenUserUpdateFails(t *testing.T) 
 			return errors.New("write user failed")
 		},
 	}
-	svc := NewUserService(repo, nil, nil, nil)
+	svc := NewUserService(repo, nil, nil, nil, nil, nil)
 
 	remoteURL := "https://cdn.example.com/new.png"
 	_, err := svc.UpdateProfile(context.Background(), 11, UpdateProfileRequest{
@@ -877,7 +877,7 @@ func TestGetProfile_HydratesAvatarFromRepository(t *testing.T) {
 			}, nil
 		},
 	}
-	svc := NewUserService(repo, nil, nil, nil)
+	svc := NewUserService(repo, nil, nil, nil, nil, nil)
 
 	user, err := svc.GetProfile(context.Background(), 12)
 	require.NoError(t, err)

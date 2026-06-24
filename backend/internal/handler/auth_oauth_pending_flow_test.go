@@ -2235,7 +2235,7 @@ CREATE TABLE IF NOT EXISTS user_affiliates (
 		affiliateService,
 		nil,
 	)
-	userSvc := service.NewUserService(userRepo, nil, nil, nil)
+	userSvc := service.NewUserService(userRepo, nil, nil, nil, nil, nil)
 	var totpSvc *service.TotpService
 	if options.totpCache != nil || options.totpEncryptor != nil {
 		totpCache := options.totpCache

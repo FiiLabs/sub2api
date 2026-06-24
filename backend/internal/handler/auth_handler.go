@@ -415,6 +415,9 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 		return
 	}
 
+	// /auth/me 无 SubjectContextMiddleware，subjectID 传 0 → 个人主体
+	user.Balance = h.userService.DisplayBalance(c.Request.Context(), subject.UserID, 0, user.Balance)
+
 	identities, err := h.userService.GetProfileIdentitySummaries(c.Request.Context(), subject.UserID, user)
 	if err != nil {
 		response.ErrorFrom(c, err)

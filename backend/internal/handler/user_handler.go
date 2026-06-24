@@ -121,6 +121,9 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 		return
 	}
 
+	// 该路由在 SubjectContextMiddleware 下，subject.BillingSubjectID 为当前工作区主体
+	userData.Balance = h.userService.DisplayBalance(c.Request.Context(), subject.UserID, subject.BillingSubjectID, userData.Balance)
+
 	profileResp, err := h.buildUserProfileResponse(c.Request.Context(), subject.UserID, userData)
 	if err != nil {
 		response.ErrorFrom(c, err)

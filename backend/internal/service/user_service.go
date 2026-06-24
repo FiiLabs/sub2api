@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	xdraw "golang.org/x/image/draw"
 	"golang.org/x/sync/singleflight"
 )
@@ -215,17 +216,21 @@ type UserService struct {
 	settingRepo          SettingRepository
 	authCacheInvalidator APIKeyAuthCacheInvalidator
 	billingCache         BillingCache
+	billingSubjectRepo   BillingSubjectRepository
+	cfg                  *config.Config
 	lastActiveTouchL1    sync.Map
 	lastActiveTouchSF    singleflight.Group
 }
 
 // NewUserService 创建用户服务实例
-func NewUserService(userRepo UserRepository, settingRepo SettingRepository, authCacheInvalidator APIKeyAuthCacheInvalidator, billingCache BillingCache) *UserService {
+func NewUserService(userRepo UserRepository, settingRepo SettingRepository, authCacheInvalidator APIKeyAuthCacheInvalidator, billingCache BillingCache, billingSubjectRepo BillingSubjectRepository, cfg *config.Config) *UserService {
 	return &UserService{
 		userRepo:             userRepo,
 		settingRepo:          settingRepo,
 		authCacheInvalidator: authCacheInvalidator,
 		billingCache:         billingCache,
+		billingSubjectRepo:   billingSubjectRepo,
+		cfg:                  cfg,
 	}
 }
 
@@ -236,6 +241,28 @@ func (s *UserService) GetFirstAdmin(ctx context.Context) (*User, error) {
 		return nil, fmt.Errorf("get first admin: %w", err)
 	}
 	return admin, nil
+}
+
+// DisplayBalance 返回用于展示的余额：开关开时返回「生效计费主体」余额
+//   - subjectID>0：用该主体（用户接口由 SubjectContextMiddleware 解析的 subject，网关用 key 的 subject）
+//   - subjectID<=0：用个人主体（无工作区上下文的入口，如 /auth/me）
+//
+// 开关关或解析失败 → 返回 fallback（即 users.balance），fail-safe 不阻断展示。
+func (s *UserService) DisplayBalance(ctx context.Context, userID, subjectID int64, fallback float64) float64 {
+	if s.cfg == nil || !s.cfg.Billing.QuotaSubjectScoped || s.billingSubjectRepo == nil {
+		return fallback
+	}
+	var subj *BillingSubject
+	var err error
+	if subjectID > 0 {
+		subj, err = s.billingSubjectRepo.GetByID(ctx, subjectID)
+	} else {
+		subj, err = s.billingSubjectRepo.GetPersonalByUserID(ctx, userID)
+	}
+	if err != nil || subj == nil {
+		return fallback
+	}
+	return subj.Balance
 }
 
 // GetProfile 获取用户资料
