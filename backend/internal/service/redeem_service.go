@@ -131,6 +131,21 @@ type RedeemCodeBatchUpdateResult struct {
 	Updated int64 `json:"updated"`
 }
 
+// RedeemAuditLog 兑换入账审计流水（service 层传输结构）。
+type RedeemAuditLog struct {
+	RedeemCodeID     int64
+	Code             string
+	ActorUserID      int64
+	BillingSubjectID int64
+	CodeType         string
+	Amount           float64
+}
+
+// RedeemAuditLogRepository 兑换审计流水写入端口。
+type RedeemAuditLogRepository interface {
+	Create(ctx context.Context, log *RedeemAuditLog) error
+}
+
 // RedeemService 兑换码服务
 type RedeemService struct {
 	redeemRepo           RedeemCodeRepository
@@ -142,6 +157,7 @@ type RedeemService struct {
 	entClient            *dbent.Client
 	authCacheInvalidator APIKeyAuthCacheInvalidator
 	affiliateService     *AffiliateService
+	redeemAuditRepo      RedeemAuditLogRepository
 }
 
 // NewRedeemService 创建兑换码服务实例
@@ -155,6 +171,7 @@ func NewRedeemService(
 	entClient *dbent.Client,
 	authCacheInvalidator APIKeyAuthCacheInvalidator,
 	affiliateService *AffiliateService,
+	redeemAuditRepo RedeemAuditLogRepository,
 ) *RedeemService {
 	return &RedeemService{
 		redeemRepo:           redeemRepo,
@@ -166,6 +183,7 @@ func NewRedeemService(
 		entClient:            entClient,
 		authCacheInvalidator: authCacheInvalidator,
 		affiliateService:     affiliateService,
+		redeemAuditRepo:      redeemAuditRepo,
 	}
 }
 
@@ -516,6 +534,20 @@ func (s *RedeemService) RedeemForSubject(ctx context.Context, actorUserID, billi
 
 	default:
 		return nil, fmt.Errorf("unsupported redeem type: %s", redeemCode.Type)
+	}
+
+	// 资金/权益入账审计流水（who/when/code/amount/subject），与兑换同事务提交：可审计且原子。
+	if s.redeemAuditRepo != nil {
+		if err := s.redeemAuditRepo.Create(txCtx, &RedeemAuditLog{
+			RedeemCodeID:     redeemCode.ID,
+			Code:             redeemCode.Code,
+			ActorUserID:      userID,
+			BillingSubjectID: billingSubjectID,
+			CodeType:         redeemCode.Type,
+			Amount:           redeemCode.Value,
+		}); err != nil {
+			return nil, fmt.Errorf("write redeem audit log: %w", err)
+		}
 	}
 
 	// 提交事务
