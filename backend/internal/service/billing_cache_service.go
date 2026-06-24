@@ -108,6 +108,7 @@ type BillingCacheService struct {
 	cfg                   *config.Config
 	circuitBreaker        *billingCircuitBreaker
 	userPlatformQuotaRepo UserPlatformQuotaRepository
+	billingSubjectRepo    BillingSubjectRepository
 
 	cacheWriteChan     chan cacheWriteTask
 	cacheWriteWg       sync.WaitGroup
@@ -133,6 +134,7 @@ func NewBillingCacheService(
 	userGroupRateRepo UserGroupRateRepository,
 	cfg *config.Config,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
+	billingSubjectRepo BillingSubjectRepository,
 ) *BillingCacheService {
 	svc := &BillingCacheService{
 		cache:                 cache,
@@ -143,6 +145,7 @@ func NewBillingCacheService(
 		userGroupRateRepo:     userGroupRateRepo,
 		cfg:                   cfg,
 		userPlatformQuotaRepo: userPlatformQuotaRepo,
+		billingSubjectRepo:    billingSubjectRepo,
 	}
 	svc.circuitBreaker = newBillingCircuitBreaker(cfg.Billing.CircuitBreaker)
 	svc.startCacheWriteWorkers()
@@ -306,15 +309,58 @@ func (s *BillingCacheService) logCacheWriteDrop(task cacheWriteTask, reason stri
 // BillingSubjectCache（真实 Redis 实现）时委派到 subject 专用键；否则回退到以
 // subjectID 当作 userID 的用户余额缓存，保持向后兼容。
 
-// GetSubjectBalance 获取计费主体余额。
+// GetSubjectBalance 获取计费主体余额（优先缓存，MISS 经 singleflight 回源 DB 并回填）。
 func (s *BillingCacheService) GetSubjectBalance(ctx context.Context, subjectID int64) (float64, error) {
 	if subjectID <= 0 {
 		return 0, ErrUserNotFound
 	}
-	if subjectCache, ok := s.cache.(BillingSubjectCache); ok {
-		return subjectCache.GetSubjectBalance(ctx, subjectID)
+	if s.cache == nil {
+		return s.getSubjectBalanceFromDB(ctx, subjectID)
 	}
-	return s.GetUserBalance(ctx, subjectID)
+	subjectCache, ok := s.cache.(BillingSubjectCache)
+	if !ok {
+		// 缓存后端不支持 subject 维度：保持 legacy 行为，按 user 键缓存读取。
+		return s.GetUserBalance(ctx, subjectID)
+	}
+	if balance, err := subjectCache.GetSubjectBalance(ctx, subjectID); err == nil {
+		return balance, nil
+	}
+	// 缓存 MISS：singleflight 合并并发回源（key 加 subj: 前缀避免与 user 键空间冲突）。
+	value, err, _ := s.balanceLoadSF.Do("subj:"+strconv.FormatInt(subjectID, 10), func() (any, error) {
+		loadCtx, cancel := context.WithTimeout(context.Background(), balanceLoadTimeout)
+		defer cancel()
+		bal, derr := s.getSubjectBalanceFromDB(loadCtx, subjectID)
+		if derr != nil {
+			return nil, derr
+		}
+		if serr := subjectCache.SetSubjectBalance(loadCtx, subjectID, bal); serr != nil {
+			logger.LegacyPrintf("service.billing_cache", "Warning: set subject balance cache failed for subject %d: %v", subjectID, serr)
+		}
+		return bal, nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	balance, ok := value.(float64)
+	if !ok {
+		return 0, fmt.Errorf("unexpected balance type: %T", value)
+	}
+	return balance, nil
+}
+
+// getSubjectBalanceFromDB 从 billing_subjects 读取主体余额（缓存回源）。
+func (s *BillingCacheService) getSubjectBalanceFromDB(ctx context.Context, subjectID int64) (float64, error) {
+	if s.billingSubjectRepo == nil {
+		return 0, fmt.Errorf("get subject balance: billing subject repo not configured")
+	}
+	subj, err := s.billingSubjectRepo.GetByID(ctx, subjectID)
+	if err != nil {
+		return 0, fmt.Errorf("get subject balance: %w", err)
+	}
+	if subj == nil {
+		return 0, ErrUserNotFound
+	}
+	return subj.Balance, nil
 }
 
 // SetSubjectBalance 设置计费主体余额缓存。
