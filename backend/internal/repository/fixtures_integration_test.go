@@ -4,10 +4,12 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 )
@@ -424,4 +426,39 @@ func mustBindAccountToGroup(t *testing.T, client *dbent.Client, accountID, group
 		SetPriority(priority).
 		Save(ctx)
 	require.NoError(t, err, "create account_group")
+}
+
+// mustCreateTeamWithBalance 建一个 active 团队及其合法 team billing_subject
+// （满足 billing_subjects_owner_check：team_id 非空、user_id 为空），返回 (teamID, billingSubjectID)。
+// 正确顺序：先建 team（不设 billing_subject_id），再建 team 主体（SetTeamID），再回填。
+func mustCreateTeamWithBalance(t *testing.T, client *dbent.Client, ctx context.Context, ownerUserID int64, balance float64) (int64, int64) {
+	t.Helper()
+	ts := time.Now().UnixNano()
+
+	// 1. 先建 team，不设 billing_subject_id（可空）
+	team, err := client.Team.Create().
+		SetName(fmt.Sprintf("T-%d", ts)).
+		SetSlug(fmt.Sprintf("t-%d", ts)).
+		SetOwnerUserID(ownerUserID).
+		SetCreatedByUserID(ownerUserID).
+		SetStatus(domain.TeamStatusActive).
+		Save(ctx)
+	require.NoError(t, err, "create team")
+
+	// 2. 建 team 主体：SetTeamID 非空、不设 user_id（满足 owner_check 约束）
+	subj, err := client.BillingSubject.Create().
+		SetType(domain.BillingSubjectTypeTeam).
+		SetTeamID(team.ID).
+		SetStatus(domain.StatusActive).
+		SetBalance(balance).
+		Save(ctx)
+	require.NoError(t, err, "create team billing_subject")
+
+	// 3. 回填 team.billing_subject_id
+	_, err = client.Team.UpdateOneID(team.ID).
+		SetBillingSubjectID(subj.ID).
+		Save(ctx)
+	require.NoError(t, err, "backfill team billing_subject_id")
+
+	return team.ID, subj.ID
 }

@@ -24,24 +24,13 @@ func TestListWorkspaces_FillsTeamBalance(t *testing.T) {
 		PasswordHash: "hash",
 		Balance:      5,
 	})
-	// 团队主体余额 250；建团队 + 关联主体 + 把 user 设为 active 成员（owner）。
-	teamSubj, err := client.BillingSubject.Create().
-		SetType(domain.BillingSubjectTypeTeam).
-		SetStatus(domain.StatusActive).
-		SetBalance(250).
-		Save(ctx)
-	require.NoError(t, err)
-	team, err := client.Team.Create().
-		SetName("T-" + fmt.Sprint(time.Now().UnixNano())).
-		SetSlug("t-" + fmt.Sprint(time.Now().UnixNano())).
-		SetOwnerUserID(user.ID).
-		SetCreatedByUserID(user.ID).
-		SetStatus(domain.TeamStatusActive).
-		SetBillingSubjectID(teamSubj.ID).
-		Save(ctx)
-	require.NoError(t, err)
-	_, err = client.TeamMember.Create().
-		SetTeamID(team.ID).SetUserID(user.ID).
+
+	// 用 helper 建合法 team + team billing_subject（满足 owner_check 约束）
+	teamID, _ := mustCreateTeamWithBalance(t, client, ctx, user.ID, 250)
+
+	// 把 user 设为该团队的 active 成员（owner）
+	_, err := client.TeamMember.Create().
+		SetTeamID(teamID).SetUserID(user.ID).
 		SetRole(domain.TeamRoleOwner).
 		SetStatus(domain.TeamMemberStatusActive).
 		SetJoinedAt(time.Now()).
@@ -53,7 +42,7 @@ func TestListWorkspaces_FillsTeamBalance(t *testing.T) {
 
 	var teamItem *service.WorkspaceSubject
 	for i := range items {
-		if items[i].Type == domain.BillingSubjectTypeTeam && items[i].TeamID == team.ID {
+		if items[i].Type == domain.BillingSubjectTypeTeam && items[i].TeamID == teamID {
 			teamItem = &items[i]
 		}
 	}
