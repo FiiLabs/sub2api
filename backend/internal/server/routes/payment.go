@@ -1,7 +1,6 @@
 package routes
 
 import (
-	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -27,7 +26,7 @@ func RegisterPaymentRoutes(
 	authenticated := v1.Group("/payment")
 	authenticated.Use(gin.HandlerFunc(jwtAuth))
 	authenticated.Use(middleware.SubjectContextMiddleware(teamService))
-	authenticated.Use(requirePersonalPaymentSubject())
+	authenticated.Use(requireTeamBillingManageSubject())
 	authenticated.Use(middleware.BackendModeUserGuard(settingService))
 	{
 		authenticated.GET("/config", paymentHandler.GetPaymentConfig)
@@ -111,7 +110,10 @@ func RegisterPaymentRoutes(
 	}
 }
 
-func requirePersonalPaymentSubject() gin.HandlerFunc {
+// requireTeamBillingManageSubject 放开团队在线支付：个人主体放行；团队主体需 team.billing.manage
+// （owner/admin/billing），否则 403。与兑换/订阅购买共用同一计费权限闸（handler.RequireTeamBillingManage），
+// 避免逐接口口径漂移（CPO 备注 2）。后端订单创建/列表/履约已按 subject.BillingSubjectID 归属。
+func requireTeamBillingManageSubject() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		subject, ok := middleware.GetAuthSubjectFromContext(c)
 		if !ok {
@@ -119,8 +121,8 @@ func requirePersonalPaymentSubject() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		if subject.SubjectType == domain.BillingSubjectTypeTeam {
-			response.Forbidden(c, "Team payments are not available yet")
+		if err := handler.RequireTeamBillingManage(subject); err != nil {
+			response.ErrorFrom(c, err)
 			c.Abort()
 			return
 		}
