@@ -241,8 +241,10 @@ func (s *BillingCacheService) cacheWriteWorker(ch <-chan cacheWriteTask) {
 				}
 			}
 		case cacheWriteDeductSubjectBalance:
-			if err := s.DeductSubjectBalance(ctx, task.subjectID, task.amount); err != nil {
-				logger.LegacyPrintf("service.billing_cache", "Warning: deduct subject balance cache failed for subject %d: %v", task.subjectID, err)
+			if s.cache != nil {
+				if err := s.DeductSubjectBalance(ctx, task.subjectID, task.amount); err != nil {
+					logger.LegacyPrintf("service.billing_cache", "Warning: deduct subject balance cache failed for subject %d: %v", task.subjectID, err)
+				}
 			}
 		}
 		cancel()
@@ -262,6 +264,8 @@ func cacheWriteKindName(kind cacheWriteKind) string {
 		return "deduct_balance"
 	case cacheWriteUpdateRateLimitUsage:
 		return "update_rate_limit_usage"
+	case cacheWriteDeductSubjectBalance:
+		return "deduct_subject_balance"
 	default:
 		return "unknown"
 	}
