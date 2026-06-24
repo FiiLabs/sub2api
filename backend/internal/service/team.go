@@ -649,6 +649,31 @@ func (s *TeamService) AdminGetTeam(ctx context.Context, teamID int64) (*AdminTea
 	return summary, members, invitations, nil
 }
 
+// UpdateTeamSettingsInput 用户端团队设置入参（当前仅团队名）。
+type UpdateTeamSettingsInput struct {
+	Name *string
+}
+
+// UpdateTeamSettings 更新团队设置（名称），需 team.settings.manage（owner/admin）。
+// 不开放改 status（停用/启用属平台管理员后台或独立流程，非自助设置项）。
+func (s *TeamService) UpdateTeamSettings(ctx context.Context, actorUserID, teamID int64, input UpdateTeamSettingsInput) (*Team, error) {
+	if _, err := s.Require(ctx, actorUserID, teamID, domain.TeamPermissionManageSettings); err != nil {
+		return nil, err
+	}
+	var name *string
+	if input.Name != nil {
+		trimmed := strings.TrimSpace(*input.Name)
+		if trimmed == "" {
+			return nil, infraerrors.BadRequest("TEAM_INVALID_INPUT", "team name cannot be empty")
+		}
+		name = &trimmed
+	}
+	if name == nil {
+		return nil, infraerrors.BadRequest("TEAM_UPDATE_EMPTY", "team update is empty")
+	}
+	return s.repo.UpdateTeam(ctx, teamID, name, nil)
+}
+
 // AdminUpdateTeam updates a team's name and/or status. An empty update is
 // rejected. No membership checks are performed.
 func (s *TeamService) AdminUpdateTeam(ctx context.Context, teamID int64, input AdminUpdateTeamInput) (*AdminTeamSummary, error) {

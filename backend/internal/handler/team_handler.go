@@ -21,6 +21,7 @@ type TeamHTTPService interface {
 	PreviewInvitation(ctx context.Context, plainToken string) (*service.InvitationPreview, error)
 	AcceptInvitation(ctx context.Context, actorUserID int64, plainToken string) (*service.TeamMember, error)
 	TransferOwnership(ctx context.Context, actorUserID, teamID, newOwnerUserID int64) error
+	UpdateTeamSettings(ctx context.Context, actorUserID, teamID int64, input service.UpdateTeamSettingsInput) (*service.Team, error)
 	// GetTeam loads a team by id (used to return the joined team summary on accept).
 	GetTeam(ctx context.Context, teamID int64) (*service.Team, error)
 }
@@ -186,6 +187,35 @@ type acceptInvitationRequest struct {
 
 type transferOwnershipRequest struct {
 	UserID int64 `json:"user_id" binding:"required"`
+}
+
+type updateTeamSettingsRequest struct {
+	Name *string `json:"name" binding:"omitempty,min=1,max=120"`
+}
+
+// UpdateTeamSettings handles PATCH /teams/:id. Requires team.settings.manage (owner/admin).
+func (h *TeamHandler) UpdateTeamSettings(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	teamID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || teamID <= 0 {
+		response.BadRequest(c, "Invalid team ID")
+		return
+	}
+	var req updateTeamSettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid team settings request")
+		return
+	}
+	team, err := h.teamService.UpdateTeamSettings(c.Request.Context(), subject.UserID, teamID, service.UpdateTeamSettingsInput{Name: req.Name})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"team": teamSummaryDTOFromService(team)})
 }
 
 // teamSummaryDTO is the minimal team shape returned on invitation accept.

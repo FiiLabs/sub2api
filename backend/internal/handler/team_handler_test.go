@@ -82,6 +82,14 @@ func (a teamHandlerServiceAdapter) GetTeam(_ context.Context, teamID int64) (*se
 	return &service.Team{ID: teamID}, nil
 }
 
+func (a teamHandlerServiceAdapter) UpdateTeamSettings(_ context.Context, _, teamID int64, input service.UpdateTeamSettingsInput) (*service.Team, error) {
+	t := &service.Team{ID: teamID}
+	if input.Name != nil {
+		t.Name = *input.Name
+	}
+	return t, nil
+}
+
 type teamMemberHandlerServiceStub struct {
 	workspaces  []service.WorkspaceSubject
 	members     []service.TeamMember
@@ -158,6 +166,14 @@ func (s *teamMemberHandlerServiceStub) TransferOwnership(_ context.Context, acto
 func (s *teamMemberHandlerServiceStub) GetTeam(_ context.Context, teamID int64) (*service.Team, error) {
 	bsID := int64(200 + teamID)
 	return &service.Team{ID: teamID, Name: "Platform", Slug: "platform", OwnerUserID: 11, BillingSubjectID: &bsID, Status: "active"}, nil
+}
+
+func (s *teamMemberHandlerServiceStub) UpdateTeamSettings(_ context.Context, _, teamID int64, input service.UpdateTeamSettingsInput) (*service.Team, error) {
+	t := &service.Team{ID: teamID}
+	if input.Name != nil {
+		t.Name = *input.Name
+	}
+	return t, nil
 }
 
 func TestTeamHandlerListMembersRequiresTeamPermission(t *testing.T) {
