@@ -134,6 +134,8 @@ func (r *teamRepository) ListWorkspaces(ctx context.Context, userID int64) ([]se
 	if err != nil {
 		return nil, err
 	}
+	teamItems := make([]int, 0, len(members)) // out 中团队项的下标
+	subjectIDs := make([]int64, 0, len(members))
 	for _, member := range members {
 		t := member.Edges.Team
 		if t == nil || t.BillingSubjectID == nil {
@@ -147,6 +149,25 @@ func (r *teamRepository) ListWorkspaces(ctx context.Context, userID int64) ([]se
 			Role:             member.Role,
 			Permissions:      domain.TeamRolePermissions(member.Role),
 		})
+		teamItems = append(teamItems, len(out)-1)
+		subjectIDs = append(subjectIDs, *t.BillingSubjectID)
+	}
+
+	// 批量查团队 billing_subject 余额并回填（个人项余额已在上方填充）。
+	if len(subjectIDs) > 0 {
+		subs, err := client.BillingSubject.Query().
+			Where(billingsubject.IDIn(subjectIDs...), billingsubject.DeletedAtIsNil()).
+			All(ctx)
+		if err != nil {
+			return nil, err
+		}
+		balByID := make(map[int64]float64, len(subs))
+		for _, sub := range subs {
+			balByID[sub.ID] = sub.Balance
+		}
+		for _, idx := range teamItems {
+			out[idx].Balance = balByID[out[idx].BillingSubjectID]
+		}
 	}
 	return out, nil
 }
