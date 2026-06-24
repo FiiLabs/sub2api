@@ -23,6 +23,10 @@ type UserSubscriptionRepoSuite struct {
 
 func (s *UserSubscriptionRepoSuite) SetupTest() {
 	s.ctx = context.Background()
+	// 本套件用 testEntTx 隔离自身写入，但读到的是共享库的已提交数据。先 TRUNCATE ... CASCADE 清掉
+	// 前序套件遗留的已提交用户，否则本套件的固定邮箱会撞 users_email_unique_active。
+	_, err := integrationDB.ExecContext(s.ctx, "TRUNCATE TABLE users CASCADE")
+	s.Require().NoError(err, "truncate users cascade")
 	tx := testEntTx(s.T())
 	s.client = tx.Client()
 	s.repo = NewUserSubscriptionRepository(s.client).(*userSubscriptionRepository)

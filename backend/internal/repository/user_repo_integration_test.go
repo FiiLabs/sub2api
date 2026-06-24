@@ -27,12 +27,13 @@ func (s *UserRepoSuite) SetupTest() {
 	s.client = testEntClient(s.T())
 	s.repo = newUserRepositoryWithSQL(s.client, integrationDB)
 
-	// 清理测试数据，确保每个测试从干净状态开始
-	_, _ = integrationDB.ExecContext(s.ctx, "DELETE FROM auth_identity_channels")
-	_, _ = integrationDB.ExecContext(s.ctx, "DELETE FROM auth_identities")
-	_, _ = integrationDB.ExecContext(s.ctx, "DELETE FROM user_subscriptions")
-	_, _ = integrationDB.ExecContext(s.ctx, "DELETE FROM user_allowed_groups")
-	_, _ = integrationDB.ExecContext(s.ctx, "DELETE FROM users")
+	// 清理：给每个测试一个干净的 users 状态。team-workspaces 后 users 被 billing_subjects / teams /
+	// api_keys / usage_logs 等多张表外键引用（RESTRICT），逐表 DELETE 既脆弱又会被外键挡住；旧实现还
+	// 吞掉错误（_, _ =），导致 DELETE FROM users 静默失败、用户跨测试/跨套件累积（计数与邮箱唯一性断言失败）。
+	// 用 TRUNCATE ... CASCADE 一次性清掉整个 user 关联图，并对错误显式断言以免再次被静默掩盖。
+	// （TRUNCATE 只触发 TRUNCATE 触发器，不触发行级 DELETE 触发器，故不受 billing_subjects 引用守卫影响。）
+	_, err := integrationDB.ExecContext(s.ctx, "TRUNCATE TABLE users CASCADE")
+	s.Require().NoError(err, "truncate users cascade")
 }
 
 func TestUserRepoSuite(t *testing.T) {
