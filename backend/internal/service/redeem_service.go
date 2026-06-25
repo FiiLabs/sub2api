@@ -556,7 +556,7 @@ func (s *RedeemService) RedeemForSubject(ctx context.Context, actorUserID, billi
 	}
 
 	// 事务提交成功后失效缓存
-	s.invalidateRedeemCaches(ctx, userID, redeemCode)
+	s.invalidateRedeemCaches(ctx, userID, billingSubjectID, redeemCode)
 
 	// 余额类正数兑换码触发邀请返利（best-effort，失败不影响兑换结果）
 	if redeemCode.Type == RedeemTypeBalance && redeemCode.Value > 0 {
@@ -573,7 +573,7 @@ func (s *RedeemService) RedeemForSubject(ctx context.Context, actorUserID, billi
 }
 
 // invalidateRedeemCaches 失效兑换相关的缓存
-func (s *RedeemService) invalidateRedeemCaches(ctx context.Context, userID int64, redeemCode *RedeemCode) {
+func (s *RedeemService) invalidateRedeemCaches(ctx context.Context, userID int64, billingSubjectID int64, redeemCode *RedeemCode) {
 	switch redeemCode.Type {
 	case RedeemTypeBalance:
 		if s.authCacheInvalidator != nil {
@@ -586,6 +586,9 @@ func (s *RedeemService) invalidateRedeemCaches(ctx context.Context, userID int64
 			cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			_ = s.billingCacheService.InvalidateUserBalance(cacheCtx, userID)
+			if billingSubjectID > 0 {
+				_ = s.billingCacheService.InvalidateSubjectBalance(cacheCtx, billingSubjectID)
+			}
 		}()
 	case RedeemTypeConcurrency:
 		if s.authCacheInvalidator != nil {
