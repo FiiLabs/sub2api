@@ -29,6 +29,10 @@ const (
 	TeamPermissionManageSettings    = "team.settings.manage"
 	TeamPermissionDissolveTeam      = "team.dissolve"
 	TeamPermissionTransferOwnership = "team.ownership.transfer"
+
+	// Self/all 分级：owner/admin 才有 *.all，可跨成员查看/管理团队全量资源。
+	TeamPermissionManageKeysAll = "team.keys.manage.all"
+	TeamPermissionViewUsageAll  = "team.usage.view.all"
 )
 
 func TeamRolePermissions(role string) map[string]bool {
@@ -42,6 +46,8 @@ func TeamRolePermissions(role string) map[string]bool {
 			TeamPermissionManageSettings:    true,
 			TeamPermissionDissolveTeam:      true,
 			TeamPermissionTransferOwnership: true,
+			TeamPermissionManageKeysAll:     true,
+			TeamPermissionViewUsageAll:      true,
 		}
 	case TeamRoleAdmin:
 		return map[string]bool{
@@ -50,6 +56,8 @@ func TeamRolePermissions(role string) map[string]bool {
 			TeamPermissionManageMembers:  true,
 			TeamPermissionManageBilling:  true,
 			TeamPermissionManageSettings: true,
+			TeamPermissionManageKeysAll:  true,
+			TeamPermissionViewUsageAll:   true,
 		}
 	case TeamRoleBilling:
 		return map[string]bool{TeamPermissionViewUsage: true, TeamPermissionManageBilling: true}
