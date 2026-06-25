@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -116,6 +117,14 @@ func (h *UsageHandler) List(c *gin.Context) {
 		}
 		actorUserID = id
 	}
+
+	// Gate: ordinary team members may only view their own actor; owner/admin (team.usage.view.all) may pass any.
+	resolvedActor, ok := domain.TeamUsageActorFilter(subject.SubjectType, subject.Permissions, subject.UserID, actorUserID)
+	if !ok {
+		response.Forbidden(c, "Not authorized to view other members' usage")
+		return
+	}
+	actorUserID = resolvedActor
 
 	// Parse date range
 	var startTime, endTime *time.Time

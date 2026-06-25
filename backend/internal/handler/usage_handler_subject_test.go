@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -77,4 +78,45 @@ func TestUsageListFallsBackToUserScopeWithoutSubject(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Equal(t, int64(42), repo.listFilters.UserID)
 	require.Equal(t, int64(0), repo.listFilters.BillingSubjectID)
+}
+
+func TestUsageListForcesActorToSelfForMember(t *testing.T) {
+	repo := &userUsageRepoCapture{}
+	subject := middleware2.AuthSubject{
+		UserID: 42, BillingSubjectID: 100, SubjectType: domain.BillingSubjectTypeTeam, TeamID: 7,
+		Permissions: map[string]bool{domain.TeamPermissionViewUsage: true},
+	}
+	router := newUserUsageSubjectTestRouter(repo, subject)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/usage", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, int64(42), repo.listFilters.ActorUserID)
+}
+
+func TestUsageListRejectsForeignActorForMember(t *testing.T) {
+	repo := &userUsageRepoCapture{}
+	subject := middleware2.AuthSubject{
+		UserID: 42, BillingSubjectID: 100, SubjectType: domain.BillingSubjectTypeTeam, TeamID: 7,
+		Permissions: map[string]bool{domain.TeamPermissionViewUsage: true},
+	}
+	router := newUserUsageSubjectTestRouter(repo, subject)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/usage?actor_user_id=99", nil))
+	require.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestUsageListAllowsForeignActorForOwner(t *testing.T) {
+	repo := &userUsageRepoCapture{}
+	subject := middleware2.AuthSubject{
+		UserID: 1, BillingSubjectID: 100, SubjectType: domain.BillingSubjectTypeTeam, TeamID: 7,
+		Permissions: map[string]bool{domain.TeamPermissionViewUsageAll: true},
+	}
+	router := newUserUsageSubjectTestRouter(repo, subject)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/usage?actor_user_id=99", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, int64(99), repo.listFilters.ActorUserID)
 }
