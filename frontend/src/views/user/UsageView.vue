@@ -979,8 +979,8 @@ const loadByMember = async () => {
   if (!teamId) return
   try {
     const response = await usageAPI.getTeamUsageByMember(teamId, {
-      start_date: filters.value.start_date,
-      end_date: filters.value.end_date,
+      start_date: filters.value.start_date || startDate.value,
+      end_date: filters.value.end_date || endDate.value,
     })
     byMember.value = response.items
   } catch (error) {

@@ -668,8 +668,10 @@ describe('UsageView — member filter and by-member breakdown panel', () => {
     expect(html).toContain('owner@example.com')
     expect(html).toContain('admin@example.com')
 
-    // getTeamUsageByMember should have been called
+    // getTeamUsageByMember should have been called with a non-empty start_date (fallback active)
     expect(getTeamUsageByMember).toHaveBeenCalled()
+    const byMemberCall = getTeamUsageByMember.mock.calls[getTeamUsageByMember.mock.calls.length - 1]
+    expect(byMemberCall[1]?.start_date).toBeTruthy()
 
     wrapper.unmount()
   })
