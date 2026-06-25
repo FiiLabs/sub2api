@@ -1,11 +1,14 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -119,4 +122,31 @@ func TestUsageListAllowsForeignActorForOwner(t *testing.T) {
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/usage?actor_user_id=99", nil))
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Equal(t, int64(99), repo.listFilters.ActorUserID)
+}
+
+// GetSubjectStatsAggregated stub — captures billingSubjectID and actorUserID for assertions.
+func (s *userUsageRepoCapture) GetSubjectStatsAggregated(_ context.Context, billingSubjectID, actorUserID int64, _, _ time.Time) (*usagestats.UsageStats, error) {
+	s.statsSubjectID = billingSubjectID
+	s.statsActorID = actorUserID
+	return &usagestats.UsageStats{}, nil
+}
+
+func TestUsageStatsScopesBySubjectAndSelfForMember(t *testing.T) {
+	repo := &userUsageRepoCapture{}
+	subject := middleware2.AuthSubject{
+		UserID: 42, BillingSubjectID: 100, SubjectType: domain.BillingSubjectTypeTeam, TeamID: 7,
+		Permissions: map[string]bool{domain.TeamPermissionViewUsage: true},
+	}
+	gin.SetMode(gin.TestMode)
+	usageSvc := service.NewUsageService(repo, nil, nil, nil)
+	handler := NewUsageHandler(usageSvc, nil, nil, nil)
+	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set(string(middleware2.ContextKeyUser), subject); c.Next() })
+	router.GET("/usage/stats", handler.Stats)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/usage/stats", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, int64(100), repo.statsSubjectID)
+	require.Equal(t, int64(42), repo.statsActorID) // member forced to self
 }

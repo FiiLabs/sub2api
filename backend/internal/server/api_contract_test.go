@@ -2526,6 +2526,53 @@ func (r *stubUsageLogRepo) GetDailyStatsAggregated(ctx context.Context, userID i
 	return nil, errors.New("not implemented")
 }
 
+func (r *stubUsageLogRepo) GetSubjectStatsAggregated(ctx context.Context, billingSubjectID, actorUserID int64, startTime, endTime time.Time) (*usagestats.UsageStats, error) {
+	// Collect all logs whose BillingSubjectID matches, or fall back to userID==billingSubjectID
+	// (for personal subjects the contract test sets BillingSubjectID = UserID = 1).
+	var logs []service.UsageLog
+	for uid, ls := range r.userLogs {
+		for _, l := range ls {
+			if l.BillingSubjectID == billingSubjectID || (l.BillingSubjectID == 0 && uid == billingSubjectID) {
+				logs = append(logs, l)
+			}
+		}
+	}
+	if actorUserID > 0 {
+		var filtered []service.UsageLog
+		for _, l := range logs {
+			if l.ActorUserID != nil && *l.ActorUserID == actorUserID {
+				filtered = append(filtered, l)
+			}
+		}
+		logs = filtered
+	}
+	if len(logs) == 0 {
+		return &usagestats.UsageStats{}, nil
+	}
+	var s usagestats.UsageStats
+	var totalDuration int64
+	var durationCount int64
+	for _, l := range logs {
+		s.TotalRequests++
+		s.TotalInputTokens += int64(l.InputTokens)
+		s.TotalOutputTokens += int64(l.OutputTokens)
+		s.TotalCacheCreationTokens += int64(l.CacheCreationTokens)
+		s.TotalCacheReadTokens += int64(l.CacheReadTokens)
+		s.TotalCacheTokens += int64(l.CacheCreationTokens + l.CacheReadTokens)
+		s.TotalCost += l.TotalCost
+		s.TotalActualCost += l.ActualCost
+		if l.DurationMs != nil {
+			totalDuration += int64(*l.DurationMs)
+			durationCount++
+		}
+	}
+	s.TotalTokens = s.TotalInputTokens + s.TotalOutputTokens + s.TotalCacheTokens
+	if durationCount > 0 {
+		s.AverageDurationMs = float64(totalDuration) / float64(durationCount)
+	}
+	return &s, nil
+}
+
 func (r *stubUsageLogRepo) GetBatchUserUsageStats(ctx context.Context, userIDs []int64, startTime, endTime time.Time) (map[int64]*usagestats.BatchUserUsageStats, error) {
 	return nil, errors.New("not implemented")
 }

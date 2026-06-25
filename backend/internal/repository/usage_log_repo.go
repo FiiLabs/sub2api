@@ -1954,6 +1954,52 @@ func (r *usageLogRepository) GetModelStatsAggregated(ctx context.Context, modelN
 	return &stats, nil
 }
 
+// GetSubjectStatsAggregated 按计费主体（+可选 actor）聚合使用统计。
+// actorUserID=0 表示主体全量；>0 时追加 actor_user_id 过滤。
+// SELECT 列顺序与 GetUserStatsAggregated 完全对齐。
+func (r *usageLogRepository) GetSubjectStatsAggregated(ctx context.Context, billingSubjectID, actorUserID int64, startTime, endTime time.Time) (*usagestats.UsageStats, error) {
+	conds := []string{"billing_subject_id = $1", "created_at >= $2", "created_at < $3"}
+	args := []any{billingSubjectID, startTime, endTime}
+	if actorUserID > 0 {
+		conds = append(conds, fmt.Sprintf("actor_user_id = $%d", len(args)+1))
+		args = append(args, actorUserID)
+	}
+	query := `
+		SELECT
+			COUNT(*) as total_requests,
+			COALESCE(SUM(input_tokens), 0) as total_input_tokens,
+			COALESCE(SUM(output_tokens), 0) as total_output_tokens,
+			COALESCE(SUM(cache_creation_tokens + cache_read_tokens), 0) as total_cache_tokens,
+			COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation_tokens,
+			COALESCE(SUM(cache_read_tokens), 0) as total_cache_read_tokens,
+			COALESCE(SUM(total_cost), 0) as total_cost,
+			COALESCE(SUM(actual_cost), 0) as total_actual_cost,
+			COALESCE(AVG(COALESCE(duration_ms, 0)), 0) as avg_duration_ms
+		FROM usage_logs
+		WHERE ` + strings.Join(conds, " AND ")
+
+	var stats usagestats.UsageStats
+	if err := scanSingleRow(
+		ctx,
+		r.sql,
+		query,
+		args,
+		&stats.TotalRequests,
+		&stats.TotalInputTokens,
+		&stats.TotalOutputTokens,
+		&stats.TotalCacheTokens,
+		&stats.TotalCacheCreationTokens,
+		&stats.TotalCacheReadTokens,
+		&stats.TotalCost,
+		&stats.TotalActualCost,
+		&stats.AverageDurationMs,
+	); err != nil {
+		return nil, err
+	}
+	stats.TotalTokens = stats.TotalInputTokens + stats.TotalOutputTokens + stats.TotalCacheTokens
+	return &stats, nil
+}
+
 // GetDailyStatsAggregated 使用 SQL 聚合统计用户的每日使用数据
 // 性能优化：使用 GROUP BY 在数据库层按日期分组聚合，避免应用层循环分组统计
 func (r *usageLogRepository) GetDailyStatsAggregated(ctx context.Context, userID int64, startTime, endTime time.Time) (result []map[string]any, err error) {

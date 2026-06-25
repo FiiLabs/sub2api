@@ -77,6 +77,8 @@ type UsageLogRepository interface {
 	GetAccountStatsAggregated(ctx context.Context, accountID int64, startTime, endTime time.Time) (*usagestats.UsageStats, error)
 	GetModelStatsAggregated(ctx context.Context, modelName string, startTime, endTime time.Time) (*usagestats.UsageStats, error)
 	GetDailyStatsAggregated(ctx context.Context, userID int64, startTime, endTime time.Time) ([]map[string]any, error)
+	// GetSubjectStatsAggregated 按计费主体（+可选 actor）聚合使用统计。actorUserID=0 表示主体全量。
+	GetSubjectStatsAggregated(ctx context.Context, billingSubjectID, actorUserID int64, startTime, endTime time.Time) (*usagestats.UsageStats, error)
 }
 
 type accountWindowStatsBatchReader interface {

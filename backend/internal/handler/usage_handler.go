@@ -403,7 +403,12 @@ func (h *UsageHandler) Stats(c *gin.Context) {
 	if apiKeyID > 0 {
 		stats, err = h.usageService.GetStatsByAPIKey(c.Request.Context(), apiKeyID, startTime, endTime)
 	} else {
-		stats, err = h.usageService.GetStatsByUser(c.Request.Context(), subject.UserID, startTime, endTime)
+		actor, ok := domain.TeamUsageActorFilter(subject.SubjectType, subject.Permissions, subject.UserID, 0)
+		if !ok {
+			response.Forbidden(c, "Not authorized")
+			return
+		}
+		stats, err = h.usageService.GetStatsBySubject(c.Request.Context(), subject.BillingSubjectID, actor, startTime, endTime)
 	}
 	if err != nil {
 		response.ErrorFrom(c, err)

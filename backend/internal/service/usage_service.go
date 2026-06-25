@@ -205,6 +205,26 @@ func (s *UsageService) GetStatsByUser(ctx context.Context, userID int64, startTi
 	}, nil
 }
 
+// GetStatsBySubject 按计费主体（+可选 actor）聚合使用统计。actorUserID=0 表示主体全量。
+func (s *UsageService) GetStatsBySubject(ctx context.Context, billingSubjectID, actorUserID int64, startTime, endTime time.Time) (*UsageStats, error) {
+	stats, err := s.usageRepo.GetSubjectStatsAggregated(ctx, billingSubjectID, actorUserID, startTime, endTime)
+	if err != nil {
+		return nil, fmt.Errorf("get subject stats: %w", err)
+	}
+	return &UsageStats{
+		TotalRequests:            stats.TotalRequests,
+		TotalInputTokens:         stats.TotalInputTokens,
+		TotalOutputTokens:        stats.TotalOutputTokens,
+		TotalCacheTokens:         stats.TotalCacheTokens,
+		TotalCacheCreationTokens: stats.TotalCacheCreationTokens,
+		TotalCacheReadTokens:     stats.TotalCacheReadTokens,
+		TotalTokens:              stats.TotalTokens,
+		TotalCost:                stats.TotalCost,
+		TotalActualCost:          stats.TotalActualCost,
+		AverageDurationMs:        stats.AverageDurationMs,
+	}, nil
+}
+
 // GetStatsByAPIKey 获取API Key的使用统计
 func (s *UsageService) GetStatsByAPIKey(ctx context.Context, apiKeyID int64, startTime, endTime time.Time) (*UsageStats, error) {
 	stats, err := s.usageRepo.GetAPIKeyStatsAggregated(ctx, apiKeyID, startTime, endTime)
