@@ -106,7 +106,8 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 				subscriptionService.DoWindowMaintenance(&maintenanceCopy)
 			}
 		} else {
-			if apiKey.User.Balance <= 0 {
+			// 团队计费主体 key 跳过个人余额拦截，同 api_key_auth.go。
+			if !isTeamSubjectScoped(cfg, apiKey) && apiKey.User.Balance <= 0 {
 				abortWithGoogleError(c, 403, "Insufficient account balance")
 				return
 			}

@@ -758,3 +758,141 @@ func TestApiKeyAuthWithSubscriptionGoogle_SubscriptionLimitExceededReturns429(t 
 	require.Equal(t, "RESOURCE_EXHAUSTED", resp.Error.Status)
 	require.Contains(t, resp.Error.Message, "daily usage limit exceeded")
 }
+
+// TestGoogleTeamKeyBalanceGateScoping 验证 Google 中间件中团队计费主体 key 绕过个人余额拦截。
+func TestGoogleTeamKeyBalanceGateScoping(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	teamID := int64(55)
+
+	// 1. 团队 key：BillingSubjectID > 0，用户个人余额为 0，QuotaSubjectScoped = true
+	//    预期：请求通过（状态 200）—— 这在修复前 FAIL（返回 403）。
+	t.Run("team_key_zero_personal_balance_passes_when_scoped", func(t *testing.T) {
+		apiKey := &service.APIKey{
+			ID:               400,
+			UserID:           40,
+			BillingSubjectID: 900,
+			TeamID:           &teamID,
+			Key:              "google-team-key-zero-balance",
+			Status:           service.StatusActive,
+			User: &service.User{
+				ID:          40,
+				Role:        service.RoleUser,
+				Status:      service.StatusActive,
+				Balance:     0, // 个人余额为 0
+				Concurrency: 3,
+			},
+		}
+		cfg := &config.Config{RunMode: config.RunModeStandard}
+		cfg.Billing.QuotaSubjectScoped = true
+		apiKeyService := newTestAPIKeyService(fakeAPIKeyRepo{
+			getByKey: func(ctx context.Context, key string) (*service.APIKey, error) {
+				if key != apiKey.Key {
+					return nil, service.ErrAPIKeyNotFound
+				}
+				clone := *apiKey
+				return &clone, nil
+			},
+		})
+		r := gin.New()
+		r.Use(APIKeyAuthWithSubscriptionGoogle(apiKeyService, nil, cfg))
+		r.GET("/v1beta/test", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
+
+		req := httptest.NewRequest(http.MethodGet, "/v1beta/test", nil)
+		req.Header.Set("Authorization", "Bearer "+apiKey.Key)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusOK, rec.Code,
+			"团队 key 且 QuotaSubjectScoped=true 时，个人余额 0 不应导致 403 Insufficient account balance；"+
+				"实际收到：%s", rec.Body.String())
+	})
+
+	// 2. 个人 key：BillingSubjectID = 0，用户个人余额为 0
+	//    预期：仍应 403 PERMISSION_DENIED（回归防护）。
+	t.Run("personal_key_zero_balance_still_blocked", func(t *testing.T) {
+		apiKey := &service.APIKey{
+			ID:               401,
+			UserID:           41,
+			BillingSubjectID: 0, // 无团队计费主体
+			Key:              "google-personal-key-zero-balance",
+			Status:           service.StatusActive,
+			User: &service.User{
+				ID:          41,
+				Role:        service.RoleUser,
+				Status:      service.StatusActive,
+				Balance:     0,
+				Concurrency: 3,
+			},
+		}
+		cfg := &config.Config{RunMode: config.RunModeStandard}
+		cfg.Billing.QuotaSubjectScoped = true
+		apiKeyService := newTestAPIKeyService(fakeAPIKeyRepo{
+			getByKey: func(ctx context.Context, key string) (*service.APIKey, error) {
+				if key != apiKey.Key {
+					return nil, service.ErrAPIKeyNotFound
+				}
+				clone := *apiKey
+				return &clone, nil
+			},
+		})
+		r := gin.New()
+		r.Use(APIKeyAuthWithSubscriptionGoogle(apiKeyService, nil, cfg))
+		r.GET("/v1beta/test", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
+
+		req := httptest.NewRequest(http.MethodGet, "/v1beta/test", nil)
+		req.Header.Set("Authorization", "Bearer "+apiKey.Key)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusForbidden, rec.Code)
+		var resp googleErrorResponse
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+		require.Equal(t, "Insufficient account balance", resp.Error.Message)
+		require.Equal(t, "PERMISSION_DENIED", resp.Error.Status)
+	})
+
+	// 3. 团队 key 但 QuotaSubjectScoped = false：仍应 403（flag 关闭时不绕过）。
+	t.Run("team_key_flag_off_still_blocked", func(t *testing.T) {
+		apiKey := &service.APIKey{
+			ID:               402,
+			UserID:           42,
+			BillingSubjectID: 901,
+			TeamID:           &teamID,
+			Key:              "google-team-key-flag-off",
+			Status:           service.StatusActive,
+			User: &service.User{
+				ID:          42,
+				Role:        service.RoleUser,
+				Status:      service.StatusActive,
+				Balance:     0,
+				Concurrency: 3,
+			},
+		}
+		cfg := &config.Config{RunMode: config.RunModeStandard}
+		cfg.Billing.QuotaSubjectScoped = false // flag 关闭
+		apiKeyService := newTestAPIKeyService(fakeAPIKeyRepo{
+			getByKey: func(ctx context.Context, key string) (*service.APIKey, error) {
+				if key != apiKey.Key {
+					return nil, service.ErrAPIKeyNotFound
+				}
+				clone := *apiKey
+				return &clone, nil
+			},
+		})
+		r := gin.New()
+		r.Use(APIKeyAuthWithSubscriptionGoogle(apiKeyService, nil, cfg))
+		r.GET("/v1beta/test", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
+
+		req := httptest.NewRequest(http.MethodGet, "/v1beta/test", nil)
+		req.Header.Set("Authorization", "Bearer "+apiKey.Key)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusForbidden, rec.Code)
+		var resp googleErrorResponse
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+		require.Equal(t, "Insufficient account balance", resp.Error.Message)
+		require.Equal(t, "PERMISSION_DENIED", resp.Error.Status)
+	})
+}

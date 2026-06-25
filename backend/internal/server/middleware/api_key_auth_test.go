@@ -921,6 +921,138 @@ func TestAPIKeyAuthTouchesLastUsedInStandardMode(t *testing.T) {
 	require.Equal(t, 1, touchCalls)
 }
 
+// TestTeamKeyBalanceGateScoping 验证团队计费主体 key 绕过个人余额拦截（release-blocker fix）。
+//
+// 在修复前，非订阅分支会对 apiKey.User.Balance <= 0 直接拒绝，导致
+// 个人余额为 0 的开发者使用团队 key 时收到 403 INSUFFICIENT_BALANCE。
+func TestTeamKeyBalanceGateScoping(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	teamID := int64(55)
+
+	// 1. 团队 key：BillingSubjectID > 0，用户个人余额为 0，QuotaSubjectScoped = true
+	//    预期：请求通过（状态 200）—— 这在修复前 FAIL（返回 403）。
+	t.Run("team_key_zero_personal_balance_passes_when_scoped", func(t *testing.T) {
+		apiKey := &service.APIKey{
+			ID:               300,
+			UserID:           30,
+			BillingSubjectID: 900,
+			TeamID:           &teamID,
+			Key:              "team-key-zero-balance",
+			Status:           service.StatusActive,
+			User: &service.User{
+				ID:          30,
+				Role:        service.RoleUser,
+				Status:      service.StatusActive,
+				Balance:     0, // 个人余额为 0
+				Concurrency: 3,
+			},
+		}
+		apiKeyRepo := &stubApiKeyRepo{
+			getByKey: func(ctx context.Context, key string) (*service.APIKey, error) {
+				if key != apiKey.Key {
+					return nil, service.ErrAPIKeyNotFound
+				}
+				clone := *apiKey
+				return &clone, nil
+			},
+		}
+		cfg := &config.Config{RunMode: config.RunModeStandard}
+		cfg.Billing.QuotaSubjectScoped = true
+		apiKeyService := service.NewAPIKeyService(apiKeyRepo, nil, nil, nil, nil, nil, cfg)
+		router := newAuthTestRouter(apiKeyService, nil, cfg)
+
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/t", nil)
+		req.Header.Set("x-api-key", apiKey.Key)
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code,
+			"团队 key 且 QuotaSubjectScoped=true 时，个人余额 0 不应导致 403 INSUFFICIENT_BALANCE；"+
+				"实际收到：%s", w.Body.String())
+	})
+
+	// 2. 个人 key：BillingSubjectID = 0，用户个人余额为 0
+	//    预期：仍应 403 INSUFFICIENT_BALANCE（回归防护）。
+	t.Run("personal_key_zero_balance_still_blocked", func(t *testing.T) {
+		apiKey := &service.APIKey{
+			ID:               301,
+			UserID:           31,
+			BillingSubjectID: 0, // 无团队计费主体
+			Key:              "personal-key-zero-balance",
+			Status:           service.StatusActive,
+			User: &service.User{
+				ID:          31,
+				Role:        service.RoleUser,
+				Status:      service.StatusActive,
+				Balance:     0,
+				Concurrency: 3,
+			},
+		}
+		apiKeyRepo := &stubApiKeyRepo{
+			getByKey: func(ctx context.Context, key string) (*service.APIKey, error) {
+				if key != apiKey.Key {
+					return nil, service.ErrAPIKeyNotFound
+				}
+				clone := *apiKey
+				return &clone, nil
+			},
+		}
+		cfg := &config.Config{RunMode: config.RunModeStandard}
+		cfg.Billing.QuotaSubjectScoped = true
+		apiKeyService := service.NewAPIKeyService(apiKeyRepo, nil, nil, nil, nil, nil, cfg)
+		router := newAuthTestRouter(apiKeyService, nil, cfg)
+
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/t", nil)
+		req.Header.Set("x-api-key", apiKey.Key)
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusForbidden, w.Code)
+		require.Contains(t, w.Body.String(), "INSUFFICIENT_BALANCE")
+	})
+
+	// 3. 团队 key 但 QuotaSubjectScoped = false：仍应 403（flag 关闭时不绕过）。
+	t.Run("team_key_flag_off_still_blocked", func(t *testing.T) {
+		apiKey := &service.APIKey{
+			ID:               302,
+			UserID:           32,
+			BillingSubjectID: 901,
+			TeamID:           &teamID,
+			Key:              "team-key-flag-off",
+			Status:           service.StatusActive,
+			User: &service.User{
+				ID:          32,
+				Role:        service.RoleUser,
+				Status:      service.StatusActive,
+				Balance:     0,
+				Concurrency: 3,
+			},
+		}
+		apiKeyRepo := &stubApiKeyRepo{
+			getByKey: func(ctx context.Context, key string) (*service.APIKey, error) {
+				if key != apiKey.Key {
+					return nil, service.ErrAPIKeyNotFound
+				}
+				clone := *apiKey
+				return &clone, nil
+			},
+		}
+		cfg := &config.Config{RunMode: config.RunModeStandard}
+		cfg.Billing.QuotaSubjectScoped = false // flag 关闭
+		apiKeyService := service.NewAPIKeyService(apiKeyRepo, nil, nil, nil, nil, nil, cfg)
+		router := newAuthTestRouter(apiKeyService, nil, cfg)
+
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/t", nil)
+		req.Header.Set("x-api-key", apiKey.Key)
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusForbidden, w.Code)
+		require.Contains(t, w.Body.String(), "INSUFFICIENT_BALANCE")
+	})
+}
+
 func newAuthTestRouter(apiKeyService *service.APIKeyService, subscriptionService *service.SubscriptionService, cfg *config.Config) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, subscriptionService, cfg)))

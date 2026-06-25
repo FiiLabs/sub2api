@@ -207,7 +207,9 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 				}
 			} else {
 				// 非订阅模式 或 订阅模式但 subscriptionService 未注入：回退到余额检查
-				if apiKey.User.Balance <= 0 {
+				// 团队计费主体 key 跳过个人余额拦截——余额由 handler 的 subject 化
+				// CheckBillingEligibility 裁决，中间件不再用 key 拥有者个人余额误拦团队成员。
+				if !isTeamSubjectScoped(cfg, apiKey) && apiKey.User.Balance <= 0 {
 					AbortWithError(c, 403, "INSUFFICIENT_BALANCE", "Insufficient account balance")
 					return
 				}
@@ -327,6 +329,16 @@ func validateAPIKeyGroupAllowed(apiKey *service.APIKey) bool {
 		return true
 	}
 	return apiKey.User.CanBindGroup(group.ID, group.IsExclusive)
+}
+
+// isTeamSubjectScoped 表示该 key 走团队计费主体——余额改由 handler 的 subject 化
+// CheckBillingEligibility 裁决，中间件不再用 key 拥有者个人余额误拦团队成员。
+//
+// 注意：snapshotToAPIKey 会将个人 key 的 BillingSubjectID 回填为 UserID（>0），
+// 因此不能以 BillingSubjectID > 0 区分团队/个人；以 TeamID 判断更准确。
+func isTeamSubjectScoped(cfg *config.Config, apiKey *service.APIKey) bool {
+	return cfg != nil && cfg.Billing.QuotaSubjectScoped && apiKey != nil &&
+		apiKey.TeamID != nil && *apiKey.TeamID > 0
 }
 
 func validateAPIKeyGroupAvailable(apiKey *service.APIKey) (string, string, bool) {
