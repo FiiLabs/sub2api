@@ -8,6 +8,7 @@ const ACTIVE_WORKSPACE_KEY = 'active_workspace_subject_id'
 export const useWorkspaceStore = defineStore('workspaces', () => {
   const workspaces = ref<WorkspaceSubject[]>([])
   const activeSubjectId = ref<number | null>(null)
+  const subjectVersion = ref(0)
   const loading = ref(false)
 
   const activeWorkspace = computed(() => {
@@ -41,7 +42,8 @@ export const useWorkspaceStore = defineStore('workspaces', () => {
     if (!exists) return
     activeSubjectId.value = subjectId
     localStorage.setItem(ACTIVE_WORKSPACE_KEY, String(subjectId))
+    subjectVersion.value++
   }
 
-  return { workspaces, activeSubjectId, activeWorkspace, isTeamWorkspace, canManageMembers, loading, loadWorkspaces, switchWorkspace }
+  return { workspaces, activeSubjectId, subjectVersion, activeWorkspace, isTeamWorkspace, canManageMembers, loading, loadWorkspaces, switchWorkspace }
 })

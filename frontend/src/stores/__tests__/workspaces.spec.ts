@@ -33,4 +33,20 @@ describe('workspace store', () => {
     expect(store.activeWorkspace?.name).toBe('Platform')
     expect(localStorage.getItem('active_workspace_subject_id')).toBe('2')
   })
+
+  it('bumps subjectVersion on workspace switch', async () => {
+    const store = useWorkspaceStore()
+    await store.loadWorkspaces()
+    const before = store.subjectVersion
+    store.switchWorkspace(2)
+    expect(store.subjectVersion).toBe(before + 1)
+  })
+
+  it('does not bump subjectVersion when switching to a non-existent workspace', async () => {
+    const store = useWorkspaceStore()
+    await store.loadWorkspaces()
+    const before = store.subjectVersion
+    store.switchWorkspace(999)
+    expect(store.subjectVersion).toBe(before)
+  })
 })
