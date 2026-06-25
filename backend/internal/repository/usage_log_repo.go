@@ -2646,6 +2646,176 @@ func (r *usageLogRepository) GetUserDashboardStats(ctx context.Context, userID i
 	return stats, nil
 }
 
+// GetDashboardStatsBySubject 获取按计费主体（+可选 actor）范围的仪表盘统计。
+// actorUserID=0 表示主体全量；>0 时追加 actor_user_id / created_by_user_id 过滤。
+func (r *usageLogRepository) GetDashboardStatsBySubject(ctx context.Context, billingSubjectID, actorUserID int64) (*UserDashboardStats, error) {
+	stats := &UserDashboardStats{}
+	today := timezone.Today()
+
+	// API Key 统计：按 billing_subject_id，member 时再限 created_by_user_id
+	apiKeyBasePred := "billing_subject_id = $1 AND deleted_at IS NULL"
+	apiKeyBaseArgs := []any{billingSubjectID}
+	if actorUserID > 0 {
+		apiKeyBasePred += " AND created_by_user_id = $2"
+		apiKeyBaseArgs = append(apiKeyBaseArgs, actorUserID)
+	}
+	if err := scanSingleRow(
+		ctx,
+		r.sql,
+		"SELECT COUNT(*) FROM api_keys WHERE "+apiKeyBasePred,
+		apiKeyBaseArgs,
+		&stats.TotalAPIKeys,
+	); err != nil {
+		return nil, err
+	}
+	activeKeyArgs := append([]any{billingSubjectID, service.StatusActive}, apiKeyBaseArgs[1:]...)
+	activeKeyPred := "billing_subject_id = $1 AND status = $2 AND deleted_at IS NULL"
+	if actorUserID > 0 {
+		activeKeyPred += " AND created_by_user_id = $3"
+	}
+	if err := scanSingleRow(
+		ctx,
+		r.sql,
+		"SELECT COUNT(*) FROM api_keys WHERE "+activeKeyPred,
+		activeKeyArgs,
+		&stats.ActiveAPIKeys,
+	); err != nil {
+		return nil, err
+	}
+
+	// 累计 Token 统计
+	subjPred := "billing_subject_id = $1"
+	baseArgs := []any{billingSubjectID}
+	if actorUserID > 0 {
+		subjPred += " AND actor_user_id = $2"
+		baseArgs = append(baseArgs, actorUserID)
+	}
+	totalStatsQuery := `
+		SELECT
+			COUNT(*) as total_requests,
+			COALESCE(SUM(input_tokens), 0) as total_input_tokens,
+			COALESCE(SUM(output_tokens), 0) as total_output_tokens,
+			COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation_tokens,
+			COALESCE(SUM(cache_read_tokens), 0) as total_cache_read_tokens,
+			COALESCE(SUM(total_cost), 0) as total_cost,
+			COALESCE(SUM(actual_cost), 0) as total_actual_cost,
+			COALESCE(AVG(duration_ms), 0) as avg_duration_ms
+		FROM usage_logs
+		WHERE ` + subjPred
+	if err := scanSingleRow(
+		ctx,
+		r.sql,
+		totalStatsQuery,
+		baseArgs,
+		&stats.TotalRequests,
+		&stats.TotalInputTokens,
+		&stats.TotalOutputTokens,
+		&stats.TotalCacheCreationTokens,
+		&stats.TotalCacheReadTokens,
+		&stats.TotalCost,
+		&stats.TotalActualCost,
+		&stats.AverageDurationMs,
+	); err != nil {
+		return nil, err
+	}
+	stats.TotalTokens = stats.TotalInputTokens + stats.TotalOutputTokens + stats.TotalCacheCreationTokens + stats.TotalCacheReadTokens
+
+	// 今日 Token 统计；today 追加到 baseArgs 末尾，占位符序号在 baseArgs 之后
+	todayArgN := len(baseArgs) + 1
+	todayStatsQuery := fmt.Sprintf(`
+		SELECT
+			COUNT(*) as today_requests,
+			COALESCE(SUM(input_tokens), 0) as today_input_tokens,
+			COALESCE(SUM(output_tokens), 0) as today_output_tokens,
+			COALESCE(SUM(cache_creation_tokens), 0) as today_cache_creation_tokens,
+			COALESCE(SUM(cache_read_tokens), 0) as today_cache_read_tokens,
+			COALESCE(SUM(total_cost), 0) as today_cost,
+			COALESCE(SUM(actual_cost), 0) as today_actual_cost
+		FROM usage_logs
+		WHERE %s AND created_at >= $%d
+	`, subjPred, todayArgN)
+	todayArgs := append(baseArgs, today)
+	if err := scanSingleRow(
+		ctx,
+		r.sql,
+		todayStatsQuery,
+		todayArgs,
+		&stats.TodayRequests,
+		&stats.TodayInputTokens,
+		&stats.TodayOutputTokens,
+		&stats.TodayCacheCreationTokens,
+		&stats.TodayCacheReadTokens,
+		&stats.TodayCost,
+		&stats.TodayActualCost,
+	); err != nil {
+		return nil, err
+	}
+	stats.TodayTokens = stats.TodayInputTokens + stats.TodayOutputTokens + stats.TodayCacheCreationTokens + stats.TodayCacheReadTokens
+
+	// 性能指标：RPM 和 TPM（近5分钟全局平均，主体范围统计暂不拆分）
+	rpm, tpm, err := r.getPerformanceStats(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	stats.Rpm = rpm
+	stats.Tpm = tpm
+
+	// 按"有效平台"维度拆分。
+	// today 占 $2；actor 若存在再追加为 $3。
+	platformWherePred := "ul.billing_subject_id = $1"
+	platformArgs := []any{billingSubjectID, today}
+	if actorUserID > 0 {
+		platformWherePred += " AND ul.actor_user_id = $3"
+		platformArgs = append(platformArgs, actorUserID)
+	}
+	platformQuery := `
+		SELECT
+			` + usageLogEffectivePlatformExpr + ` as platform,
+			COUNT(*) as total_requests,
+			COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens), 0) as total_tokens,
+			COALESCE(SUM(ul.actual_cost), 0) as total_actual_cost,
+			COUNT(*) FILTER (WHERE ul.created_at >= $2) as today_requests,
+			COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens) FILTER (WHERE ul.created_at >= $2), 0) as today_tokens,
+			COALESCE(SUM(ul.actual_cost) FILTER (WHERE ul.created_at >= $2), 0) as today_actual_cost
+		FROM usage_logs ul
+		LEFT JOIN groups g ON g.id = ul.group_id
+		LEFT JOIN accounts a ON a.id = ul.account_id
+		WHERE ` + platformWherePred + `
+		  AND ` + usageLogSuccessFilterUL + `
+		GROUP BY ` + usageLogEffectivePlatformExpr + `
+		HAVING ` + usageLogEffectivePlatformExpr + ` IS NOT NULL AND ` + usageLogEffectivePlatformExpr + ` <> ''
+		ORDER BY total_actual_cost DESC
+	`
+	rows, err := r.sql.QueryContext(ctx, platformQuery, platformArgs...)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var p PlatformDashboardStats
+		if err := rows.Scan(
+			&p.Platform,
+			&p.TotalRequests,
+			&p.TotalTokens,
+			&p.TotalActualCost,
+			&p.TodayRequests,
+			&p.TodayTokens,
+			&p.TodayActualCost,
+		); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		stats.ByPlatform = append(stats.ByPlatform, p)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return stats, nil
+}
+
 // getPerformanceStatsByAPIKey 获取指定 API Key 的 RPM 和 TPM（近5分钟平均值）
 func (r *usageLogRepository) getPerformanceStatsByAPIKey(ctx context.Context, apiKeyID int64) (rpm, tpm int64, err error) {
 	fiveMinutesAgo := time.Now().Add(-5 * time.Minute)

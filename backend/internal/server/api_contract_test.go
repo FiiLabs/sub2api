@@ -2590,6 +2590,10 @@ func (r *stubUsageLogRepo) GetAPIKeyDashboardStats(ctx context.Context, apiKeyID
 	return nil, errors.New("not implemented")
 }
 
+func (r *stubUsageLogRepo) GetDashboardStatsBySubject(ctx context.Context, billingSubjectID, actorUserID int64) (*usagestats.UserDashboardStats, error) {
+	return nil, errors.New("not implemented")
+}
+
 func (r *stubUsageLogRepo) GetUserUsageTrendByUserID(ctx context.Context, userID int64, startTime, endTime time.Time, granularity string) ([]usagestats.TrendDataPoint, error) {
 	return nil, errors.New("not implemented")
 }

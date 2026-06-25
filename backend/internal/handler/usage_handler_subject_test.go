@@ -150,3 +150,30 @@ func TestUsageStatsScopesBySubjectAndSelfForMember(t *testing.T) {
 	require.Equal(t, int64(100), repo.statsSubjectID)
 	require.Equal(t, int64(42), repo.statsActorID) // member forced to self
 }
+
+// GetDashboardStatsBySubject stub — captures billingSubjectID and actorUserID for assertions.
+func (s *userUsageRepoCapture) GetDashboardStatsBySubject(_ context.Context, billingSubjectID, actorUserID int64) (*usagestats.UserDashboardStats, error) {
+	s.dashSubjectID = billingSubjectID
+	s.dashActorID = actorUserID
+	return &usagestats.UserDashboardStats{}, nil
+}
+
+func TestDashboardStatsScopesBySubjectForMember(t *testing.T) {
+	repo := &userUsageRepoCapture{}
+	subject := middleware2.AuthSubject{
+		UserID: 42, BillingSubjectID: 100, SubjectType: domain.BillingSubjectTypeTeam,
+		Permissions: map[string]bool{domain.TeamPermissionViewUsage: true},
+	}
+	gin.SetMode(gin.TestMode)
+	usageSvc := service.NewUsageService(repo, nil, nil, nil)
+	handler := NewUsageHandler(usageSvc, nil, nil, nil)
+	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set(string(middleware2.ContextKeyUser), subject); c.Next() })
+	router.GET("/usage/dashboard/stats", handler.DashboardStats)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/usage/dashboard/stats", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, int64(100), repo.dashSubjectID)
+	require.Equal(t, int64(42), repo.dashActorID)
+}

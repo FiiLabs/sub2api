@@ -20,6 +20,8 @@ type userUsageRepoCapture struct {
 	listFilters    usagestats.UsageLogFilters
 	statsSubjectID int64
 	statsActorID   int64
+	dashSubjectID  int64
+	dashActorID    int64
 }
 
 func (s *userUsageRepoCapture) ListWithFilters(ctx context.Context, params pagination.PaginationParams, filters usagestats.UsageLogFilters) ([]service.UsageLog, *pagination.PaginationResult, error) {

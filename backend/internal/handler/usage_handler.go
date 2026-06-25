@@ -483,7 +483,13 @@ func (h *UsageHandler) DashboardStats(c *gin.Context) {
 		return
 	}
 
-	stats, err := h.usageService.GetDashboardStatsBySubject(c.Request.Context(), subject.UserID, subject.BillingSubjectID)
+	actor, ok := domain.TeamUsageActorFilter(subject.SubjectType, subject.Permissions, subject.UserID, 0)
+	if !ok {
+		response.Forbidden(c, "Not authorized")
+		return
+	}
+
+	stats, err := h.usageService.GetDashboardStatsBySubject(c.Request.Context(), subject.BillingSubjectID, actor)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
