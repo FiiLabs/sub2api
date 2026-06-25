@@ -43,6 +43,7 @@ func (r *apiKeyRepository) Create(ctx context.Context, key *service.APIKey) erro
 	builder := r.client.APIKey.Create().
 		SetUserID(key.UserID).
 		SetKey(key.Key).
+		SetNillableKeyHash(key.KeyHash).
 		SetName(key.Name).
 		SetStatus(key.Status).
 		SetNillableGroupID(key.GroupID).
@@ -115,6 +116,25 @@ func (r *apiKeyRepository) GetKeyAndOwnerID(ctx context.Context, id int64) (stri
 		return "", 0, err
 	}
 	return m.Key, m.UserID, nil
+}
+
+func (r *apiKeyRepository) GetByKeyHash(ctx context.Context, hash string) (*service.APIKey, error) {
+	m, err := r.activeQuery().
+		Where(apikey.KeyHashEQ(hash)).
+		WithUser(func(q *dbent.UserQuery) {
+			q.WithAllowedGroups(func(gq *dbent.GroupQuery) {
+				gq.Select(group.FieldID)
+			})
+		}).
+		WithGroup().
+		Only(ctx)
+	if err != nil {
+		if dbent.IsNotFound(err) {
+			return nil, service.ErrAPIKeyNotFound
+		}
+		return nil, err
+	}
+	return apiKeyEntityToService(m), nil
 }
 
 func (r *apiKeyRepository) GetByKey(ctx context.Context, key string) (*service.APIKey, error) {
@@ -831,6 +851,7 @@ func apiKeyEntityToService(m *dbent.APIKey) *service.APIKey {
 		CreatedByUserID:  m.CreatedByUserID,
 		UpdatedByUserID:  m.UpdatedByUserID,
 		Key:              m.Key,
+		KeyHash:          m.KeyHash,
 		Name:             m.Name,
 		Status:           m.Status,
 		IPWhitelist:      m.IPWhitelist,

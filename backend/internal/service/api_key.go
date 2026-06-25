@@ -49,6 +49,9 @@ type APIKey struct {
 	User                *User
 	Group               *Group
 
+	// KeyHash is the hex-encoded SHA-256 of Key, written on create for TEE lookup.
+	KeyHash *string
+
 	// Quota fields
 	Quota     float64    // Quota limit in USD (0 = unlimited)
 	QuotaUsed float64    // Used quota amount

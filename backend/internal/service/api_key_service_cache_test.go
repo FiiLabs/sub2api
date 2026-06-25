@@ -44,6 +44,9 @@ func (s *authRepoStub) GetByKeyForAuth(ctx context.Context, key string) (*APIKey
 	}
 	return s.getByKeyForAuth(ctx, key)
 }
+func (s *authRepoStub) GetByKeyHash(context.Context, string) (*APIKey, error) {
+	panic("unexpected GetByKeyHash call")
+}
 
 func (s *authRepoStub) Update(ctx context.Context, key *APIKey) error {
 	panic("unexpected Update call")

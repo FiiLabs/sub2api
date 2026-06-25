@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"html"
@@ -55,6 +56,8 @@ type APIKeyRepository interface {
 	GetByKey(ctx context.Context, key string) (*APIKey, error)
 	// GetByKeyForAuth 认证专用查询，返回最小字段集
 	GetByKeyForAuth(ctx context.Context, key string) (*APIKey, error)
+	// GetByKeyHash looks up an API key by the hex-encoded SHA-256 of its key value.
+	GetByKeyHash(ctx context.Context, hash string) (*APIKey, error)
 	Update(ctx context.Context, key *APIKey) error
 	Delete(ctx context.Context, id int64) error
 	// DeleteWithAudit 在同一事务内先写 deleted_api_key_audits 审计、再软删除该 key。
@@ -438,6 +441,11 @@ func (s *APIKeyService) createAPIKey(ctx context.Context, userID int64, req Crea
 		apiKey.ExpiresAt = &expiresAt
 	}
 
+	// Compute and store sha256(key) so TEE control plane can look up the key by hash.
+	h := sha256.Sum256([]byte(apiKey.Key))
+	keyHash := hex.EncodeToString(h[:])
+	apiKey.KeyHash = &keyHash
+
 	if err := s.apiKeyRepo.Create(ctx, apiKey); err != nil {
 		return nil, fmt.Errorf("create api key: %w", err)
 	}
@@ -641,6 +649,16 @@ func (s *APIKeyService) GetByKey(ctx context.Context, key string) (*APIKey, erro
 		return nil, fmt.Errorf("get api key: %w", err)
 	}
 	apiKey.Key = key
+	s.compileAPIKeyIPRules(apiKey)
+	return apiKey, nil
+}
+
+// GetByKeyHash looks up an API key by the hex-encoded SHA-256 of its key value.
+func (s *APIKeyService) GetByKeyHash(ctx context.Context, hash string) (*APIKey, error) {
+	apiKey, err := s.apiKeyRepo.GetByKeyHash(ctx, hash)
+	if err != nil {
+		return nil, fmt.Errorf("get api key by hash: %w", err)
+	}
 	s.compileAPIKeyIPRules(apiKey)
 	return apiKey, nil
 }

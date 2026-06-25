@@ -190,6 +190,9 @@ func (r *teamAPIKeyRepoStub) GetByKey(context.Context, string) (*APIKey, error) 
 func (r *teamAPIKeyRepoStub) GetByKeyForAuth(context.Context, string) (*APIKey, error) {
 	panic("unexpected GetByKeyForAuth")
 }
+func (r *teamAPIKeyRepoStub) GetByKeyHash(context.Context, string) (*APIKey, error) {
+	panic("unexpected GetByKeyHash")
+}
 func (r *teamAPIKeyRepoStub) Update(_ context.Context, key *APIKey) error {
 	clone := *key
 	r.updated = append(r.updated, &clone)

@@ -95,6 +95,9 @@ func (s *quotaBaseAPIKeyRepoStub) GetByKey(context.Context, string) (*APIKey, er
 func (s *quotaBaseAPIKeyRepoStub) GetByKeyForAuth(context.Context, string) (*APIKey, error) {
 	panic("unexpected GetByKeyForAuth call")
 }
+func (s *quotaBaseAPIKeyRepoStub) GetByKeyHash(context.Context, string) (*APIKey, error) {
+	panic("unexpected GetByKeyHash call")
+}
 func (s *quotaBaseAPIKeyRepoStub) Update(context.Context, *APIKey) error {
 	panic("unexpected Update call")
 }
