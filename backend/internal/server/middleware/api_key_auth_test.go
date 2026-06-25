@@ -251,10 +251,97 @@ func TestAuthSubjectFromAPIKeyIncludesWorkspaceSubject(t *testing.T) {
 	subject := authSubjectFromAPIKey(apiKey)
 
 	require.Equal(t, int64(42), subject.UserID)
+	// SubjectConcurrency == nil → 回退到用户自身 concurrency（团队 key 未加载主体时的降级路径）
 	require.Equal(t, 3, subject.Concurrency)
 	require.Equal(t, int64(900), subject.BillingSubjectID)
 	require.Equal(t, int64(77), subject.TeamID)
 	require.Equal(t, domain.BillingSubjectTypeTeam, subject.SubjectType)
+}
+
+// TestAuthSubjectConcurrencyFromBillingSubject 验证团队 key 的并发 LIMIT 来自
+// 团队计费主体（billing_subject.concurrency），而不是 key 所有者的个人 concurrency。
+// 并发 COUNTER 仍按 member user_id 计数（subject.UserID 不变）。
+func TestAuthSubjectConcurrencyFromBillingSubject(t *testing.T) {
+	intPtr := func(v int) *int { return &v }
+	int64Ptr := func(v int64) *int64 { return &v }
+
+	t.Run("team_key_uses_subject_concurrency_when_loaded", func(t *testing.T) {
+		// 团队 key：SubjectConcurrency=5（主体值），User.Concurrency=1（个人值）
+		// 预期：subject.Concurrency == 5（团队主体值），NOT 1
+		// 这在实现前会 FAIL（返回 1）
+		apiKey := &service.APIKey{
+			UserID:              42,
+			BillingSubjectID:    900,
+			TeamID:              int64Ptr(77),
+			SubjectConcurrency:  intPtr(5),
+			User: &service.User{
+				ID:          42,
+				Concurrency: 1, // 个人值，应被团队主体值覆盖
+			},
+		}
+
+		subject := authSubjectFromAPIKey(apiKey)
+
+		require.Equal(t, int64(42), subject.UserID, "counter key 必须保持 member user_id，不能改为团队 subject_id")
+		require.Equal(t, 5, subject.Concurrency, "团队 key 的并发上限必须来自 billing_subject.concurrency")
+		require.Equal(t, int64(900), subject.BillingSubjectID)
+	})
+
+	t.Run("personal_key_uses_user_concurrency", func(t *testing.T) {
+		// 个人 key：TeamID=nil，SubjectConcurrency=nil
+		// 预期：subject.Concurrency == 3（用户个人值）
+		apiKey := &service.APIKey{
+			UserID:           31,
+			BillingSubjectID: 31,
+			TeamID:           nil,
+			User: &service.User{
+				ID:          31,
+				Concurrency: 3,
+			},
+		}
+
+		subject := authSubjectFromAPIKey(apiKey)
+
+		require.Equal(t, int64(31), subject.UserID)
+		require.Equal(t, 3, subject.Concurrency, "个人 key 的并发上限应来自 user.concurrency")
+	})
+
+	t.Run("team_key_subject_concurrency_nil_fallback_to_user", func(t *testing.T) {
+		// 团队 key 但 SubjectConcurrency == nil（加载失败场景）→ 回退到 user.concurrency
+		apiKey := &service.APIKey{
+			UserID:             42,
+			BillingSubjectID:   900,
+			TeamID:             int64Ptr(77),
+			SubjectConcurrency: nil, // 未加载 / 加载出错
+			User: &service.User{
+				ID:          42,
+				Concurrency: 2,
+			},
+		}
+
+		subject := authSubjectFromAPIKey(apiKey)
+
+		require.Equal(t, int64(42), subject.UserID)
+		require.Equal(t, 2, subject.Concurrency, "加载失败时应回退到 user.concurrency")
+	})
+
+	t.Run("team_key_subject_concurrency_zero_means_unlimited", func(t *testing.T) {
+		// SubjectConcurrency=0 → 无限制（应透传 0，不当成"未加载"）
+		apiKey := &service.APIKey{
+			UserID:             42,
+			BillingSubjectID:   900,
+			TeamID:             int64Ptr(77),
+			SubjectConcurrency: intPtr(0), // 0 = 无限制
+			User: &service.User{
+				ID:          42,
+				Concurrency: 5,
+			},
+		}
+
+		subject := authSubjectFromAPIKey(apiKey)
+
+		require.Equal(t, 0, subject.Concurrency, "SubjectConcurrency=0 表示无限制，必须透传 0")
+	})
 }
 
 func TestAPIKeyAuthRejectsExclusiveGroupWhenUserNoLongerAllowed(t *testing.T) {

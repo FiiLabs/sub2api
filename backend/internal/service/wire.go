@@ -493,7 +493,8 @@ func ProvideBillingCacheService(
 	return NewBillingCacheService(cache, userRepo, subRepo, apiKeyRepo, rpmCache, rateRepo, cfg, userPlatformQuotaRepo, billingSubjectRepo)
 }
 
-// ProvideAPIKeyService wires APIKeyService and connects rate-limit cache invalidation.
+// ProvideAPIKeyService wires APIKeyService and connects rate-limit cache invalidation
+// and the billing subject repository (for team key concurrency limit loading).
 func ProvideAPIKeyService(
 	apiKeyRepo APIKeyRepository,
 	userRepo UserRepository,
@@ -503,9 +504,11 @@ func ProvideAPIKeyService(
 	cache APIKeyCache,
 	cfg *config.Config,
 	billingCacheService *BillingCacheService,
+	billingSubjectRepo BillingSubjectRepository,
 ) *APIKeyService {
 	svc := NewAPIKeyService(apiKeyRepo, userRepo, groupRepo, userSubRepo, userGroupRateRepo, cache, cfg)
 	svc.SetRateLimitCacheInvalidator(billingCacheService)
+	svc.SetBillingSubjectRepo(billingSubjectRepo)
 	return svc
 }
 

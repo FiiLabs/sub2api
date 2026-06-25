@@ -214,6 +214,7 @@ type APIKeyService struct {
 	userGroupRateRepo     UserGroupRateRepository
 	cache                 APIKeyCache
 	rateLimitCacheInvalid RateLimitCacheInvalidator // optional: invalidate Redis rate limit cache
+	billingSubjectRepo    BillingSubjectRepository  // optional: load team billing subject concurrency
 	cfg                   *config.Config
 	authCacheL1           *ristretto.Cache
 	authCfg               apiKeyAuthCacheConfig
@@ -249,6 +250,14 @@ func NewAPIKeyService(
 // Called after construction (e.g. in wire) to avoid circular dependencies.
 func (s *APIKeyService) SetRateLimitCacheInvalidator(inv RateLimitCacheInvalidator) {
 	s.rateLimitCacheInvalid = inv
+}
+
+// SetBillingSubjectRepo 设置可选的计费主体仓储，用于在认证快照构建时
+// 加载团队 key 的 billing_subject.concurrency。
+// 构建后由 wire/ProvideAPIKeyService 注入，避免循环依赖和修改构造函数签名。
+// 单元测试不注入时保持 nil → SubjectConcurrency 留 nil → 回退到用户个人值。
+func (s *APIKeyService) SetBillingSubjectRepo(repo BillingSubjectRepository) {
+	s.billingSubjectRepo = repo
 }
 
 func (s *APIKeyService) compileAPIKeyIPRules(apiKey *APIKey) {

@@ -64,6 +64,11 @@ type APIKey struct {
 	Window5hStart *time.Time // Start of current 5h window
 	Window1dStart *time.Time // Start of current 1d window
 	Window7dStart *time.Time // Start of current 7d window
+
+	// SubjectConcurrency 团队计费主体的并发上限（来自 billing_subjects.concurrency）。
+	// nil = 未加载（个人 key 或加载失败）→ 回退到 User.Concurrency；
+	// 非 nil（含 0）= 主体值，0 表示不限制。
+	SubjectConcurrency *int `json:"subject_concurrency,omitempty"`
 }
 
 type SubjectResourceContext struct {

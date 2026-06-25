@@ -237,7 +237,13 @@ func authSubjectFromAPIKey(apiKey *service.APIKey) AuthSubject {
 		return subject
 	}
 	subject.UserID = apiKey.User.ID
-	subject.Concurrency = apiKey.User.Concurrency
+	// 团队 key 且主体并发已加载 → 用团队计费主体的 concurrency 作为 LIMIT；
+	// 计数器 key 保持 subject.UserID（成员间互不阻塞）。
+	if apiKey.TeamID != nil && *apiKey.TeamID > 0 && apiKey.SubjectConcurrency != nil {
+		subject.Concurrency = *apiKey.SubjectConcurrency
+	} else {
+		subject.Concurrency = apiKey.User.Concurrency
+	}
 	subject.BillingSubjectID = apiKey.BillingSubjectID
 	if subject.BillingSubjectID == 0 {
 		subject.BillingSubjectID = apiKey.User.ID
