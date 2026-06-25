@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
@@ -45,6 +46,10 @@ func (s *userUsageRepoCapture) ListWithFilters(ctx context.Context, params pagin
 		PageSize: params.PageSize,
 		Pages:    0,
 	}, nil
+}
+
+func (s *userUsageRepoCapture) GetAPIKeyStatsAggregated(_ context.Context, _ int64, _, _ time.Time) (*usagestats.UsageStats, error) {
+	return &usagestats.UsageStats{}, nil
 }
 
 func newUserUsageRequestTypeTestRouter(repo *userUsageRepoCapture) *gin.Engine {

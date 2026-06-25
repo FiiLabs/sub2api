@@ -66,7 +66,16 @@ func (h *UsageHandler) List(c *gin.Context) {
 			response.ErrorFrom(c, err)
 			return
 		}
-		if apiKey.UserID != subject.UserID {
+		if subject.SubjectType == domain.BillingSubjectTypeTeam {
+			if apiKey.BillingSubjectID != subject.BillingSubjectID {
+				response.Forbidden(c, "Not authorized to access this API key's usage records")
+				return
+			}
+			if !subject.Permissions[domain.TeamPermissionViewUsageAll] && apiKey.UserID != subject.UserID {
+				response.Forbidden(c, "Not authorized to access this API key's usage records")
+				return
+			}
+		} else if apiKey.UserID != subject.UserID {
 			response.Forbidden(c, "Not authorized to access this API key's usage records")
 			return
 		}
@@ -361,7 +370,16 @@ func (h *UsageHandler) Stats(c *gin.Context) {
 			response.NotFound(c, "API key not found")
 			return
 		}
-		if apiKey.UserID != subject.UserID {
+		if subject.SubjectType == domain.BillingSubjectTypeTeam {
+			if apiKey.BillingSubjectID != subject.BillingSubjectID {
+				response.Forbidden(c, "Not authorized to access this API key's statistics")
+				return
+			}
+			if !subject.Permissions[domain.TeamPermissionViewUsageAll] && apiKey.UserID != subject.UserID {
+				response.Forbidden(c, "Not authorized to access this API key's statistics")
+				return
+			}
+		} else if apiKey.UserID != subject.UserID {
 			response.Forbidden(c, "Not authorized to access this API key's statistics")
 			return
 		}

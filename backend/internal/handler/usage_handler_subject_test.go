@@ -2,11 +2,13 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -400,4 +402,204 @@ func TestDashboardModelsScopesBySubjectForOwner(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Equal(t, int64(100), repo.modelSubjectID)
 	require.Equal(t, int64(0), repo.modelActorID) // owner gets all actors
+}
+
+// ── api_key_id 所有权检查：team 感知 ──────────────────────────────────────────
+
+// usageAPIKeyRepoStub 是一个最小的 APIKeyRepository 桩，只实现 GetByID。
+// 所有其他方法通过嵌入 service.APIKeyRepository 接口保持 nil（调用会 panic，
+// 但测试中不会到达那些方法）。
+type usageAPIKeyRepoStub struct {
+	service.APIKeyRepository
+	key *service.APIKey
+	err error
+}
+
+func (r *usageAPIKeyRepoStub) GetByID(_ context.Context, _ int64) (*service.APIKey, error) {
+	return r.key, r.err
+}
+
+// newUsageHandlerWithAPIKeyStub 构造一个 UsageHandler，其 apiKeyService 从给定的
+// APIKey 桩返回固定结果。usageRepo 用于注入 UsageService。
+func newUsageHandlerWithAPIKeyStub(usageRepo service.UsageLogRepository, apiKeyStub *usageAPIKeyRepoStub) *UsageHandler {
+	usageSvc := service.NewUsageService(usageRepo, nil, nil, nil)
+	apiKeySvc := service.NewAPIKeyService(apiKeyStub, nil, nil, nil, nil, nil, &config.Config{})
+	return NewUsageHandler(usageSvc, apiKeySvc, nil, nil)
+}
+
+// newUsageListStatsRouter 构造一个同时注册 List 和 Stats 路由的路由器。
+func newUsageListStatsRouter(handler *UsageHandler, subject middleware2.AuthSubject) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware2.ContextKeyUser), subject)
+		c.Next()
+	})
+	router.GET("/usage", handler.List)
+	router.GET("/usage/stats", handler.Stats)
+	return router
+}
+
+// ── List: api_key_id 团队所有权检查 ──────────────────────────────────────────
+
+// TestUsageListAPIKeyOwnKeyTeamMember – 团队成员查询自己的 key → 不应 403（通过所有权门）
+func TestUsageListAPIKeyOwnKeyTeamMember(t *testing.T) {
+	apiKeyStub := &usageAPIKeyRepoStub{key: &service.APIKey{
+		ID:               10,
+		UserID:           42,
+		BillingSubjectID: 100,
+	}}
+	subject := middleware2.AuthSubject{
+		UserID: 42, BillingSubjectID: 100,
+		SubjectType: domain.BillingSubjectTypeTeam, TeamID: 7,
+		Permissions: map[string]bool{domain.TeamPermissionViewUsage: true},
+	}
+	h := newUsageHandlerWithAPIKeyStub(&userUsageRepoCapture{}, apiKeyStub)
+	router := newUsageListStatsRouter(h, subject)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/usage?api_key_id=%d", apiKeyStub.key.ID), nil))
+	require.NotEqual(t, http.StatusForbidden, rec.Code, "团队成员查询自己的 key 不应被 403")
+}
+
+// TestUsageListAPIKeyOtherMemberKeyForbidden – 团队成员查询他人 key → 403
+func TestUsageListAPIKeyOtherMemberKeyForbidden(t *testing.T) {
+	apiKeyStub := &usageAPIKeyRepoStub{key: &service.APIKey{
+		ID:               10,
+		UserID:           99, // 他人 key
+		BillingSubjectID: 100,
+	}}
+	subject := middleware2.AuthSubject{
+		UserID: 42, BillingSubjectID: 100,
+		SubjectType: domain.BillingSubjectTypeTeam, TeamID: 7,
+		Permissions: map[string]bool{domain.TeamPermissionViewUsage: true},
+	}
+	h := newUsageHandlerWithAPIKeyStub(&userUsageRepoCapture{}, apiKeyStub)
+	router := newUsageListStatsRouter(h, subject)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/usage?api_key_id=%d", apiKeyStub.key.ID), nil))
+	require.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// TestUsageListAPIKeyOwnerViewAllPasses – owner 有 view.all，查询他人 key 同团队 → 不应 403
+func TestUsageListAPIKeyOwnerViewAllPasses(t *testing.T) {
+	apiKeyStub := &usageAPIKeyRepoStub{key: &service.APIKey{
+		ID:               10,
+		UserID:           99, // 他人的 key
+		BillingSubjectID: 100,
+	}}
+	subject := middleware2.AuthSubject{
+		UserID: 1, BillingSubjectID: 100,
+		SubjectType: domain.BillingSubjectTypeTeam, TeamID: 7,
+		Permissions: map[string]bool{domain.TeamPermissionViewUsageAll: true},
+	}
+	h := newUsageHandlerWithAPIKeyStub(&userUsageRepoCapture{}, apiKeyStub)
+	router := newUsageListStatsRouter(h, subject)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/usage?api_key_id=%d", apiKeyStub.key.ID), nil))
+	require.NotEqual(t, http.StatusForbidden, rec.Code, "owner/admin 有 view.all 查询同团队他人 key 不应 403")
+}
+
+// TestUsageListAPIKeyDifferentSubjectForbidden – key 属于不同计费主体 → 403
+func TestUsageListAPIKeyDifferentSubjectForbidden(t *testing.T) {
+	apiKeyStub := &usageAPIKeyRepoStub{key: &service.APIKey{
+		ID:               10,
+		UserID:           1, // 即使是 owner 本人
+		BillingSubjectID: 999, // 不同主体
+	}}
+	subject := middleware2.AuthSubject{
+		UserID: 1, BillingSubjectID: 100,
+		SubjectType: domain.BillingSubjectTypeTeam, TeamID: 7,
+		Permissions: map[string]bool{domain.TeamPermissionViewUsageAll: true},
+	}
+	h := newUsageHandlerWithAPIKeyStub(&userUsageRepoCapture{}, apiKeyStub)
+	router := newUsageListStatsRouter(h, subject)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/usage?api_key_id=%d", apiKeyStub.key.ID), nil))
+	require.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// ── Stats: api_key_id 团队所有权检查 ─────────────────────────────────────────
+
+// TestUsageStatsAPIKeyOwnKeyTeamMember – 团队成员查询自己的 key → 不应 403
+func TestUsageStatsAPIKeyOwnKeyTeamMember(t *testing.T) {
+	apiKeyStub := &usageAPIKeyRepoStub{key: &service.APIKey{
+		ID:               10,
+		UserID:           42,
+		BillingSubjectID: 100,
+	}}
+	subject := middleware2.AuthSubject{
+		UserID: 42, BillingSubjectID: 100,
+		SubjectType: domain.BillingSubjectTypeTeam, TeamID: 7,
+		Permissions: map[string]bool{domain.TeamPermissionViewUsage: true},
+	}
+	h := newUsageHandlerWithAPIKeyStub(&userUsageRepoCapture{}, apiKeyStub)
+	router := newUsageListStatsRouter(h, subject)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/usage/stats?api_key_id=%d", apiKeyStub.key.ID), nil))
+	require.NotEqual(t, http.StatusForbidden, rec.Code, "团队成员查询自己的 key stats 不应被 403")
+}
+
+// TestUsageStatsAPIKeyOtherMemberKeyForbidden – 团队成员查询他人 key stats → 403
+func TestUsageStatsAPIKeyOtherMemberKeyForbidden(t *testing.T) {
+	apiKeyStub := &usageAPIKeyRepoStub{key: &service.APIKey{
+		ID:               10,
+		UserID:           99,
+		BillingSubjectID: 100,
+	}}
+	subject := middleware2.AuthSubject{
+		UserID: 42, BillingSubjectID: 100,
+		SubjectType: domain.BillingSubjectTypeTeam, TeamID: 7,
+		Permissions: map[string]bool{domain.TeamPermissionViewUsage: true},
+	}
+	h := newUsageHandlerWithAPIKeyStub(&userUsageRepoCapture{}, apiKeyStub)
+	router := newUsageListStatsRouter(h, subject)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/usage/stats?api_key_id=%d", apiKeyStub.key.ID), nil))
+	require.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// TestUsageStatsAPIKeyOwnerViewAllPasses – owner 有 view.all，查询他人 key stats → 不应 403
+func TestUsageStatsAPIKeyOwnerViewAllPasses(t *testing.T) {
+	apiKeyStub := &usageAPIKeyRepoStub{key: &service.APIKey{
+		ID:               10,
+		UserID:           99,
+		BillingSubjectID: 100,
+	}}
+	subject := middleware2.AuthSubject{
+		UserID: 1, BillingSubjectID: 100,
+		SubjectType: domain.BillingSubjectTypeTeam, TeamID: 7,
+		Permissions: map[string]bool{domain.TeamPermissionViewUsageAll: true},
+	}
+	h := newUsageHandlerWithAPIKeyStub(&userUsageRepoCapture{}, apiKeyStub)
+	router := newUsageListStatsRouter(h, subject)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/usage/stats?api_key_id=%d", apiKeyStub.key.ID), nil))
+	require.NotEqual(t, http.StatusForbidden, rec.Code, "owner/admin 有 view.all 查询同团队他人 key stats 不应 403")
+}
+
+// TestUsageStatsAPIKeyDifferentSubjectForbidden – key 属于不同计费主体 → 403
+func TestUsageStatsAPIKeyDifferentSubjectForbidden(t *testing.T) {
+	apiKeyStub := &usageAPIKeyRepoStub{key: &service.APIKey{
+		ID:               10,
+		UserID:           1,
+		BillingSubjectID: 999,
+	}}
+	subject := middleware2.AuthSubject{
+		UserID: 1, BillingSubjectID: 100,
+		SubjectType: domain.BillingSubjectTypeTeam, TeamID: 7,
+		Permissions: map[string]bool{domain.TeamPermissionViewUsageAll: true},
+	}
+	h := newUsageHandlerWithAPIKeyStub(&userUsageRepoCapture{}, apiKeyStub)
+	router := newUsageListStatsRouter(h, subject)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/usage/stats?api_key_id=%d", apiKeyStub.key.ID), nil))
+	require.Equal(t, http.StatusForbidden, rec.Code)
 }
