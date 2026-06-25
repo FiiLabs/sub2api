@@ -28,6 +28,136 @@ func newUserUsageSubjectTestRouter(repo *userUsageRepoCapture, subject middlewar
 	return router
 }
 
+func newUsageGetByIDTestRouter(repo *userUsageRepoCapture, subject middleware2.AuthSubject) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	usageSvc := service.NewUsageService(repo, nil, nil, nil)
+	handler := NewUsageHandler(usageSvc, nil, nil, nil)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware2.ContextKeyUser), subject)
+		c.Next()
+	})
+	router.GET("/usage/:id", handler.GetByID)
+	return router
+}
+
+// 团队成员无 view.all 权限，ActorUserID != self → 403
+func TestUsageGetByIDTeamMemberForbiddenForOtherActorRecord(t *testing.T) {
+	otherUserID := int64(7)
+	repo := &userUsageRepoCapture{
+		getByIDResult: &service.UsageLog{
+			ID:               5,
+			UserID:           otherUserID,
+			BillingSubjectID: 100,
+			ActorUserID:      &otherUserID,
+		},
+	}
+	subject := middleware2.AuthSubject{
+		UserID:           42,
+		BillingSubjectID: 100,
+		SubjectType:      domain.BillingSubjectTypeTeam,
+		TeamID:           7,
+		Permissions:      map[string]bool{domain.TeamPermissionViewUsage: true},
+	}
+	router := newUsageGetByIDTestRouter(repo, subject)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/usage/5", nil))
+	require.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// 团队成员无 view.all 权限，ActorUserID == self → 200
+func TestUsageGetByIDTeamMemberAllowedForOwnActorRecord(t *testing.T) {
+	selfUserID := int64(42)
+	repo := &userUsageRepoCapture{
+		getByIDResult: &service.UsageLog{
+			ID:               5,
+			UserID:           selfUserID,
+			BillingSubjectID: 100,
+			ActorUserID:      &selfUserID,
+		},
+	}
+	subject := middleware2.AuthSubject{
+		UserID:           42,
+		BillingSubjectID: 100,
+		SubjectType:      domain.BillingSubjectTypeTeam,
+		TeamID:           7,
+		Permissions:      map[string]bool{domain.TeamPermissionViewUsage: true},
+	}
+	router := newUsageGetByIDTestRouter(repo, subject)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/usage/5", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+}
+
+// 团队 owner 有 view.all 权限，任意 actor 的记录 → 200
+func TestUsageGetByIDTeamOwnerAllowedForAnyTeamRecord(t *testing.T) {
+	otherUserID := int64(7)
+	repo := &userUsageRepoCapture{
+		getByIDResult: &service.UsageLog{
+			ID:               5,
+			UserID:           otherUserID,
+			BillingSubjectID: 100,
+			ActorUserID:      &otherUserID,
+		},
+	}
+	subject := middleware2.AuthSubject{
+		UserID:           1,
+		BillingSubjectID: 100,
+		SubjectType:      domain.BillingSubjectTypeTeam,
+		TeamID:           7,
+		Permissions:      map[string]bool{domain.TeamPermissionViewUsageAll: true},
+	}
+	router := newUsageGetByIDTestRouter(repo, subject)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/usage/5", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+}
+
+// 个人用户无法访问他人的记录 → 403
+func TestUsageGetByIDPersonalForbiddenForOtherUserRecord(t *testing.T) {
+	otherUserID := int64(99)
+	repo := &userUsageRepoCapture{
+		getByIDResult: &service.UsageLog{
+			ID:     5,
+			UserID: otherUserID,
+		},
+	}
+	subject := middleware2.AuthSubject{UserID: 42}
+	router := newUsageGetByIDTestRouter(repo, subject)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/usage/5", nil))
+	require.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// 团队记录属于不同计费主体 → 403
+func TestUsageGetByIDTeamForbiddenForDifferentBillingSubject(t *testing.T) {
+	selfID := int64(42)
+	repo := &userUsageRepoCapture{
+		getByIDResult: &service.UsageLog{
+			ID:               5,
+			UserID:           selfID,
+			BillingSubjectID: 999, // 不同主体
+			ActorUserID:      &selfID,
+		},
+	}
+	subject := middleware2.AuthSubject{
+		UserID:           42,
+		BillingSubjectID: 100,
+		SubjectType:      domain.BillingSubjectTypeTeam,
+		TeamID:           7,
+		Permissions:      map[string]bool{domain.TeamPermissionViewUsageAll: true},
+	}
+	router := newUsageGetByIDTestRouter(repo, subject)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/usage/5", nil))
+	require.Equal(t, http.StatusForbidden, rec.Code)
+}
+
 func TestUsageListScopesByBillingSubject(t *testing.T) {
 	repo := &userUsageRepoCapture{}
 	subject := middleware2.AuthSubject{UserID: 42, BillingSubjectID: 100, TeamID: 7}

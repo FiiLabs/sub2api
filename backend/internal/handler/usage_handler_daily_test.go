@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -68,6 +69,20 @@ func newDailyUsageTestRouter(usageRepo *dailyUsageRepoStub, apiKeyRepo *dailyUsa
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: userID})
+		c.Next()
+	})
+	router.GET("/user/api-keys/:id/usage/daily", handler.GetMyAPIKeyDailyUsage)
+	return router
+}
+
+func newDailyUsageTeamTestRouter(usageRepo *dailyUsageRepoStub, apiKeyRepo *dailyUsageAPIKeyRepoStub, subject middleware2.AuthSubject) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	usageSvc := service.NewUsageService(usageRepo, nil, nil, nil)
+	apiKeySvc := service.NewAPIKeyService(apiKeyRepo, nil, nil, nil, nil, nil, nil)
+	handler := NewUsageHandler(usageSvc, apiKeySvc, nil, nil)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware2.ContextKeyUser), subject)
 		c.Next()
 	})
 	router.GET("/user/api-keys/:id/usage/daily", handler.GetMyAPIKeyDailyUsage)
@@ -192,4 +207,71 @@ func TestGetMyAPIKeyDailyUsageAggregatesByDayForOwnedKey(t *testing.T) {
 		Cost:             0.5,
 		ActualCost:       0.4,
 	}, got.Data.Items[0])
+}
+
+// 团队成员（无 manage.keys.all）查询他人创建的 key → 403
+func TestGetMyAPIKeyDailyUsageTeamMemberForbiddenForOtherCreatorKey(t *testing.T) {
+	otherCreator := int64(99)
+	usageRepo := &dailyUsageRepoStub{}
+	apiKeyRepo := &dailyUsageAPIKeyRepoStub{
+		keys: map[int64]*service.APIKey{
+			7: {
+				ID:               7,
+				UserID:           99, // key 拥有者
+				BillingSubjectID: 100,
+				CreatedByUserID:  &otherCreator, // 创建者是他人
+				Status:           service.StatusAPIKeyActive,
+			},
+		},
+	}
+	subject := middleware2.AuthSubject{
+		UserID:           42,
+		BillingSubjectID: 100,
+		SubjectType:      domain.BillingSubjectTypeTeam,
+		TeamID:           7,
+		Permissions:      map[string]bool{domain.TeamPermissionManageKeys: true},
+	}
+	router := newDailyUsageTeamTestRouter(usageRepo, apiKeyRepo, subject)
+
+	req := httptest.NewRequest(http.MethodGet, "/user/api-keys/7/usage/daily?days=30", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.False(t, usageRepo.called)
+}
+
+// 团队 owner（有 manage.keys.all）查询他人创建的 key → 200，且 GetAPIKeyDailyUsage 收到 apiKey.UserID
+func TestGetMyAPIKeyDailyUsageTeamOwnerAllowedAndUsesKeyOwnerUserID(t *testing.T) {
+	keyOwnerID := int64(99)
+	otherCreator := int64(99)
+	usageRepo := &dailyUsageRepoStub{trend: []usagestats.TrendDataPoint{}}
+	apiKeyRepo := &dailyUsageAPIKeyRepoStub{
+		keys: map[int64]*service.APIKey{
+			7: {
+				ID:               7,
+				UserID:           keyOwnerID,
+				BillingSubjectID: 100,
+				CreatedByUserID:  &otherCreator,
+				Status:           service.StatusAPIKeyActive,
+			},
+		},
+	}
+	subject := middleware2.AuthSubject{
+		UserID:           1, // owner
+		BillingSubjectID: 100,
+		SubjectType:      domain.BillingSubjectTypeTeam,
+		TeamID:           7,
+		Permissions:      map[string]bool{domain.TeamPermissionManageKeysAll: true},
+	}
+	router := newDailyUsageTeamTestRouter(usageRepo, apiKeyRepo, subject)
+
+	req := httptest.NewRequest(http.MethodGet, "/user/api-keys/7/usage/daily?days=30", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.True(t, usageRepo.called)
+	// GetAPIKeyDailyUsage 必须使用 apiKey.UserID（key 拥有者），而非 subject.UserID（owner 自身）
+	require.Equal(t, keyOwnerID, usageRepo.userID)
 }

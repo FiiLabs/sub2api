@@ -319,7 +319,18 @@ func (h *UsageHandler) GetByID(c *gin.Context) {
 	}
 
 	// 验证所有权
-	if record.UserID != subject.UserID {
+	if subject.SubjectType == domain.BillingSubjectTypeTeam {
+		if record.BillingSubjectID != subject.BillingSubjectID {
+			response.Forbidden(c, "Not authorized to access this record")
+			return
+		}
+		if !subject.Permissions[domain.TeamPermissionViewUsageAll] {
+			if record.ActorUserID == nil || *record.ActorUserID != subject.UserID {
+				response.Forbidden(c, "Not authorized to access this record")
+				return
+			}
+		}
+	} else if record.UserID != subject.UserID {
 		response.Forbidden(c, "Not authorized to access this record")
 		return
 	}
@@ -642,14 +653,25 @@ func (h *UsageHandler) GetMyAPIKeyDailyUsage(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	if apiKey.UserID != subject.UserID {
+	if subject.SubjectType == domain.BillingSubjectTypeTeam {
+		if apiKey.BillingSubjectID != subject.BillingSubjectID {
+			response.Forbidden(c, "Not authorized to access this API key's usage")
+			return
+		}
+		if f := domain.TeamKeyCreatorFilter(subject.SubjectType, subject.Permissions, subject.UserID); f != nil {
+			if apiKey.CreatedByUserID == nil || *apiKey.CreatedByUserID != *f {
+				response.Forbidden(c, "Not authorized to access this API key's usage")
+				return
+			}
+		}
+	} else if apiKey.UserID != subject.UserID {
 		response.Forbidden(c, "Not authorized to access this API key's usage")
 		return
 	}
 
 	userTZ := c.Query("timezone")
 	startTime, endTime := apiKeyDailyUsageRange(days, userTZ)
-	items, err := h.usageService.GetAPIKeyDailyUsage(c.Request.Context(), subject.UserID, apiKeyID, startTime, endTime)
+	items, err := h.usageService.GetAPIKeyDailyUsage(c.Request.Context(), apiKey.UserID, apiKeyID, startTime, endTime)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

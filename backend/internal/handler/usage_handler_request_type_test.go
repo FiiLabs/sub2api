@@ -26,6 +26,14 @@ type userUsageRepoCapture struct {
 	trendActorID    int64
 	modelSubjectID  int64
 	modelActorID    int64
+
+	// GetByID stub
+	getByIDResult *service.UsageLog
+	getByIDErr    error
+}
+
+func (s *userUsageRepoCapture) GetByID(_ context.Context, _ int64) (*service.UsageLog, error) {
+	return s.getByIDResult, s.getByIDErr
 }
 
 func (s *userUsageRepoCapture) ListWithFilters(ctx context.Context, params pagination.PaginationParams, filters usagestats.UsageLogFilters) ([]service.UsageLog, *pagination.PaginationResult, error) {
