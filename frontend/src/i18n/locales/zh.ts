@@ -1198,6 +1198,10 @@ export default {
     exportExcelFailed: '使用数据导出失败',
     imageUnit: '张',
     userAgent: 'User-Agent',
+    memberBreakdown: '成员用量汇总',
+    memberBreakdownMember: '成员',
+    memberBreakdownRequests: '请求数',
+    memberBreakdownCost: '实际费用',
     tabs: { usage: '用量明细', errors: '错误请求' },
     errors: {
       time: '时间', model: '模型', endpoint: '端点', status: '状态码',

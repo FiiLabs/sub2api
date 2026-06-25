@@ -307,6 +307,26 @@ export async function getDashboardApiKeysUsage(
   return data
 }
 
+// ==================== Team Member Usage ====================
+
+export interface TeamMemberUsage {
+  user_id: number
+  requests: number
+  total_cost: number
+  actual_cost: number
+}
+
+export async function getTeamUsageByMember(
+  teamId: number,
+  params: { start_date?: string; end_date?: string }
+): Promise<{ items: TeamMemberUsage[] }> {
+  const { data } = await apiClient.get<{ items: TeamMemberUsage[] }>(
+    `/teams/${teamId}/usage/by-member`,
+    { params }
+  )
+  return data
+}
+
 export async function listMyErrorRequests(
   params: UserErrorListParams,
   config: { signal?: AbortSignal } = {}
@@ -339,6 +359,8 @@ export const usageAPI = {
   // Error requests
   listMyErrorRequests,
   getMyErrorDetail,
+  // Team member usage breakdown
+  getTeamUsageByMember,
 }
 
 export default usageAPI

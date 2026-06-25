@@ -1197,6 +1197,10 @@ export default {
     exportExcelFailed: 'Failed to export usage data',
     imageUnit: ' images',
     userAgent: 'User-Agent',
+    memberBreakdown: 'Usage by Member',
+    memberBreakdownMember: 'Member',
+    memberBreakdownRequests: 'Requests',
+    memberBreakdownCost: 'Actual Cost',
     tabs: { usage: 'Usage', errors: 'Error Requests' },
     errors: {
       time: 'Time', model: 'Model', endpoint: 'Endpoint', status: 'Status',

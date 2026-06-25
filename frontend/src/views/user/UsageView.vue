@@ -116,16 +116,14 @@
               />
             </div>
 
-            <!-- Member Filter (active workspace member by user id) -->
-            <div class="min-w-[140px]">
+            <!-- Member Filter (仅团队 owner/admin 可见) -->
+            <div v-if="canViewAll" class="min-w-[180px]">
               <label class="input-label">{{ t('usage.actor') }}</label>
-              <input
-                v-model.number="actorUserId"
-                type="number"
-                min="0"
-                class="input"
+              <Select
+                v-model="actorUserId"
+                :options="memberOptions"
                 :placeholder="t('usage.allMembers')"
-                @change="applyFilters"
+                @update:model-value="applyFilters"
               />
             </div>
 
@@ -403,6 +401,42 @@
             @update:pageSize="onErrorPageSize"
           />
         </div>
+
+        <!-- 按成员用量明细面板（仅 canViewAll）-->
+        <div v-if="canViewAll && byMember.length > 0" class="mt-4 card">
+          <div class="px-6 py-4">
+            <h3 class="mb-3 text-sm font-semibold text-gray-700 dark:text-gray-300">
+              {{ t('usage.memberBreakdown') }}
+            </h3>
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b border-gray-200 text-left text-xs font-medium text-gray-500 dark:border-dark-700 dark:text-gray-400">
+                  <th class="pb-2 pr-4">{{ t('usage.memberBreakdownMember') }}</th>
+                  <th class="pb-2 pr-4 text-right">{{ t('usage.memberBreakdownRequests') }}</th>
+                  <th class="pb-2 text-right">{{ t('usage.memberBreakdownCost') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="row in byMember"
+                  :key="row.user_id"
+                  class="border-b border-gray-100 last:border-0 dark:border-dark-700"
+                  :class="row.user_id === authStore.user?.id ? 'bg-blue-50 dark:bg-blue-900/20' : ''"
+                >
+                  <td class="py-2 pr-4 text-gray-700 dark:text-gray-300">
+                    {{ members.find(m => m.user_id === row.user_id)?.user?.email ?? String(row.user_id) }}
+                  </td>
+                  <td class="py-2 pr-4 text-right font-medium text-gray-900 dark:text-white">
+                    {{ row.requests.toLocaleString() }}
+                  </td>
+                  <td class="py-2 text-right font-medium text-green-600 dark:text-green-400">
+                    ${{ row.actual_cost.toFixed(4) }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </template>
 
       <template #pagination>
@@ -629,7 +663,10 @@ import { ref, computed, reactive } from 'vue'
 import { useSubjectScopedLoader } from '@/composables/useSubjectScopedLoader'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
+import { useWorkspaceStore } from '@/stores/workspaces'
+import { useAuthStore } from '@/stores/auth'
 import { usageAPI, keysAPI } from '@/api'
+import { workspacesAPI } from '@/api/workspaces'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
@@ -639,7 +676,8 @@ import Select from '@/components/common/Select.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import Icon from '@/components/icons/Icon.vue'
 import UserErrorRequestsTable from '@/components/user/UserErrorRequestsTable.vue'
-import type { UsageLog, ApiKey, UsageQueryParams, UsageStatsResponse, UserErrorRequest } from '@/types'
+import type { UsageLog, ApiKey, UsageQueryParams, UsageStatsResponse, UserErrorRequest, TeamMember } from '@/types'
+import type { TeamMemberUsage } from '@/api/usage'
 import type { Column } from '@/components/common/types'
 import { formatDateTime, formatReasoningEffort } from '@/utils/format'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
@@ -668,6 +706,21 @@ import {
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const workspaceStore = useWorkspaceStore()
+const authStore = useAuthStore()
+
+// 团队管理员/Owner 可以查看全部成员用量
+const canViewAll = computed(
+  () =>
+    workspaceStore.isTeamWorkspace &&
+    !!workspaceStore.activeWorkspace?.permissions?.['team.usage.view.all']
+)
+
+// 团队成员列表（仅 canViewAll 时有值）
+const members = ref<TeamMember[]>([])
+
+// 按成员用量明细（仅 canViewAll 时有值）
+const byMember = ref<TeamMemberUsage[]>([])
 
 let abortController: AbortController | null = null
 
@@ -728,6 +781,16 @@ const apiKeyOptions = computed(() => {
       value: key.id,
       label: key.name
     }))
+  ]
+})
+
+const memberOptions = computed(() => {
+  return [
+    { value: null, label: t('usage.allMembers') },
+    ...members.value.map((m) => ({
+      value: m.user_id,
+      label: m.user?.email ?? String(m.user_id),
+    })),
   ]
 })
 
@@ -898,6 +961,33 @@ const loadApiKeys = async () => {
   }
 }
 
+const loadMembers = async () => {
+  if (!canViewAll.value) return
+  const teamId = workspaceStore.activeWorkspace?.team_id
+  if (!teamId) return
+  try {
+    const response = await workspacesAPI.listMembers(teamId)
+    members.value = response.members
+  } catch (error) {
+    console.error('Failed to load team members:', error)
+  }
+}
+
+const loadByMember = async () => {
+  if (!canViewAll.value) return
+  const teamId = workspaceStore.activeWorkspace?.team_id
+  if (!teamId) return
+  try {
+    const response = await usageAPI.getTeamUsageByMember(teamId, {
+      start_date: filters.value.start_date,
+      end_date: filters.value.end_date,
+    })
+    byMember.value = response.items
+  } catch (error) {
+    console.error('Failed to load member usage breakdown:', error)
+  }
+}
+
 const loadUsageStats = async () => {
   try {
     const apiKeyId = filters.value.api_key_id ? Number(filters.value.api_key_id) : undefined
@@ -916,6 +1006,7 @@ const applyFilters = () => {
   pagination.page = 1
   loadUsageLogs()
   loadUsageStats()
+  loadByMember()
 }
 
 const resetFilters = () => {
@@ -924,6 +1015,7 @@ const resetFilters = () => {
     start_date: undefined,
     end_date: undefined
   }
+  actorUserId.value = null
   // Reset date range to default (last 7 days)
   const now = new Date()
   const weekAgo = new Date(now)
@@ -935,6 +1027,7 @@ const resetFilters = () => {
   pagination.page = 1
   loadUsageLogs()
   loadUsageStats()
+  loadByMember()
 }
 
 const handlePageChange = (page: number) => {
@@ -1145,5 +1238,7 @@ useSubjectScopedLoader(() => {
   loadApiKeys()
   loadUsageLogs()
   loadUsageStats()
+  loadMembers()
+  loadByMember()
 })
 </script>

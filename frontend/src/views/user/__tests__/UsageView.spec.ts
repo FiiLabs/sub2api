@@ -5,10 +5,12 @@ import { setActivePinia, createPinia } from 'pinia'
 
 import UsageView from '../UsageView.vue'
 
-const { query, getStatsByDateRange, list, showError, showWarning, showSuccess, showInfo } = vi.hoisted(() => ({
+const { query, getStatsByDateRange, list, getTeamUsageByMember, listMembers, showError, showWarning, showSuccess, showInfo } = vi.hoisted(() => ({
   query: vi.fn(),
   getStatsByDateRange: vi.fn(),
   list: vi.fn(),
+  getTeamUsageByMember: vi.fn(),
+  listMembers: vi.fn(),
   showError: vi.fn(),
   showWarning: vi.fn(),
   showSuccess: vi.fn(),
@@ -62,12 +64,19 @@ const messages: Record<string, string> = {
   'admin.usage.billingModeToken': 'Token',
   'admin.usage.billingModePerRequest': 'Per request',
   'admin.usage.billingModeImage': 'Image',
+  'usage.actor': 'Member',
+  'usage.allMembers': 'All members',
+  'usage.memberBreakdown': 'Usage by Member',
+  'usage.memberBreakdownMember': 'Member',
+  'usage.memberBreakdownRequests': 'Requests',
+  'usage.memberBreakdownCost': 'Actual Cost',
 }
 
 vi.mock('@/api', () => ({
   usageAPI: {
     query,
     getStatsByDateRange,
+    getTeamUsageByMember,
   },
   keysAPI: {
     list,
@@ -79,7 +88,10 @@ vi.mock('@/stores/app', () => ({
 }))
 
 vi.mock('@/api/workspaces', () => ({
-  list: vi.fn().mockResolvedValue({ workspaces: [] }),
+  workspacesAPI: {
+    list: vi.fn().mockResolvedValue({ workspaces: [] }),
+    listMembers,
+  },
 }))
 
 vi.mock('vue-i18n', async () => {
@@ -115,6 +127,8 @@ describe('user UsageView tooltip', () => {
     query.mockReset()
     getStatsByDateRange.mockReset()
     list.mockReset()
+    getTeamUsageByMember.mockReset()
+    listMembers.mockReset()
     showError.mockReset()
     showWarning.mockReset()
     showSuccess.mockReset()
@@ -497,7 +511,7 @@ describe('user UsageView tooltip', () => {
     wrapper.unmount()
   })
 
-  it('shows image billing metadata in the user cost tooltip', async () => {
+  it('shows image billing metadata in the user cost tooltip (pre-existing)', async () => {
     query.mockResolvedValue({
       items: [],
       total: 0,
@@ -566,5 +580,133 @@ describe('user UsageView tooltip', () => {
     expect(text).toContain('Output size')
     expect(text).toContain('3840x2160')
     expect(text).toContain('4K x 2')
+  })
+})
+
+// ── Custom Select stub that exposes placeholder as data attribute ────────────
+const SelectStubWithPlaceholder = {
+  props: ['modelValue', 'options', 'placeholder'],
+  template: '<div class="select-stub" :data-placeholder="placeholder"><slot /></div>',
+}
+
+const commonStubs = {
+  AppLayout: AppLayoutStub,
+  TablePageLayout: TablePageLayoutStub,
+  Pagination: true,
+  EmptyState: true,
+  Select: SelectStubWithPlaceholder,
+  DateRangePicker: true,
+  DataTable: DataTableStub,
+  Icon: true,
+  Teleport: true,
+}
+
+const defaultApiMocks = () => {
+  query.mockResolvedValue({ items: [], total: 0, pages: 0 })
+  getStatsByDateRange.mockResolvedValue({ total_requests: 0, total_tokens: 0, total_cost: 0, avg_duration_ms: 0 })
+  list.mockResolvedValue({ items: [] })
+}
+
+describe('UsageView — member filter and by-member breakdown panel', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    query.mockReset()
+    getStatsByDateRange.mockReset()
+    list.mockReset()
+    getTeamUsageByMember.mockReset()
+    listMembers.mockReset()
+    ;(globalThis as any).ResizeObserver = class {
+      observe() {}
+      disconnect() {}
+    }
+  })
+
+  it('admin with team.usage.view.all sees member dropdown (not raw number input) and by-member panel', async () => {
+    defaultApiMocks()
+    listMembers.mockResolvedValue({
+      members: [
+        { id: 1, team_id: 10, user_id: 101, role: 'owner', status: 'active', user: { id: 101, email: 'owner@example.com' } },
+        { id: 2, team_id: 10, user_id: 102, role: 'admin', status: 'active', user: { id: 102, email: 'admin@example.com' } },
+      ],
+      invitations: [],
+    })
+    getTeamUsageByMember.mockResolvedValue({
+      items: [
+        { user_id: 101, requests: 42, total_cost: 0.01, actual_cost: 0.008 },
+        { user_id: 102, requests: 7, total_cost: 0.002, actual_cost: 0.0015 },
+      ],
+    })
+
+    const { useWorkspaceStore } = await import('@/stores/workspaces')
+    const wrapper = mount(UsageView, { global: { stubs: commonStubs } })
+    await flushPromises()
+
+    // Set up team workspace with team.usage.view.all permission
+    const ws = useWorkspaceStore()
+    ws.workspaces = [{
+      billing_subject_id: 10,
+      type: 'team',
+      team_id: 10,
+      name: 'TeamA',
+      role: 'owner',
+      permissions: { 'team.usage.view.all': true },
+      balance: 0,
+    } as any]
+    ws.activeSubjectId = 10
+    await flushPromises()
+
+    // Should NOT have raw number input for actor filter
+    const numberInputs = wrapper.findAll('input[type="number"]')
+    expect(numberInputs.length).toBe(0)
+
+    // Should have member dropdown (Select with allMembers placeholder)
+    const memberSelect = wrapper.find('.select-stub[data-placeholder="All members"]')
+    expect(memberSelect.exists()).toBe(true)
+
+    // By-member panel should render both member rows (by email)
+    const html = wrapper.html()
+    expect(html).toContain('owner@example.com')
+    expect(html).toContain('admin@example.com')
+
+    // getTeamUsageByMember should have been called
+    expect(getTeamUsageByMember).toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('ordinary member (no team.usage.view.all) sees no member dropdown and no by-member panel', async () => {
+    defaultApiMocks()
+    listMembers.mockResolvedValue({ members: [], invitations: [] })
+    getTeamUsageByMember.mockResolvedValue({ items: [] })
+
+    const { useWorkspaceStore } = await import('@/stores/workspaces')
+    const wrapper = mount(UsageView, { global: { stubs: commonStubs } })
+    await flushPromises()
+
+    // Set team workspace WITHOUT team.usage.view.all
+    const ws = useWorkspaceStore()
+    ws.workspaces = [{
+      billing_subject_id: 20,
+      type: 'team',
+      team_id: 20,
+      name: 'TeamB',
+      role: 'developer',
+      permissions: {},
+      balance: 0,
+    } as any]
+    ws.activeSubjectId = 20
+    await flushPromises()
+
+    // No raw number input for actor filter (it's always hidden for ordinary members)
+    const memberSelectAll = wrapper.find('.select-stub[data-placeholder="All members"]')
+    expect(memberSelectAll.exists()).toBe(false)
+
+    // No by-member breakdown panel header text
+    expect(wrapper.html()).not.toContain('usage.memberBreakdown')
+
+    // getTeamUsageByMember should NOT have been called
+    expect(getTeamUsageByMember).not.toHaveBeenCalled()
+
+    wrapper.unmount()
   })
 })
