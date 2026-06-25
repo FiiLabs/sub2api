@@ -27,7 +27,7 @@ func TestCreateAPIKeyUsesBillingSubjectAndActor(t *testing.T) {
 	require.Equal(t, int64(42), *key.CreatedByUserID)
 }
 
-func TestUpdateAPIKeyForTeamSubjectDoesNotRequireCreatorOwnership(t *testing.T) {
+func TestUpdateAPIKeyForTeamSubjectAdminCanUpdateAnyKey(t *testing.T) {
 	name := "renamed"
 	repo := &teamAPIKeyRepoStub{key: &APIKey{
 		ID:               5,
@@ -291,6 +291,21 @@ func TestGetByIDForSubjectMemberCannotAccessOthersKey(t *testing.T) {
 		Permissions: map[string]bool{domain.TeamPermissionManageKeys: true},
 	})
 	require.ErrorIs(t, err, ErrInsufficientPerms)
+}
+
+func TestGetByIDForSubjectMemberCanAccessOwnKey(t *testing.T) {
+	fortyTwo := int64(42)
+	repo := &teamAPIKeyRepoStub{key: &APIKey{
+		ID: 5, UserID: 42, BillingSubjectID: 900, CreatedByUserID: &fortyTwo, Key: "sk", Status: StatusActive,
+	}}
+	svc := &APIKeyService{apiKeyRepo: repo}
+
+	key, err := svc.GetByIDForSubject(context.Background(), 5, SubjectResourceContext{
+		ActorUserID: 42, BillingSubjectID: 900, SubjectType: domain.BillingSubjectTypeTeam, TeamID: 77,
+		Permissions: map[string]bool{domain.TeamPermissionManageKeys: true},
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(5), key.ID)
 }
 
 func TestGetByIDForSubjectOwnerCanAccessAnyKey(t *testing.T) {
