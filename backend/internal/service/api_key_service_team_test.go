@@ -39,12 +39,13 @@ func TestUpdateAPIKeyForTeamSubjectDoesNotRequireCreatorOwnership(t *testing.T) 
 	}}
 	svc := &APIKeyService{apiKeyRepo: repo}
 
+	// admin/owner has ManageKeysAll and can access any team key regardless of creator
 	key, err := svc.UpdateForSubject(context.Background(), 5, SubjectResourceContext{
 		ActorUserID:      42,
 		BillingSubjectID: 900,
 		SubjectType:      domain.BillingSubjectTypeTeam,
 		TeamID:           77,
-		Permissions:      map[string]bool{domain.TeamPermissionManageKeys: true},
+		Permissions:      map[string]bool{domain.TeamPermissionManageKeys: true, domain.TeamPermissionManageKeysAll: true},
 	}, UpdateAPIKeyRequest{Name: &name})
 
 	require.NoError(t, err)
@@ -67,12 +68,13 @@ func TestGetAPIKeyForTeamSubjectUsesScopedLookup(t *testing.T) {
 	}}
 	svc := &APIKeyService{apiKeyRepo: repo}
 
+	// admin/owner has ManageKeysAll and can access any team key regardless of creator
 	key, err := svc.GetByIDForSubject(context.Background(), 5, SubjectResourceContext{
 		ActorUserID:      42,
 		BillingSubjectID: 900,
 		SubjectType:      domain.BillingSubjectTypeTeam,
 		TeamID:           77,
-		Permissions:      map[string]bool{domain.TeamPermissionManageKeys: true},
+		Permissions:      map[string]bool{domain.TeamPermissionManageKeys: true, domain.TeamPermissionManageKeysAll: true},
 	})
 
 	require.NoError(t, err)
@@ -122,12 +124,13 @@ func TestDeleteAPIKeyForTeamSubjectUsesScopedAuditDelete(t *testing.T) {
 	}}
 	svc := &APIKeyService{apiKeyRepo: repo}
 
+	// admin/owner has ManageKeysAll and can access any team key regardless of creator
 	err := svc.DeleteForSubject(context.Background(), 5, SubjectResourceContext{
 		ActorUserID:      42,
 		BillingSubjectID: 900,
 		SubjectType:      domain.BillingSubjectTypeTeam,
 		TeamID:           77,
-		Permissions:      map[string]bool{domain.TeamPermissionManageKeys: true},
+		Permissions:      map[string]bool{domain.TeamPermissionManageKeys: true, domain.TeamPermissionManageKeysAll: true},
 	})
 
 	require.NoError(t, err)
@@ -274,6 +277,35 @@ type teamAPIKeyUserRepoStub struct {
 func (r *teamAPIKeyUserRepoStub) GetByID(context.Context, int64) (*User, error) {
 	clone := *r.user
 	return &clone, nil
+}
+
+func TestGetByIDForSubjectMemberCannotAccessOthersKey(t *testing.T) {
+	other := int64(7)
+	repo := &teamAPIKeyRepoStub{key: &APIKey{
+		ID: 5, UserID: 7, BillingSubjectID: 900, CreatedByUserID: &other, Key: "sk", Status: StatusActive,
+	}}
+	svc := &APIKeyService{apiKeyRepo: repo}
+
+	_, err := svc.GetByIDForSubject(context.Background(), 5, SubjectResourceContext{
+		ActorUserID: 42, BillingSubjectID: 900, SubjectType: domain.BillingSubjectTypeTeam, TeamID: 77,
+		Permissions: map[string]bool{domain.TeamPermissionManageKeys: true},
+	})
+	require.ErrorIs(t, err, ErrInsufficientPerms)
+}
+
+func TestGetByIDForSubjectOwnerCanAccessAnyKey(t *testing.T) {
+	other := int64(7)
+	repo := &teamAPIKeyRepoStub{key: &APIKey{
+		ID: 5, UserID: 7, BillingSubjectID: 900, CreatedByUserID: &other, Key: "sk", Status: StatusActive,
+	}}
+	svc := &APIKeyService{apiKeyRepo: repo}
+
+	key, err := svc.GetByIDForSubject(context.Background(), 5, SubjectResourceContext{
+		ActorUserID: 1, BillingSubjectID: 900, SubjectType: domain.BillingSubjectTypeTeam, TeamID: 77,
+		Permissions: map[string]bool{domain.TeamPermissionManageKeys: true, domain.TeamPermissionManageKeysAll: true},
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(5), key.ID)
 }
 
 func TestListForSubjectPersonalUsesBillingSubject(t *testing.T) {

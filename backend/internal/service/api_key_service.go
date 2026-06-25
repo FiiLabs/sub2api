@@ -495,6 +495,11 @@ func (s *APIKeyService) GetByIDForSubject(ctx context.Context, id int64, subject
 		if err != nil {
 			return nil, fmt.Errorf("get api key by subject: %w", err)
 		}
+		if f := domain.TeamKeyCreatorFilter(subject.SubjectType, subject.Permissions, subject.ActorUserID); f != nil {
+			if key.CreatedByUserID == nil || *key.CreatedByUserID != *f {
+				return nil, ErrInsufficientPerms
+			}
+		}
 		s.compileAPIKeyIPRules(key)
 		return key, nil
 	}
