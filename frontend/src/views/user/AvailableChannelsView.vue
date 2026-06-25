@@ -49,7 +49,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
+import { useSubjectScopedLoader } from '@/composables/useSubjectScopedLoader'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
@@ -123,5 +124,5 @@ async function loadChannels() {
   }
 }
 
-onMounted(loadChannels)
+useSubjectScopedLoader(loadChannels)
 </script>

@@ -625,7 +625,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive, onMounted } from 'vue'
+import { ref, computed, reactive } from 'vue'
+import { useSubjectScopedLoader } from '@/composables/useSubjectScopedLoader'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { usageAPI, keysAPI } from '@/api'
@@ -1140,7 +1141,7 @@ const switchToErrors = () => {
   if (errorRows.value.length === 0) loadErrors()
 }
 
-onMounted(() => {
+useSubjectScopedLoader(() => {
   loadApiKeys()
   loadUsageLogs()
   loadUsageStats()

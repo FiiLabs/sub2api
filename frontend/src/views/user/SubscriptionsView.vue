@@ -243,11 +243,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { useWorkspaceStore } from '@/stores/workspaces'
+import { useSubjectScopedLoader } from '@/composables/useSubjectScopedLoader'
 import subscriptionsAPI from '@/api/subscriptions'
 import type { UserSubscription } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -370,7 +371,7 @@ function formatResetTime(windowStart: string | null, windowHours: number): strin
   return parts ? formatDurationParts(parts) : t('userSubscriptions.windowNotActive')
 }
 
-onMounted(() => {
+useSubjectScopedLoader(() => {
   loadSubscriptions()
 })
 </script>

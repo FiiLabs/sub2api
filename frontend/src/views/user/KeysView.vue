@@ -1059,6 +1059,7 @@
 
 <script setup lang="ts">
 	import { ref, computed, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
+	import { useSubjectScopedLoader } from '@/composables/useSubjectScopedLoader'
 	import { useI18n } from 'vue-i18n'
 	import { useAppStore } from '@/stores/app'
 	import { useOnboardingStore } from '@/stores/onboarding'
@@ -1796,10 +1797,13 @@ function formatResetTime(resetAt: string | null): string {
   return `${mins}m`
 }
 
-onMounted(() => {
+useSubjectScopedLoader(() => {
   loadApiKeys()
   loadGroups()
   loadUserGroupRates()
+})
+
+onMounted(() => {
   loadPublicSettings()
   document.addEventListener('click', closeGroupSelector)
   resetTimer = setInterval(() => { now.value = new Date() }, 60000)

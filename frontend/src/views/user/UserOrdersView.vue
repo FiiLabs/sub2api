@@ -82,7 +82,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed } from 'vue'
+import { useSubjectScopedLoader } from '@/composables/useSubjectScopedLoader'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores'
@@ -190,5 +191,5 @@ async function loadRefundEligibility() {
   } catch { /* ignore — default to hiding refund button */ }
 }
 
-onMounted(() => { fetchOrders(); loadRefundEligibility() })
+useSubjectScopedLoader(() => { fetchOrders(); loadRefundEligibility() })
 </script>

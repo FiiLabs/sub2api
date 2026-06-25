@@ -30,6 +30,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { useSubjectScopedLoader } from '@/composables/useSubjectScopedLoader'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
@@ -159,8 +160,9 @@ watch(
   },
 )
 
+useSubjectScopedLoader(() => reload(false))
+
 onMounted(() => {
-  void reload(false)
   if (appStore.cachedPublicSettings?.channel_monitor_enabled !== false) {
     autoRefresh.setEnabled(true)
   }

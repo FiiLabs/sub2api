@@ -344,6 +344,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useSubjectScopedLoader } from '@/composables/useSubjectScopedLoader'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
@@ -480,8 +481,11 @@ const handleRedeem = async () => {
   }
 }
 
-onMounted(async () => {
+useSubjectScopedLoader(() => {
   fetchHistory()
+})
+
+onMounted(async () => {
   try {
     const settings = await authAPI.getPublicSettings()
     contactInfo.value = settings.contact_info || ''

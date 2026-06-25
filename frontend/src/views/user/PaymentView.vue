@@ -249,7 +249,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
+import { useSubjectScopedLoader } from '@/composables/useSubjectScopedLoader'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
@@ -1022,7 +1023,7 @@ async function resumeWechatPaymentFromQuery() {
   }
 }
 
-onMounted(async () => {
+useSubjectScopedLoader(async () => {
   try {
     const res = await paymentAPI.getCheckoutInfo()
     checkout.value = res.data

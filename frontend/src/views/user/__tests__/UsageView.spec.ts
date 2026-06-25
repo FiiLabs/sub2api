@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
+import { setActivePinia, createPinia } from 'pinia'
 
 import UsageView from '../UsageView.vue'
 
@@ -77,6 +78,10 @@ vi.mock('@/stores/app', () => ({
   useAppStore: () => ({ showError, showWarning, showSuccess, showInfo }),
 }))
 
+vi.mock('@/api/workspaces', () => ({
+  list: vi.fn().mockResolvedValue({ workspaces: [] }),
+}))
+
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
   return {
@@ -106,6 +111,7 @@ const DataTableStub = {
 
 describe('user UsageView tooltip', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     query.mockReset()
     getStatsByDateRange.mockReset()
     list.mockReset()
@@ -465,6 +471,30 @@ describe('user UsageView tooltip', () => {
     expect(text).toContain('Image')
     expect(text).toContain('not recorded')
     expect(text).not.toContain('(2K)')
+  })
+
+  it('reloads usage when the active workspace switches', async () => {
+    query.mockResolvedValue({ items: [], total: 0, pages: 0 })
+    getStatsByDateRange.mockResolvedValue({ total_requests: 0, total_tokens: 0, total_cost: 0, avg_duration_ms: 0 })
+    list.mockResolvedValue({ items: [] })
+    const { useWorkspaceStore } = await import('@/stores/workspaces')
+
+    const wrapper = mount(UsageView, { global: { stubs: {
+      AppLayout: AppLayoutStub, TablePageLayout: TablePageLayoutStub, Pagination: true,
+      EmptyState: true, Select: true, DateRangePicker: true, DataTable: DataTableStub, Icon: true, Teleport: true,
+    } } })
+    await flushPromises()
+    const callsAfterMount = query.mock.calls.length
+
+    const ws = useWorkspaceStore()
+    ws.workspaces = [{ billing_subject_id: 1, type: 'user', name: 'P', role: 'owner', permissions: {}, balance: 0 } as any,
+                     { billing_subject_id: 2, type: 'team', name: 'T', role: 'admin', permissions: {}, balance: 0 } as any]
+    ws.activeSubjectId = 1
+    await flushPromises()
+    ws.switchWorkspace(2)
+    await flushPromises()
+    expect(query.mock.calls.length).toBeGreaterThan(callsAfterMount)
+    wrapper.unmount()
   })
 
   it('shows image billing metadata in the user cost tooltip', async () => {
