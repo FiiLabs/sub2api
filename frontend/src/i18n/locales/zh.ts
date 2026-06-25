@@ -1083,6 +1083,7 @@ export default {
     currentExpiration: '当前过期时间',
     expiresAt: '过期时间',
     noExpiration: '永久有效',
+    creator: '成员',
     status: {
       active: '活跃',
       inactive: '已停用',

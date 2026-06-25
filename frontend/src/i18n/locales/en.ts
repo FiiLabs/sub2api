@@ -1082,6 +1082,7 @@ export default {
     currentExpiration: 'Current expiration',
     expiresAt: 'Expires',
     noExpiration: 'Never',
+    creator: 'Creator',
     status: {
       active: 'Active',
       inactive: 'Inactive',

@@ -649,6 +649,7 @@ export interface ModelsListConfig {
 export interface ApiKey {
   id: number
   user_id: number
+  created_by_user_id?: number
   key: string
   name: string
   group_id: number | null

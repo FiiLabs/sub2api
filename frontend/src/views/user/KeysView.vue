@@ -319,6 +319,12 @@
             <span class="text-sm text-gray-500 dark:text-dark-400">{{ formatDateTime(value) }}</span>
           </template>
 
+          <template v-if="showMemberColumn" #cell-creator="{ row }">
+            <span class="text-sm text-gray-500 dark:text-dark-400">
+              {{ memberById[row.created_by_user_id]?.user?.email ?? (row.created_by_user_id ?? '-') }}
+            </span>
+          </template>
+
           <template #cell-actions="{ row }">
             <div class="flex items-center gap-1">
               <!-- Use Key Button -->
@@ -1066,6 +1072,8 @@
 	import { useWorkspaceStore } from '@/stores/workspaces'
 	import { useClipboard } from '@/composables/useClipboard'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
+import { workspacesAPI } from '@/api/workspaces'
+import type { TeamMember } from '@/types'
 
 const { t } = useI18n()
 import { keysAPI, authAPI, usageAPI, userGroupsAPI } from '@/api'
@@ -1121,18 +1129,52 @@ const createDisabled = computed(
   () => workspaceStore.isTeamWorkspace && !workspaceStore.activeWorkspace?.permissions?.['team.keys.manage']
 )
 
-const columns = computed<Column[]>(() => [
-  { key: 'name', label: t('common.name'), sortable: true },
-  { key: 'key', label: t('keys.apiKey'), sortable: false },
-  { key: 'group', label: t('keys.group'), sortable: false },
-  { key: 'usage', label: t('keys.usage'), sortable: false },
-  { key: 'rate_limit', label: t('keys.rateLimitColumn'), sortable: false },
-  { key: 'expires_at', label: t('keys.expiresAt'), sortable: true },
-  { key: 'status', label: t('common.status'), sortable: true },
-  { key: 'last_used_at', label: t('keys.lastUsedAt'), sortable: true },
-  { key: 'created_at', label: t('keys.created'), sortable: true },
-  { key: 'actions', label: t('common.actions'), sortable: false }
-])
+// 团队管理员/Owner 才显示成员归属列
+const showMemberColumn = computed(
+  () => workspaceStore.isTeamWorkspace && !!workspaceStore.activeWorkspace?.permissions?.['team.keys.manage.all']
+)
+
+// 团队成员列表（仅 showMemberColumn 时加载）
+const members = ref<TeamMember[]>([])
+const memberById = computed<Record<number, TeamMember>>(() => {
+  const map: Record<number, TeamMember> = {}
+  for (const m of members.value) {
+    map[m.user_id] = m
+  }
+  return map
+})
+
+const loadMembers = async () => {
+  if (!showMemberColumn.value) return
+  const teamId = workspaceStore.activeWorkspace?.team_id
+  if (!teamId) return
+  try {
+    const res = await workspacesAPI.listMembers(teamId)
+    members.value = res.members
+  } catch (error) {
+    console.error('Failed to load team members:', error)
+  }
+}
+
+const columns = computed<Column[]>(() => {
+  const base: Column[] = [
+    { key: 'name', label: t('common.name'), sortable: true },
+    { key: 'key', label: t('keys.apiKey'), sortable: false },
+    { key: 'group', label: t('keys.group'), sortable: false },
+    { key: 'usage', label: t('keys.usage'), sortable: false },
+    { key: 'rate_limit', label: t('keys.rateLimitColumn'), sortable: false },
+    { key: 'expires_at', label: t('keys.expiresAt'), sortable: true },
+    { key: 'status', label: t('common.status'), sortable: true },
+    { key: 'last_used_at', label: t('keys.lastUsedAt'), sortable: true },
+    { key: 'created_at', label: t('keys.created'), sortable: true },
+    { key: 'actions', label: t('common.actions'), sortable: false }
+  ]
+  if (showMemberColumn.value) {
+    // 在 actions 列前插入成员归属列
+    base.splice(base.length - 1, 0, { key: 'creator', label: t('keys.creator'), sortable: false })
+  }
+  return base
+})
 
 const apiKeys = ref<ApiKey[]>([])
 const groups = ref<Group[]>([])
@@ -1801,6 +1843,7 @@ useSubjectScopedLoader(() => {
   loadApiKeys()
   loadGroups()
   loadUserGroupRates()
+  loadMembers()
 })
 
 onMounted(() => {
