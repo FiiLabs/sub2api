@@ -159,7 +159,8 @@ func (k *APIKey) EffectiveUsage7d() float64 {
 
 // APIKeyListFilters holds optional filtering parameters for listing API keys.
 type APIKeyListFilters struct {
-	Search  string
-	Status  string
-	GroupID *int64 // nil=不筛选, 0=无分组, >0=指定分组
+	Search          string
+	Status          string
+	GroupID         *int64 // nil=不筛选, 0=无分组, >0=指定分组
+	CreatedByUserID *int64 // nil=不限制创建者；非 nil=仅该用户创建的 key（团队 self 作用域）
 }

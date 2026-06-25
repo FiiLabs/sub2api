@@ -59,11 +59,13 @@ func TestAPIKeyHandlerListUsesActiveTeamSubject(t *testing.T) {
 
 type apiKeyHandlerTeamRepoStub struct {
 	service.APIKeyRepository
-	keys           []service.APIKey
-	listSubjectIDs []int64
+	keys               []service.APIKey
+	listSubjectIDs     []int64
+	listCreatorFilters []*int64
 }
 
-func (r *apiKeyHandlerTeamRepoStub) ListByBillingSubjectID(_ context.Context, billingSubjectID int64, params pagination.PaginationParams, _ service.APIKeyListFilters) ([]service.APIKey, *pagination.PaginationResult, error) {
+func (r *apiKeyHandlerTeamRepoStub) ListByBillingSubjectID(_ context.Context, billingSubjectID int64, params pagination.PaginationParams, filters service.APIKeyListFilters) ([]service.APIKey, *pagination.PaginationResult, error) {
+	r.listCreatorFilters = append(r.listCreatorFilters, filters.CreatedByUserID)
 	r.listSubjectIDs = append(r.listSubjectIDs, billingSubjectID)
 	keys := append([]service.APIKey(nil), r.keys...)
 	return keys, &pagination.PaginationResult{
@@ -80,6 +82,53 @@ func (r *apiKeyHandlerTeamRepoStub) GetByIDForBillingSubjectID(context.Context, 
 
 func (r *apiKeyHandlerTeamRepoStub) UpdateLastUsed(context.Context, int64, time.Time) error {
 	panic("unexpected UpdateLastUsed")
+}
+
+func TestAPIKeyHandlerListScopesByCreatorForMember(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &apiKeyHandlerTeamRepoStub{keys: []service.APIKey{}}
+	svc := service.NewAPIKeyService(repo, nil, nil, nil, nil, nil, &config.Config{})
+	h := NewAPIKeyHandler(svc)
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{
+			UserID: 42, BillingSubjectID: 900, SubjectType: domain.BillingSubjectTypeTeam, TeamID: 77,
+			Permissions: map[string]bool{domain.TeamPermissionManageKeys: true},
+		})
+		c.Next()
+	})
+	router.GET("/api/v1/api-keys", h.List)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/api-keys", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Len(t, repo.listCreatorFilters, 1)
+	require.NotNil(t, repo.listCreatorFilters[0])
+	require.Equal(t, int64(42), *repo.listCreatorFilters[0])
+}
+
+func TestAPIKeyHandlerListNoCreatorFilterForOwner(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &apiKeyHandlerTeamRepoStub{keys: []service.APIKey{}}
+	svc := service.NewAPIKeyService(repo, nil, nil, nil, nil, nil, &config.Config{})
+	h := NewAPIKeyHandler(svc)
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{
+			UserID: 1, BillingSubjectID: 900, SubjectType: domain.BillingSubjectTypeTeam, TeamID: 77,
+			Permissions: map[string]bool{domain.TeamPermissionManageKeys: true, domain.TeamPermissionManageKeysAll: true},
+		})
+		c.Next()
+	})
+	router.GET("/api/v1/api-keys", h.List)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/api-keys", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Len(t, repo.listCreatorFilters, 1)
+	require.Nil(t, repo.listCreatorFilters[0])
 }
 
 func ptrInt64(v int64) *int64 {

@@ -526,6 +526,9 @@ func (r *apiKeyRepository) listByQuery(ctx context.Context, q *dbent.APIKeyQuery
 			q = q.Where(apikey.GroupIDEQ(*filters.GroupID))
 		}
 	}
+	if filters.CreatedByUserID != nil {
+		q = q.Where(apikey.CreatedByUserIDEQ(*filters.CreatedByUserID))
+	}
 
 	total, err := q.Count(ctx)
 	if err != nil {

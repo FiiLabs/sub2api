@@ -474,6 +474,7 @@ func (s *APIKeyService) ListForSubject(ctx context.Context, subject SubjectResou
 	if !ok {
 		return nil, nil, infraerrors.InternalServer("API_KEY_SUBJECT_REPOSITORY_UNAVAILABLE", "api key subject repository is unavailable")
 	}
+	filters.CreatedByUserID = domain.TeamKeyCreatorFilter(subject.SubjectType, subject.Permissions, subject.ActorUserID)
 	keys, result, err := repo.ListByBillingSubjectID(ctx, subject.BillingSubjectID, params, filters)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list api keys by subject: %w", err)
