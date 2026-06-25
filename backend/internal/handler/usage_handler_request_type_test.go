@@ -16,12 +16,16 @@ import (
 
 type userUsageRepoCapture struct {
 	service.UsageLogRepository
-	listParams     pagination.PaginationParams
-	listFilters    usagestats.UsageLogFilters
-	statsSubjectID int64
-	statsActorID   int64
-	dashSubjectID  int64
-	dashActorID    int64
+	listParams      pagination.PaginationParams
+	listFilters     usagestats.UsageLogFilters
+	statsSubjectID  int64
+	statsActorID    int64
+	dashSubjectID   int64
+	dashActorID     int64
+	trendSubjectID  int64
+	trendActorID    int64
+	modelSubjectID  int64
+	modelActorID    int64
 }
 
 func (s *userUsageRepoCapture) ListWithFilters(ctx context.Context, params pagination.PaginationParams, filters usagestats.UsageLogFilters) ([]service.UsageLog, *pagination.PaginationResult, error) {

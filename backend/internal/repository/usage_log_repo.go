@@ -2998,6 +2998,129 @@ func (r *usageLogRepository) GetUserModelStats(ctx context.Context, userID int64
 	return results, nil
 }
 
+// GetSubjectUsageTrend 按计费主体（+可选 actor）返回使用趋势。actorUserID=0 表示主体全量。
+func (r *usageLogRepository) GetSubjectUsageTrend(ctx context.Context, billingSubjectID, actorUserID int64, startTime, endTime time.Time, granularity string) (results []TrendDataPoint, err error) {
+	dateFormat := safeDateFormat(granularity)
+
+	var query string
+	var rows *sql.Rows
+	if actorUserID > 0 {
+		query = fmt.Sprintf(`
+			SELECT
+				TO_CHAR(created_at, '%s') as date,
+				COUNT(*) as requests,
+				COALESCE(SUM(input_tokens), 0) as input_tokens,
+				COALESCE(SUM(output_tokens), 0) as output_tokens,
+				COALESCE(SUM(cache_creation_tokens), 0) as cache_creation_tokens,
+				COALESCE(SUM(cache_read_tokens), 0) as cache_read_tokens,
+				COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as total_tokens,
+				COALESCE(SUM(total_cost), 0) as cost,
+				COALESCE(SUM(actual_cost), 0) as actual_cost
+			FROM usage_logs
+			WHERE billing_subject_id = $1 AND actor_user_id = $2 AND created_at >= $3 AND created_at < $4
+			GROUP BY date
+			ORDER BY date ASC
+		`, dateFormat)
+		rows, err = r.sql.QueryContext(ctx, query, billingSubjectID, actorUserID, startTime, endTime)
+	} else {
+		query = fmt.Sprintf(`
+			SELECT
+				TO_CHAR(created_at, '%s') as date,
+				COUNT(*) as requests,
+				COALESCE(SUM(input_tokens), 0) as input_tokens,
+				COALESCE(SUM(output_tokens), 0) as output_tokens,
+				COALESCE(SUM(cache_creation_tokens), 0) as cache_creation_tokens,
+				COALESCE(SUM(cache_read_tokens), 0) as cache_read_tokens,
+				COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as total_tokens,
+				COALESCE(SUM(total_cost), 0) as cost,
+				COALESCE(SUM(actual_cost), 0) as actual_cost
+			FROM usage_logs
+			WHERE billing_subject_id = $1 AND created_at >= $2 AND created_at < $3
+			GROUP BY date
+			ORDER BY date ASC
+		`, dateFormat)
+		rows, err = r.sql.QueryContext(ctx, query, billingSubjectID, startTime, endTime)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		// 保持主错误优先；仅在无错误时回传 Close 失败。
+		// 同时清空返回值，避免误用不完整结果。
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+			results = nil
+		}
+	}()
+
+	results, err = scanTrendRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+// GetSubjectModelStats 按计费主体（+可选 actor）返回模型统计。actorUserID=0 表示主体全量。
+func (r *usageLogRepository) GetSubjectModelStats(ctx context.Context, billingSubjectID, actorUserID int64, startTime, endTime time.Time) (results []ModelStat, err error) {
+	var rows *sql.Rows
+	if actorUserID > 0 {
+		query := `
+			SELECT
+				model,
+				COUNT(*) as requests,
+				COALESCE(SUM(input_tokens), 0) as input_tokens,
+				COALESCE(SUM(output_tokens), 0) as output_tokens,
+				COALESCE(SUM(cache_creation_tokens), 0) as cache_creation_tokens,
+				COALESCE(SUM(cache_read_tokens), 0) as cache_read_tokens,
+				COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as total_tokens,
+				COALESCE(SUM(total_cost), 0) as cost,
+				COALESCE(SUM(actual_cost), 0) as actual_cost,
+				COALESCE(SUM(COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1)), 0) as account_cost
+			FROM usage_logs
+			WHERE billing_subject_id = $1 AND actor_user_id = $2 AND created_at >= $3 AND created_at < $4
+			GROUP BY model
+			ORDER BY total_tokens DESC
+		`
+		rows, err = r.sql.QueryContext(ctx, query, billingSubjectID, actorUserID, startTime, endTime)
+	} else {
+		query := `
+			SELECT
+				model,
+				COUNT(*) as requests,
+				COALESCE(SUM(input_tokens), 0) as input_tokens,
+				COALESCE(SUM(output_tokens), 0) as output_tokens,
+				COALESCE(SUM(cache_creation_tokens), 0) as cache_creation_tokens,
+				COALESCE(SUM(cache_read_tokens), 0) as cache_read_tokens,
+				COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as total_tokens,
+				COALESCE(SUM(total_cost), 0) as cost,
+				COALESCE(SUM(actual_cost), 0) as actual_cost,
+				COALESCE(SUM(COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1)), 0) as account_cost
+			FROM usage_logs
+			WHERE billing_subject_id = $1 AND created_at >= $2 AND created_at < $3
+			GROUP BY model
+			ORDER BY total_tokens DESC
+		`
+		rows, err = r.sql.QueryContext(ctx, query, billingSubjectID, startTime, endTime)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		// 保持主错误优先；仅在无错误时回传 Close 失败。
+		// 同时清空返回值，避免误用不完整结果。
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+			results = nil
+		}
+	}()
+
+	results, err = scanModelStatsRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
 // UsageLogFilters represents filters for usage log queries
 type UsageLogFilters = usagestats.UsageLogFilters
 

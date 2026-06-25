@@ -502,15 +502,21 @@ func (h *UsageHandler) DashboardStats(c *gin.Context) {
 // GET /api/v1/usage/dashboard/trend
 func (h *UsageHandler) DashboardTrend(c *gin.Context) {
 	subject, ok := middleware2.GetAuthSubjectFromContext(c)
-	if !ok {
+	if !ok || subject.BillingSubjectID <= 0 {
 		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	actor, ok := domain.TeamUsageActorFilter(subject.SubjectType, subject.Permissions, subject.UserID, 0)
+	if !ok {
+		response.Forbidden(c, "Not authorized")
 		return
 	}
 
 	startTime, endTime := parseUserTimeRange(c)
 	granularity := c.DefaultQuery("granularity", "day")
 
-	trend, err := h.usageService.GetUserUsageTrendByUserID(c.Request.Context(), subject.UserID, startTime, endTime, granularity)
+	trend, err := h.usageService.GetUsageTrendBySubject(c.Request.Context(), subject.BillingSubjectID, actor, startTime, endTime, granularity)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -528,14 +534,20 @@ func (h *UsageHandler) DashboardTrend(c *gin.Context) {
 // GET /api/v1/usage/dashboard/models
 func (h *UsageHandler) DashboardModels(c *gin.Context) {
 	subject, ok := middleware2.GetAuthSubjectFromContext(c)
-	if !ok {
+	if !ok || subject.BillingSubjectID <= 0 {
 		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	actor, ok := domain.TeamUsageActorFilter(subject.SubjectType, subject.Permissions, subject.UserID, 0)
+	if !ok {
+		response.Forbidden(c, "Not authorized")
 		return
 	}
 
 	startTime, endTime := parseUserTimeRange(c)
 
-	stats, err := h.usageService.GetUserModelStats(c.Request.Context(), subject.UserID, startTime, endTime)
+	stats, err := h.usageService.GetModelStatsBySubject(c.Request.Context(), subject.BillingSubjectID, actor, startTime, endTime)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

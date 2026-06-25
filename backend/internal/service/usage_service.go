@@ -354,6 +354,24 @@ func (s *UsageService) GetUserModelStats(ctx context.Context, userID int64, star
 	return stats, nil
 }
 
+// GetUsageTrendBySubject 按计费主体（+可选 actor）返回使用趋势。
+// billingSubjectID 必须 > 0；actorUserID=0 表示主体全量，>0 表示仅该成员自己的数据。
+func (s *UsageService) GetUsageTrendBySubject(ctx context.Context, billingSubjectID, actorUserID int64, startTime, endTime time.Time, granularity string) ([]usagestats.TrendDataPoint, error) {
+	if billingSubjectID <= 0 {
+		return nil, fmt.Errorf("get usage trend by subject: invalid billing subject")
+	}
+	return s.usageRepo.GetSubjectUsageTrend(ctx, billingSubjectID, actorUserID, startTime, endTime, granularity)
+}
+
+// GetModelStatsBySubject 按计费主体（+可选 actor）返回模型统计。
+// billingSubjectID 必须 > 0；actorUserID=0 表示主体全量，>0 表示仅该成员自己的数据。
+func (s *UsageService) GetModelStatsBySubject(ctx context.Context, billingSubjectID, actorUserID int64, startTime, endTime time.Time) ([]usagestats.ModelStat, error) {
+	if billingSubjectID <= 0 {
+		return nil, fmt.Errorf("get model stats by subject: invalid billing subject")
+	}
+	return s.usageRepo.GetSubjectModelStats(ctx, billingSubjectID, actorUserID, startTime, endTime)
+}
+
 // GetAPIKeyModelStats returns per-model usage stats for a specific API Key.
 func (s *UsageService) GetAPIKeyModelStats(ctx context.Context, apiKeyID int64, startTime, endTime time.Time) ([]usagestats.ModelStat, error) {
 	stats, err := s.usageRepo.GetModelStatsWithFilters(ctx, startTime, endTime, 0, apiKeyID, 0, 0, nil, nil, nil)

@@ -2602,6 +2602,14 @@ func (r *stubUsageLogRepo) GetUserModelStats(ctx context.Context, userID int64, 
 	return nil, errors.New("not implemented")
 }
 
+func (r *stubUsageLogRepo) GetSubjectUsageTrend(ctx context.Context, billingSubjectID, actorUserID int64, startTime, endTime time.Time, granularity string) ([]usagestats.TrendDataPoint, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (r *stubUsageLogRepo) GetSubjectModelStats(ctx context.Context, billingSubjectID, actorUserID int64, startTime, endTime time.Time) ([]usagestats.ModelStat, error) {
+	return nil, errors.New("not implemented")
+}
+
 func (r *stubUsageLogRepo) ListWithFilters(ctx context.Context, params pagination.PaginationParams, filters usagestats.UsageLogFilters) ([]service.UsageLog, *pagination.PaginationResult, error) {
 	// Mirror production: when a billing subject is scoped, query by it across
 	// all rows; otherwise fall back to the per-user index.

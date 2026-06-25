@@ -64,6 +64,10 @@ type UsageLogRepository interface {
 	GetDashboardStatsBySubject(ctx context.Context, billingSubjectID, actorUserID int64) (*usagestats.UserDashboardStats, error)
 	GetUserUsageTrendByUserID(ctx context.Context, userID int64, startTime, endTime time.Time, granularity string) ([]usagestats.TrendDataPoint, error)
 	GetUserModelStats(ctx context.Context, userID int64, startTime, endTime time.Time) ([]usagestats.ModelStat, error)
+	// GetSubjectUsageTrend 按计费主体（+可选 actor）返回使用趋势。actorUserID=0 表示主体全量。
+	GetSubjectUsageTrend(ctx context.Context, billingSubjectID, actorUserID int64, startTime, endTime time.Time, granularity string) ([]usagestats.TrendDataPoint, error)
+	// GetSubjectModelStats 按计费主体（+可选 actor）返回模型统计。actorUserID=0 表示主体全量。
+	GetSubjectModelStats(ctx context.Context, billingSubjectID, actorUserID int64, startTime, endTime time.Time) ([]usagestats.ModelStat, error)
 
 	// Admin usage listing/stats
 	ListWithFilters(ctx context.Context, params pagination.PaginationParams, filters usagestats.UsageLogFilters) ([]UsageLog, *pagination.PaginationResult, error)
