@@ -38,6 +38,11 @@ func (APIKey) Fields() []ent.Field {
 			MaxLen(128).
 			NotEmpty().
 			Unique(),
+		field.String("key_hash").
+			MaxLen(64).
+			Optional().
+			Nillable().
+			Comment("SHA256(key) hex,用于 consult 按哈希查 key"),
 		field.String("name").
 			MaxLen(100).
 			NotEmpty(),
@@ -175,5 +180,6 @@ func (APIKey) Indexes() []ent.Index {
 		// Index for quota queries
 		index.Fields("quota", "quota_used"),
 		index.Fields("expires_at"),
+		index.Fields("key_hash"),
 	}
 }
