@@ -480,6 +480,7 @@ func TestAPIContracts(t *testing.T) {
 					{
 						ID:                  1,
 						UserID:              1,
+						BillingSubjectID:    1,
 						APIKeyID:            100,
 						AccountID:           200,
 						Model:               "claude-3",
@@ -493,17 +494,18 @@ func TestAPIContracts(t *testing.T) {
 						CreatedAt:           deps.now,
 					},
 					{
-						ID:           2,
-						UserID:       1,
-						APIKeyID:     100,
-						AccountID:    200,
-						Model:        "claude-3",
-						InputTokens:  5,
-						OutputTokens: 15,
-						TotalCost:    0.25,
-						ActualCost:   0.25,
-						DurationMs:   ptr(300),
-						CreatedAt:    deps.now,
+						ID:               2,
+						UserID:           1,
+						BillingSubjectID: 1,
+						APIKeyID:         100,
+						AccountID:        200,
+						Model:            "claude-3",
+						InputTokens:      5,
+						OutputTokens:     15,
+						TotalCost:        0.25,
+						ActualCost:       0.25,
+						DurationMs:       ptr(300),
+						CreatedAt:        deps.now,
 					},
 				})
 			},
@@ -2527,12 +2529,11 @@ func (r *stubUsageLogRepo) GetDailyStatsAggregated(ctx context.Context, userID i
 }
 
 func (r *stubUsageLogRepo) GetSubjectStatsAggregated(ctx context.Context, billingSubjectID, actorUserID int64, startTime, endTime time.Time) (*usagestats.UsageStats, error) {
-	// Collect all logs whose BillingSubjectID matches, or fall back to userID==billingSubjectID
-	// (for personal subjects the contract test sets BillingSubjectID = UserID = 1).
+	// Collect all logs whose BillingSubjectID strictly matches billingSubjectID.
 	var logs []service.UsageLog
-	for uid, ls := range r.userLogs {
+	for _, ls := range r.userLogs {
 		for _, l := range ls {
-			if l.BillingSubjectID == billingSubjectID || (l.BillingSubjectID == 0 && uid == billingSubjectID) {
+			if l.BillingSubjectID == billingSubjectID {
 				logs = append(logs, l)
 			}
 		}
