@@ -15,7 +15,7 @@ import (
 	"github.com/dgraph-io/ristretto"
 )
 
-const apiKeyAuthSnapshotVersion = 14 // v14: team key concurrency limit sourced from billing_subject.concurrency
+const apiKeyAuthSnapshotVersion = 15 // v15: team key RPM limit sourced from billing_subject.rpm_limit
 
 type apiKeyAuthCacheConfig struct {
 	l1Size        int
@@ -253,14 +253,16 @@ func (s *APIKeyService) snapshotFromAPIKey(ctx context.Context, apiKey *APIKey) 
 		// 查询失败或无 override 时留 nil，checkRPM 会回退到 DB 查询
 	}
 
-	// 填充团队计费主体并发上限 —— 团队 key 走 billing_subject.concurrency，
-	// 个人 key 保持 nil（认证层直接用 User.Concurrency）。
-	// best-effort：查询失败时留 nil，认证层回退到 user.concurrency。
+	// 填充团队计费主体并发上限与 RPM 上限 —— 团队 key 走 billing_subject 字段，
+	// 个人 key 保持 nil（认证层直接用 User.Concurrency / User.RPMLimit）。
+	// best-effort：查询失败时留 nil，认证层回退到 user 级字段。
 	if apiKey.TeamID != nil && *apiKey.TeamID > 0 && s.billingSubjectRepo != nil {
 		subj, err := s.billingSubjectRepo.GetByID(ctx, apiKey.BillingSubjectID)
 		if err == nil && subj != nil {
 			concurrency := subj.Concurrency
 			snapshot.SubjectConcurrency = &concurrency
+			rpm := subj.RPMLimit
+			snapshot.SubjectRPMLimit = &rpm
 		}
 	}
 	if apiKey.Group != nil {
@@ -331,6 +333,7 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 		RateLimit1d:        snapshot.RateLimit1d,
 		RateLimit7d:        snapshot.RateLimit7d,
 		SubjectConcurrency: snapshot.SubjectConcurrency,
+		SubjectRPMLimit:    snapshot.SubjectRPMLimit,
 		User: &User{
 			ID:                         snapshot.User.ID,
 			Status:                     snapshot.User.Status,

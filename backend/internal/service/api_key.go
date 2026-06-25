@@ -69,6 +69,11 @@ type APIKey struct {
 	// nil = 未加载（个人 key 或加载失败）→ 回退到 User.Concurrency；
 	// 非 nil（含 0）= 主体值，0 表示不限制。
 	SubjectConcurrency *int `json:"subject_concurrency,omitempty"`
+
+	// SubjectRPMLimit 团队计费主体的 RPM 上限（来自 billing_subjects.rpm_limit）。
+	// nil = 未加载（个人 key 或加载失败）→ 回退到 User.RPMLimit；
+	// 非 nil（含 0）= 主体值，0 表示不限制。
+	SubjectRPMLimit *int `json:"subject_rpm_limit,omitempty"`
 }
 
 type SubjectResourceContext struct {

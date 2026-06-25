@@ -715,6 +715,107 @@ func (r *stubBillingSubjectRepo) DeductBalance(ctx context.Context, subjectID in
 	return errors.New("not implemented")
 }
 
+// TestSnapshotCarriesSubjectRPMLimit 验证 snapshotFromAPIKey 对团队 key 一并加载
+// billing_subject.rpm_limit，并且 snapshotToAPIKey 还原时正确传递给 APIKey。
+// 镜像 TestSnapshotCarriesSubjectConcurrency，使用同一 GetByID 调用（无额外查询）。
+func TestSnapshotCarriesSubjectRPMLimit(t *testing.T) {
+	intPtr := func(v int) *int { return &v }
+	int64Ptr := func(v int64) *int64 { return &v }
+
+	t.Run("team_key_snapshot_loads_subject_rpm_limit", func(t *testing.T) {
+		// stub billingSubjectRepo 返回 Concurrency=7, RPMLimit=9
+		billingSubjRepo := &stubBillingSubjectRepo{
+			getByID: func(ctx context.Context, id int64) (*BillingSubject, error) {
+				return &BillingSubject{ID: id, Concurrency: 7, RPMLimit: 9}, nil
+			},
+		}
+		svc := &APIKeyService{}
+		svc.SetBillingSubjectRepo(billingSubjRepo)
+
+		teamID := int64(55)
+		apiKey := &APIKey{
+			ID:               10,
+			UserID:           42,
+			BillingSubjectID: 900,
+			TeamID:           int64Ptr(teamID),
+			Key:              "sk-team-key-rpm",
+			Name:             "team key rpm",
+			Status:           StatusActive,
+			User: &User{
+				ID:          42,
+				Status:      StatusActive,
+				Role:        RoleUser,
+				Balance:     10,
+				Concurrency: 3,
+				RPMLimit:    1, // 个人值，不应出现在 SubjectRPMLimit 中
+			},
+		}
+
+		snapshot := svc.snapshotFromAPIKey(context.Background(), apiKey)
+
+		require.NotNil(t, snapshot)
+		// 并发上限仍在
+		require.NotNil(t, snapshot.SubjectConcurrency, "SubjectConcurrency 应已填充")
+		require.Equal(t, 7, *snapshot.SubjectConcurrency)
+		// RPM 上限新增
+		require.NotNil(t, snapshot.SubjectRPMLimit, "团队 key 快照必须包含 SubjectRPMLimit")
+		require.Equal(t, 9, *snapshot.SubjectRPMLimit, "SubjectRPMLimit 必须来自 billing_subject.rpm_limit")
+	})
+
+	t.Run("personal_key_snapshot_no_subject_rpm_limit", func(t *testing.T) {
+		svc := &APIKeyService{}
+
+		apiKey := &APIKey{
+			ID:     11,
+			UserID: 31,
+			Key:    "sk-personal-rpm",
+			Name:   "personal rpm",
+			Status: StatusActive,
+			User: &User{
+				ID:       31,
+				Status:   StatusActive,
+				Role:     RoleUser,
+				Balance:  10,
+				RPMLimit: 5,
+			},
+		}
+
+		snapshot := svc.snapshotFromAPIKey(context.Background(), apiKey)
+
+		require.NotNil(t, snapshot)
+		require.Nil(t, snapshot.SubjectRPMLimit, "个人 key 快照不应包含 SubjectRPMLimit")
+	})
+
+	t.Run("snapshot_to_api_key_restores_subject_rpm_limit", func(t *testing.T) {
+		svc := &APIKeyService{}
+		teamID := int64(55)
+		snapshot := &APIKeyAuthSnapshot{
+			Version:            apiKeyAuthSnapshotVersion,
+			APIKeyID:           10,
+			UserID:             42,
+			BillingSubjectID:   900,
+			TeamID:             int64Ptr(teamID),
+			Status:             StatusActive,
+			SubjectConcurrency: intPtr(7),
+			SubjectRPMLimit:    intPtr(9),
+			User: APIKeyAuthUserSnapshot{
+				ID:          42,
+				Status:      StatusActive,
+				Role:        RoleUser,
+				Balance:     10,
+				Concurrency: 3,
+				RPMLimit:    1,
+			},
+		}
+
+		apiKey := svc.snapshotToAPIKey("sk-team-key-rpm", snapshot)
+
+		require.NotNil(t, apiKey)
+		require.NotNil(t, apiKey.SubjectRPMLimit, "snapshotToAPIKey 必须还原 SubjectRPMLimit 字段")
+		require.Equal(t, 9, *apiKey.SubjectRPMLimit)
+	})
+}
+
 func TestAPIKeyService_GetByKey_SingleflightCollapses(t *testing.T) {
 	var calls int32
 	cache := &authCacheStub{}
