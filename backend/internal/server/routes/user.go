@@ -97,6 +97,7 @@ func RegisterUserRoutes(
 			teams.PATCH("/:id", h.Team.UpdateTeamSettings)
 			teams.DELETE("/:id", h.Team.DissolveTeam)
 			teams.POST("/:id/transfer-ownership", h.Team.TransferOwnership)
+			teams.GET("/:id/usage/by-member", h.Team.UsageByMember)
 		}
 
 		// 使用记录

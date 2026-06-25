@@ -800,6 +800,44 @@ func (r *teamRepository) DissolveTeam(ctx context.Context, teamID int64) error {
 	return tx.Commit()
 }
 
+// UsageByMember 返回团队在 [start, end) 时间窗内按成员（actor_user_id）聚合的用量明细。
+// 只统计 actor_user_id 非空的记录（排除非人工行为的用量）。
+func (r *teamRepository) UsageByMember(ctx context.Context, teamID int64, start, end time.Time) ([]service.TeamMemberUsage, error) {
+	client := clientFromContext(ctx, r.client)
+	var rows []struct {
+		ActorUserID int64   `json:"actor_user_id"`
+		Requests    int64   `json:"requests"`
+		TotalCost   float64 `json:"total_cost"`
+		ActualCost  float64 `json:"actual_cost"`
+	}
+	if err := client.UsageLog.Query().
+		Where(
+			usagelog.TeamIDEQ(teamID),
+			usagelog.ActorUserIDNotNil(),
+			usagelog.CreatedAtGTE(start),
+			usagelog.CreatedAtLT(end),
+		).
+		GroupBy(usagelog.FieldActorUserID).
+		Aggregate(
+			dbent.As(dbent.Count(), "requests"),
+			dbent.As(dbent.Sum(usagelog.FieldTotalCost), "total_cost"),
+			dbent.As(dbent.Sum(usagelog.FieldActualCost), "actual_cost"),
+		).
+		Scan(ctx, &rows); err != nil {
+		return nil, err
+	}
+	out := make([]service.TeamMemberUsage, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, service.TeamMemberUsage{
+			UserID:     row.ActorUserID,
+			Requests:   row.Requests,
+			TotalCost:  row.TotalCost,
+			ActualCost: row.ActualCost,
+		})
+	}
+	return out, nil
+}
+
 func adminTeamSummaryFromEntity(row *dbent.Team) *service.AdminTeamSummary {
 	if row == nil {
 		return nil

@@ -365,6 +365,11 @@ func (r *teamRepoMemory) DissolveTeam(ctx context.Context, teamID int64) error {
 	return nil
 }
 
+// UsageByMember 内存桩不维护用量数据，恒返回空切片。
+func (r *teamRepoMemory) UsageByMember(_ context.Context, _ int64, _, _ time.Time) ([]TeamMemberUsage, error) {
+	return nil, nil
+}
+
 func teamTestPtrTime(t time.Time) *time.Time { return &t }
 
 func TestTeamServiceListMembersRequiresViewPermission(t *testing.T) {

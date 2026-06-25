@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -25,6 +26,9 @@ type TeamHTTPService interface {
 	DissolveTeam(ctx context.Context, actorUserID, teamID int64) error
 	// GetTeam loads a team by id (used to return the joined team summary on accept).
 	GetTeam(ctx context.Context, teamID int64) (*service.Team, error)
+	// UsageByMember returns per-actor usage aggregates for a team within [start, end).
+	// Requires team.usage.view.all (owner/admin).
+	UsageByMember(ctx context.Context, actorUserID, teamID int64, start, end time.Time) ([]service.TeamMemberUsage, error)
 }
 
 type TeamHandler struct {
@@ -407,6 +411,44 @@ func (h *TeamHandler) TransferOwnership(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"message": "ownership transferred"})
+}
+
+// UsageByMember handles GET /teams/:id/usage/by-member.
+// Returns per-actor usage aggregates for the team within [start_date, end_date].
+// Gated by team.usage.view.all (owner/admin only).
+func (h *TeamHandler) UsageByMember(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	teamID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || teamID <= 0 {
+		response.BadRequest(c, "Invalid team ID")
+		return
+	}
+
+	// 解析 start_date / end_date（同 parseUsageDateRange 风格）；默认近 30 天。
+	now := timezone.Now()
+	startTime := now.AddDate(0, 0, -30)
+	endTime := now
+	if s := c.Query("start_date"); s != "" {
+		if t, perr := timezone.ParseInLocation("2006-01-02", s); perr == nil {
+			startTime = t
+		}
+	}
+	if s := c.Query("end_date"); s != "" {
+		if t, perr := timezone.ParseInLocation("2006-01-02", s); perr == nil {
+			endTime = t.AddDate(0, 0, 1) // 半开区间上界
+		}
+	}
+
+	items, err := h.teamService.UsageByMember(c.Request.Context(), subject.UserID, teamID, startTime, endTime)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"items": items})
 }
 
 // DissolveTeam handles DELETE /teams/:id. Owner-only (team.dissolve); irreversible.

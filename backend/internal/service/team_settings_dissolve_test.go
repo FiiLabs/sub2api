@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/stretchr/testify/require"
@@ -63,6 +64,10 @@ func (s *dissolveRepoStub) CountActiveAPIKeysByBillingSubjectID(_ context.Contex
 func (s *dissolveRepoStub) DissolveTeam(_ context.Context, teamID int64) error {
 	s.dissolved = append(s.dissolved, teamID)
 	return nil
+}
+
+func (s *dissolveRepoStub) UsageByMember(_ context.Context, _ int64, _, _ time.Time) ([]TeamMemberUsage, error) {
+	return nil, nil
 }
 
 // dissolveSubjectStub 内嵌 BillingSubjectRepository，仅覆写 GetByID 以返回可配置余额。

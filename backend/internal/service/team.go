@@ -174,6 +174,14 @@ type AdminAddMemberInput struct {
 	AdminUserID int64
 }
 
+// TeamMemberUsage holds per-actor usage aggregates for a team within a time window.
+type TeamMemberUsage struct {
+	UserID     int64   `json:"user_id"`
+	Requests   int64   `json:"requests"`
+	TotalCost  float64 `json:"total_cost"`
+	ActualCost float64 `json:"actual_cost"`
+}
+
 type TeamRepository interface {
 	CreateTeam(ctx context.Context, input CreateTeamInput) (*Team, error)
 	GetMembership(ctx context.Context, teamID, userID int64) (*TeamMember, error)
@@ -206,6 +214,8 @@ type TeamRepository interface {
 	CountActiveAPIKeysByBillingSubjectID(ctx context.Context, billingSubjectID int64) (int, error)
 	// DissolveTeam 在单事务内软删团队成员、团队与团队计费主体（高危不可逆，调用方须已校验 owner + 前置条件）。
 	DissolveTeam(ctx context.Context, teamID int64) error
+	// UsageByMember 返回团队在 [start, end) 时间窗内按成员（actor_user_id）聚合的用量明细。
+	UsageByMember(ctx context.Context, teamID int64, start, end time.Time) ([]TeamMemberUsage, error)
 }
 
 // TeamInviteNotifier delivers a team invitation to the invitee's email. It is a
@@ -815,6 +825,15 @@ func (s *TeamService) AdminRemoveMember(ctx context.Context, adminUserID, teamID
 		return ErrTeamOwnerImmutable
 	}
 	return s.repo.RemoveMember(ctx, adminUserID, teamID, userID)
+}
+
+// UsageByMember 返回团队在 [start, end) 时间窗内按成员（actor_user_id）聚合的用量明细。
+// 调用方需持有 team.usage.view.all 权限（owner/admin），否则返回 ErrTeamPermissionDenied。
+func (s *TeamService) UsageByMember(ctx context.Context, actorUserID, teamID int64, start, end time.Time) ([]TeamMemberUsage, error) {
+	if _, err := s.Require(ctx, actorUserID, teamID, domain.TeamPermissionViewUsageAll); err != nil {
+		return nil, err
+	}
+	return s.repo.UsageByMember(ctx, teamID, start, end)
 }
 
 func GenerateInvitationToken() (plain string, tokenHash string, err error) {

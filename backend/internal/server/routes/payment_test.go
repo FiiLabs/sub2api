@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
@@ -214,4 +215,8 @@ func (r routeTeamRepo) CountActiveAPIKeysByBillingSubjectID(_ context.Context, _
 
 func (r routeTeamRepo) DissolveTeam(_ context.Context, _ int64) error {
 	return nil
+}
+
+func (r routeTeamRepo) UsageByMember(_ context.Context, _ int64, _, _ time.Time) ([]service.TeamMemberUsage, error) {
+	return nil, nil
 }

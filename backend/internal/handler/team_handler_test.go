@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -92,6 +93,10 @@ func (a teamHandlerServiceAdapter) UpdateTeamSettings(_ context.Context, _, team
 
 func (a teamHandlerServiceAdapter) DissolveTeam(_ context.Context, _, _ int64) error {
 	return nil
+}
+
+func (a teamHandlerServiceAdapter) UsageByMember(_ context.Context, _, _ int64, _, _ time.Time) ([]service.TeamMemberUsage, error) {
+	return nil, nil
 }
 
 type teamMemberHandlerServiceStub struct {
@@ -186,6 +191,10 @@ func (s *teamMemberHandlerServiceStub) UpdateTeamSettings(_ context.Context, _, 
 func (s *teamMemberHandlerServiceStub) DissolveTeam(_ context.Context, actorUserID, teamID int64) error {
 	s.dissolveArgs = [2]int64{actorUserID, teamID}
 	return s.dissolveErr
+}
+
+func (s *teamMemberHandlerServiceStub) UsageByMember(_ context.Context, _, _ int64, _, _ time.Time) ([]service.TeamMemberUsage, error) {
+	return nil, nil
 }
 
 func TestTeamHandlerListMembersRequiresTeamPermission(t *testing.T) {
