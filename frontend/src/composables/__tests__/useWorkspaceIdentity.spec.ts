@@ -39,4 +39,16 @@ describe('useWorkspaceIdentity', () => {
     expect(id.typeLabel.value).toBe('workspace.team')
     expect(id.palette.value.key).not.toBe('gray')
   })
+
+  it('传入 subject(getter) 覆盖当前激活并反映该 subject', () => {
+    const ws = useWorkspaceStore()
+    ws.workspaces = [{ billing_subject_id: 1, type: 'user', name: 'Me', role: 'owner', permissions: {}, balance: 0 } as any]
+    ws.activeSubjectId = 1
+    const team = { billing_subject_id: 2, type: 'team', team_id: 3, name: 'Acme', role: 'admin', permissions: {}, balance: 0 } as any
+    let api!: ReturnType<typeof useWorkspaceIdentity>
+    mount(defineComponent({ setup() { api = useWorkspaceIdentity(() => team); return () => h('div') } }))
+    expect(api.isTeam.value).toBe(true)
+    expect(api.name.value).toBe('Acme')
+    expect(api.icon.value).toBe('users')
+  })
 })
