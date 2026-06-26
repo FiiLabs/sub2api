@@ -110,6 +110,9 @@ func (f fakeAPIKeyRepo) GetRateLimitData(ctx context.Context, id int64) (*servic
 func (f fakeAPIKeyRepo) UpdateGroupIDByUserAndGroup(ctx context.Context, userID, oldGroupID, newGroupID int64) (int64, error) {
 	return 0, errors.New("not implemented")
 }
+func (f fakeAPIKeyRepo) GetByKeyHash(ctx context.Context, hash string) (*service.APIKey, error) {
+	return nil, errors.New("not implemented")
+}
 
 func (f fakeGoogleSubscriptionRepo) Create(ctx context.Context, sub *service.UserSubscription) error {
 	return errors.New("not implemented")
