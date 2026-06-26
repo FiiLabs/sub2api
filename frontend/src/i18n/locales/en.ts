@@ -649,6 +649,7 @@ export default {
     teamNameRequired: 'Team name is required',
     createTeamSuccess: 'Team created',
     createTeamFailed: 'Failed to create team',
+    teamLimitReached: 'You have reached the maximum number of teams you can create. Please contact an administrator if you need more.',
     createKeyTeamAck: 'I understand this API key will be billed to team "{name}"'
   },
 

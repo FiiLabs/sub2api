@@ -457,7 +457,11 @@ async function handleCreateTeam() {
     appStore.showSuccess(t('workspace.createTeamSuccess'))
     closeCreateTeam()
   } catch (error: any) {
-    appStore.showError(error?.message || t('workspace.createTeamFailed'))
+    appStore.showError(
+      error?.code === 'TEAM_LIMIT_REACHED'
+        ? t('workspace.teamLimitReached')
+        : error?.message || t('workspace.createTeamFailed')
+    )
     console.error('Failed to create team:', error)
   } finally {
     creatingTeam.value = false

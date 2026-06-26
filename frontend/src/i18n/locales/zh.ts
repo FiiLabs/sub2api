@@ -646,6 +646,7 @@ export default {
     teamNameRequired: '请输入团队名称',
     createTeamSuccess: '团队已创建',
     createTeamFailed: '创建团队失败',
+    teamLimitReached: '已达到可自助创建的团队数量上限，如需更多请联系管理员。',
     createKeyTeamAck: '我了解此 API Key 将计入团队「{name}」的账单'
   },
 
