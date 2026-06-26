@@ -40,6 +40,12 @@ type adminTeamServiceStub struct {
 
 	// AdminGetTeamOverride 若设置则替代默认实现
 	AdminGetTeamOverride func(teamID int64) (*service.AdminTeamSummary, []service.TeamMember, []service.TeamInvitation, error)
+
+	// balance 相关可控字段
+	adjustErr       error
+	adjustedBalance float64
+	historyItems    []service.RedeemCode
+	historyTotal    int64
 }
 
 func (s *adminTeamServiceStub) AdminCreateTeam(_ context.Context, input service.AdminCreateTeamInput) (*service.AdminTeamSummary, error) {
@@ -114,6 +120,17 @@ func (s *adminTeamServiceStub) AdminDeleteTeam(_ context.Context, teamID int64) 
 	return s.deleteTeamErr
 }
 
+func (s *adminTeamServiceStub) AdminAdjustTeamBalance(_ context.Context, teamID int64, _ float64, _, _ string) (*service.AdminTeamSummary, error) {
+	if s.adjustErr != nil {
+		return nil, s.adjustErr
+	}
+	return &service.AdminTeamSummary{Team: service.Team{ID: teamID}, Balance: s.adjustedBalance}, nil
+}
+
+func (s *adminTeamServiceStub) AdminGetTeamBalanceHistory(_ context.Context, _ int64, _, _ int, _ string) ([]service.RedeemCode, int64, error) {
+	return s.historyItems, s.historyTotal, nil
+}
+
 // adminRouter wires the handler routes the same way the production router does,
 // injecting an admin AuthSubject (a platform admin, NOT a team member).
 func adminRouter(h *AdminTeamHandler, adminUserID int64) *gin.Engine {
@@ -132,6 +149,8 @@ func adminRouter(h *AdminTeamHandler, adminUserID int64) *gin.Engine {
 	teams.DELETE("/:id/members/:user_id", h.RemoveMember)
 	teams.POST("/:id/transfer-ownership", h.TransferOwnership)
 	teams.DELETE("/:id", h.Delete)
+	teams.POST("/:id/balance", h.UpdateBalance)
+	teams.GET("/:id/balance-history", h.BalanceHistory)
 	return router
 }
 
@@ -438,4 +457,129 @@ func TestAdminDeleteTeamHandler(t *testing.T) {
 	// keys deleted + cache invalidated BEFORE team dissolved
 	require.Equal(t, int64(7), inv.deleteTeamKeysTeamID)
 	require.Equal(t, int64(7), stub.deleteTeamID)
+}
+
+// ----- UpdateBalance 测试 -------------------------------------------------------
+
+func TestAdminUpdateTeamBalanceHappyPath(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	stub := &adminTeamServiceStub{adjustedBalance: 99.5}
+	h := &AdminTeamHandler{teamService: stub}
+	router := adminRouter(h, 1)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/teams/7/balance",
+		strings.NewReader(`{"balance":50.0,"operation":"add","notes":"topup"}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	// 幂等包装返回 data 字段包含 adminTeamDTO
+	require.Contains(t, body, `"balance":99.5`)
+}
+
+func TestAdminUpdateTeamBalanceInvalidOperation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	stub := &adminTeamServiceStub{}
+	h := &AdminTeamHandler{teamService: stub}
+	router := adminRouter(h, 1)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/teams/7/balance",
+		strings.NewReader(`{"balance":10.0,"operation":"invalid"}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestAdminUpdateTeamBalanceMissingBalance(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	stub := &adminTeamServiceStub{}
+	h := &AdminTeamHandler{teamService: stub}
+	router := adminRouter(h, 1)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/teams/7/balance",
+		strings.NewReader(`{"operation":"add"}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestAdminUpdateTeamBalanceInvalidID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	stub := &adminTeamServiceStub{}
+	h := &AdminTeamHandler{teamService: stub}
+	router := adminRouter(h, 1)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/teams/abc/balance",
+		strings.NewReader(`{"balance":10.0,"operation":"add"}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+// ----- BalanceHistory 测试 ------------------------------------------------------
+
+func TestAdminTeamBalanceHistoryHappyPath(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	bsID := int64(42)
+	stub := &adminTeamServiceStub{
+		historyItems: []service.RedeemCode{
+			{ID: 1, Code: "abc123", Type: "admin_balance", Value: 50.0, Notes: "topup", BillingSubjectID: &bsID},
+		},
+		historyTotal: 1,
+	}
+	h := &AdminTeamHandler{teamService: stub}
+	router := adminRouter(h, 1)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/teams/7/balance-history?page=1&page_size=20", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	require.Contains(t, body, `"items"`)
+	require.Contains(t, body, `"total":1`)
+	require.Contains(t, body, `"page":1`)
+	require.Contains(t, body, `"page_size":20`)
+	require.Contains(t, body, `"pages":1`)
+	require.Contains(t, body, `"billing_subject_id":42`)
+	require.Contains(t, body, `"notes":"topup"`)
+}
+
+func TestAdminTeamBalanceHistoryEmptyResult(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	stub := &adminTeamServiceStub{historyItems: nil, historyTotal: 0}
+	h := &AdminTeamHandler{teamService: stub}
+	router := adminRouter(h, 1)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/teams/7/balance-history", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	require.Contains(t, body, `"items":[]`)
+	require.Contains(t, body, `"total":0`)
+	// 空结果页数最少为 1
+	require.Contains(t, body, `"pages":1`)
+}
+
+func TestAdminTeamBalanceHistoryInvalidID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	stub := &adminTeamServiceStub{}
+	h := &AdminTeamHandler{teamService: stub}
+	router := adminRouter(h, 1)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/teams/notanid/balance-history", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
 }

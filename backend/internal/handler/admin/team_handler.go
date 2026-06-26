@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -26,6 +27,8 @@ type AdminTeamService interface {
 	AdminRemoveMember(ctx context.Context, adminUserID, teamID, userID int64) error
 	AdminTransferOwnership(ctx context.Context, teamID, newOwnerUserID int64) error
 	AdminDeleteTeam(ctx context.Context, teamID int64) error
+	AdminAdjustTeamBalance(ctx context.Context, teamID int64, amount float64, operation, notes string) (*service.AdminTeamSummary, error)
+	AdminGetTeamBalanceHistory(ctx context.Context, teamID int64, page, pageSize int, codeType string) ([]service.RedeemCode, int64, error)
 }
 
 // teamAuthCacheInvalidator 由 *service.APIKeyService 实现（按团队失效鉴权缓存）。
@@ -483,4 +486,67 @@ func (h *AdminTeamHandler) Delete(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"message": "team deleted"})
+}
+
+// adminTeamUpdateBalanceRequest 是 UpdateBalance 的请求体。
+type adminTeamUpdateBalanceRequest struct {
+	Balance   float64 `json:"balance" binding:"required,gt=0"`
+	Operation string  `json:"operation" binding:"required,oneof=set add subtract"`
+	Notes     string  `json:"notes"`
+}
+
+// UpdateBalance handles POST /api/v1/admin/teams/:id/balance
+func (h *AdminTeamHandler) UpdateBalance(c *gin.Context) {
+	teamID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid team ID")
+		return
+	}
+	var req adminTeamUpdateBalanceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	payload := struct {
+		TeamID int64                        `json:"team_id"`
+		Body   adminTeamUpdateBalanceRequest `json:"body"`
+	}{TeamID: teamID, Body: req}
+	executeAdminIdempotentJSON(c, "admin.teams.balance.update", payload, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
+		summary, execErr := h.teamService.AdminAdjustTeamBalance(ctx, teamID, req.Balance, req.Operation, req.Notes)
+		if execErr != nil {
+			return nil, execErr
+		}
+		return adminTeamDTOFromSummary(summary), nil
+	})
+}
+
+// BalanceHistory handles GET /api/v1/admin/teams/:id/balance-history
+func (h *AdminTeamHandler) BalanceHistory(c *gin.Context) {
+	teamID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid team ID")
+		return
+	}
+	page, pageSize := response.ParsePagination(c)
+	codeType := c.Query("type")
+	codes, total, err := h.teamService.AdminGetTeamBalanceHistory(c.Request.Context(), teamID, page, pageSize, codeType)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	out := make([]dto.AdminRedeemCode, 0, len(codes))
+	for i := range codes {
+		out = append(out, *dto.RedeemCodeFromServiceAdmin(&codes[i]))
+	}
+	pages := int((total + int64(pageSize) - 1) / int64(pageSize))
+	if pages < 1 {
+		pages = 1
+	}
+	response.Success(c, gin.H{
+		"items":     out,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+		"pages":     pages,
+	})
 }
