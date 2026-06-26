@@ -188,6 +188,13 @@
           </div>
         </div>
 
+        <!-- Balance actions -->
+        <div class="flex flex-wrap items-center gap-2">
+          <button type="button" class="btn btn-secondary" @click="openBalance('add')">{{ t('admin.teams.deposit') }}</button>
+          <button type="button" class="btn btn-secondary" @click="openBalance('subtract')">{{ t('admin.teams.withdraw') }}</button>
+          <button type="button" class="btn btn-secondary" @click="showBalanceHistory = true">{{ t('admin.teams.balanceHistory') }}</button>
+        </div>
+
         <!-- Edit limits -->
         <div class="flex items-end gap-2">
           <div>
@@ -449,6 +456,10 @@
       @confirm="confirmRemoveMember"
       @cancel="showRemoveConfirm = false"
     />
+
+    <!-- Balance modals -->
+    <TeamBalanceModal :show="showBalanceModal" :team="detailTeam" :operation="balanceOperation" @close="showBalanceModal = false" @success="onBalanceSuccess" />
+    <TeamBalanceHistoryModal :show="showBalanceHistory" :team="detailTeam" @close="showBalanceHistory = false" />
   </AppLayout>
 </template>
 
@@ -471,6 +482,8 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import TeamBalanceModal from '@/components/admin/team/TeamBalanceModal.vue'
+import TeamBalanceHistoryModal from '@/components/admin/team/TeamBalanceHistoryModal.vue'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -793,6 +806,21 @@ const confirmRemoveMember = async () => {
     appStore.showError(error?.message || t('admin.teams.failedToRemoveMember'))
     console.error('Error removing team member:', error)
   }
+}
+
+// ==================== Balance modals ====================
+
+const showBalanceModal = ref(false)
+const balanceOperation = ref<'add' | 'subtract'>('add')
+const showBalanceHistory = ref(false)
+
+const openBalance = (op: 'add' | 'subtract') => {
+  balanceOperation.value = op
+  showBalanceModal.value = true
+}
+
+const onBalanceSuccess = async () => {
+  if (detailTeam.value) await loadDetail(detailTeam.value.id)
 }
 
 // ==================== Delete team ====================
