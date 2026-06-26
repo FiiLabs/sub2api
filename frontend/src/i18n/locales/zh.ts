@@ -645,7 +645,8 @@ export default {
     teamNamePlaceholder: '请输入团队名称',
     teamNameRequired: '请输入团队名称',
     createTeamSuccess: '团队已创建',
-    createTeamFailed: '创建团队失败'
+    createTeamFailed: '创建团队失败',
+    createKeyTeamAck: '我了解此 API Key 将计入团队「{name}」的账单'
   },
 
   // Auth

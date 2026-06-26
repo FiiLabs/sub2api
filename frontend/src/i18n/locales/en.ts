@@ -648,7 +648,8 @@ export default {
     teamNamePlaceholder: 'Enter a team name',
     teamNameRequired: 'Team name is required',
     createTeamSuccess: 'Team created',
-    createTeamFailed: 'Failed to create team'
+    createTeamFailed: 'Failed to create team',
+    createKeyTeamAck: 'I understand this API key will be billed to team "{name}"'
   },
 
   // Auth
