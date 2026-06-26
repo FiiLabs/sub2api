@@ -188,6 +188,19 @@
           </div>
         </div>
 
+        <!-- Edit limits -->
+        <div class="flex items-end gap-2">
+          <div>
+            <label class="input-label">{{ t('admin.teams.concurrency') }}</label>
+            <input v-model.number="editLimits.concurrency" type="number" min="0" class="input w-28" />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.teams.rpmLimit') }}</label>
+            <input v-model.number="editLimits.rpm_limit" type="number" min="0" class="input w-28" />
+          </div>
+          <button class="btn btn-primary" :disabled="savingLimits" @click="handleUpdateLimits">{{ t('common.save') }}</button>
+        </div>
+
         <!-- Add member -->
         <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-700">
           <h4 class="mb-3 text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.teams.addMember') }}</h4>
@@ -603,6 +616,9 @@ const addMemberInput = ref('')
 const addMemberRole = ref<AdminAssignableRole>('developer')
 const addMemberSubmitting = ref(false)
 
+const editLimits = reactive({ concurrency: 0, rpm_limit: 0 })
+const savingLimits = ref(false)
+
 const loadDetail = async (teamId: number) => {
   detailLoading.value = true
   try {
@@ -610,11 +626,32 @@ const loadDetail = async (teamId: number) => {
     detailTeam.value = data.team
     members.value = data.members
     invitations.value = data.invitations
+    editLimits.concurrency = data.team.concurrency
+    editLimits.rpm_limit = data.team.rpm_limit
   } catch (error: any) {
     appStore.showError(error?.message || t('admin.teams.failedToLoad'))
     console.error('Error loading team detail:', error)
   } finally {
     detailLoading.value = false
+  }
+}
+
+const handleUpdateLimits = async () => {
+  if (!detailTeam.value) return
+  savingLimits.value = true
+  try {
+    await adminTeamsAPI.update(detailTeam.value.id, {
+      concurrency: editLimits.concurrency,
+      rpm_limit: editLimits.rpm_limit
+    })
+    appStore.showSuccess(t('admin.teams.updateSuccess'))
+    await loadDetail(detailTeam.value.id)
+    loadTeams()
+  } catch (error: any) {
+    appStore.showError(error?.message || t('admin.teams.failedToUpdate'))
+    console.error('Error updating team limits:', error)
+  } finally {
+    savingLimits.value = false
   }
 }
 

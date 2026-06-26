@@ -2096,6 +2096,7 @@ export default {
       memberAdded: 'Member added',
       memberUpdated: 'Member updated',
       memberRemoved: 'Member removed',
+      updateSuccess: 'Team limits updated',
       failedToLoad: 'Failed to load teams',
       failedToUpdate: 'Failed to update team',
       failedToAddMember: 'Failed to add member',

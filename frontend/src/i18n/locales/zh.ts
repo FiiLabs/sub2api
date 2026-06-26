@@ -2114,6 +2114,7 @@ export default {
       memberAdded: '成员已添加',
       memberUpdated: '成员已更新',
       memberRemoved: '成员已移除',
+      updateSuccess: '团队限制已更新',
       failedToLoad: '加载团队失败',
       failedToUpdate: '更新团队失败',
       failedToAddMember: '添加成员失败',
