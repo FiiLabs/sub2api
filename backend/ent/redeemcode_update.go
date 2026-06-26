@@ -214,6 +214,33 @@ func (_u *RedeemCodeUpdate) AddValidityDays(v int) *RedeemCodeUpdate {
 	return _u
 }
 
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (_u *RedeemCodeUpdate) SetBillingSubjectID(v int64) *RedeemCodeUpdate {
+	_u.mutation.ResetBillingSubjectID()
+	_u.mutation.SetBillingSubjectID(v)
+	return _u
+}
+
+// SetNillableBillingSubjectID sets the "billing_subject_id" field if the given value is not nil.
+func (_u *RedeemCodeUpdate) SetNillableBillingSubjectID(v *int64) *RedeemCodeUpdate {
+	if v != nil {
+		_u.SetBillingSubjectID(*v)
+	}
+	return _u
+}
+
+// AddBillingSubjectID adds value to the "billing_subject_id" field.
+func (_u *RedeemCodeUpdate) AddBillingSubjectID(v int64) *RedeemCodeUpdate {
+	_u.mutation.AddBillingSubjectID(v)
+	return _u
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (_u *RedeemCodeUpdate) ClearBillingSubjectID() *RedeemCodeUpdate {
+	_u.mutation.ClearBillingSubjectID()
+	return _u
+}
+
 // SetUserID sets the "user" edge to the User entity by ID.
 func (_u *RedeemCodeUpdate) SetUserID(id int64) *RedeemCodeUpdate {
 	_u.mutation.SetUserID(id)
@@ -352,6 +379,15 @@ func (_u *RedeemCodeUpdate) sqlSave(ctx context.Context) (_node int, err error) 
 	}
 	if value, ok := _u.mutation.AddedValidityDays(); ok {
 		_spec.AddField(redeemcode.FieldValidityDays, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.BillingSubjectID(); ok {
+		_spec.SetField(redeemcode.FieldBillingSubjectID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedBillingSubjectID(); ok {
+		_spec.AddField(redeemcode.FieldBillingSubjectID, field.TypeInt64, value)
+	}
+	if _u.mutation.BillingSubjectIDCleared() {
+		_spec.ClearField(redeemcode.FieldBillingSubjectID, field.TypeInt64)
 	}
 	if _u.mutation.UserCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -615,6 +651,33 @@ func (_u *RedeemCodeUpdateOne) AddValidityDays(v int) *RedeemCodeUpdateOne {
 	return _u
 }
 
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (_u *RedeemCodeUpdateOne) SetBillingSubjectID(v int64) *RedeemCodeUpdateOne {
+	_u.mutation.ResetBillingSubjectID()
+	_u.mutation.SetBillingSubjectID(v)
+	return _u
+}
+
+// SetNillableBillingSubjectID sets the "billing_subject_id" field if the given value is not nil.
+func (_u *RedeemCodeUpdateOne) SetNillableBillingSubjectID(v *int64) *RedeemCodeUpdateOne {
+	if v != nil {
+		_u.SetBillingSubjectID(*v)
+	}
+	return _u
+}
+
+// AddBillingSubjectID adds value to the "billing_subject_id" field.
+func (_u *RedeemCodeUpdateOne) AddBillingSubjectID(v int64) *RedeemCodeUpdateOne {
+	_u.mutation.AddBillingSubjectID(v)
+	return _u
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (_u *RedeemCodeUpdateOne) ClearBillingSubjectID() *RedeemCodeUpdateOne {
+	_u.mutation.ClearBillingSubjectID()
+	return _u
+}
+
 // SetUserID sets the "user" edge to the User entity by ID.
 func (_u *RedeemCodeUpdateOne) SetUserID(id int64) *RedeemCodeUpdateOne {
 	_u.mutation.SetUserID(id)
@@ -783,6 +846,15 @@ func (_u *RedeemCodeUpdateOne) sqlSave(ctx context.Context) (_node *RedeemCode, 
 	}
 	if value, ok := _u.mutation.AddedValidityDays(); ok {
 		_spec.AddField(redeemcode.FieldValidityDays, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.BillingSubjectID(); ok {
+		_spec.SetField(redeemcode.FieldBillingSubjectID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedBillingSubjectID(); ok {
+		_spec.AddField(redeemcode.FieldBillingSubjectID, field.TypeInt64, value)
+	}
+	if _u.mutation.BillingSubjectIDCleared() {
+		_spec.ClearField(redeemcode.FieldBillingSubjectID, field.TypeInt64)
 	}
 	if _u.mutation.UserCleared() {
 		edge := &sqlgraph.EdgeSpec{

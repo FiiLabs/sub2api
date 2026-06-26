@@ -72,6 +72,10 @@ func (RedeemCode) Fields() []ent.Field {
 			Nillable(),
 		field.Int("validity_days").
 			Default(30),
+		field.Int64("billing_subject_id").
+			Optional().
+			Nillable().
+			Comment("非空表示该记录归属某计费主体（团队余额调整审计）；个人余额记录为空"),
 	}
 }
 

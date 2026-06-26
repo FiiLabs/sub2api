@@ -110,6 +110,11 @@ func ValidityDays(v int) predicate.RedeemCode {
 	return predicate.RedeemCode(sql.FieldEQ(FieldValidityDays, v))
 }
 
+// BillingSubjectID applies equality check predicate on the "billing_subject_id" field. It's identical to BillingSubjectIDEQ.
+func BillingSubjectID(v int64) predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldEQ(FieldBillingSubjectID, v))
+}
+
 // CodeEQ applies the EQ predicate on the "code" field.
 func CodeEQ(v string) predicate.RedeemCode {
 	return predicate.RedeemCode(sql.FieldEQ(FieldCode, v))
@@ -658,6 +663,56 @@ func ValidityDaysLT(v int) predicate.RedeemCode {
 // ValidityDaysLTE applies the LTE predicate on the "validity_days" field.
 func ValidityDaysLTE(v int) predicate.RedeemCode {
 	return predicate.RedeemCode(sql.FieldLTE(FieldValidityDays, v))
+}
+
+// BillingSubjectIDEQ applies the EQ predicate on the "billing_subject_id" field.
+func BillingSubjectIDEQ(v int64) predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldEQ(FieldBillingSubjectID, v))
+}
+
+// BillingSubjectIDNEQ applies the NEQ predicate on the "billing_subject_id" field.
+func BillingSubjectIDNEQ(v int64) predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldNEQ(FieldBillingSubjectID, v))
+}
+
+// BillingSubjectIDIn applies the In predicate on the "billing_subject_id" field.
+func BillingSubjectIDIn(vs ...int64) predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldIn(FieldBillingSubjectID, vs...))
+}
+
+// BillingSubjectIDNotIn applies the NotIn predicate on the "billing_subject_id" field.
+func BillingSubjectIDNotIn(vs ...int64) predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldNotIn(FieldBillingSubjectID, vs...))
+}
+
+// BillingSubjectIDGT applies the GT predicate on the "billing_subject_id" field.
+func BillingSubjectIDGT(v int64) predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldGT(FieldBillingSubjectID, v))
+}
+
+// BillingSubjectIDGTE applies the GTE predicate on the "billing_subject_id" field.
+func BillingSubjectIDGTE(v int64) predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldGTE(FieldBillingSubjectID, v))
+}
+
+// BillingSubjectIDLT applies the LT predicate on the "billing_subject_id" field.
+func BillingSubjectIDLT(v int64) predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldLT(FieldBillingSubjectID, v))
+}
+
+// BillingSubjectIDLTE applies the LTE predicate on the "billing_subject_id" field.
+func BillingSubjectIDLTE(v int64) predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldLTE(FieldBillingSubjectID, v))
+}
+
+// BillingSubjectIDIsNil applies the IsNil predicate on the "billing_subject_id" field.
+func BillingSubjectIDIsNil() predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldIsNull(FieldBillingSubjectID))
+}
+
+// BillingSubjectIDNotNil applies the NotNil predicate on the "billing_subject_id" field.
+func BillingSubjectIDNotNil() predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldNotNull(FieldBillingSubjectID))
 }
 
 // HasUser applies the HasEdge predicate on the "user" edge.

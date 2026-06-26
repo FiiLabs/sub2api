@@ -20,6 +20,7 @@ type RedeemCode struct {
 
 	GroupID      *int64
 	ValidityDays int
+	BillingSubjectID *int64 // 非空=归属某计费主体（团队余额调整审计）
 
 	User  *User
 	Group *Group
