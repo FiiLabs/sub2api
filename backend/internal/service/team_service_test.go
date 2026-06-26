@@ -1152,4 +1152,5 @@ func TestTeamServiceAdminUpdateTeamConcurrencyCallsUpdateLimits(t *testing.T) {
 
 	require.Equal(t, int64(42), billingStub.calledSubjectID)
 	require.Equal(t, 20, billingStub.calledConc)
+	require.Equal(t, 0, billingStub.calledRpm)
 }
