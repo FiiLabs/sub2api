@@ -156,6 +156,50 @@ export async function transferOwnership(id: number, userId: number): Promise<unk
   return data
 }
 
+/** Team balance history item (admin balance adjustments attributed to the team's billing subject). */
+export interface TeamBalanceHistoryItem {
+  id: number
+  code: string
+  type: string
+  value: number
+  status: string
+  billing_subject_id: number | null
+  used_at: string | null
+  created_at: string
+  notes: string
+}
+
+/** Adjust a team's billing-subject balance (platform admin). */
+export async function updateBalance(
+  id: number,
+  balance: number,
+  operation: 'set' | 'add' | 'subtract',
+  notes?: string
+): Promise<AdminTeam> {
+  const { data } = await apiClient.post<AdminTeam>(`/admin/teams/${id}/balance`, {
+    balance,
+    operation,
+    notes: notes || ''
+  })
+  return data
+}
+
+/** Get a team's balance change history (paginated). */
+export async function getTeamBalanceHistory(
+  id: number,
+  page = 1,
+  pageSize = 15,
+  type?: string
+): Promise<PaginatedResponse<TeamBalanceHistoryItem>> {
+  const params: Record<string, any> = { page, page_size: pageSize }
+  if (type) params.type = type
+  const { data } = await apiClient.get<PaginatedResponse<TeamBalanceHistoryItem>>(
+    `/admin/teams/${id}/balance-history`,
+    { params }
+  )
+  return data
+}
+
 export const adminTeamsAPI = {
   list,
   get,
@@ -165,7 +209,9 @@ export const adminTeamsAPI = {
   updateMember,
   removeMember,
   deleteTeam,
-  transferOwnership
+  transferOwnership,
+  updateBalance,
+  getTeamBalanceHistory
 }
 
 export default adminTeamsAPI
