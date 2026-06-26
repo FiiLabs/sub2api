@@ -248,7 +248,7 @@ function formatDate(value: string): string {
 }
 
 function selectOnFocus(event: FocusEvent): void {
-  ;(event.target as HTMLInputElement)?.select()
+  (event.target as HTMLInputElement)?.select()
 }
 
 async function loadMembers(): Promise<void> {
