@@ -64,6 +64,13 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 			return
 		}
 
+		// Team-mode gate: team keys must use the TEE gateway endpoint only.
+		// Using a team key directly on the Gemini data-plane proxy bypasses the TEE.
+		if apiKey.IsTeamMode() {
+			abortWithGoogleError(c, 403, "team key must use the TEE gateway endpoint")
+			return
+		}
+
 		// 简易模式：跳过余额和订阅检查
 		if cfg.RunMode == config.RunModeSimple {
 			c.Set(string(ContextKeyAPIKey), apiKey)

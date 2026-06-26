@@ -762,14 +762,101 @@ func TestApiKeyAuthWithSubscriptionGoogle_SubscriptionLimitExceededReturns429(t 
 	require.Contains(t, resp.Error.Message, "daily usage limit exceeded")
 }
 
+// TestAPIKeyAuthGoogle_RejectsTeamKey verifies that APIKeyAuthWithSubscriptionGoogle
+// blocks team keys (TeamID set) with 403 USE_TEE_ENDPOINT, and passes personal keys.
+func TestAPIKeyAuthGoogle_RejectsTeamKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	teamID := int64(77)
+
+	t.Run("team_key_gets_403_USE_TEE_ENDPOINT", func(t *testing.T) {
+		apiKey := &service.APIKey{
+			ID:     501,
+			UserID: 50,
+			TeamID: &teamID,
+			Key:    "google-team-key-tee",
+			Status: service.StatusActive,
+			User: &service.User{
+				ID:          50,
+				Role:        service.RoleUser,
+				Status:      service.StatusActive,
+				Balance:     10,
+				Concurrency: 3,
+			},
+		}
+		apiKeyService := newTestAPIKeyService(fakeAPIKeyRepo{
+			getByKey: func(ctx context.Context, key string) (*service.APIKey, error) {
+				if key != apiKey.Key {
+					return nil, service.ErrAPIKeyNotFound
+				}
+				clone := *apiKey
+				return &clone, nil
+			},
+		})
+		cfg := &config.Config{RunMode: config.RunModeSimple}
+		r := gin.New()
+		r.Use(APIKeyAuthWithSubscriptionGoogle(apiKeyService, nil, cfg))
+		r.GET("/v1beta/test", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
+
+		req := httptest.NewRequest(http.MethodGet, "/v1beta/test", nil)
+		req.Header.Set("Authorization", "Bearer "+apiKey.Key)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusForbidden, rec.Code)
+		var resp googleErrorResponse
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+		require.Equal(t, http.StatusForbidden, resp.Error.Code)
+		require.Equal(t, "team key must use the TEE gateway endpoint", resp.Error.Message)
+		require.Equal(t, "PERMISSION_DENIED", resp.Error.Status)
+	})
+
+	t.Run("personal_key_passes_gate", func(t *testing.T) {
+		apiKey := &service.APIKey{
+			ID:     502,
+			UserID: 51,
+			TeamID: nil, // personal key
+			Key:    "google-personal-key-tee",
+			Status: service.StatusActive,
+			User: &service.User{
+				ID:          51,
+				Role:        service.RoleUser,
+				Status:      service.StatusActive,
+				Balance:     10,
+				Concurrency: 3,
+			},
+		}
+		apiKeyService := newTestAPIKeyService(fakeAPIKeyRepo{
+			getByKey: func(ctx context.Context, key string) (*service.APIKey, error) {
+				if key != apiKey.Key {
+					return nil, service.ErrAPIKeyNotFound
+				}
+				clone := *apiKey
+				return &clone, nil
+			},
+		})
+		cfg := &config.Config{RunMode: config.RunModeSimple}
+		r := gin.New()
+		r.Use(APIKeyAuthWithSubscriptionGoogle(apiKeyService, nil, cfg))
+		r.GET("/v1beta/test", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
+
+		req := httptest.NewRequest(http.MethodGet, "/v1beta/test", nil)
+		req.Header.Set("Authorization", "Bearer "+apiKey.Key)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusOK, rec.Code)
+	})
+}
+
 // TestGoogleTeamKeyBalanceGateScoping 验证 Google 中间件中团队计费主体 key 绕过个人余额拦截。
 func TestGoogleTeamKeyBalanceGateScoping(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	teamID := int64(55)
 
-	// 1. 团队 key：BillingSubjectID > 0，用户个人余额为 0，QuotaSubjectScoped = true
-	//    预期：请求通过（状态 200）—— 这在修复前 FAIL（返回 403）。
+	// 1. 团队 key：TeamID 非空 → 必须走 TEE 端点，直接 403 USE_TEE_ENDPOINT，
+	//    无论 QuotaSubjectScoped 或个人余额如何。
 	t.Run("team_key_zero_personal_balance_passes_when_scoped", func(t *testing.T) {
 		apiKey := &service.APIKey{
 			ID:               400,
@@ -806,9 +893,12 @@ func TestGoogleTeamKeyBalanceGateScoping(t *testing.T) {
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
 
-		require.Equal(t, http.StatusOK, rec.Code,
-			"团队 key 且 QuotaSubjectScoped=true 时，个人余额 0 不应导致 403 Insufficient account balance；"+
-				"实际收到：%s", rec.Body.String())
+		// Team keys are now blocked by the TEE gate before any balance check.
+		require.Equal(t, http.StatusForbidden, rec.Code)
+		var resp googleErrorResponse
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+		require.Equal(t, "team key must use the TEE gateway endpoint", resp.Error.Message)
+		require.Equal(t, "PERMISSION_DENIED", resp.Error.Status)
 	})
 
 	// 2. 个人 key：BillingSubjectID = 0，用户个人余额为 0
@@ -855,7 +945,8 @@ func TestGoogleTeamKeyBalanceGateScoping(t *testing.T) {
 		require.Equal(t, "PERMISSION_DENIED", resp.Error.Status)
 	})
 
-	// 3. 团队 key 但 QuotaSubjectScoped = false：仍应 403（flag 关闭时不绕过）。
+	// 3. 团队 key，QuotaSubjectScoped = false：TEE 拦截先于余额检查触发，
+	//    同样返回 403 USE_TEE_ENDPOINT。
 	t.Run("team_key_flag_off_still_blocked", func(t *testing.T) {
 		apiKey := &service.APIKey{
 			ID:               402,
@@ -892,10 +983,11 @@ func TestGoogleTeamKeyBalanceGateScoping(t *testing.T) {
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
 
+		// Team keys are blocked by the TEE gate before any balance/scoping check.
 		require.Equal(t, http.StatusForbidden, rec.Code)
 		var resp googleErrorResponse
 		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
-		require.Equal(t, "Insufficient account balance", resp.Error.Message)
+		require.Equal(t, "team key must use the TEE gateway endpoint", resp.Error.Message)
 		require.Equal(t, "PERMISSION_DENIED", resp.Error.Status)
 	})
 }
