@@ -241,6 +241,7 @@
                   <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">{{ t('common.user') }}</th>
                   <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">{{ t('admin.teams.role') }}</th>
                   <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">{{ t('admin.teams.status') }}</th>
+                  <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">{{ t('admin.teams.currentConcurrency') }}</th>
                   <th class="px-4 py-2 text-right text-xs font-medium uppercase text-gray-500">{{ t('admin.teams.actions') }}</th>
                 </tr>
               </thead>
@@ -265,6 +266,9 @@
                   <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
                     {{ t('admin.teams.memberStatus.' + member.status) }}
                   </td>
+                  <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
+                    {{ member.current_concurrency ?? 0 }} / {{ detailTeam?.concurrency === 0 ? '∞' : detailTeam?.concurrency ?? '-' }}
+                  </td>
                   <td class="px-4 py-3">
                     <div v-if="member.role !== 'owner'" class="flex items-center justify-end gap-1">
                       <button
@@ -288,7 +292,7 @@
                   </td>
                 </tr>
                 <tr v-if="members.length === 0">
-                  <td colspan="4" class="px-4 py-8 text-center text-sm text-gray-500">{{ t('common.noData') }}</td>
+                  <td colspan="5" class="px-4 py-8 text-center text-sm text-gray-500">{{ t('common.noData') }}</td>
                 </tr>
               </tbody>
             </table>
