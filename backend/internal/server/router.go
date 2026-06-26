@@ -105,6 +105,9 @@ func registerRoutes(
 	// 通用路由（健康检查、状态等）
 	routes.RegisterCommonRoutes(r)
 
+	// TEE 控制面路由（/consult/pre、/consult/post、/models），由控制面 token 鉴权
+	routes.RegisterConsultRoutes(r, h, cfg)
+
 	// API v1
 	v1 := r.Group("/api/v1")
 

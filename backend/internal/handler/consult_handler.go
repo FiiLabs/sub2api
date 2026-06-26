@@ -52,15 +52,24 @@ type ConsultHandler struct {
 }
 
 // NewConsultHandler creates a new ConsultHandler.
+// Parameters are concrete service types so that google/wire can resolve them from
+// the DI graph. The interface-typed fields are preserved for unit-test fake injection.
 func NewConsultHandler(
-	apiKeys consultAPIKeys,
-	subs consultSubs,
-	pricing consultPricing,
-	gateway consultUsage,
-	accounts consultAccounts,
+	apiKeys *service.APIKeyService,
+	subs *service.SubscriptionService,
+	pricing *service.PricingService,
+	gateway *service.GatewayService,
+	accounts service.AccountRepository,
 	cfg *config.Config,
 ) *ConsultHandler {
-	return &ConsultHandler{apiKeys, subs, pricing, gateway, accounts, cfg}
+	return &ConsultHandler{
+		apiKeys:  apiKeys,
+		subs:     subs,
+		pricing:  pricing,
+		gateway:  gateway,
+		accounts: accounts,
+		cfg:      cfg,
+	}
 }
 
 // Models implements GET /models: OpenAI-style catalog from the consult route_map.
