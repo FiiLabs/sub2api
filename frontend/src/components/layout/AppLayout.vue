@@ -3,6 +3,9 @@
     <!-- Background Decoration -->
     <div class="pointer-events-none fixed inset-0 bg-mesh-gradient"></div>
 
+    <!-- 团队工作区水印（仅 team 时渲染） -->
+    <WorkspaceWatermark />
+
     <!-- Sidebar -->
     <AppSidebar />
 
@@ -33,6 +36,7 @@ import { useOnboardingTour } from '@/composables/useOnboardingTour'
 import { useOnboardingStore } from '@/stores/onboarding'
 import AppSidebar from './AppSidebar.vue'
 import AppHeader from './AppHeader.vue'
+import WorkspaceWatermark from './WorkspaceWatermark.vue'
 import AppFooter from './AppFooter.vue'
 
 const appStore = useAppStore()
