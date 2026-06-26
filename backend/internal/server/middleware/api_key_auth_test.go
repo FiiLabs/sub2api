@@ -921,17 +921,18 @@ func TestAPIKeyAuthTouchesLastUsedInStandardMode(t *testing.T) {
 	require.Equal(t, 1, touchCalls)
 }
 
-// TestTeamKeyBalanceGateScoping 验证团队计费主体 key 绕过个人余额拦截（release-blocker fix）。
+// TestTeamKeyBalanceGateScoping 验证团队 key 和个人 key 在数据面代理的计费拦截行为。
 //
-// 在修复前，非订阅分支会对 apiKey.User.Balance <= 0 直接拒绝，导致
-// 个人余额为 0 的开发者使用团队 key 时收到 403 INSUFFICIENT_BALANCE。
+// 在引入 TEE 数据面隔离后，团队 key（TeamID != nil）在余额门控之前已被
+// apiKeyAuthWithSubscription 以 USE_TEE_ENDPOINT 拒绝，因此团队 key 的
+// 所有子测试预期结果均为 403 USE_TEE_ENDPOINT，而非 INSUFFICIENT_BALANCE。
 func TestTeamKeyBalanceGateScoping(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	teamID := int64(55)
 
-	// 1. 团队 key：BillingSubjectID > 0，用户个人余额为 0，QuotaSubjectScoped = true
-	//    预期：请求通过（状态 200）—— 这在修复前 FAIL（返回 403）。
+	// 1. 团队 key：TeamID 非空 → 数据面代理直接拒绝（USE_TEE_ENDPOINT），
+	//    个人余额为 0 时不再适用 INSUFFICIENT_BALANCE，因为请求在此之前已中断。
 	t.Run("team_key_zero_personal_balance_passes_when_scoped", func(t *testing.T) {
 		apiKey := &service.APIKey{
 			ID:               300,
@@ -967,9 +968,9 @@ func TestTeamKeyBalanceGateScoping(t *testing.T) {
 		req.Header.Set("x-api-key", apiKey.Key)
 		router.ServeHTTP(w, req)
 
-		require.Equal(t, http.StatusOK, w.Code,
-			"团队 key 且 QuotaSubjectScoped=true 时，个人余额 0 不应导致 403 INSUFFICIENT_BALANCE；"+
-				"实际收到：%s", w.Body.String())
+		// Team keys must be rejected at the TEE gate — not passed to the balance check.
+		require.Equal(t, http.StatusForbidden, w.Code)
+		require.Contains(t, w.Body.String(), "USE_TEE_ENDPOINT")
 	})
 
 	// 2. 个人 key：BillingSubjectID = 0，用户个人余额为 0
@@ -1012,7 +1013,7 @@ func TestTeamKeyBalanceGateScoping(t *testing.T) {
 		require.Contains(t, w.Body.String(), "INSUFFICIENT_BALANCE")
 	})
 
-	// 3. 团队 key 但 QuotaSubjectScoped = false：仍应 403（flag 关闭时不绕过）。
+	// 3. 团队 key（QuotaSubjectScoped = false）→ 同样被 TEE 门控拒绝（USE_TEE_ENDPOINT）。
 	t.Run("team_key_flag_off_still_blocked", func(t *testing.T) {
 		apiKey := &service.APIKey{
 			ID:               302,
@@ -1048,8 +1049,93 @@ func TestTeamKeyBalanceGateScoping(t *testing.T) {
 		req.Header.Set("x-api-key", apiKey.Key)
 		router.ServeHTTP(w, req)
 
+		// Team keys must be rejected at the TEE gate regardless of QuotaSubjectScoped.
 		require.Equal(t, http.StatusForbidden, w.Code)
-		require.Contains(t, w.Body.String(), "INSUFFICIENT_BALANCE")
+		require.Contains(t, w.Body.String(), "USE_TEE_ENDPOINT")
+	})
+}
+
+// TestAPIKeyAuth_RejectsTeamKey verifies the data-plane proxy middleware rejects team-mode
+// keys with 403 USE_TEE_ENDPOINT, while personal keys pass through unchanged.
+func TestAPIKeyAuth_RejectsTeamKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	teamID := int64(42)
+
+	// sub-test 1: team key → 403 USE_TEE_ENDPOINT
+	t.Run("team_key_rejected_with_USE_TEE_ENDPOINT", func(t *testing.T) {
+		apiKey := &service.APIKey{
+			ID:     500,
+			UserID: 50,
+			TeamID: &teamID,
+			Key:    "team-key-rejected",
+			Status: service.StatusActive,
+			User: &service.User{
+				ID:          50,
+				Role:        service.RoleUser,
+				Status:      service.StatusActive,
+				Balance:     100,
+				Concurrency: 3,
+			},
+		}
+		apiKeyRepo := &stubApiKeyRepo{
+			getByKey: func(ctx context.Context, key string) (*service.APIKey, error) {
+				if key != apiKey.Key {
+					return nil, service.ErrAPIKeyNotFound
+				}
+				clone := *apiKey
+				return &clone, nil
+			},
+		}
+		cfg := &config.Config{RunMode: config.RunModeSimple}
+		apiKeyService := service.NewAPIKeyService(apiKeyRepo, nil, nil, nil, nil, nil, cfg)
+		router := newAuthTestRouter(apiKeyService, nil, cfg)
+
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/t", nil)
+		req.Header.Set("x-api-key", apiKey.Key)
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusForbidden, w.Code)
+		require.Contains(t, w.Body.String(), "USE_TEE_ENDPOINT")
+	})
+
+	// sub-test 2: personal key (TeamID nil) → passes (200)
+	t.Run("personal_key_passes_team_gate", func(t *testing.T) {
+		apiKey := &service.APIKey{
+			ID:     501,
+			UserID: 51,
+			TeamID: nil, // personal key
+			Key:    "personal-key-passes",
+			Status: service.StatusActive,
+			User: &service.User{
+				ID:          51,
+				Role:        service.RoleUser,
+				Status:      service.StatusActive,
+				Balance:     100,
+				Concurrency: 3,
+			},
+		}
+		apiKeyRepo := &stubApiKeyRepo{
+			getByKey: func(ctx context.Context, key string) (*service.APIKey, error) {
+				if key != apiKey.Key {
+					return nil, service.ErrAPIKeyNotFound
+				}
+				clone := *apiKey
+				return &clone, nil
+			},
+		}
+		cfg := &config.Config{RunMode: config.RunModeSimple}
+		apiKeyService := service.NewAPIKeyService(apiKeyRepo, nil, nil, nil, nil, nil, cfg)
+		router := newAuthTestRouter(apiKeyService, nil, cfg)
+
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/t", nil)
+		req.Header.Set("x-api-key", apiKey.Key)
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code,
+			"personal key must NOT be rejected by the team gate; got: %s", w.Body.String())
 	})
 }
 
@@ -1165,6 +1251,10 @@ func (r *stubApiKeyRepo) ResetRateLimitWindows(ctx context.Context, id int64) er
 }
 func (r *stubApiKeyRepo) GetRateLimitData(ctx context.Context, id int64) (*service.APIKeyRateLimitData, error) {
 	return nil, nil
+}
+
+func (r *stubApiKeyRepo) GetByKeyHash(ctx context.Context, hash string) (*service.APIKey, error) {
+	return nil, errors.New("not implemented")
 }
 
 type stubUserSubscriptionRepo struct {

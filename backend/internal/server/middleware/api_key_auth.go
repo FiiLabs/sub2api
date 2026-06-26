@@ -124,6 +124,15 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 			return
 		}
 
+		// ── 3b. Team-mode gate ───────────────────────────────────────
+		// Team keys must only reach the TEE gateway (/consult/* endpoints guarded
+		// by ControlTokenAuth). Using a team key directly on the data-plane proxy
+		// would bypass the TEE, so we reject it here unconditionally.
+		if apiKey.IsTeamMode() {
+			AbortWithError(c, 403, "USE_TEE_ENDPOINT", "team key must use the TEE gateway endpoint")
+			return
+		}
+
 		// ── 4. SimpleMode → early return ─────────────────────────────
 
 		if cfg.RunMode == config.RunModeSimple {
