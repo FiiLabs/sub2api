@@ -2,6 +2,7 @@
   <AppLayout>
     <TablePageLayout>
       <template #actions>
+        <WorkspaceContextBar class="mb-4" />
         <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <!-- Total Requests -->
           <div class="card p-4">
@@ -676,6 +677,7 @@ import Select from '@/components/common/Select.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import Icon from '@/components/icons/Icon.vue'
 import UserErrorRequestsTable from '@/components/user/UserErrorRequestsTable.vue'
+import WorkspaceContextBar from '@/components/common/WorkspaceContextBar.vue'
 import type { UsageLog, ApiKey, UsageQueryParams, UsageStatsResponse, UserErrorRequest, TeamMember } from '@/types'
 import type { TeamMemberUsage } from '@/api/usage'
 import type { Column } from '@/components/common/types'
