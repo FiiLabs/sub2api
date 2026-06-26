@@ -35,6 +35,9 @@ type adminTeamServiceStub struct {
 	transferArgs [2]int64 // teamID, newOwnerUserID
 	transferErr  error
 
+	deleteTeamID  int64
+	deleteTeamErr error
+
 	// AdminGetTeamOverride 若设置则替代默认实现
 	AdminGetTeamOverride func(teamID int64) (*service.AdminTeamSummary, []service.TeamMember, []service.TeamInvitation, error)
 }
@@ -104,6 +107,11 @@ func (s *adminTeamServiceStub) AdminRemoveMember(_ context.Context, adminUserID,
 func (s *adminTeamServiceStub) AdminTransferOwnership(_ context.Context, teamID, newOwnerUserID int64) error {
 	s.transferArgs = [2]int64{teamID, newOwnerUserID}
 	return s.transferErr
+}
+
+func (s *adminTeamServiceStub) AdminDeleteTeam(_ context.Context, teamID int64) error {
+	s.deleteTeamID = teamID
+	return s.deleteTeamErr
 }
 
 // adminRouter wires the handler routes the same way the production router does,

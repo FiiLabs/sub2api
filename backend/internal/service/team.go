@@ -543,6 +543,15 @@ func (s *TeamService) TransferOwnership(ctx context.Context, actorUserID, teamID
 	return s.repo.TransferOwnership(ctx, teamID, newOwnerUserID, team.OwnerUserID)
 }
 
+// AdminDeleteTeam 平台 admin 强删团队：直接软删 成员/团队/团队计费主体，无 owner/余额/启用-key 守卫
+// （守卫仅作用于 owner 自助 DissolveTeam）。团队 API key 的删除与缓存失效由调用方在此之前完成。
+func (s *TeamService) AdminDeleteTeam(ctx context.Context, teamID int64) error {
+	if teamID <= 0 {
+		return ErrTeamNotFound
+	}
+	return s.repo.DissolveTeam(ctx, teamID)
+}
+
 // AdminTransferOwnership transfers team ownership as a platform admin (no
 // membership gating on the actor). The new owner must still be an active member;
 // the previous owner is demoted to admin.

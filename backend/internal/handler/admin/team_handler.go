@@ -25,6 +25,7 @@ type AdminTeamService interface {
 	AdminUpdateMember(ctx context.Context, adminUserID, teamID, userID int64, input service.UpdateTeamMemberInput) (*service.TeamMember, error)
 	AdminRemoveMember(ctx context.Context, adminUserID, teamID, userID int64) error
 	AdminTransferOwnership(ctx context.Context, teamID, newOwnerUserID int64) error
+	AdminDeleteTeam(ctx context.Context, teamID int64) error
 }
 
 // teamAuthCacheInvalidator 由 *service.APIKeyService 实现（按团队失效鉴权缓存）。
