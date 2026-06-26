@@ -26,7 +26,7 @@ export const TEAM_PALETTES: WorkspacePalette[] = [
   { key: 'amber',   chip: 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',         icon: 'text-amber-600 dark:text-amber-400',     border: 'border-amber-200 dark:border-amber-500/30',     watermarkText: 'text-amber-500 dark:text-amber-400' },
   { key: 'orange',  chip: 'bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300',     icon: 'text-orange-600 dark:text-orange-400',   border: 'border-orange-200 dark:border-orange-500/30',   watermarkText: 'text-orange-500 dark:text-orange-400' },
   { key: 'rose',    chip: 'bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300',             icon: 'text-rose-600 dark:text-rose-400',       border: 'border-rose-200 dark:border-rose-500/30',       watermarkText: 'text-rose-500 dark:text-rose-400' },
-  { key: 'fuchsia', chip: 'bg-fuchsia-50 text-fuchsia-700 dark:bg-fuchsia-500/15 dark:text-fuchsia-300', icon: 'text-fuchsia-600 dark:text-fuchsia-400', border: 'border-fuchsia-200 dark:border-fuchsia-500/30', watermarkText: 'text-fuchsia-500 dark:text-fuchsia-400' }
+  { key: 'pink',    chip: 'bg-pink-50 text-pink-700 dark:bg-pink-500/15 dark:text-pink-300',             icon: 'text-pink-600 dark:text-pink-400',       border: 'border-pink-200 dark:border-pink-500/30',       watermarkText: 'text-pink-500 dark:text-pink-400' }
 ]
 
 /** 个人→中性；团队→按 team_id（回退 billing_subject_id）稳定取色。 */
