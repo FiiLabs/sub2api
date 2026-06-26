@@ -50,12 +50,20 @@ func (r *teamRepository) CreateTeam(ctx context.Context, input service.CreateTea
 		return nil, err
 	}
 
+	concurrency := 5
+	if input.Concurrency != nil {
+		concurrency = *input.Concurrency
+	}
+	rpmLimit := 0
+	if input.RpmLimit != nil {
+		rpmLimit = *input.RpmLimit
+	}
 	subject, err := tx.BillingSubject.Create().
 		SetType(domain.BillingSubjectTypeTeam).
 		SetTeamID(created.ID).
 		SetStatus(domain.StatusActive).
-		SetConcurrency(5).
-		SetRpmLimit(0).
+		SetConcurrency(concurrency).
+		SetRpmLimit(rpmLimit).
 		SetBalanceNotifyEnabled(true).
 		SetBalanceNotifyThresholdType("fixed").
 		SetBalanceNotifyExtraEmails("[]").

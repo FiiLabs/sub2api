@@ -116,6 +116,9 @@ type CreateTeamInput struct {
 	// platform admin can create a team on behalf of another user). When 0 the owner
 	// defaults to ActorUserID (user self-service path).
 	OwnerUserID int64
+	// Concurrency/RpmLimit：nil = 用默认(5/0)，非 nil = 用该值(含 0=不限制)。仅 admin 创建路径会传。
+	Concurrency *int
+	RpmLimit    *int
 }
 
 // AdminCreateTeamInput holds the input for AdminCreateTeam. The owner is resolved
@@ -127,6 +130,8 @@ type AdminCreateTeamInput struct {
 	OwnerUserID int64
 	OwnerEmail  string
 	AdminUserID int64
+	Concurrency *int
+	RpmLimit    *int
 }
 
 type InviteTeamMemberInput struct {
@@ -609,6 +614,8 @@ func (s *TeamService) AdminCreateTeam(ctx context.Context, input AdminCreateTeam
 		OwnerUserID: ownerID,
 		Name:        input.Name,
 		Slug:        slug,
+		Concurrency: input.Concurrency,
+		RpmLimit:    input.RpmLimit,
 	})
 	if err != nil {
 		return nil, err

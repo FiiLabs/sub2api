@@ -141,6 +141,8 @@ type adminCreateTeamRequest struct {
 	Slug        string `json:"slug"`
 	OwnerUserID int64  `json:"owner_user_id"`
 	OwnerEmail  string `json:"owner_email" binding:"omitempty,email"`
+	Concurrency *int   `json:"concurrency" binding:"omitempty,min=0"`
+	RpmLimit    *int   `json:"rpm_limit" binding:"omitempty,min=0"`
 }
 
 type adminUpdateTeamRequest struct {
@@ -225,6 +227,8 @@ func (h *AdminTeamHandler) Create(c *gin.Context) {
 		OwnerUserID: req.OwnerUserID,
 		OwnerEmail:  req.OwnerEmail,
 		AdminUserID: adminUserID,
+		Concurrency: req.Concurrency,
+		RpmLimit:    req.RpmLimit,
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)
