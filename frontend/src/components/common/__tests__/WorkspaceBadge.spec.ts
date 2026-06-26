@@ -9,7 +9,7 @@ vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (k: string) => k }) }))
 
 const personal: WorkspaceSubject = { billing_subject_id: 1, type: 'user', name: 'Me', role: 'owner', permissions: {}, balance: 0 }
 const team: WorkspaceSubject = { billing_subject_id: 2, type: 'team', team_id: 4, name: 'Acme', role: 'admin', permissions: {}, balance: 0 }
-const TEAM_FAMILIES = ['emerald', 'teal', 'sky', 'blue', 'amber', 'orange', 'rose', 'fuchsia']
+const TEAM_FAMILIES = ['emerald', 'teal', 'sky', 'blue', 'amber', 'orange', 'rose', 'pink']
 
 const mountBadge = (props: Record<string, unknown>) =>
   mount(WorkspaceBadge, { props, global: { stubs: { Icon: true } } })

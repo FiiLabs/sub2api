@@ -1559,6 +1559,12 @@ const confirmDelete = (key: ApiKey) => {
 }
 
 const handleSubmit = async () => {
+  // Prevent team-key creation without billing acknowledgement (guards Enter-submit bypass)
+  if (showCreateModal.value && workspaceStore.isTeamWorkspace && !teamBillingAck.value) {
+    appStore.showError(t('workspace.createKeyTeamAck', { name: workspaceStore.activeWorkspace?.name }))
+    return
+  }
+
   // Validate group_id is required
   if (formData.value.group_id === null) {
     appStore.showError(t('keys.groupRequired'))
