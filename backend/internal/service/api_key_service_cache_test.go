@@ -20,6 +20,7 @@ type authRepoStub struct {
 	getByKeyForAuth   func(ctx context.Context, key string) (*APIKey, error)
 	listKeysByUserID  func(ctx context.Context, userID int64) ([]string, error)
 	listKeysByGroupID func(ctx context.Context, groupID int64) ([]string, error)
+	listKeysByTeamID  func(ctx context.Context, teamID int64) ([]string, error)
 }
 
 func (s *authRepoStub) Create(ctx context.Context, key *APIKey) error {
@@ -107,7 +108,10 @@ func (s *authRepoStub) ListKeysByGroupID(ctx context.Context, groupID int64) ([]
 }
 
 func (s *authRepoStub) ListKeysByTeamID(ctx context.Context, teamID int64) ([]string, error) {
-	return nil, nil
+	if s.listKeysByTeamID == nil {
+		panic("unexpected ListKeysByTeamID call")
+	}
+	return s.listKeysByTeamID(ctx, teamID)
 }
 
 func (s *authRepoStub) IncrementQuotaUsed(ctx context.Context, id int64, amount float64) (float64, error) {
@@ -491,6 +495,24 @@ func TestAPIKeyService_InvalidateAuthCacheByGroupID(t *testing.T) {
 	svc := NewAPIKeyService(repo, nil, nil, nil, nil, cache, cfg)
 
 	svc.InvalidateAuthCacheByGroupID(context.Background(), 9)
+	require.Len(t, cache.deleteAuthKeys, 2)
+}
+
+func TestAPIKeyService_InvalidateAuthCacheByTeamID(t *testing.T) {
+	cache := &authCacheStub{}
+	repo := &authRepoStub{
+		listKeysByTeamID: func(ctx context.Context, teamID int64) ([]string, error) {
+			return []string{"k1", "k2"}, nil
+		},
+	}
+	cfg := &config.Config{
+		APIKeyAuth: config.APIKeyAuthCacheConfig{
+			L2TTLSeconds: 60,
+		},
+	}
+	svc := NewAPIKeyService(repo, nil, nil, nil, nil, cache, cfg)
+
+	svc.InvalidateAuthCacheByTeamID(context.Background(), 7)
 	require.Len(t, cache.deleteAuthKeys, 2)
 }
 
