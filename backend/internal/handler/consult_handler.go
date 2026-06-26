@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -72,10 +73,48 @@ func NewConsultHandler(
 	}
 }
 
+// resolveConsultRoute resolves a model name against the route_map with the
+// following precedence:
+//  1. Exact key match wins.
+//  2. Longest matching prefix wildcard (pattern ending with "*") wins among ties.
+//  3. Catch-all "*" key is used as a last resort.
+//
+// Returns the matched ConsultRoute and true, or a zero value and false when
+// nothing matches.
+func resolveConsultRoute(m map[string]config.ConsultRoute, model string) (config.ConsultRoute, bool) {
+	if r, ok := m[model]; ok { // exact wins
+		return r, true
+	}
+	bestLen := -1
+	var best config.ConsultRoute
+	for pat, r := range m {
+		if pat == "*" || !strings.HasSuffix(pat, "*") {
+			continue
+		}
+		prefix := strings.TrimSuffix(pat, "*")
+		if strings.HasPrefix(model, prefix) && len(prefix) > bestLen {
+			bestLen = len(prefix)
+			best = r
+		}
+	}
+	if bestLen >= 0 {
+		return best, true
+	}
+	if r, ok := m["*"]; ok { // catch-all fallback
+		return r, true
+	}
+	return config.ConsultRoute{}, false
+}
+
 // Models implements GET /models: OpenAI-style catalog from the consult route_map.
+// Pattern keys (entries containing "*") are excluded — they are routing rules,
+// not real model identifiers.
 func (h *ConsultHandler) Models(c *gin.Context) {
 	data := make([]gin.H, 0, len(h.cfg.Consult.RouteMap))
 	for id := range h.cfg.Consult.RouteMap {
+		if strings.Contains(id, "*") {
+			continue
+		}
 		data = append(data, gin.H{"id": id, "object": "model"})
 	}
 	c.JSON(http.StatusOK, gin.H{"object": "list", "data": data})
@@ -139,8 +178,8 @@ func (h *ConsultHandler) Pre(c *gin.Context) {
 		return
 	}
 
-	// 6. Route map lookup.
-	route, ok := h.cfg.Consult.RouteMap[req.Model]
+	// 6. Route map lookup (exact → longest-prefix wildcard → catch-all "*").
+	route, ok := resolveConsultRoute(h.cfg.Consult.RouteMap, req.Model)
 	if !ok {
 		deny(c, http.StatusNotFound, "Unknown model: "+req.Model)
 		return
