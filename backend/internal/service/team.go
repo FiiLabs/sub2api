@@ -1048,6 +1048,24 @@ func (s *TeamService) AdminAdjustTeamBalance(ctx context.Context, teamID int64, 
 	return s.repo.AdminGetTeamSummary(ctx, teamID)
 }
 
+// AdminGetTeamBalanceHistory 返回团队（计费主体）的余额变动历史，分页；codeType 可选过滤。
+// 团队无计费主体时返回空切片（不报错）。
+func (s *TeamService) AdminGetTeamBalanceHistory(ctx context.Context, teamID int64, page, pageSize int, codeType string) ([]RedeemCode, int64, error) {
+	summary, err := s.repo.AdminGetTeamSummary(ctx, teamID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if summary.BillingSubjectID == nil || *summary.BillingSubjectID <= 0 || s.redeemCodeRepo == nil {
+		return nil, 0, nil
+	}
+	params := pagination.PaginationParams{Page: page, PageSize: pageSize}
+	items, result, err := s.redeemCodeRepo.ListBySubjectID(ctx, *summary.BillingSubjectID, params, codeType)
+	if err != nil {
+		return nil, 0, err
+	}
+	return items, result.Total, nil
+}
+
 // randHexSuffix returns ~6 hex chars of crypto-random entropy, reusing the
 // crypto/rand style of GenerateInvitationToken.
 func randHexSuffix() (string, error) {

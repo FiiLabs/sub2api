@@ -1269,7 +1269,8 @@ func (f *fakeBillingSubjectForBalance) lastDelta(subjectID int64) float64 {
 	return f.deltas[subjectID]
 }
 
-// fakeRedeemCodeRepoForBalance 记录 Create 调用的关键字段。
+// fakeRedeemCodeRepoForBalance 记录 Create 调用的关键字段，并可为指定 subjectID
+// 预填若干行以供 ListBySubjectID 返回（Task 8 扩展）。
 type fakeRedeemCodeRepoForBalance struct {
 	RedeemCodeRepository
 	mu                   sync.Mutex
@@ -1277,10 +1278,17 @@ type fakeRedeemCodeRepoForBalance struct {
 	lastType             string
 	lastBillingSubjectID *int64
 	lastUsedBy           *int64
+	// subjectRows 由 seedSubjectRows 填充；ListBySubjectID 按 subjectID 查找。
+	subjectRows map[int64][]RedeemCode
 }
 
 func newFakeRedeemCodeRepoForBalance() *fakeRedeemCodeRepoForBalance {
-	return &fakeRedeemCodeRepoForBalance{}
+	return &fakeRedeemCodeRepoForBalance{subjectRows: make(map[int64][]RedeemCode)}
+}
+
+// newFakeRedeemCodeRepo 是 newFakeRedeemCodeRepoForBalance 的短名别名，供 Task 8 测试使用。
+func newFakeRedeemCodeRepo() *fakeRedeemCodeRepoForBalance {
+	return newFakeRedeemCodeRepoForBalance()
 }
 
 func (f *fakeRedeemCodeRepoForBalance) Create(_ context.Context, code *RedeemCode) error {
@@ -1296,6 +1304,28 @@ func (f *fakeRedeemCodeRepoForBalance) Create(_ context.Context, code *RedeemCod
 		f.lastBillingSubjectID = nil
 	}
 	return nil
+}
+
+// seedSubjectRows 预填 n 行 RedeemCode（BillingSubjectID=subjectID），
+// 使 ListBySubjectID 对该 subjectID 返回 n 行、Total=n。
+func (f *fakeRedeemCodeRepoForBalance) seedSubjectRows(subjectID int64, n int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	rows := make([]RedeemCode, n)
+	for i := range rows {
+		id := int64(i + 1)
+		rows[i] = RedeemCode{ID: id, BillingSubjectID: &subjectID, Type: AdjustmentTypeAdminBalance}
+	}
+	f.subjectRows[subjectID] = rows
+}
+
+// ListBySubjectID 返回已播种的行，对未播种的 subjectID 返回空切片。
+func (f *fakeRedeemCodeRepoForBalance) ListBySubjectID(_ context.Context, subjectID int64, params pagination.PaginationParams, _ string) ([]RedeemCode, *pagination.PaginationResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	rows := f.subjectRows[subjectID]
+	total := int64(len(rows))
+	return rows, &pagination.PaginationResult{Total: total, Page: params.Page, PageSize: params.PageSize}, nil
 }
 
 // fakeSubjectBalanceCacheForBalance 线程安全地记录被失效的 subjectID。
@@ -1389,4 +1419,52 @@ func TestTeamService_AdminAdjustTeamBalance_SetAndNoSubjectGuard(t *testing.T) {
 	svc2 := NewTeamService(repo2, newFakeBillingSubjectForBalance(), nil, newFakeRedeemCodeRepoForBalance(), newFakeSubjectBalanceCacheForBalance())
 	_, err = svc2.AdminAdjustTeamBalance(context.Background(), 1, 1.0, "add", "")
 	require.Error(t, err)
+}
+
+// --- AdminGetTeamBalanceHistory helpers & tests --------------------------------
+
+// newTeamRepoMemoryWithTeam 创建含一个团队（固定 teamID）的内存仓储桩。
+// subjectID > 0 时 AdminGetTeamSummary 返回非 nil BillingSubjectID；= 0 则返回 nil。
+// balance 注入到 AdminGetTeamSummary 返回值的 Balance 字段。
+// t 仅用于保证 teamID 可被追踪（暂未断言，预留）。
+func newTeamRepoMemoryWithTeam(t *testing.T, teamID, subjectID int64, balance float64) *adminBalanceRepoStub {
+	t.Helper()
+	base := newTeamRepoMemory()
+	// nextID 默认从 1 开始；若 teamID != 1 先用虚拟团队占位填满 nextID 到 teamID。
+	for base.nextID < teamID {
+		_, _ = base.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 1, Name: fmt.Sprintf("placeholder-%d", base.nextID)})
+	}
+	_, _ = base.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 1, Name: fmt.Sprintf("team-%d", teamID)})
+	return newAdminBalanceRepoStub(base, subjectID, balance)
+}
+
+// newFakeBillingSubjectRepo 返回一个满足 BillingSubjectRepository 接口的最小桩（无计费主体 subject 操作需求）。
+func newFakeBillingSubjectRepo() *fakeBillingSubjectForBalance {
+	return newFakeBillingSubjectForBalance()
+}
+
+// newFakeSubjectBalanceCache 返回一个满足 SubjectBalanceInvalidator 接口的最小桩。
+func newFakeSubjectBalanceCache() *fakeSubjectBalanceCacheForBalance {
+	return newFakeSubjectBalanceCacheForBalance()
+}
+
+func TestTeamService_AdminGetTeamBalanceHistory(t *testing.T) {
+	repo := newTeamRepoMemoryWithTeam(t, 20, 700, 0)
+	redeem := newFakeRedeemCodeRepo()
+	redeem.seedSubjectRows(700, 3) // 让 ListBySubjectID 返回 3 行 total=3
+	svc := NewTeamService(repo, newFakeBillingSubjectRepo(), nil, redeem, newFakeSubjectBalanceCache())
+
+	items, total, err := svc.AdminGetTeamBalanceHistory(context.Background(), 20, 1, 10, "")
+	require.NoError(t, err)
+	require.Equal(t, int64(3), total)
+	require.Len(t, items, 3)
+}
+
+func TestTeamService_AdminGetTeamBalanceHistory_NoSubject(t *testing.T) {
+	repo := newTeamRepoMemoryWithTeam(t, 21, 0, 0)
+	svc := NewTeamService(repo, newFakeBillingSubjectRepo(), nil, newFakeRedeemCodeRepo(), newFakeSubjectBalanceCache())
+	items, total, err := svc.AdminGetTeamBalanceHistory(context.Background(), 21, 1, 10, "")
+	require.NoError(t, err)
+	require.Equal(t, int64(0), total)
+	require.Empty(t, items)
 }
