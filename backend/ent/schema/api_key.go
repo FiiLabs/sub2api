@@ -180,6 +180,6 @@ func (APIKey) Indexes() []ent.Index {
 		// Index for quota queries
 		index.Fields("quota", "quota_used"),
 		index.Fields("expires_at"),
-		index.Fields("key_hash"),
+		index.Fields("key_hash").Unique(),
 	}
 }

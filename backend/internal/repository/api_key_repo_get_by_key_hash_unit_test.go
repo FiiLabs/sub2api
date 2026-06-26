@@ -45,3 +45,29 @@ func TestAPIKeyRepository_GetByKeyHash(t *testing.T) {
 	_, err = repo.GetByKeyHash(ctx, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
 	require.ErrorIs(t, err, service.ErrAPIKeyNotFound)
 }
+
+func TestAPIKeyRepository_GetByKeyHash_SoftDeleted(t *testing.T) {
+	repo, client := newAPIKeyRepoSQLite(t)
+	ctx := context.Background()
+	user := mustCreateAPIKeyRepoUser(t, ctx, client, "get-by-key-hash-deleted@test.com")
+
+	rawKey := "sk-get-by-key-hash-deleted-key"
+	hash := sha256Hex(rawKey)
+
+	key := &service.APIKey{
+		UserID:  user.ID,
+		Key:     rawKey,
+		KeyHash: &hash,
+		Name:    "HashTestKeyDeleted",
+		Status:  service.StatusActive,
+	}
+	require.NoError(t, repo.Create(ctx, key))
+	require.NotZero(t, key.ID)
+
+	// Soft-delete the key.
+	require.NoError(t, repo.Delete(ctx, key.ID))
+
+	// GetByKeyHash must not return soft-deleted keys.
+	_, err := repo.GetByKeyHash(ctx, hash)
+	require.ErrorIs(t, err, service.ErrAPIKeyNotFound)
+}

@@ -137,7 +137,7 @@ var (
 			},
 			{
 				Name:    "apikey_key_hash",
-				Unique:  false,
+				Unique:  true,
 				Columns: []*schema.Column{APIKeysColumns[5]},
 			},
 		},
