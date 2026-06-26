@@ -974,6 +974,80 @@ func slugifyTeamName(name string) string {
 	return slug
 }
 
+// AdminAdjustTeamBalance 平台 admin 调整团队（计费主体）余额。
+// operation: "set"（绝对值）/ "add"（加）/ "subtract"（减）。
+// 结果余额不得为负。写带 BillingSubjectID 的审计记录（best-effort），并异步失效主体余额缓存。
+func (s *TeamService) AdminAdjustTeamBalance(ctx context.Context, teamID int64, amount float64, operation, notes string) (*AdminTeamSummary, error) {
+	summary, err := s.repo.AdminGetTeamSummary(ctx, teamID)
+	if err != nil {
+		return nil, err
+	}
+	if summary.BillingSubjectID == nil || *summary.BillingSubjectID <= 0 {
+		return nil, infraerrors.BadRequest("TEAM_NO_BILLING_SUBJECT", "team has no billing subject")
+	}
+	subjectID := *summary.BillingSubjectID
+	oldBalance := summary.Balance
+
+	var newBalance float64
+	switch operation {
+	case "set":
+		newBalance = amount
+	case "add":
+		newBalance = oldBalance + amount
+	case "subtract":
+		newBalance = oldBalance - amount
+	default:
+		return nil, infraerrors.BadRequest("TEAM_BALANCE_BAD_OP", "invalid operation")
+	}
+	if newBalance < 0 {
+		return nil, infraerrors.BadRequest("TEAM_BALANCE_NEGATIVE",
+			fmt.Sprintf("balance cannot be negative, current: %.2f, result would be: %.2f", oldBalance, newBalance))
+	}
+
+	delta := newBalance - oldBalance
+	if err := s.billingSubject.UpdateBalance(ctx, subjectID, delta); err != nil {
+		return nil, err
+	}
+
+	// 审计（best-effort，失败仅记日志，不阻断主流程）
+	if delta != 0 && s.redeemCodeRepo != nil {
+		if code, gerr := GenerateRedeemCode(); gerr == nil {
+			now := time.Now()
+			rec := &RedeemCode{
+				Code:             code,
+				Type:             AdjustmentTypeAdminBalance,
+				Value:            delta,
+				Status:           StatusUsed,
+				UsedAt:           &now,
+				Notes:            notes,
+				BillingSubjectID: &subjectID,
+			}
+			if cerr := s.redeemCodeRepo.Create(ctx, rec); cerr != nil {
+				slog.WarnContext(ctx, "AdminAdjustTeamBalance: failed to write audit record",
+					"team_id", teamID, "error", cerr.Error())
+			}
+		} else {
+			slog.WarnContext(ctx, "AdminAdjustTeamBalance: failed to generate audit code",
+				"team_id", teamID, "error", gerr.Error())
+		}
+	}
+
+	// 异步失效主体余额缓存
+	if delta != 0 && s.subjectBalanceCache != nil {
+		go func() {
+			cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if ierr := s.subjectBalanceCache.InvalidateSubjectBalance(cacheCtx, subjectID); ierr != nil {
+				slog.Warn("AdminAdjustTeamBalance: invalidate subject balance cache failed",
+					"subject_id", subjectID, "error", ierr.Error())
+			}
+		}()
+	}
+
+	// 返回最新 summary（重新读，含新余额）
+	return s.repo.AdminGetTeamSummary(ctx, teamID)
+}
+
 // randHexSuffix returns ~6 hex chars of crypto-random entropy, reusing the
 // crypto/rand style of GenerateInvitationToken.
 func randHexSuffix() (string, error) {

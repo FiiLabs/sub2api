@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1197,4 +1198,195 @@ func TestTeamService_AdminCreateTeam_BypassesOwnerCap(t *testing.T) {
 	// admin 代建第 6 个、指派同一 owner —— 不受上限影响
 	_, err := svc.AdminCreateTeam(context.Background(), AdminCreateTeamInput{AdminUserID: 1, OwnerUserID: owner, Name: "admin-extra"})
 	require.NoError(t, err)
+}
+
+// --- AdminAdjustTeamBalance tests -----------------------------------------------
+
+// adminBalanceRepoStub 内嵌 teamRepoMemory，覆写 AdminGetTeamSummary 以注入
+// BillingSubjectID 和 Balance（这样 AdminAdjustTeamBalance 能读到初始余额并在最
+// 终重读时返回更新后的余额）。subjectID=0 表示无主体（返回 BillingSubjectID=nil）。
+type adminBalanceRepoStub struct {
+	*teamRepoMemory
+	billingSubjectID int64
+	// balance 是 AdminGetTeamSummary 返回的当前余额，在 UpdateBalance 被调用后由
+	// fakeBillingSubjectForBalance 通过回调更新。
+	mu      sync.Mutex
+	balance float64
+}
+
+func newAdminBalanceRepoStub(base *teamRepoMemory, subjectID int64, balance float64) *adminBalanceRepoStub {
+	return &adminBalanceRepoStub{teamRepoMemory: base, billingSubjectID: subjectID, balance: balance}
+}
+
+func (s *adminBalanceRepoStub) AdminGetTeamSummary(ctx context.Context, teamID int64) (*AdminTeamSummary, error) {
+	summary, err := s.teamRepoMemory.AdminGetTeamSummary(ctx, teamID)
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.billingSubjectID > 0 {
+		sid := s.billingSubjectID
+		summary.BillingSubjectID = &sid
+	} else {
+		summary.BillingSubjectID = nil
+	}
+	summary.Balance = s.balance
+	return summary, nil
+}
+
+func (s *adminBalanceRepoStub) applyDelta(delta float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.balance += delta
+}
+
+// fakeBillingSubjectForBalance 记录 UpdateBalance 的累计 delta，并将变化同步回 repo stub。
+type fakeBillingSubjectForBalance struct {
+	BillingSubjectRepository
+	mu      sync.Mutex
+	deltas  map[int64]float64
+	onDelta func(subjectID int64, delta float64)
+}
+
+func newFakeBillingSubjectForBalance() *fakeBillingSubjectForBalance {
+	return &fakeBillingSubjectForBalance{deltas: make(map[int64]float64)}
+}
+
+func (f *fakeBillingSubjectForBalance) UpdateBalance(_ context.Context, subjectID int64, delta float64) error {
+	f.mu.Lock()
+	f.deltas[subjectID] += delta
+	f.mu.Unlock()
+	if f.onDelta != nil {
+		f.onDelta(subjectID, delta)
+	}
+	return nil
+}
+
+func (f *fakeBillingSubjectForBalance) lastDelta(subjectID int64) float64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.deltas[subjectID]
+}
+
+// fakeRedeemCodeRepoForBalance 记录 Create 调用的关键字段。
+type fakeRedeemCodeRepoForBalance struct {
+	RedeemCodeRepository
+	mu                   sync.Mutex
+	created              int
+	lastType             string
+	lastBillingSubjectID *int64
+	lastUsedBy           *int64
+}
+
+func newFakeRedeemCodeRepoForBalance() *fakeRedeemCodeRepoForBalance {
+	return &fakeRedeemCodeRepoForBalance{}
+}
+
+func (f *fakeRedeemCodeRepoForBalance) Create(_ context.Context, code *RedeemCode) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.created++
+	f.lastType = code.Type
+	f.lastUsedBy = code.UsedBy
+	if code.BillingSubjectID != nil {
+		sid := *code.BillingSubjectID
+		f.lastBillingSubjectID = &sid
+	} else {
+		f.lastBillingSubjectID = nil
+	}
+	return nil
+}
+
+// fakeSubjectBalanceCacheForBalance 线程安全地记录被失效的 subjectID。
+type fakeSubjectBalanceCacheForBalance struct {
+	mu          sync.Mutex
+	invalidated map[int64]bool
+}
+
+func newFakeSubjectBalanceCacheForBalance() *fakeSubjectBalanceCacheForBalance {
+	return &fakeSubjectBalanceCacheForBalance{invalidated: make(map[int64]bool)}
+}
+
+func (f *fakeSubjectBalanceCacheForBalance) InvalidateSubjectBalance(_ context.Context, subjectID int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.invalidated[subjectID] = true
+	return nil
+}
+
+func (f *fakeSubjectBalanceCacheForBalance) wasInvalidated(subjectID int64) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.invalidated[subjectID]
+}
+
+func TestTeamService_AdminAdjustTeamBalance_AddAndAudit(t *testing.T) {
+	base := newTeamRepoMemory()
+	_, err := base.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 1, Name: "T10"})
+	require.NoError(t, err)
+	teamID := int64(1)
+
+	repo := newAdminBalanceRepoStub(base, 500, 20.0)
+	bs := newFakeBillingSubjectForBalance()
+	// 让 bs.UpdateBalance 把变化同步回 repo stub（这样二次读返回新余额）
+	bs.onDelta = func(subjectID int64, delta float64) { repo.applyDelta(delta) }
+	redeem := newFakeRedeemCodeRepoForBalance()
+	cache := newFakeSubjectBalanceCacheForBalance()
+	svc := NewTeamService(repo, bs, nil, redeem, cache)
+
+	sum, err := svc.AdminAdjustTeamBalance(context.Background(), teamID, 5.0, "add", "topup")
+	require.NoError(t, err)
+	require.InDelta(t, 25.0, sum.Balance, 1e-9)
+	require.InDelta(t, 5.0, bs.lastDelta(500), 1e-9) // delta = +5
+	redeem.mu.Lock()
+	created := redeem.created
+	lastType := redeem.lastType
+	lastBSID := redeem.lastBillingSubjectID
+	lastUsedBy := redeem.lastUsedBy
+	redeem.mu.Unlock()
+	require.Equal(t, 1, created)                              // 审计写入
+	require.Equal(t, AdjustmentTypeAdminBalance, lastType)
+	require.NotNil(t, lastBSID)
+	require.Equal(t, int64(500), *lastBSID)
+	require.Nil(t, lastUsedBy)
+	require.Eventually(t, func() bool { return cache.wasInvalidated(500) }, time.Second, 10*time.Millisecond)
+}
+
+func TestTeamService_AdminAdjustTeamBalance_SubtractBelowZeroRejected(t *testing.T) {
+	base := newTeamRepoMemory()
+	_, err := base.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 1, Name: "T11"})
+	require.NoError(t, err)
+
+	repo := newAdminBalanceRepoStub(base, 501, 3.0)
+	bs := newFakeBillingSubjectForBalance()
+	svc := NewTeamService(repo, bs, nil, newFakeRedeemCodeRepoForBalance(), newFakeSubjectBalanceCacheForBalance())
+
+	_, err = svc.AdminAdjustTeamBalance(context.Background(), 1, 10.0, "subtract", "")
+	require.Error(t, err) // 结果 3-10 = -7 < 0
+}
+
+func TestTeamService_AdminAdjustTeamBalance_SetAndNoSubjectGuard(t *testing.T) {
+	// set 到绝对值
+	base := newTeamRepoMemory()
+	_, err := base.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 1, Name: "T12"})
+	require.NoError(t, err)
+
+	repo := newAdminBalanceRepoStub(base, 502, 8.0)
+	bs := newFakeBillingSubjectForBalance()
+	bs.onDelta = func(subjectID int64, delta float64) { repo.applyDelta(delta) }
+	svc := NewTeamService(repo, bs, nil, newFakeRedeemCodeRepoForBalance(), newFakeSubjectBalanceCacheForBalance())
+
+	sum, err := svc.AdminAdjustTeamBalance(context.Background(), 1, 30.0, "set", "")
+	require.NoError(t, err)
+	require.InDelta(t, 30.0, sum.Balance, 1e-9)
+
+	// 无计费主体的团队 → 报错
+	base2 := newTeamRepoMemory()
+	_, err = base2.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 2, Name: "T13"})
+	require.NoError(t, err)
+	repo2 := newAdminBalanceRepoStub(base2, 0 /*no subject*/, 0)
+	svc2 := NewTeamService(repo2, newFakeBillingSubjectForBalance(), nil, newFakeRedeemCodeRepoForBalance(), newFakeSubjectBalanceCacheForBalance())
+	_, err = svc2.AdminAdjustTeamBalance(context.Background(), 1, 1.0, "add", "")
+	require.Error(t, err)
 }
