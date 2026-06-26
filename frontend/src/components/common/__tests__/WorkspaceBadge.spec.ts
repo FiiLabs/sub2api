@@ -37,8 +37,9 @@ describe('WorkspaceBadge', () => {
 
   it('responsiveCompact：移动端隐藏文字组、图标常显', () => {
     const w = mountBadge({ subject: team, responsiveCompact: true })
-    expect(w.html()).toContain('hidden')
-    expect(w.html()).toContain('sm:inline-flex')
+    const group = w.find('span.hidden')
+    expect(group.exists()).toBe(true)
+    expect(group.classes()).toContain('sm:inline-flex')
     expect(w.text()).toContain('Acme')
   })
 })
