@@ -156,7 +156,8 @@ type AdminTeamSummary struct {
 	Balance     float64
 	Concurrency int
 	RpmLimit    int
-	MemberCount int
+	MemberCount    int
+	ActiveKeyCount int
 }
 
 // AdminTeamListFilter holds the optional filters for AdminListTeams.
@@ -680,6 +681,13 @@ func (s *TeamService) AdminGetTeam(ctx context.Context, teamID int64) (*AdminTea
 	summary, err := s.repo.AdminGetTeamSummary(ctx, teamID)
 	if err != nil {
 		return nil, nil, nil, err
+	}
+	if summary.BillingSubjectID != nil && *summary.BillingSubjectID > 0 {
+		count, err := s.repo.CountActiveAPIKeysByBillingSubjectID(ctx, *summary.BillingSubjectID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		summary.ActiveKeyCount = count
 	}
 	members, invitations, err := s.repo.ListMembers(ctx, teamID)
 	if err != nil {

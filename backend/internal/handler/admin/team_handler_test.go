@@ -400,6 +400,28 @@ func TestAdminUpdateTeamConcurrencyInvalidatesCache(t *testing.T) {
 	require.Equal(t, int64(7), inv.calledTeamID)
 }
 
+func TestAdminGetTeamDetailExposesActiveKeyCount(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	// AdminGetTeam 桩：返回含 ActiveKeyCount=3 的 summary
+	teamStub := &adminTeamServiceStub{}
+	teamStub.AdminGetTeamOverride = func(teamID int64) (*service.AdminTeamSummary, []service.TeamMember, []service.TeamInvitation, error) {
+		summary := &service.AdminTeamSummary{Team: service.Team{ID: teamID}}
+		summary.ActiveKeyCount = 3
+		return summary, nil, nil, nil
+	}
+
+	h := &AdminTeamHandler{teamService: teamStub}
+	router := adminRouter(h, 999)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/teams/7", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), `"active_key_count":3`)
+}
+
 func TestAdminDeleteTeamHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	inv := &recordingInvalidator{}

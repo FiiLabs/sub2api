@@ -77,6 +77,7 @@ type adminTeamDTO struct {
 	Concurrency      int               `json:"concurrency"`
 	RpmLimit         int               `json:"rpm_limit"`
 	MemberCount      int               `json:"member_count"`
+	ActiveKeyCount   int               `json:"active_key_count"`
 	CreatedAt        time.Time         `json:"created_at"`
 	UpdatedAt        time.Time         `json:"updated_at"`
 }
@@ -123,6 +124,7 @@ func adminTeamDTOFromSummary(s *service.AdminTeamSummary) adminTeamDTO {
 		Concurrency:      s.Concurrency,
 		RpmLimit:         s.RpmLimit,
 		MemberCount:      s.MemberCount,
+		ActiveKeyCount:   s.ActiveKeyCount,
 		CreatedAt:        s.CreatedAt,
 		UpdatedAt:        s.UpdatedAt,
 	}
