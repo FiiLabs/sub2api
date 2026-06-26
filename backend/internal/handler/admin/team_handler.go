@@ -80,14 +80,15 @@ type adminTeamDTO struct {
 }
 
 type adminTeamMemberDTO struct {
-	ID           int64             `json:"id"`
-	TeamID       int64             `json:"team_id"`
-	UserID       int64             `json:"user_id"`
-	Role         string            `json:"role"`
-	Status       string            `json:"status"`
-	JoinedAt     *time.Time        `json:"joined_at"`
-	LastActiveAt *time.Time        `json:"last_active_at"`
-	User         *adminTeamUserDTO `json:"user"`
+	ID                 int64             `json:"id"`
+	TeamID             int64             `json:"team_id"`
+	UserID             int64             `json:"user_id"`
+	Role               string            `json:"role"`
+	Status             string            `json:"status"`
+	JoinedAt           *time.Time        `json:"joined_at"`
+	LastActiveAt       *time.Time        `json:"last_active_at"`
+	User               *adminTeamUserDTO `json:"user"`
+	CurrentConcurrency int               `json:"current_concurrency"`
 }
 
 type adminTeamInvitationDTO struct {
@@ -281,6 +282,19 @@ func (h *AdminTeamHandler) GetByID(c *gin.Context) {
 	}
 
 	team := adminTeamDTOFromSummary(summary)
+	if h.concurrencyLoader != nil && len(memberDTOs) > 0 {
+		reqs := make([]service.UserWithConcurrency, 0, len(memberDTOs))
+		for i := range memberDTOs {
+			reqs = append(reqs, service.UserWithConcurrency{ID: memberDTOs[i].UserID, MaxConcurrency: team.Concurrency})
+		}
+		if load, err := h.concurrencyLoader.GetUsersLoadBatch(c.Request.Context(), reqs); err == nil {
+			for i := range memberDTOs {
+				if info := load[memberDTOs[i].UserID]; info != nil {
+					memberDTOs[i].CurrentConcurrency = info.CurrentConcurrency
+				}
+			}
+		}
+	}
 	response.Success(c, gin.H{
 		"team":        team,
 		"members":     memberDTOs,

@@ -34,6 +34,9 @@ type adminTeamServiceStub struct {
 
 	transferArgs [2]int64 // teamID, newOwnerUserID
 	transferErr  error
+
+	// AdminGetTeamOverride 若设置则替代默认实现
+	AdminGetTeamOverride func(teamID int64) (*service.AdminTeamSummary, []service.TeamMember, []service.TeamInvitation, error)
 }
 
 func (s *adminTeamServiceStub) AdminCreateTeam(_ context.Context, input service.AdminCreateTeamInput) (*service.AdminTeamSummary, error) {
@@ -53,6 +56,9 @@ func (s *adminTeamServiceStub) AdminListTeams(_ context.Context, _ service.Admin
 }
 
 func (s *adminTeamServiceStub) AdminGetTeam(_ context.Context, teamID int64) (*service.AdminTeamSummary, []service.TeamMember, []service.TeamInvitation, error) {
+	if s.AdminGetTeamOverride != nil {
+		return s.AdminGetTeamOverride(teamID)
+	}
 	return &service.AdminTeamSummary{Team: service.Team{ID: teamID}}, nil, nil, nil
 }
 
@@ -317,6 +323,41 @@ func TestAdminTeamHandlerTransferOwnershipRequiresUserID(t *testing.T) {
 	// Missing user_id is rejected at request binding.
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	require.Equal(t, [2]int64{0, 0}, stub.transferArgs)
+}
+
+// stubConcurrencyLoader 是 teamConcurrencyLoader 的测试桩，返回预设的负载数据。
+type stubConcurrencyLoader struct{ load map[int64]*service.UserLoadInfo }
+
+func (s *stubConcurrencyLoader) GetUsersLoadBatch(_ context.Context, _ []service.UserWithConcurrency) (map[int64]*service.UserLoadInfo, error) {
+	return s.load, nil
+}
+
+func TestAdminGetTeamFillsMemberCurrentConcurrency(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	// teamService 桩：AdminGetTeam 返回 1 个成员(user_id=5)，团队 Concurrency=10
+	teamStub := &adminTeamServiceStub{}
+	teamStub.AdminGetTeamOverride = func(teamID int64) (*service.AdminTeamSummary, []service.TeamMember, []service.TeamInvitation, error) {
+		summary := &service.AdminTeamSummary{Team: service.Team{ID: teamID}}
+		summary.Concurrency = 10
+		members := []service.TeamMember{{ID: 1, TeamID: teamID, UserID: 5, Role: "developer", Status: "active"}}
+		return summary, members, nil, nil
+	}
+
+	loader := &stubConcurrencyLoader{load: map[int64]*service.UserLoadInfo{
+		5: {CurrentConcurrency: 3},
+	}}
+
+	h := &AdminTeamHandler{teamService: teamStub, concurrencyLoader: loader}
+	router := adminRouter(h, 999)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/teams/7", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	require.Contains(t, body, `"current_concurrency":3`)
 }
 
 // recordingInvalidator 是 teamAuthCacheInvalidator 的测试桩，记录调用的 teamID。
