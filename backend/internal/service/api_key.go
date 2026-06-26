@@ -104,6 +104,12 @@ func (k *APIKey) IsExpired() bool {
 	return time.Now().After(*k.ExpiresAt)
 }
 
+// IsTeamMode reports whether this key routes through the TEE gateway (team mode).
+// Personal keys (no team) use sub2api's own data plane.
+func (k *APIKey) IsTeamMode() bool {
+	return k != nil && k.TeamID != nil
+}
+
 // IsQuotaExhausted checks if the API key quota is exhausted
 func (k *APIKey) IsQuotaExhausted() bool {
 	if k.Quota <= 0 {
