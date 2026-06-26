@@ -201,3 +201,58 @@ func TestListKeysByTeamIDReturnsOnlyTeamKeys(t *testing.T) {
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"k-team-a-1", "k-team-a-2"}, keys)
 }
+
+func TestDeleteByTeamIDSoftDeletesTeamKeysAndReturnsStrings(t *testing.T) {
+	repo, client := newAPIKeyRepoSQLite(t)
+	ctx := context.Background()
+	user := mustCreateAPIKeyRepoUser(t, ctx, client, "delete-team-keys@test.com")
+
+	// TeamID 是外键，需要真实 team 记录
+	team7, err := client.Team.Create().
+		SetName("team-7").
+		SetSlug("team-7").
+		SetOwnerUserID(user.ID).
+		SetCreatedByUserID(user.ID).
+		SetStatus("active").
+		Save(ctx)
+	require.NoError(t, err)
+
+	team8, err := client.Team.Create().
+		SetName("team-8").
+		SetSlug("team-8").
+		SetOwnerUserID(user.ID).
+		SetCreatedByUserID(user.ID).
+		SetStatus("active").
+		Save(ctx)
+	require.NoError(t, err)
+
+	mk := func(key string, teamID *int64) {
+		k := &service.APIKey{
+			UserID: user.ID,
+			Key:    key,
+			Name:   key,
+			Status: service.StatusActive,
+			TeamID: teamID,
+		}
+		require.NoError(t, repo.Create(ctx, k))
+	}
+	t7, t8 := team7.ID, team8.ID
+	mk("k-team7-a", &t7)
+	mk("k-team7-b", &t7)
+	mk("k-team8", &t8)
+	mk("k-personal", nil)
+
+	deleted, err := repo.DeleteByTeamID(ctx, team7.ID)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"k-team7-a", "k-team7-b"}, deleted)
+
+	// team7 的 key 已软删（active 查询不再返回）
+	remaining, err := repo.ListKeysByTeamID(ctx, team7.ID)
+	require.NoError(t, err)
+	require.Empty(t, remaining)
+
+	// team8 / personal 不受影响
+	t8keys, err := repo.ListKeysByTeamID(ctx, team8.ID)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"k-team8"}, t8keys)
+}

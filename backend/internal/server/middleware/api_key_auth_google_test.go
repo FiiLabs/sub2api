@@ -92,6 +92,9 @@ func (f fakeAPIKeyRepo) ListKeysByGroupID(ctx context.Context, groupID int64) ([
 func (f fakeAPIKeyRepo) ListKeysByTeamID(ctx context.Context, teamID int64) ([]string, error) {
 	return nil, nil
 }
+func (f fakeAPIKeyRepo) DeleteByTeamID(ctx context.Context, teamID int64) ([]string, error) {
+	return nil, nil
+}
 func (f fakeAPIKeyRepo) IncrementQuotaUsed(ctx context.Context, id int64, amount float64) (float64, error) {
 	return 0, errors.New("not implemented")
 }

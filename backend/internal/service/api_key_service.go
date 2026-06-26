@@ -73,6 +73,7 @@ type APIKeyRepository interface {
 	ListKeysByUserID(ctx context.Context, userID int64) ([]string, error)
 	ListKeysByGroupID(ctx context.Context, groupID int64) ([]string, error)
 	ListKeysByTeamID(ctx context.Context, teamID int64) ([]string, error)
+	DeleteByTeamID(ctx context.Context, teamID int64) ([]string, error)
 
 	// Quota methods
 	IncrementQuotaUsed(ctx context.Context, id int64, amount float64) (float64, error)
