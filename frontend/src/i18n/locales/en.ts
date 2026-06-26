@@ -630,6 +630,8 @@ export default {
   // Workspace
   workspace: {
     active: 'Workspace',
+    personal: 'Personal',
+    team: 'Team',
     billingTarget: 'Billing target: {name}',
     createTeam: 'Create team',
     createTeamTitle: 'Create team workspace',

@@ -627,6 +627,8 @@ export default {
   // Workspace
   workspace: {
     active: '工作空间',
+    personal: '个人',
+    team: '团队',
     billingTarget: '账单主体：{name}',
     createTeam: '创建团队',
     createTeamTitle: '创建团队工作空间',
