@@ -4,5 +4,5 @@
 -- to proxy upstream API traffic); it exists solely as an FK anchor.
 -- Idempotent, safe to re-run.
 INSERT INTO accounts (name, platform, type, status, credentials, extra, schedulable, created_at, updated_at)
-VALUES ('tee-gateway', 'anthropic', 'api_key', 'disabled', '{}', '{}', false, now(), now())
-ON CONFLICT DO NOTHING;
+SELECT 'tee-gateway', 'anthropic', 'api_key', 'disabled', '{}', '{}', false, now(), now()
+WHERE NOT EXISTS (SELECT 1 FROM accounts WHERE name = 'tee-gateway');

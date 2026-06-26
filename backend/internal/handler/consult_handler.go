@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -191,8 +192,27 @@ func (h *ConsultHandler) Post(c *gin.Context) {
 		return
 	}
 
-	// Load placeholder account (ignore errors — nil Account is handled downstream).
+	// Fix 4: skip recording when requestModel is empty — a blank model would
+	// produce a meaningless usage log.
+	if req.RequestModel == "" {
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+		return
+	}
+
+	// Load placeholder account.
 	acc, _ := h.accounts.GetByID(ctx, h.cfg.Consult.PlaceholderAccountID)
+
+	// Fix 1: guard nil placeholder account — RecordUsage/recordUsageCore dereferences
+	// account.ID without nil-guards, so a nil Account would panic the billing path.
+	if acc == nil {
+		slog.Warn("[Consult Post] misconfigured placeholder account id — skipping billing",
+			"placeholderAccountID", h.cfg.Consult.PlaceholderAccountID,
+			"requestModel", req.RequestModel,
+			"virtualKeyId", req.VirtualKeyID,
+		)
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+		return
+	}
 
 	res := &service.ForwardResult{
 		Model: req.RequestModel,
@@ -204,7 +224,8 @@ func (h *ConsultHandler) Post(c *gin.Context) {
 		},
 	}
 
-	_ = h.gateway.RecordUsage(ctx, &service.RecordUsageInput{
+	// Fix 3: log RecordUsage errors instead of discarding them.
+	if err := h.gateway.RecordUsage(ctx, &service.RecordUsageInput{
 		Result:          res,
 		APIKey:          key,
 		User:            key.User,
@@ -212,7 +233,13 @@ func (h *ConsultHandler) Post(c *gin.Context) {
 		InboundEndpoint: req.Endpoint,
 		APIKeyService:   h.apiKeys,
 		QuotaPlatform:   service.PlatformFromAPIKey(key),
-	})
+	}); err != nil {
+		slog.Warn("[Consult Post] RecordUsage failed",
+			"error", err,
+			"requestModel", req.RequestModel,
+			"virtualKeyId", req.VirtualKeyID,
+		)
+	}
 
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

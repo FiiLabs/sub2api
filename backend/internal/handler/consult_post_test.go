@@ -154,6 +154,111 @@ func TestConsultPost_RecordsUsage(t *testing.T) {
 	assert.Equal(t, "/v1/messages", in.InboundEndpoint)
 }
 
+// TestConsultPost_NilPlaceholderAccount: GetByID on accounts returns (nil, nil) →
+// 200 ok=true AND RecordUsage NOT called (no panic).
+func TestConsultPost_NilPlaceholderAccount(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	user := &service.User{ID: 55, Status: "active", Balance: 100}
+	teamKey := &service.APIKey{
+		ID:     11,
+		UserID: 55,
+		TeamID: teamIDPtr(4),
+		Status: "active",
+		User:   user,
+	}
+
+	apiKeys := &fakePostAPIKeys{
+		byID: map[int64]*service.APIKey{11: teamKey},
+	}
+	// accounts returns nil, nil — simulating a misconfigured PlaceholderAccountID.
+	accounts := &fakeConsultAccounts{acc: nil}
+	gw := &fakeConsultUsage{}
+
+	cfg := &config.Config{}
+	cfg.Consult.PlaceholderAccountID = 999 // points to a non-existent row
+
+	h := &ConsultHandler{
+		apiKeys:  apiKeys,
+		accounts: accounts,
+		gateway:  gw,
+		cfg:      cfg,
+	}
+
+	body := map[string]any{
+		"endpoint":     "/v1/messages",
+		"requestModel": "claude-3-5-sonnet",
+		"virtualKeyId": int64(11),
+		"usage": map[string]any{
+			"prompt_tokens":     10,
+			"completion_tokens": 5,
+		},
+	}
+
+	w := postPost(t, h, body)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, true, resp["ok"])
+
+	// RecordUsage must NOT be called when placeholder account is nil.
+	assert.Equal(t, 0, gw.called, "RecordUsage must NOT be called when account is nil")
+}
+
+// TestConsultPost_EmptyModel: requestModel is empty → 200 ok=true, RecordUsage NOT called.
+func TestConsultPost_EmptyModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	user := &service.User{ID: 66, Status: "active", Balance: 100}
+	teamKey := &service.APIKey{
+		ID:     22,
+		UserID: 66,
+		TeamID: teamIDPtr(5),
+		Status: "active",
+		User:   user,
+	}
+
+	apiKeys := &fakePostAPIKeys{
+		byID: map[int64]*service.APIKey{22: teamKey},
+	}
+	acc := &service.Account{ID: 99}
+	accounts := &fakeConsultAccounts{acc: acc}
+	gw := &fakeConsultUsage{}
+
+	cfg := &config.Config{}
+	cfg.Consult.PlaceholderAccountID = 99
+
+	h := &ConsultHandler{
+		apiKeys:  apiKeys,
+		accounts: accounts,
+		gateway:  gw,
+		cfg:      cfg,
+	}
+
+	body := map[string]any{
+		"endpoint":     "/v1/messages",
+		"requestModel": "", // empty model
+		"virtualKeyId": int64(22),
+		"usage": map[string]any{
+			"prompt_tokens":     10,
+			"completion_tokens": 5,
+		},
+	}
+
+	w := postPost(t, h, body)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, true, resp["ok"])
+
+	// RecordUsage must NOT be called when requestModel is empty.
+	assert.Equal(t, 0, gw.called, "RecordUsage must NOT be called when requestModel is empty")
+}
+
 // TestConsultPost_KeyNotFound: GetByID returns not-found → 200 ok=true, RecordUsage NOT called.
 func TestConsultPost_KeyNotFound(t *testing.T) {
 	gin.SetMode(gin.TestMode)
