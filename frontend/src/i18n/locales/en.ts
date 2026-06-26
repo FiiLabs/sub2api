@@ -2108,7 +2108,9 @@ export default {
         members: 'Members',
         balance: 'Balance',
         created: 'Created',
-        actions: 'Actions'
+        actions: 'Actions',
+        concurrency: 'Concurrency',
+        rpmLimit: 'RPM'
       },
       roles: {
         owner: 'Owner',
@@ -2121,7 +2123,13 @@ export default {
         active: 'Active',
         suspended: 'Suspended',
         left: 'Left'
-      }
+      },
+      concurrency: 'Concurrency',
+      rpmLimit: 'RPM limit',
+      unlimited: 'Unlimited',
+      concurrencyHint: '0 = unlimited',
+      rpmLimitHint: '0 = unlimited',
+      currentConcurrency: 'Current concurrency'
     },
 
     // Users

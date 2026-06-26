@@ -175,6 +175,8 @@ export interface AdminTeam {
   member_count: number
   created_at: string
   updated_at: string
+  concurrency: number
+  rpm_limit: number
 }
 
 /** Team member as seen by platform admins */
@@ -187,6 +189,7 @@ export interface AdminTeamMember {
   joined_at: string | null
   last_active_at: string | null
   user: AdminTeamUserRef | null
+  current_concurrency?: number
 }
 
 export interface LoginRequest {

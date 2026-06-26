@@ -2126,7 +2126,9 @@ export default {
         members: '成员数',
         balance: '余额',
         created: '创建时间',
-        actions: '操作'
+        actions: '操作',
+        concurrency: '并发',
+        rpmLimit: 'RPM'
       },
       roles: {
         owner: '所有者',
@@ -2139,7 +2141,13 @@ export default {
         active: '正常',
         suspended: '已暂停',
         left: '已退出'
-      }
+      },
+      concurrency: '并发上限',
+      rpmLimit: 'RPM 上限',
+      unlimited: '不限制',
+      concurrencyHint: '0 = 不限制',
+      rpmLimitHint: '0 = 不限制',
+      currentConcurrency: '当前并发'
     },
 
     // Users Management

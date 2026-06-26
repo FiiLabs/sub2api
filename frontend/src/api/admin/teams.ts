@@ -57,7 +57,7 @@ export async function list(
  * @returns Created team
  */
 export async function create(
-  payload: { name: string; owner_user_id?: number; owner_email?: string }
+  payload: { name: string; owner_user_id?: number; owner_email?: string; concurrency?: number; rpm_limit?: number }
 ): Promise<{ team: AdminTeam }> {
   const { data } = await apiClient.post<{ team: AdminTeam }>('/admin/teams', payload)
   return data
@@ -81,7 +81,7 @@ export async function get(id: number): Promise<AdminTeamDetail> {
  */
 export async function update(
   id: number,
-  payload: { name?: string; status?: 'active' | 'disabled' }
+  payload: { name?: string; status?: 'active' | 'disabled'; concurrency?: number; rpm_limit?: number }
 ): Promise<{ team: AdminTeam }> {
   const { data } = await apiClient.patch<{ team: AdminTeam }>(`/admin/teams/${id}`, payload)
   return data
