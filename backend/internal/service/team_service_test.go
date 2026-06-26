@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -1164,4 +1165,36 @@ func TestTeamServiceAdminUpdateTeamConcurrencyCallsUpdateLimits(t *testing.T) {
 	require.Equal(t, int64(42), billingStub.calledSubjectID)
 	require.Equal(t, 20, billingStub.calledConc)
 	require.Equal(t, 0, billingStub.calledRpm)
+}
+
+// --- Owner cap tests ----------------------------------------------------------
+
+func TestTeamService_CreateTeam_OwnerCapEnforced(t *testing.T) {
+	repo := newTeamRepoMemory()
+	svc := NewTeamService(repo, nil, nil)
+	owner := int64(7)
+	for i := 0; i < MaxTeamsPerOwner; i++ {
+		_, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: owner, Name: fmt.Sprintf("T%d", i)})
+		require.NoError(t, err)
+	}
+	// 第 MaxTeamsPerOwner+1 个应被拦截
+	_, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: owner, Name: "overflow"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "TEAM_LIMIT_REACHED")
+}
+
+func TestTeamService_AdminCreateTeam_BypassesOwnerCap(t *testing.T) {
+	repo := newTeamRepoMemory()
+	lookup := teamUserLookupStub{byID: map[int64]*User{
+		8: {ID: 8, Email: "owner@example.com", Username: "owner"},
+	}}
+	svc := &TeamService{repo: repo, userLookup: lookup}
+	owner := int64(8)
+	for i := 0; i < MaxTeamsPerOwner; i++ {
+		_, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: owner, Name: fmt.Sprintf("S%d", i)})
+		require.NoError(t, err)
+	}
+	// admin 代建第 6 个、指派同一 owner —— 不受上限影响
+	_, err := svc.AdminCreateTeam(context.Background(), AdminCreateTeamInput{AdminUserID: 1, OwnerUserID: owner, Name: "admin-extra"})
+	require.NoError(t, err)
 }

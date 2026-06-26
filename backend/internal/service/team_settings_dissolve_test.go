@@ -68,6 +68,10 @@ func (s *dissolveRepoStub) DissolveTeam(_ context.Context, teamID int64) error {
 	return nil
 }
 
+func (s *dissolveRepoStub) CountActiveTeamsByOwner(_ context.Context, _ int64) (int, error) {
+	return 0, nil
+}
+
 func (s *dissolveRepoStub) UsageByMember(_ context.Context, _ int64, _, _ time.Time) ([]TeamMemberUsage, error) {
 	return nil, nil
 }

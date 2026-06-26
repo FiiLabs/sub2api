@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"net/url"
 	"strings"
@@ -40,6 +41,9 @@ var (
 	ErrTeamDissolveHasBalance    = infraerrors.Conflict("TEAM_DISSOLVE_HAS_BALANCE", "team has remaining balance; zero it before dissolving")
 	ErrTeamDissolveHasActiveKeys = infraerrors.Conflict("TEAM_DISSOLVE_HAS_ACTIVE_KEYS", "team has active API keys; delete them before dissolving")
 )
+
+// MaxTeamsPerOwner 普通用户自助创建团队的上限（owner 口径）。admin 经 AdminCreateTeam 不受此限。
+const MaxTeamsPerOwner = 5
 
 type Team struct {
 	ID               int64
@@ -275,6 +279,15 @@ func (s *TeamService) CreateTeam(ctx context.Context, input CreateTeamInput) (*T
 	input.Slug = strings.TrimSpace(input.Slug)
 	if input.ActorUserID <= 0 || input.Name == "" {
 		return nil, infraerrors.BadRequest("TEAM_INVALID_INPUT", "team name is required")
+	}
+	// 自助创建上限（owner 口径）。admin 路径走 AdminCreateTeam，不经此处。
+	count, err := s.repo.CountActiveTeamsByOwner(ctx, input.ActorUserID)
+	if err != nil {
+		return nil, err
+	}
+	if count >= MaxTeamsPerOwner {
+		return nil, infraerrors.BadRequest("TEAM_LIMIT_REACHED",
+			fmt.Sprintf("已达自助创建团队上限（%d 个），如需更多请联系管理员", MaxTeamsPerOwner))
 	}
 	slug, err := buildTeamSlug(input.Name, input.Slug)
 	if err != nil {
