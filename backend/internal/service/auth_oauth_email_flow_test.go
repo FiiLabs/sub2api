@@ -102,6 +102,10 @@ func (s *redeemCodeRepoStub) ListByUserPaginated(context.Context, int64, paginat
 	panic("unexpected ListByUserPaginated call")
 }
 
+func (s *redeemCodeRepoStub) ListBySubjectID(_ context.Context, subjectID int64, params pagination.PaginationParams, codeType string) ([]RedeemCode, *pagination.PaginationResult, error) {
+	return nil, &pagination.PaginationResult{Total: 0, Page: params.Page, PageSize: params.PageSize, Pages: 1}, nil
+}
+
 func (s *redeemCodeRepoStub) SumPositiveBalanceByUser(context.Context, int64) (float64, error) {
 	panic("unexpected SumPositiveBalanceByUser call")
 }

@@ -1965,6 +1965,10 @@ func (stubRedeemCodeRepo) ListByUserPaginated(ctx context.Context, userID int64,
 	return nil, nil, errors.New("not implemented")
 }
 
+func (stubRedeemCodeRepo) ListBySubjectID(_ context.Context, subjectID int64, params pagination.PaginationParams, codeType string) ([]service.RedeemCode, *pagination.PaginationResult, error) {
+	return nil, &pagination.PaginationResult{Total: 0, Page: params.Page, PageSize: params.PageSize, Pages: 1}, nil
+}
+
 func (stubRedeemCodeRepo) SumPositiveBalanceByUser(ctx context.Context, userID int64) (float64, error) {
 	return 0, errors.New("not implemented")
 }

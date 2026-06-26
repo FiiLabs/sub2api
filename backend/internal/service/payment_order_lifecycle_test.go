@@ -158,6 +158,10 @@ func (r *paymentOrderLifecycleRedeemRepo) ListByUserPaginated(context.Context, i
 	panic("unexpected call")
 }
 
+func (r *paymentOrderLifecycleRedeemRepo) ListBySubjectID(_ context.Context, subjectID int64, params pagination.PaginationParams, codeType string) ([]RedeemCode, *pagination.PaginationResult, error) {
+	return nil, &pagination.PaginationResult{Total: 0, Page: params.Page, PageSize: params.PageSize, Pages: 1}, nil
+}
+
 func (r *paymentOrderLifecycleRedeemRepo) SumPositiveBalanceByUser(context.Context, int64) (float64, error) {
 	panic("unexpected call")
 }
