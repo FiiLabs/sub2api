@@ -719,6 +719,10 @@ func (r *stubBillingSubjectRepo) DeductBalance(ctx context.Context, subjectID in
 	return errors.New("not implemented")
 }
 
+func (r *stubBillingSubjectRepo) UpdateLimits(ctx context.Context, subjectID int64, concurrency, rpmLimit int) error {
+	return nil
+}
+
 // TestSnapshotCarriesSubjectRPMLimit 验证 snapshotFromAPIKey 对团队 key 一并加载
 // billing_subject.rpm_limit，并且 snapshotToAPIKey 还原时正确传递给 APIKey。
 // 镜像 TestSnapshotCarriesSubjectConcurrency，使用同一 GetByID 调用（无额外查询）。

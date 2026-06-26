@@ -74,6 +74,9 @@ func (f *fakeSubjectRepo) CreateTeamSubject(_ context.Context, _ int64, _ Billin
 }
 func (f *fakeSubjectRepo) UpdateBalance(_ context.Context, _ int64, _ float64) error { return nil }
 func (f *fakeSubjectRepo) DeductBalance(_ context.Context, _ int64, _ float64) error { return nil }
+func (f *fakeSubjectRepo) UpdateLimits(ctx context.Context, subjectID int64, concurrency, rpmLimit int) error {
+	return nil
+}
 
 func newSubjectBalanceService(cache BillingCache, repo BillingSubjectRepository) *BillingCacheService {
 	cfg := &config.Config{}
