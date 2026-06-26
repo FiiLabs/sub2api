@@ -31,6 +31,7 @@ type AdminTeamService interface {
 // teamAuthCacheInvalidator 由 *service.APIKeyService 实现（按团队失效鉴权缓存）。
 type teamAuthCacheInvalidator interface {
 	InvalidateAuthCacheByTeamID(ctx context.Context, teamID int64)
+	DeleteTeamKeys(ctx context.Context, teamID int64) error
 }
 
 // teamConcurrencyLoader 由 *service.ConcurrencyService 实现（取成员当前并发）。
@@ -460,4 +461,24 @@ func (h *AdminTeamHandler) TransferOwnership(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"message": "ownership transferred"})
+}
+
+// Delete handles DELETE /api/v1/admin/teams/:id —— admin 强删团队（先删 key 失效缓存，再软删团队体）。
+func (h *AdminTeamHandler) Delete(c *gin.Context) {
+	teamID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || teamID <= 0 {
+		response.BadRequest(c, "Invalid team ID")
+		return
+	}
+	if h.authCacheInvalidator != nil {
+		if err := h.authCacheInvalidator.DeleteTeamKeys(c.Request.Context(), teamID); err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+	}
+	if err := h.teamService.AdminDeleteTeam(c.Request.Context(), teamID); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "team deleted"})
 }

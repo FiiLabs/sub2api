@@ -131,6 +131,7 @@ func adminRouter(h *AdminTeamHandler, adminUserID int64) *gin.Engine {
 	teams.PATCH("/:id/members/:user_id", h.UpdateMember)
 	teams.DELETE("/:id/members/:user_id", h.RemoveMember)
 	teams.POST("/:id/transfer-ownership", h.TransferOwnership)
+	teams.DELETE("/:id", h.Delete)
 	return router
 }
 
@@ -369,10 +370,18 @@ func TestAdminGetTeamFillsMemberCurrentConcurrency(t *testing.T) {
 }
 
 // recordingInvalidator 是 teamAuthCacheInvalidator 的测试桩，记录调用的 teamID。
-type recordingInvalidator struct{ calledTeamID int64 }
+type recordingInvalidator struct {
+	calledTeamID          int64
+	deleteTeamKeysTeamID  int64
+}
 
 func (r *recordingInvalidator) InvalidateAuthCacheByTeamID(_ context.Context, teamID int64) {
 	r.calledTeamID = teamID
+}
+
+func (r *recordingInvalidator) DeleteTeamKeys(_ context.Context, teamID int64) error {
+	r.deleteTeamKeysTeamID = teamID
+	return nil
 }
 
 func TestAdminUpdateTeamConcurrencyInvalidatesCache(t *testing.T) {
@@ -389,4 +398,22 @@ func TestAdminUpdateTeamConcurrencyInvalidatesCache(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Equal(t, int64(7), inv.calledTeamID)
+}
+
+func TestAdminDeleteTeamHandler(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	inv := &recordingInvalidator{}
+	stub := &adminTeamServiceStub{}
+	h := &AdminTeamHandler{teamService: stub, authCacheInvalidator: inv}
+	router := adminRouter(h, 1)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/teams/7", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), "team deleted")
+	// keys deleted + cache invalidated BEFORE team dissolved
+	require.Equal(t, int64(7), inv.deleteTeamKeysTeamID)
+	require.Equal(t, int64(7), stub.deleteTeamID)
 }
