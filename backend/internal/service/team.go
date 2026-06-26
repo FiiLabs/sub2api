@@ -250,18 +250,25 @@ type TeamUserLookup interface {
 	GetByID(ctx context.Context, id int64) (*User, error)
 }
 
-type TeamService struct {
-	repo           TeamRepository
-	billingSubject BillingSubjectRepository
-	userLookup     TeamUserLookup
-	inviteNotifier TeamInviteNotifier
+// SubjectBalanceInvalidator 失效计费主体余额缓存（*BillingCacheService 实现）。
+type SubjectBalanceInvalidator interface {
+	InvalidateSubjectBalance(ctx context.Context, subjectID int64) error
 }
 
-func NewTeamService(repo TeamRepository, billingSubject BillingSubjectRepository, userRepo UserRepository) *TeamService {
+type TeamService struct {
+	repo                TeamRepository
+	billingSubject      BillingSubjectRepository
+	userLookup          TeamUserLookup
+	inviteNotifier      TeamInviteNotifier
+	redeemCodeRepo      RedeemCodeRepository
+	subjectBalanceCache SubjectBalanceInvalidator
+}
+
+func NewTeamService(repo TeamRepository, billingSubject BillingSubjectRepository, userRepo UserRepository, redeemCodeRepo RedeemCodeRepository, subjectBalanceCache SubjectBalanceInvalidator) *TeamService {
 	// userRepo (the full UserRepository) is stored behind the narrow TeamUserLookup
 	// interface; accepting the full interface keeps wire injection binding-free,
 	// while the narrow field keeps the admin email-resolution dependency minimal.
-	s := &TeamService{repo: repo, billingSubject: billingSubject}
+	s := &TeamService{repo: repo, billingSubject: billingSubject, redeemCodeRepo: redeemCodeRepo, subjectBalanceCache: subjectBalanceCache}
 	if userRepo != nil {
 		s.userLookup = userRepo
 	}

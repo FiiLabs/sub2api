@@ -460,8 +460,8 @@ func ProvideOpsService(
 // ProvideTeamService wires TeamService and injects the best-effort invitation
 // email notifier (over EmailService + SettingService). NewTeamService stays
 // binding-free; the notifier is attached post-construction.
-func ProvideTeamService(repo TeamRepository, billingSubject BillingSubjectRepository, userRepo UserRepository, emailService *EmailService, settingService *SettingService) *TeamService {
-	svc := NewTeamService(repo, billingSubject, userRepo)
+func ProvideTeamService(repo TeamRepository, billingSubject BillingSubjectRepository, userRepo UserRepository, emailService *EmailService, settingService *SettingService, redeemCodeRepo RedeemCodeRepository, billingCacheService *BillingCacheService) *TeamService {
+	svc := NewTeamService(repo, billingSubject, userRepo, redeemCodeRepo, billingCacheService)
 	svc.SetInviteNotifier(ProvideTeamInviteNotifier(emailService, settingService))
 	return svc
 }

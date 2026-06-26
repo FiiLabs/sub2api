@@ -13,7 +13,7 @@ import (
 
 func TestUpdateTeamSettings_OwnerCanRename(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Old"})
 	require.NoError(t, err)
 
@@ -25,7 +25,7 @@ func TestUpdateTeamSettings_OwnerCanRename(t *testing.T) {
 
 func TestUpdateTeamSettings_NonMemberDenied(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Old"})
 	require.NoError(t, err)
 
@@ -36,7 +36,7 @@ func TestUpdateTeamSettings_NonMemberDenied(t *testing.T) {
 
 func TestUpdateTeamSettings_EmptyRejected(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Old"})
 	require.NoError(t, err)
 
@@ -94,7 +94,7 @@ func newDissolveService(role string, balance float64, activeKeys int) (*TeamServ
 		team:       &Team{ID: 1, BillingSubjectID: dissolvePtrInt64(900)},
 		activeKeys: activeKeys,
 	}
-	svc := NewTeamService(repo, &dissolveSubjectStub{balance: balance}, nil)
+	svc := NewTeamService(repo, &dissolveSubjectStub{balance: balance}, nil, nil, nil)
 	return svc, repo
 }
 
@@ -124,7 +124,7 @@ func TestDissolveTeam_RejectsWithActiveKeys(t *testing.T) {
 
 func TestAdminDeleteTeamCallsRepoDissolveWithoutGuards(t *testing.T) {
 	repo := &dissolveRepoStub{}
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	require.NoError(t, svc.AdminDeleteTeam(context.Background(), 7))
 	require.Equal(t, int64(7), repo.dissolvedTeamID)
 }

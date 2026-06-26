@@ -386,7 +386,7 @@ func teamTestPtrTime(t time.Time) *time.Time { return &t }
 
 func TestTeamServiceListMembersRequiresViewPermission(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 
@@ -401,7 +401,7 @@ func TestTeamServiceListMembersRequiresViewPermission(t *testing.T) {
 
 func TestTeamServiceInviteMemberRejectsOwnerRole(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 
@@ -419,7 +419,7 @@ func TestTeamServiceInviteMemberRejectsOwnerRole(t *testing.T) {
 
 func TestTeamServiceUpdateMemberValidations(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 	repo.members[team.ID] = append(repo.members[team.ID], TeamMember{TeamID: team.ID, UserID: 8, Role: domain.TeamRoleViewer, Status: domain.TeamMemberStatusActive})
@@ -441,7 +441,7 @@ func TestTeamServiceUpdateMemberValidations(t *testing.T) {
 
 func TestTeamServiceCreateTeamCreatesOwnerWorkspace(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 42, Name: "Platform Team", Slug: "platform-team"})
 	require.NoError(t, err)
@@ -454,7 +454,7 @@ func TestTeamServiceCreateTeamCreatesOwnerWorkspace(t *testing.T) {
 
 func TestTeamServiceCreateTeamAutoGeneratesSlug(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 
 	// Name only (no slug): slug is auto-generated from the name plus a suffix.
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 42, Name: "Platform Team"})
@@ -472,7 +472,7 @@ func TestTeamServiceCreateTeamAutoGeneratesSlug(t *testing.T) {
 
 func TestTeamServiceCreateTeamSlugFallbackForNonASCIIName(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 
 	// All-non-ASCII name slugifies to "" -> falls back to "team-<suffix>".
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "团队名称"})
@@ -483,7 +483,7 @@ func TestTeamServiceCreateTeamSlugFallbackForNonASCIIName(t *testing.T) {
 
 func TestTeamServiceCreateTeamRequiresName(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 
 	// Name is required even though slug is now optional.
 	_, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Slug: "ops"})
@@ -558,7 +558,7 @@ func TestTeamServiceAdminCreateTeamRequiresOwner(t *testing.T) {
 
 func TestTeamServiceCanChecksRolePermissions(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Billing Team", Slug: "billing-team"})
 	require.NoError(t, err)
 
@@ -573,7 +573,7 @@ func TestTeamServiceCanChecksRolePermissions(t *testing.T) {
 
 func TestTeamServiceListWorkspacesIncludesPersonalAndTeams(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	_, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 9, Name: "AI Ops", Slug: "ai-ops"})
 	require.NoError(t, err)
 
@@ -587,7 +587,7 @@ func TestTeamServiceListWorkspacesIncludesPersonalAndTeams(t *testing.T) {
 
 func TestTeamServiceAdminAddMemberCreatesActiveMembership(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 
@@ -602,7 +602,7 @@ func TestTeamServiceAdminAddMemberCreatesActiveMembership(t *testing.T) {
 
 func TestTeamServiceAdminAddMemberRejectsOwnerRole(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 
@@ -612,7 +612,7 @@ func TestTeamServiceAdminAddMemberRejectsOwnerRole(t *testing.T) {
 
 func TestTeamServiceAdminAddMemberRejectsDuplicateActive(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 
@@ -626,7 +626,7 @@ func TestTeamServiceAdminAddMemberRejectsDuplicateActive(t *testing.T) {
 
 func TestTeamServiceAdminAddMemberReactivatesLeftMembership(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 
@@ -700,7 +700,7 @@ func TestTeamServiceAdminAddMemberResolvesByEmail(t *testing.T) {
 
 func TestTeamServiceAdminAddMemberMissingUserAndEmail(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 
@@ -710,7 +710,7 @@ func TestTeamServiceAdminAddMemberMissingUserAndEmail(t *testing.T) {
 
 func TestTeamServiceAdminUpdateMemberProtectsOwner(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 
@@ -722,7 +722,7 @@ func TestTeamServiceAdminUpdateMemberProtectsOwner(t *testing.T) {
 
 func TestTeamServiceAdminUpdateMemberValidations(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 	_, err = svc.AdminAddMember(context.Background(), AdminAddMemberInput{TeamID: team.ID, UserID: 8, Role: domain.TeamRoleViewer, AdminUserID: 1})
@@ -746,7 +746,7 @@ func TestTeamServiceAdminUpdateMemberValidations(t *testing.T) {
 
 func TestTeamServiceAdminRemoveMemberProtectsOwner(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 
@@ -756,7 +756,7 @@ func TestTeamServiceAdminRemoveMemberProtectsOwner(t *testing.T) {
 
 func TestTeamServiceAdminUpdateTeamValidations(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 
@@ -780,7 +780,7 @@ func TestTeamServiceAdminUpdateTeamValidations(t *testing.T) {
 
 func TestTeamServiceAdminListAndGetTeam(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 	_, err = svc.AdminAddMember(context.Background(), AdminAddMemberInput{TeamID: team.ID, UserID: 8, Role: domain.TeamRoleViewer, AdminUserID: 1})
@@ -976,7 +976,7 @@ func TestTeamServicePreviewInvitationNoMutation(t *testing.T) {
 
 func TestTeamServiceTransferOwnershipSwapsRoles(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 	_, err = svc.AdminAddMember(context.Background(), AdminAddMemberInput{TeamID: team.ID, UserID: 8, Role: domain.TeamRoleDeveloper, AdminUserID: 7})
@@ -1000,7 +1000,7 @@ func TestTeamServiceTransferOwnershipSwapsRoles(t *testing.T) {
 
 func TestTeamServiceTransferOwnershipRejectsNonOwner(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 	_, err = svc.AdminAddMember(context.Background(), AdminAddMemberInput{TeamID: team.ID, UserID: 8, Role: domain.TeamRoleAdmin, AdminUserID: 7})
@@ -1019,7 +1019,7 @@ func TestTeamServiceTransferOwnershipRejectsNonOwner(t *testing.T) {
 
 func TestTeamServiceTransferOwnershipRequiresActiveNewOwner(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 
@@ -1030,7 +1030,7 @@ func TestTeamServiceTransferOwnershipRequiresActiveNewOwner(t *testing.T) {
 
 func TestTeamServiceAdminTransferOwnershipBypassesGating(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 	_, err = svc.AdminAddMember(context.Background(), AdminAddMemberInput{TeamID: team.ID, UserID: 8, Role: domain.TeamRoleDeveloper, AdminUserID: 7})
@@ -1076,7 +1076,7 @@ func (s *inviteNotifierSpyWithBase) AcceptBaseURL(_ context.Context) string { re
 
 func TestTeamServiceInviteMemberInvokesNotifier(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	_, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 	spy := &inviteNotifierSpyWithBase{base: "https://app.example.com"}
@@ -1099,7 +1099,7 @@ func TestTeamServiceInviteMemberInvokesNotifier(t *testing.T) {
 
 func TestTeamServiceInviteMemberNotifierErrorIsNonFatal(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	_, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 	spy := &inviteNotifierSpy{returnErr: ErrEmailNotConfigured}
@@ -1153,7 +1153,7 @@ func TestTeamServiceAdminUpdateTeamConcurrencyCallsUpdateLimits(t *testing.T) {
 	base := newTeamRepoMemory()
 	repo := &adminUpdateRepoStub{teamRepoMemory: base, billingSubjectID: 42}
 	billingStub := &updateLimitsBillingStub{}
-	svc := NewTeamService(repo, billingStub, nil)
+	svc := NewTeamService(repo, billingStub, nil, nil, nil)
 
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
@@ -1171,7 +1171,7 @@ func TestTeamServiceAdminUpdateTeamConcurrencyCallsUpdateLimits(t *testing.T) {
 
 func TestTeamService_CreateTeam_OwnerCapEnforced(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	owner := int64(7)
 	for i := 0; i < MaxTeamsPerOwner; i++ {
 		_, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: owner, Name: fmt.Sprintf("T%d", i)})

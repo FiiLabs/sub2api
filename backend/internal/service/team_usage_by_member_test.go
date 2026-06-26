@@ -41,7 +41,7 @@ func TestUsageByMemberRequiresViewAll(t *testing.T) {
 			Status: domain.TeamMemberStatusActive,
 		},
 	}
-	svc := NewTeamService(stub, nil, nil)
+	svc := NewTeamService(stub, nil, nil, nil, nil)
 
 	start := time.Now().Add(-24 * time.Hour)
 	end := time.Now()
@@ -66,7 +66,7 @@ func TestUsageByMemberReturnsAggregates(t *testing.T) {
 		},
 		usageRows: expected,
 	}
-	svc := NewTeamService(stub, nil, nil)
+	svc := NewTeamService(stub, nil, nil, nil, nil)
 
 	start := time.Now().Add(-7 * 24 * time.Hour)
 	end := time.Now()

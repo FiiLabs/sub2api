@@ -38,7 +38,7 @@ func TestRegisterPaymentRoutesRejectsUnavailableWorkspaceSubject(t *testing.T) {
 			Name:             "Core Team",
 			Role:             domain.TeamRoleViewer,
 			Permissions:      domain.TeamRolePermissions(domain.TeamRoleViewer),
-		}}}, nil, nil),
+		}}}, nil, nil, nil, nil),
 	)
 
 	rec := httptest.NewRecorder()
@@ -83,7 +83,7 @@ func TestRegisterPaymentRoutesRejectsTeamWorkspaceWithoutBillingManage(t *testin
 				Role:             domain.TeamRoleDeveloper,
 				Permissions:      domain.TeamRolePermissions(domain.TeamRoleDeveloper),
 			},
-		}}, nil, nil),
+		}}, nil, nil, nil, nil),
 	)
 
 	rec := httptest.NewRecorder()
@@ -128,7 +128,7 @@ func TestRegisterPaymentRoutesAllowsTeamWorkspaceWithBillingManage(t *testing.T)
 				Role:             domain.TeamRoleAdmin,
 				Permissions:      domain.TeamRolePermissions(domain.TeamRoleAdmin),
 			},
-		}}, nil, nil),
+		}}, nil, nil, nil, nil),
 	)
 
 	rec := httptest.NewRecorder()
