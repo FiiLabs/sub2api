@@ -1,7 +1,7 @@
 <template>
   <span
     :class="[
-      'inline-flex items-center gap-1.5 min-w-0',
+      'flex items-center gap-1.5 min-w-0',
       sizeText,
       variant === 'chip' ? ['rounded-lg px-2 py-1', palette.chip] : ''
     ]"
