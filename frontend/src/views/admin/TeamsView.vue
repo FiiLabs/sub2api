@@ -324,8 +324,45 @@
       </div>
 
       <template #footer>
-        <div class="flex justify-end">
+        <div class="flex items-center justify-between">
+          <button type="button" class="btn bg-red-600 text-white hover:bg-red-700" @click="openDeleteConfirm">
+            {{ t('admin.teams.deleteTeam') }}
+          </button>
           <button type="button" class="btn btn-secondary" @click="closeDetail">{{ t('common.close') }}</button>
+        </div>
+      </template>
+    </BaseDialog>
+
+    <!-- Delete team confirm modal -->
+    <BaseDialog
+      :show="showDeleteConfirm"
+      :title="t('admin.teams.deleteTeamTitle')"
+      width="narrow"
+      @close="closeDeleteConfirm"
+    >
+      <div v-if="detailTeam" class="space-y-3">
+        <p class="text-sm text-red-600 dark:text-red-400">
+          {{ t('admin.teams.deleteTeamWarning', { name: detailTeam.name, balance: Number(detailTeam.balance).toFixed(2) }) }}
+        </p>
+        <p class="text-sm text-gray-600 dark:text-gray-400">
+          {{ t('admin.teams.deleteTeamActiveKeys', { count: detailTeam.active_key_count ?? 0 }) }}
+        </p>
+        <div>
+          <label class="input-label">{{ t('admin.teams.deleteTeamTypeName') }}</label>
+          <input v-model="deleteConfirmName" type="text" class="input" :placeholder="detailTeam.name" />
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-3">
+          <button type="button" class="btn btn-secondary" @click="closeDeleteConfirm">{{ t('common.cancel') }}</button>
+          <button
+            type="button"
+            class="btn bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+            :disabled="deleting || deleteConfirmName !== detailTeam?.name"
+            @click="handleDeleteTeam"
+          >
+            {{ t('admin.teams.deleteTeam') }}
+          </button>
         </div>
       </template>
     </BaseDialog>
@@ -755,6 +792,38 @@ const confirmRemoveMember = async () => {
   } catch (error: any) {
     appStore.showError(error?.message || t('admin.teams.failedToRemoveMember'))
     console.error('Error removing team member:', error)
+  }
+}
+
+// ==================== Delete team ====================
+
+const showDeleteConfirm = ref(false)
+const deleteConfirmName = ref('')
+const deleting = ref(false)
+
+const openDeleteConfirm = () => {
+  deleteConfirmName.value = ''
+  showDeleteConfirm.value = true
+}
+
+const closeDeleteConfirm = () => {
+  showDeleteConfirm.value = false
+  deleteConfirmName.value = ''
+}
+
+const handleDeleteTeam = async () => {
+  if (!detailTeam.value || deleteConfirmName.value !== detailTeam.value.name) return
+  deleting.value = true
+  try {
+    await adminTeamsAPI.deleteTeam(detailTeam.value.id)
+    appStore.showSuccess(t('admin.teams.teamDeleted'))
+    closeDeleteConfirm()
+    closeDetail()
+    await loadTeams()
+  } catch (e: any) {
+    appStore.showError(e?.message || t('admin.teams.failedToDeleteTeam'))
+  } finally {
+    deleting.value = false
   }
 }
 
