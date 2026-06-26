@@ -629,6 +629,15 @@ export default {
     active: '工作空间',
     personal: '个人',
     team: '团队',
+    youAreIn: '你正在',
+    roleLabel: '你的角色',
+    roles: {
+      owner: '所有者',
+      admin: '管理员',
+      billing: '财务',
+      developer: '开发者',
+      viewer: '只读'
+    },
     billingTarget: '账单主体：{name}',
     createTeam: '创建团队',
     createTeamTitle: '创建团队工作空间',

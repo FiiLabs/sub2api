@@ -632,6 +632,15 @@ export default {
     active: 'Workspace',
     personal: 'Personal',
     team: 'Team',
+    youAreIn: 'You are in',
+    roleLabel: 'Your role',
+    roles: {
+      owner: 'Owner',
+      admin: 'Admin',
+      billing: 'Billing',
+      developer: 'Developer',
+      viewer: 'Viewer'
+    },
     billingTarget: 'Billing target: {name}',
     createTeam: 'Create team',
     createTeamTitle: 'Create team workspace',
