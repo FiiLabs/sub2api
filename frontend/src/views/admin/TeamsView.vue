@@ -544,6 +544,8 @@ const createForm = reactive({ name: '', owner: '', concurrency: 5, rpm_limit: 0 
 const openCreate = () => {
   createForm.name = ''
   createForm.owner = ''
+  createForm.concurrency = 5
+  createForm.rpm_limit = 0
   showCreate.value = true
 }
 
@@ -551,6 +553,8 @@ const closeCreate = () => {
   showCreate.value = false
   createForm.name = ''
   createForm.owner = ''
+  createForm.concurrency = 5
+  createForm.rpm_limit = 0
 }
 
 // Owner accepts either a numeric user id or an email address.
