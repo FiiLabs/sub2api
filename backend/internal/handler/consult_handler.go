@@ -11,9 +11,23 @@ import (
 )
 
 // consultAPIKeys is a narrow seam over *service.APIKeyService for unit testing.
+// It also embeds service.APIKeyQuotaUpdater so the same value can be passed as
+// RecordUsageInput.APIKeyService without an extra cast.
 type consultAPIKeys interface {
 	GetByKeyHash(ctx context.Context, hash string) (*service.APIKey, error)
 	GetByID(ctx context.Context, id int64) (*service.APIKey, error)
+	UpdateQuotaUsed(ctx context.Context, apiKeyID int64, cost float64) error
+	UpdateRateLimitUsage(ctx context.Context, apiKeyID int64, cost float64) error
+}
+
+// consultUsage is a narrow seam over *service.GatewayService for unit testing.
+type consultUsage interface {
+	RecordUsage(ctx context.Context, in *service.RecordUsageInput) error
+}
+
+// consultAccounts is a narrow seam over service.AccountRepository for unit testing.
+type consultAccounts interface {
+	GetByID(ctx context.Context, id int64) (*service.Account, error)
 }
 
 // consultSubs is a narrow seam over *service.SubscriptionService for unit testing.
@@ -31,8 +45,8 @@ type ConsultHandler struct {
 	apiKeys  consultAPIKeys
 	subs     consultSubs
 	pricing  consultPricing
-	gateway  *service.GatewayService
-	accounts service.AccountRepository
+	gateway  consultUsage
+	accounts consultAccounts
 	cfg      *config.Config
 }
 
@@ -41,8 +55,8 @@ func NewConsultHandler(
 	apiKeys consultAPIKeys,
 	subs consultSubs,
 	pricing consultPricing,
-	gateway *service.GatewayService,
-	accounts service.AccountRepository,
+	gateway consultUsage,
+	accounts consultAccounts,
 	cfg *config.Config,
 ) *ConsultHandler {
 	return &ConsultHandler{apiKeys, subs, pricing, gateway, accounts, cfg}
@@ -145,4 +159,60 @@ func (h *ConsultHandler) Pre(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+// postReq is the JSON body for POST /consult/post.
+type postReq struct {
+	Endpoint     string `json:"endpoint"`
+	RequestModel string `json:"requestModel"`
+	VirtualKeyID int64  `json:"virtualKeyId"`
+	Usage        struct {
+		PromptTokens        int `json:"prompt_tokens"`
+		CompletionTokens    int `json:"completion_tokens"`
+		CacheReadTokens     int `json:"cache_read_input_tokens"`
+		CacheCreationTokens int `json:"cache_creation_input_tokens"`
+	} `json:"usage"`
+}
+
+// Post implements POST /consult/post: records usage reported by the executor
+// into the standard billing path so quota/balance/rate-limits update.
+// It is fire-and-forget from the caller's perspective; it always returns {"ok":true}.
+func (h *ConsultHandler) Post(c *gin.Context) {
+	var req postReq
+	// Tolerant bind: ignore parse errors and still proceed.
+	_ = c.ShouldBindJSON(&req)
+
+	ctx := c.Request.Context()
+
+	// Look up the virtual key; bail out (best-effort) on any error.
+	key, err := h.apiKeys.GetByID(ctx, req.VirtualKeyID)
+	if err != nil || key == nil || key.User == nil {
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+		return
+	}
+
+	// Load placeholder account (ignore errors — nil Account is handled downstream).
+	acc, _ := h.accounts.GetByID(ctx, h.cfg.Consult.PlaceholderAccountID)
+
+	res := &service.ForwardResult{
+		Model: req.RequestModel,
+		Usage: service.ClaudeUsage{
+			InputTokens:              req.Usage.PromptTokens,
+			OutputTokens:             req.Usage.CompletionTokens,
+			CacheReadInputTokens:     req.Usage.CacheReadTokens,
+			CacheCreationInputTokens: req.Usage.CacheCreationTokens,
+		},
+	}
+
+	_ = h.gateway.RecordUsage(ctx, &service.RecordUsageInput{
+		Result:          res,
+		APIKey:          key,
+		User:            key.User,
+		Account:         acc,
+		InboundEndpoint: req.Endpoint,
+		APIKeyService:   h.apiKeys,
+		QuotaPlatform:   service.PlatformFromAPIKey(key),
+	})
+
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

@@ -38,6 +38,14 @@ func (f *fakeAPIKeys) GetByID(_ context.Context, id int64) (*service.APIKey, err
 	return nil, service.ErrAPIKeyNotFound
 }
 
+func (f *fakeAPIKeys) UpdateQuotaUsed(_ context.Context, _ int64, _ float64) error {
+	return nil
+}
+
+func (f *fakeAPIKeys) UpdateRateLimitUsage(_ context.Context, _ int64, _ float64) error {
+	return nil
+}
+
 // fakeSubs implements consultSubs.
 type fakeSubs struct {
 	sub *service.UserSubscription
