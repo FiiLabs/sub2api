@@ -2130,7 +2130,14 @@ export default {
       unlimited: 'Unlimited',
       concurrencyHint: '0 = unlimited',
       rpmLimitHint: '0 = unlimited',
-      currentConcurrency: 'Current concurrency'
+      currentConcurrency: 'Current concurrency',
+      deleteTeam: 'Delete team',
+      deleteTeamTitle: 'Delete team',
+      deleteTeamWarning: 'This permanently deletes team "{name}", revokes all its API keys, and forfeits its balance (${balance}). This cannot be undone.',
+      deleteTeamActiveKeys: 'Active API keys to be revoked: {count}',
+      deleteTeamTypeName: 'Type the team name to confirm',
+      teamDeleted: 'Team deleted',
+      failedToDeleteTeam: 'Failed to delete team'
     },
 
     // Users

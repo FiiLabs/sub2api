@@ -2148,7 +2148,14 @@ export default {
       unlimited: '不限制',
       concurrencyHint: '0 = 不限制',
       rpmLimitHint: '0 = 不限制',
-      currentConcurrency: '当前并发'
+      currentConcurrency: '当前并发',
+      deleteTeam: '删除团队',
+      deleteTeamTitle: '删除团队',
+      deleteTeamWarning: '将永久删除团队「{name}」、吊销其所有 API Key、并作废其余额（${balance}）。此操作不可撤销。',
+      deleteTeamActiveKeys: '将被吊销的启用中 API Key 数：{count}',
+      deleteTeamTypeName: '输入团队名以确认',
+      teamDeleted: '团队已删除',
+      failedToDeleteTeam: '删除团队失败'
     },
 
     // Users Management

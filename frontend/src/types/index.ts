@@ -177,6 +177,7 @@ export interface AdminTeam {
   updated_at: string
   concurrency: number
   rpm_limit: number
+  active_key_count?: number
 }
 
 /** Team member as seen by platform admins */

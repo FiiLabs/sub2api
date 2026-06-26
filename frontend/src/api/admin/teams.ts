@@ -136,6 +136,12 @@ export async function removeMember(id: number, userId: number): Promise<{ messag
   return data
 }
 
+/** Delete a team (platform admin force-delete). */
+export async function deleteTeam(id: number): Promise<{ message: string }> {
+  const { data } = await apiClient.delete<{ message: string }>(`/admin/teams/${id}`)
+  return data
+}
+
 /**
  * Transfer team ownership to another member (platform admin)
  * @param id - Team ID
@@ -158,6 +164,7 @@ export const adminTeamsAPI = {
   addMember,
   updateMember,
   removeMember,
+  deleteTeam,
   transferOwnership
 }
 
