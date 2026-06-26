@@ -213,6 +213,10 @@ func (r routeTeamRepo) CountActiveAPIKeysByBillingSubjectID(_ context.Context, _
 	return 0, nil
 }
 
+func (r routeTeamRepo) CountActiveTeamsByOwner(_ context.Context, _ int64) (int, error) {
+	return 0, nil
+}
+
 func (r routeTeamRepo) DissolveTeam(_ context.Context, _ int64) error {
 	return nil
 }

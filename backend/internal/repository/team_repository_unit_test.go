@@ -284,6 +284,32 @@ func TestCreateTeamAppliesConcurrencyOverrideAndDefault(t *testing.T) {
 	require.Equal(t, 0, sub2.RPMLimit)
 }
 
+func TestTeamRepository_CountActiveTeamsByOwner(t *testing.T) {
+	client := newWorkspaceEntClient(t)
+	ctx := context.Background()
+	repo := NewTeamRepository(client)
+
+	ownerUser := createWorkspaceTestUser(t, client, "owner1001@example.com")
+	otherUser := createWorkspaceTestUser(t, client, "other2002@example.com")
+
+	// ownerUser 拥有 2 个 active 团队
+	_, err := repo.CreateTeam(ctx, service.CreateTeamInput{ActorUserID: ownerUser.ID, OwnerUserID: ownerUser.ID, Name: "T1", Slug: "t1"})
+	require.NoError(t, err)
+	_, err = repo.CreateTeam(ctx, service.CreateTeamInput{ActorUserID: ownerUser.ID, OwnerUserID: ownerUser.ID, Name: "T2", Slug: "t2"})
+	require.NoError(t, err)
+	// otherUser 拥有 1 个，不应计入 ownerUser
+	_, err = repo.CreateTeam(ctx, service.CreateTeamInput{ActorUserID: otherUser.ID, OwnerUserID: otherUser.ID, Name: "T3", Slug: "t3"})
+	require.NoError(t, err)
+
+	n, err := repo.CountActiveTeamsByOwner(ctx, ownerUser.ID)
+	require.NoError(t, err)
+	require.Equal(t, 2, n)
+
+	n0, err := repo.CountActiveTeamsByOwner(ctx, int64(9999))
+	require.NoError(t, err)
+	require.Equal(t, 0, n0)
+}
+
 func TestAdminGetTeamSummaryIncludesLimits(t *testing.T) {
 	client := newWorkspaceEntClient(t)
 	repo := NewTeamRepository(client)

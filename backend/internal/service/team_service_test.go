@@ -350,6 +350,17 @@ func (r *teamRepoMemory) CountActiveAPIKeysByBillingSubjectID(ctx context.Contex
 	return 0, nil
 }
 
+// CountActiveTeamsByOwner 统计内存桩中该 owner 的活跃团队数（status=active；内存桩中已解散的团队从 map 删除，故无需检查软删标记）。
+func (r *teamRepoMemory) CountActiveTeamsByOwner(ctx context.Context, ownerUserID int64) (int, error) {
+	n := 0
+	for _, tm := range r.teams {
+		if tm.OwnerUserID == ownerUserID && tm.Status == domain.TeamStatusActive {
+			n++
+		}
+	}
+	return n, nil
+}
+
 // DissolveTeam 内存桩解散：成员标记为 left（与 RemoveMember 一致的软删标记），
 // 团队从 map 移除（模拟软删后不可再查到）。
 func (r *teamRepoMemory) DissolveTeam(ctx context.Context, teamID int64) error {

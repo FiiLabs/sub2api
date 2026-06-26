@@ -222,6 +222,8 @@ type TeamRepository interface {
 	UpdateTeam(ctx context.Context, teamID int64, name *string, status *string) (*Team, error)
 	// CountActiveAPIKeysByBillingSubjectID 统计该计费主体名下「启用中」的 API Key 数（解散前置校验）。
 	CountActiveAPIKeysByBillingSubjectID(ctx context.Context, billingSubjectID int64) (int, error)
+	// CountActiveTeamsByOwner 统计某用户作为 owner 拥有的「活跃」团队数（status=active 且未软删），用于自助建团队上限。
+	CountActiveTeamsByOwner(ctx context.Context, ownerUserID int64) (int, error)
 	// DissolveTeam 在单事务内软删团队成员、团队与团队计费主体（高危不可逆，调用方须已校验 owner + 前置条件）。
 	DissolveTeam(ctx context.Context, teamID int64) error
 	// UsageByMember 返回团队在 [start, end) 时间窗内按成员（actor_user_id）聚合的用量明细。
