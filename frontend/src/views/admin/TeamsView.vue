@@ -96,6 +96,13 @@
             <span class="font-medium text-gray-900 dark:text-white">${{ Number(value).toFixed(2) }}</span>
           </template>
 
+          <template #cell-concurrency="{ value }">
+            <span class="text-sm text-gray-700 dark:text-gray-300">{{ value === 0 ? t('admin.teams.unlimited') : value }}</span>
+          </template>
+          <template #cell-rpm_limit="{ value }">
+            <span class="text-sm text-gray-700 dark:text-gray-300">{{ value === 0 ? t('admin.teams.unlimited') : value }}</span>
+          </template>
+
           <template #cell-created_at="{ value }">
             <span class="text-sm text-gray-500 dark:text-dark-400">{{ formatDateTime(value) }}</span>
           </template>
@@ -337,6 +344,16 @@
             :placeholder="t('admin.teams.ownerPlaceholder')"
           />
         </div>
+        <div>
+          <label class="input-label" for="create-team-concurrency">{{ t('admin.teams.concurrency') }}</label>
+          <input id="create-team-concurrency" v-model.number="createForm.concurrency" type="number" min="0" class="input" />
+          <p class="mt-1 text-xs text-gray-400">{{ t('admin.teams.concurrencyHint') }}</p>
+        </div>
+        <div>
+          <label class="input-label" for="create-team-rpm">{{ t('admin.teams.rpmLimit') }}</label>
+          <input id="create-team-rpm" v-model.number="createForm.rpm_limit" type="number" min="0" class="input" />
+          <p class="mt-1 text-xs text-gray-400">{{ t('admin.teams.rpmLimitHint') }}</p>
+        </div>
       </form>
 
       <template #footer>
@@ -410,6 +427,8 @@ const columns = computed<Column[]>(() => [
   { key: 'status', label: t('admin.teams.columns.status'), sortable: false },
   { key: 'member_count', label: t('admin.teams.columns.members'), sortable: false },
   { key: 'balance', label: t('admin.teams.columns.balance'), sortable: false },
+  { key: 'concurrency', label: t('admin.teams.columns.concurrency'), sortable: false },
+  { key: 'rpm_limit', label: t('admin.teams.columns.rpmLimit'), sortable: false },
   { key: 'created_at', label: t('admin.teams.columns.created'), sortable: false },
   { key: 'actions', label: t('admin.teams.columns.actions'), sortable: false }
 ])
@@ -520,7 +539,7 @@ const handleToggleTeamStatus = async (team: AdminTeam) => {
 
 const showCreate = ref(false)
 const createSubmitting = ref(false)
-const createForm = reactive({ name: '', owner: '' })
+const createForm = reactive({ name: '', owner: '', concurrency: 5, rpm_limit: 0 })
 
 const openCreate = () => {
   createForm.name = ''
@@ -546,12 +565,14 @@ const handleCreate = async () => {
     appStore.showError(t('admin.teams.ownerRequired'))
     return
   }
-  const payload: { name: string; owner_user_id?: number; owner_email?: string } = { name }
+  const payload: { name: string; owner_user_id?: number; owner_email?: string; concurrency?: number; rpm_limit?: number } = { name }
   if (/^\d+$/.test(owner)) {
     payload.owner_user_id = Number(owner)
   } else {
     payload.owner_email = owner
   }
+  payload.concurrency = createForm.concurrency
+  payload.rpm_limit = createForm.rpm_limit
   createSubmitting.value = true
   try {
     await adminTeamsAPI.create(payload)
