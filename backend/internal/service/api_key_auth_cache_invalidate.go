@@ -51,6 +51,21 @@ func (s *APIKeyService) InvalidateAuthCacheByTeamID(ctx context.Context, teamID 
 	s.deleteAuthCacheByKeys(ctx, keys)
 }
 
+// DeleteTeamKeys 软删团队名下所有 API key 并失效其鉴权缓存（admin 强删团队时调用）。
+func (s *APIKeyService) DeleteTeamKeys(ctx context.Context, teamID int64) error {
+	if teamID <= 0 {
+		return nil
+	}
+	keys, err := s.apiKeyRepo.DeleteByTeamID(ctx, teamID)
+	if err != nil {
+		return err
+	}
+	for _, k := range keys {
+		s.InvalidateAuthCacheByKey(ctx, k)
+	}
+	return nil
+}
+
 func (s *APIKeyService) deleteAuthCacheByKeys(ctx context.Context, keys []string) {
 	if len(keys) == 0 {
 		return

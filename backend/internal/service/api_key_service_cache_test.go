@@ -21,6 +21,7 @@ type authRepoStub struct {
 	listKeysByUserID  func(ctx context.Context, userID int64) ([]string, error)
 	listKeysByGroupID func(ctx context.Context, groupID int64) ([]string, error)
 	listKeysByTeamID  func(ctx context.Context, teamID int64) ([]string, error)
+	deleteByTeamID    func(ctx context.Context, teamID int64) ([]string, error)
 }
 
 func (s *authRepoStub) Create(ctx context.Context, key *APIKey) error {
@@ -114,6 +115,9 @@ func (s *authRepoStub) ListKeysByTeamID(ctx context.Context, teamID int64) ([]st
 	return s.listKeysByTeamID(ctx, teamID)
 }
 func (s *authRepoStub) DeleteByTeamID(ctx context.Context, teamID int64) ([]string, error) {
+	if s.deleteByTeamID != nil {
+		return s.deleteByTeamID(ctx, teamID)
+	}
 	return nil, nil
 }
 
