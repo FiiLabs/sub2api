@@ -1468,3 +1468,33 @@ func TestTeamService_AdminGetTeamBalanceHistory_NoSubject(t *testing.T) {
 	require.Equal(t, int64(0), total)
 	require.Empty(t, items)
 }
+
+func TestTeamService_AdminAdjustTeamBalance_NoOpDeltaZero(t *testing.T) {
+	base := newTeamRepoMemory()
+	_, err := base.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 1, Name: "T-noop"})
+	require.NoError(t, err)
+	teamID := int64(1)
+
+	const subjectID = int64(600)
+	const startBalance = 20.0
+
+	repo := newAdminBalanceRepoStub(base, subjectID, startBalance)
+	bs := newFakeBillingSubjectForBalance()
+	redeem := newFakeRedeemCodeRepoForBalance()
+	cache := newFakeSubjectBalanceCacheForBalance()
+	svc := NewTeamService(repo, bs, nil, redeem, cache)
+
+	// set → 20.0（与当前余额相同），delta == 0 → 审计跳过，缓存不失效
+	sum, err := svc.AdminAdjustTeamBalance(context.Background(), teamID, startBalance, "set", "noop")
+	require.NoError(t, err)
+	require.InDelta(t, startBalance, sum.Balance, 1e-9)
+
+	// 审计未写入
+	redeem.mu.Lock()
+	created := redeem.created
+	redeem.mu.Unlock()
+	require.Equal(t, 0, created)
+
+	// 缓存未失效（delta==0 直接短路，无 goroutine 调度）
+	require.False(t, cache.wasInvalidated(subjectID))
+}

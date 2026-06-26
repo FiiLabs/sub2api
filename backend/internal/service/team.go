@@ -1044,8 +1044,9 @@ func (s *TeamService) AdminAdjustTeamBalance(ctx context.Context, teamID int64, 
 		}()
 	}
 
-	// 返回最新 summary（重新读，含新余额）
-	return s.repo.AdminGetTeamSummary(ctx, teamID)
+	// 返回更新后的 summary（内存中改余额，避免提交后再读失败导致"已扣款却报错"）。
+	summary.Balance = newBalance
+	return summary, nil
 }
 
 // AdminGetTeamBalanceHistory 返回团队（计费主体）的余额变动历史，分页；codeType 可选过滤。
