@@ -851,6 +851,8 @@ func adminTeamSummaryFromEntity(row *dbent.Team) *service.AdminTeamSummary {
 	}
 	if row.Edges.BillingSubject != nil {
 		summary.Balance = row.Edges.BillingSubject.Balance
+		summary.Concurrency = row.Edges.BillingSubject.Concurrency
+		summary.RpmLimit = row.Edges.BillingSubject.RpmLimit
 	}
 	return summary
 }

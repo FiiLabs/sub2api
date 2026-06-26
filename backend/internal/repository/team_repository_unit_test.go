@@ -253,3 +253,23 @@ func mustCreateTeamUsage(t *testing.T, client *dbent.Client, teamID, actorUserID
 		Save(context.Background())
 	require.NoError(t, err)
 }
+
+func TestAdminGetTeamSummaryIncludesLimits(t *testing.T) {
+	client := newWorkspaceEntClient(t)
+	repo := NewTeamRepository(client)
+	ctx := context.Background()
+
+	// Create a team (default 5/0), then directly update subject to verify reading
+	owner := createWorkspaceTestUser(t, client, "ownerlimits@example.com")
+	team, err := repo.CreateTeam(ctx, service.CreateTeamInput{ActorUserID: owner.ID, OwnerUserID: owner.ID, Name: "Acme", Slug: "acme-limits"})
+	require.NoError(t, err)
+
+	bsRepo := NewBillingSubjectRepository(client)
+	require.NotNil(t, team.BillingSubjectID)
+	require.NoError(t, bsRepo.UpdateLimits(ctx, *team.BillingSubjectID, 30, 90))
+
+	summary, err := repo.AdminGetTeamSummary(ctx, team.ID)
+	require.NoError(t, err)
+	require.Equal(t, 30, summary.Concurrency)
+	require.Equal(t, 90, summary.RpmLimit)
+}

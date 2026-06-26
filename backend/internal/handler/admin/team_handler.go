@@ -56,6 +56,8 @@ type adminTeamDTO struct {
 	Owner            *adminTeamUserDTO `json:"owner"`
 	BillingSubjectID *int64            `json:"billing_subject_id"`
 	Balance          float64           `json:"balance"`
+	Concurrency      int               `json:"concurrency"`
+	RpmLimit         int               `json:"rpm_limit"`
 	MemberCount      int               `json:"member_count"`
 	CreatedAt        time.Time         `json:"created_at"`
 	UpdatedAt        time.Time         `json:"updated_at"`
@@ -99,6 +101,8 @@ func adminTeamDTOFromSummary(s *service.AdminTeamSummary) adminTeamDTO {
 		Owner:            adminTeamUserDTOFromService(s.OwnerUser),
 		BillingSubjectID: s.BillingSubjectID,
 		Balance:          s.Balance,
+		Concurrency:      s.Concurrency,
+		RpmLimit:         s.RpmLimit,
 		MemberCount:      s.MemberCount,
 		CreatedAt:        s.CreatedAt,
 		UpdatedAt:        s.UpdatedAt,

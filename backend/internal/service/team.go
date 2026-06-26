@@ -149,6 +149,8 @@ type AdminTeamSummary struct {
 	Team
 	OwnerUser   *User
 	Balance     float64
+	Concurrency int
+	RpmLimit    int
 	MemberCount int
 }
 
