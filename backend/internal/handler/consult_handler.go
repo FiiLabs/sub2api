@@ -106,16 +106,42 @@ func resolveConsultRoute(m map[string]config.ConsultRoute, model string) (config
 	return config.ConsultRoute{}, false
 }
 
+// consultModelCreated is a stable placeholder creation timestamp for all
+// catalog entries returned by the /models endpoint.  Using a fixed value
+// avoids spurious diffs on every request.
+const consultModelCreated int64 = 1700000000 // stable placeholder creation time for catalog entries
+
+// consultModelOwnedBy derives the "owned_by" value from a route_id by
+// returning the substring before the first ":".  If there is no ":" or the
+// prefix is empty, it falls back to "sub2api".
+//
+// Examples:
+//
+//	"claude:sonnet-4-6"  → "claude"
+//	"openai:gpt-4o"      → "openai"
+//	"nocolon"            → "sub2api"
+func consultModelOwnedBy(routeID string) string {
+	if i := strings.Index(routeID, ":"); i > 0 {
+		return routeID[:i]
+	}
+	return "sub2api"
+}
+
 // Models implements GET /models: OpenAI-style catalog from the consult route_map.
 // Pattern keys (entries containing "*") are excluded — they are routing rules,
 // not real model identifiers.
 func (h *ConsultHandler) Models(c *gin.Context) {
 	data := make([]gin.H, 0, len(h.cfg.Consult.RouteMap))
-	for id := range h.cfg.Consult.RouteMap {
+	for id, route := range h.cfg.Consult.RouteMap {
 		if strings.Contains(id, "*") {
 			continue
 		}
-		data = append(data, gin.H{"id": id, "object": "model"})
+		data = append(data, gin.H{
+			"id":       id,
+			"object":   "model",
+			"created":  consultModelCreated,
+			"owned_by": consultModelOwnedBy(route.RouteID),
+		})
 	}
 	c.JSON(http.StatusOK, gin.H{"object": "list", "data": data})
 }
