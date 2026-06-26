@@ -318,3 +318,26 @@ func TestAdminTeamHandlerTransferOwnershipRequiresUserID(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	require.Equal(t, [2]int64{0, 0}, stub.transferArgs)
 }
+
+// recordingInvalidator 是 teamAuthCacheInvalidator 的测试桩，记录调用的 teamID。
+type recordingInvalidator struct{ calledTeamID int64 }
+
+func (r *recordingInvalidator) InvalidateAuthCacheByTeamID(_ context.Context, teamID int64) {
+	r.calledTeamID = teamID
+}
+
+func TestAdminUpdateTeamConcurrencyInvalidatesCache(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	inv := &recordingInvalidator{}
+	stub := &adminTeamServiceStub{}
+	h := &AdminTeamHandler{teamService: stub, authCacheInvalidator: inv}
+	router := adminRouter(h, 1)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/teams/7", strings.NewReader(`{"concurrency":20}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, int64(7), inv.calledTeamID)
+}

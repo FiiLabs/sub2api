@@ -167,8 +167,10 @@ type AdminTeamListFilter struct {
 
 // AdminUpdateTeamInput holds the mutable team fields for AdminUpdateTeam.
 type AdminUpdateTeamInput struct {
-	Name   *string
-	Status *string
+	Name        *string
+	Status      *string
+	Concurrency *int
+	RpmLimit    *int
 }
 
 // AdminAddMemberInput holds the input for AdminAddMember. The target user is
@@ -732,8 +734,8 @@ func (s *TeamService) DissolveTeam(ctx context.Context, actorUserID, teamID int6
 	return s.repo.DissolveTeam(ctx, teamID)
 }
 
-// AdminUpdateTeam updates a team's name and/or status. An empty update is
-// rejected. No membership checks are performed.
+// AdminUpdateTeam updates a team's name, status, concurrency and/or rpm_limit.
+// An empty update is rejected. No membership checks are performed.
 func (s *TeamService) AdminUpdateTeam(ctx context.Context, teamID int64, input AdminUpdateTeamInput) (*AdminTeamSummary, error) {
 	if teamID <= 0 {
 		return nil, ErrTeamNotFound
@@ -751,11 +753,39 @@ func (s *TeamService) AdminUpdateTeam(ctx context.Context, teamID int64, input A
 			return nil, infraerrors.BadRequest("TEAM_INVALID_STATUS", "invalid team status")
 		}
 	}
-	if name == nil && input.Status == nil {
+	if input.Concurrency != nil && *input.Concurrency < 0 {
+		return nil, infraerrors.BadRequest("TEAM_INVALID_LIMIT", "concurrency must be >= 0")
+	}
+	if input.RpmLimit != nil && *input.RpmLimit < 0 {
+		return nil, infraerrors.BadRequest("TEAM_INVALID_LIMIT", "rpm_limit must be >= 0")
+	}
+	if name == nil && input.Status == nil && input.Concurrency == nil && input.RpmLimit == nil {
 		return nil, infraerrors.BadRequest("TEAM_UPDATE_EMPTY", "team update is empty")
 	}
-	if _, err := s.repo.UpdateTeam(ctx, teamID, name, input.Status); err != nil {
-		return nil, err
+	if name != nil || input.Status != nil {
+		if _, err := s.repo.UpdateTeam(ctx, teamID, name, input.Status); err != nil {
+			return nil, err
+		}
+	}
+	if input.Concurrency != nil || input.RpmLimit != nil {
+		summary, err := s.repo.AdminGetTeamSummary(ctx, teamID)
+		if err != nil {
+			return nil, err
+		}
+		if summary.BillingSubjectID == nil {
+			return nil, ErrTeamNotFound
+		}
+		concurrency := summary.Concurrency
+		if input.Concurrency != nil {
+			concurrency = *input.Concurrency
+		}
+		rpmLimit := summary.RpmLimit
+		if input.RpmLimit != nil {
+			rpmLimit = *input.RpmLimit
+		}
+		if err := s.billingSubject.UpdateLimits(ctx, *summary.BillingSubjectID, concurrency, rpmLimit); err != nil {
+			return nil, err
+		}
 	}
 	return s.repo.AdminGetTeamSummary(ctx, teamID)
 }

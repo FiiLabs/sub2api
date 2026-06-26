@@ -27,16 +27,32 @@ type AdminTeamService interface {
 	AdminTransferOwnership(ctx context.Context, teamID, newOwnerUserID int64) error
 }
 
+// teamAuthCacheInvalidator 由 *service.APIKeyService 实现（按团队失效鉴权缓存）。
+type teamAuthCacheInvalidator interface {
+	InvalidateAuthCacheByTeamID(ctx context.Context, teamID int64)
+}
+
+// teamConcurrencyLoader 由 *service.ConcurrencyService 实现（取成员当前并发）。
+type teamConcurrencyLoader interface {
+	GetUsersLoadBatch(ctx context.Context, users []service.UserWithConcurrency) (map[int64]*service.UserLoadInfo, error)
+}
+
 // AdminTeamHandler handles platform-admin team management. Access is gated by the
 // admin auth middleware at the route level; no team-membership checks apply.
 type AdminTeamHandler struct {
-	teamService AdminTeamService
+	teamService          AdminTeamService
+	authCacheInvalidator teamAuthCacheInvalidator
+	concurrencyLoader    teamConcurrencyLoader
 }
 
 // NewAdminTeamHandler creates a new admin team handler. *service.TeamService is
 // passed directly (it implements AdminTeamService).
-func NewAdminTeamHandler(teamService *service.TeamService) *AdminTeamHandler {
-	return &AdminTeamHandler{teamService: teamService}
+func NewAdminTeamHandler(teamService *service.TeamService, apiKeyService *service.APIKeyService, concurrencyService *service.ConcurrencyService) *AdminTeamHandler {
+	return &AdminTeamHandler{
+		teamService:          teamService,
+		authCacheInvalidator: apiKeyService,
+		concurrencyLoader:    concurrencyService,
+	}
 }
 
 // --- DTOs ---------------------------------------------------------------------
@@ -146,8 +162,10 @@ type adminCreateTeamRequest struct {
 }
 
 type adminUpdateTeamRequest struct {
-	Name   *string `json:"name"`
-	Status *string `json:"status" binding:"omitempty,oneof=active disabled"`
+	Name        *string `json:"name"`
+	Status      *string `json:"status" binding:"omitempty,oneof=active disabled"`
+	Concurrency *int    `json:"concurrency" binding:"omitempty,min=0"`
+	RpmLimit    *int    `json:"rpm_limit" binding:"omitempty,min=0"`
 }
 
 type adminAddTeamMemberRequest struct {
@@ -285,12 +303,18 @@ func (h *AdminTeamHandler) Update(c *gin.Context) {
 	}
 
 	summary, err := h.teamService.AdminUpdateTeam(c.Request.Context(), teamID, service.AdminUpdateTeamInput{
-		Name:   req.Name,
-		Status: req.Status,
+		Name:        req.Name,
+		Status:      req.Status,
+		Concurrency: req.Concurrency,
+		RpmLimit:    req.RpmLimit,
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
+	}
+
+	if (req.Concurrency != nil || req.RpmLimit != nil) && h.authCacheInvalidator != nil {
+		h.authCacheInvalidator.InvalidateAuthCacheByTeamID(c.Request.Context(), teamID)
 	}
 
 	team := adminTeamDTOFromSummary(summary)

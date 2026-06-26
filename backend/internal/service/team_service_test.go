@@ -1104,3 +1104,52 @@ func TestTeamServiceInviteMemberNotifierErrorIsNonFatal(t *testing.T) {
 	// With no base URL the link is a relative path.
 	require.Equal(t, "/teams/accept?token="+token, acceptLink)
 }
+
+// --- AdminUpdateTeam concurrency/rpm tests -----------------------------------
+
+// adminUpdateRepoStub 内嵌 teamRepoMemory，覆写 AdminGetTeamSummary 以注入非 nil 的 BillingSubjectID。
+type adminUpdateRepoStub struct {
+	*teamRepoMemory
+	billingSubjectID int64
+}
+
+func (s *adminUpdateRepoStub) AdminGetTeamSummary(ctx context.Context, teamID int64) (*AdminTeamSummary, error) {
+	summary, err := s.teamRepoMemory.AdminGetTeamSummary(ctx, teamID)
+	if err != nil {
+		return nil, err
+	}
+	summary.BillingSubjectID = &s.billingSubjectID
+	return summary, nil
+}
+
+// updateLimitsBillingStub 内嵌 BillingSubjectRepository，记录 UpdateLimits 的调用参数。
+type updateLimitsBillingStub struct {
+	BillingSubjectRepository
+	calledSubjectID int64
+	calledConc      int
+	calledRpm       int
+}
+
+func (s *updateLimitsBillingStub) UpdateLimits(_ context.Context, subjectID int64, concurrency, rpmLimit int) error {
+	s.calledSubjectID = subjectID
+	s.calledConc = concurrency
+	s.calledRpm = rpmLimit
+	return nil
+}
+
+func TestTeamServiceAdminUpdateTeamConcurrencyCallsUpdateLimits(t *testing.T) {
+	base := newTeamRepoMemory()
+	repo := &adminUpdateRepoStub{teamRepoMemory: base, billingSubjectID: 42}
+	billingStub := &updateLimitsBillingStub{}
+	svc := NewTeamService(repo, billingStub, nil)
+
+	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
+	require.NoError(t, err)
+
+	conc := 20
+	_, err = svc.AdminUpdateTeam(context.Background(), team.ID, AdminUpdateTeamInput{Concurrency: &conc})
+	require.NoError(t, err)
+
+	require.Equal(t, int64(42), billingStub.calledSubjectID)
+	require.Equal(t, 20, billingStub.calledConc)
+}
