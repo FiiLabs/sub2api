@@ -126,6 +126,17 @@ func (r *billingSubjectRepository) DeductBalance(ctx context.Context, subjectID 
 	return err
 }
 
+// UpdateLimits 设置团队主体的并发与 RPM 上限（0 = 不限制）。
+func (r *billingSubjectRepository) UpdateLimits(ctx context.Context, subjectID int64, concurrency, rpmLimit int) error {
+	client := clientFromContext(ctx, r.client)
+	_, err := client.BillingSubject.UpdateOneID(subjectID).
+		SetConcurrency(concurrency).
+		SetRpmLimit(rpmLimit).
+		SetUpdatedAt(time.Now()).
+		Save(ctx)
+	return err
+}
+
 func billingSubjectEntityToService(row *dbent.BillingSubject) *service.BillingSubject {
 	if row == nil {
 		return nil
