@@ -97,30 +97,32 @@ func (h *ConsultHandler) Pre(c *gin.Context) {
 		return
 	}
 
-	// 3. Optionally load active subscription.
-	var sub *service.UserSubscription
-	if key.Group != nil && key.Group.IsSubscriptionType() && h.subs != nil {
-		userID := int64(0)
-		if key.User != nil {
-			userID = key.User.ID
-		}
-		sub, _ = h.subs.GetActiveSubscription(ctx, userID, key.Group.ID)
+	// 3. Guard: user must be present before any subscription lookup.
+	if key.User == nil {
+		deny(c, 401, "Invalid API key")
+		return
 	}
 
-	// 4. Billing/status gate.
+	// 4. Optionally load active subscription.
+	var sub *service.UserSubscription
+	if key.Group != nil && key.Group.IsSubscriptionType() && h.subs != nil {
+		sub, _ = h.subs.GetActiveSubscription(ctx, key.User.ID, key.Group.ID)
+	}
+
+	// 5. Billing/status gate.
 	if ok, status, _, msg := service.ValidateAPIKey(ctx, key, sub, h.cfg); !ok {
 		deny(c, status, msg)
 		return
 	}
 
-	// 5. Route map lookup.
+	// 6. Route map lookup.
 	route, ok := h.cfg.Consult.RouteMap[req.Model]
 	if !ok {
 		deny(c, http.StatusNotFound, "Unknown model: "+req.Model)
 		return
 	}
 
-	// 6. Build candidate.
+	// 7. Build candidate.
 	cand := gin.H{
 		"routeId": route.RouteID,
 		"format":  route.Format,
@@ -129,7 +131,7 @@ func (h *ConsultHandler) Pre(c *gin.Context) {
 		cand["engine"] = route.Engine
 	}
 
-	// 7. Build success response.
+	// 8. Build success response.
 	resp := gin.H{
 		"allow":        true,
 		"candidates":   []gin.H{cand},

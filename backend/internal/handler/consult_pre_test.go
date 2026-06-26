@@ -202,6 +202,44 @@ func TestConsultPre_ModelNotInRouteMap(t *testing.T) {
 	assert.Equal(t, float64(404), resp["status"])
 }
 
+// TestConsultPre_ValidationDenied: a TEAM key whose ValidateAPIKey fails (inactive user) →
+// allow=false, status=401 (USER_INACTIVE path in ValidateAPIKey).
+func TestConsultPre_ValidationDenied(t *testing.T) {
+	cfg := makeConsultConfig(map[string]config.ConsultRoute{
+		"m2": {RouteID: "minimax:m2", Format: "openai"},
+	})
+
+	// TEAM key (TeamID set, User non-nil) but user is inactive (Status "disabled", Balance 0).
+	// ValidateAPIKey check 4: !k.User.IsActive() → returns false, 401, "USER_INACTIVE".
+	deniedKey := &service.APIKey{
+		ID:     9,
+		UserID: 90,
+		TeamID: teamIDPtr(3),
+		Status: "active",
+		User:   &service.User{ID: 90, Status: "disabled", Balance: 0},
+	}
+
+	h := newTestConsultHandler(
+		&fakeAPIKeys{byHash: map[string]*service.APIKey{"hash-denied": deniedKey}},
+		nil,
+		&fakePricing{},
+		cfg,
+	)
+
+	w := postPre(t, h, map[string]string{
+		"apiKeyHash": "hash-denied",
+		"model":      "m2",
+	})
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+
+	assert.Equal(t, false, resp["allow"])
+	assert.Equal(t, float64(401), resp["status"])
+}
+
 // TestConsultPre_Success: team key + active user + balance>0 + model in route_map → allow=true.
 func TestConsultPre_Success(t *testing.T) {
 	cfg := makeConsultConfig(map[string]config.ConsultRoute{
