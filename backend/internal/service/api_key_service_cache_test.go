@@ -106,6 +106,10 @@ func (s *authRepoStub) ListKeysByGroupID(ctx context.Context, groupID int64) ([]
 	return s.listKeysByGroupID(ctx, groupID)
 }
 
+func (s *authRepoStub) ListKeysByTeamID(ctx context.Context, teamID int64) ([]string, error) {
+	return nil, nil
+}
+
 func (s *authRepoStub) IncrementQuotaUsed(ctx context.Context, id int64, amount float64) (float64, error) {
 	panic("unexpected IncrementQuotaUsed call")
 }

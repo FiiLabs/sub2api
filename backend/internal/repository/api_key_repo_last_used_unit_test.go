@@ -154,3 +154,50 @@ func TestAPIKeyRepository_CreateDuplicateKey(t *testing.T) {
 	err := repo.Create(ctx, second)
 	require.ErrorIs(t, err, service.ErrAPIKeyExists)
 }
+
+func TestListKeysByTeamIDReturnsOnlyTeamKeys(t *testing.T) {
+	repo, client := newAPIKeyRepoSQLite(t)
+	ctx := context.Background()
+	user := mustCreateAPIKeyRepoUser(t, ctx, client, "list-keys-team@test.com")
+
+	// 需要真实的 team 记录，TeamID 是外键
+	teamA, err := client.Team.Create().
+		SetName("team-a").
+		SetSlug("team-a").
+		SetOwnerUserID(user.ID).
+		SetCreatedByUserID(user.ID).
+		SetStatus("active").
+		Save(ctx)
+	require.NoError(t, err)
+
+	teamB, err := client.Team.Create().
+		SetName("team-b").
+		SetSlug("team-b").
+		SetOwnerUserID(user.ID).
+		SetCreatedByUserID(user.ID).
+		SetStatus("active").
+		Save(ctx)
+	require.NoError(t, err)
+
+	idA := teamA.ID
+	idB := teamB.ID
+
+	mk := func(key string, teamID *int64) {
+		k := &service.APIKey{
+			UserID: user.ID,
+			Key:    key,
+			Name:   key,
+			Status: service.StatusActive,
+			TeamID: teamID,
+		}
+		require.NoError(t, repo.Create(ctx, k))
+	}
+	mk("k-team-a-1", &idA)
+	mk("k-team-a-2", &idA)
+	mk("k-team-b", &idB)
+	mk("k-personal", nil)
+
+	keys, err := repo.ListKeysByTeamID(ctx, teamA.ID)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"k-team-a-1", "k-team-a-2"}, keys)
+}

@@ -705,6 +705,18 @@ func (r *apiKeyRepository) ListKeysByGroupID(ctx context.Context, groupID int64)
 	return keys, nil
 }
 
+// ListKeysByTeamID 返回团队名下所有 active API key 的 key 字符串（用于按团队失效鉴权缓存）。
+func (r *apiKeyRepository) ListKeysByTeamID(ctx context.Context, teamID int64) ([]string, error) {
+	keys, err := r.activeQuery().
+		Where(apikey.TeamIDEQ(teamID)).
+		Select(apikey.FieldKey).
+		Strings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return keys, nil
+}
+
 // IncrementQuotaUsed 使用 Ent 原子递增 quota_used 字段并返回新值
 func (r *apiKeyRepository) IncrementQuotaUsed(ctx context.Context, id int64, amount float64) (float64, error) {
 	updated, err := r.client.APIKey.UpdateOneID(id).
