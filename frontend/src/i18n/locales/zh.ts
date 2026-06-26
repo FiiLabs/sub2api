@@ -2156,7 +2156,22 @@ export default {
       deleteTeamActiveKeys: '将被吊销的启用中 API Key 数：{count}',
       deleteTeamTypeName: '输入团队名以确认',
       teamDeleted: '团队已删除',
-      failedToDeleteTeam: '删除团队失败'
+      failedToDeleteTeam: '删除团队失败',
+      deposit: '充值',
+      withdraw: '扣减',
+      depositAmount: '充值金额',
+      withdrawAmount: '扣减金额',
+      withdrawAll: '全部',
+      currentBalance: '当前余额',
+      newBalance: '调整后余额',
+      balanceNotes: '备注',
+      amountRequired: '请输入金额',
+      insufficientBalance: '金额超过当前余额',
+      balanceUpdated: '余额已更新',
+      failedToUpdateBalance: '余额更新失败',
+      balanceHistory: '余额历史',
+      balanceHistoryTitle: '团队余额历史',
+      noBalanceHistory: '暂无余额变动记录'
     },
 
     // Users Management

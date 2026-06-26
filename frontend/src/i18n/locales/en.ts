@@ -2138,7 +2138,22 @@ export default {
       deleteTeamActiveKeys: 'Active API keys to be revoked: {count}',
       deleteTeamTypeName: 'Type the team name to confirm',
       teamDeleted: 'Team deleted',
-      failedToDeleteTeam: 'Failed to delete team'
+      failedToDeleteTeam: 'Failed to delete team',
+      deposit: 'Deposit',
+      withdraw: 'Withdraw',
+      depositAmount: 'Deposit amount',
+      withdrawAmount: 'Withdraw amount',
+      withdrawAll: 'All',
+      currentBalance: 'Current balance',
+      newBalance: 'New balance',
+      balanceNotes: 'Notes',
+      amountRequired: 'Please enter an amount',
+      insufficientBalance: 'Amount exceeds current balance',
+      balanceUpdated: 'Balance updated',
+      failedToUpdateBalance: 'Failed to update balance',
+      balanceHistory: 'Balance history',
+      balanceHistoryTitle: 'Team balance history',
+      noBalanceHistory: 'No balance changes yet'
     },
 
     // Users
