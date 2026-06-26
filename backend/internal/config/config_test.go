@@ -1933,3 +1933,24 @@ func TestLoad_DefaultGatewayImageStreamConfig(t *testing.T) {
 		t.Fatalf("image stream timeout = %d, want greater than ordinary stream timeout %d", cfg.Gateway.ImageStreamDataIntervalTimeout, cfg.Gateway.StreamDataIntervalTimeout)
 	}
 }
+
+func TestConsultConfigUnmarshal(t *testing.T) {
+	const yamlBlob = `
+consult:
+  control_token: tok
+  placeholder_account_id: 42
+  route_map:
+    m2: { route_id: "minimax:m2", format: "openai" }
+`
+	v := viper.New()
+	v.SetConfigType("yaml")
+	require.NoError(t, v.ReadConfig(strings.NewReader(yamlBlob)))
+
+	var c Config
+	require.NoError(t, v.Unmarshal(&c))
+
+	require.Equal(t, "tok", c.Consult.ControlToken)
+	require.Equal(t, int64(42), c.Consult.PlaceholderAccountID)
+	require.Equal(t, "minimax:m2", c.Consult.RouteMap["m2"].RouteID)
+	require.Equal(t, "openai", c.Consult.RouteMap["m2"].Format)
+}

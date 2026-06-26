@@ -93,6 +93,7 @@ type Config struct {
 	Gemini                  GeminiConfig                  `mapstructure:"gemini"`
 	Update                  UpdateConfig                  `mapstructure:"update"`
 	Idempotency             IdempotencyConfig             `mapstructure:"idempotency"`
+	Consult                 ConsultConfig                 `mapstructure:"consult"`
 }
 
 type LogConfig struct {
@@ -173,6 +174,18 @@ type IdempotencyConfig struct {
 	CleanupIntervalSeconds int `mapstructure:"cleanup_interval_seconds"`
 	// CleanupBatchSize 每次清理的最大记录数。
 	CleanupBatchSize int `mapstructure:"cleanup_batch_size"`
+}
+
+type ConsultConfig struct {
+	ControlToken         string                  `mapstructure:"control_token"`
+	PlaceholderAccountID int64                   `mapstructure:"placeholder_account_id"`
+	RouteMap             map[string]ConsultRoute `mapstructure:"route_map"`
+}
+
+type ConsultRoute struct {
+	RouteID string `mapstructure:"route_id"`
+	Format  string `mapstructure:"format"`
+	Engine  string `mapstructure:"engine"`
 }
 
 type LinuxDoConnectConfig struct {
@@ -1980,6 +1993,10 @@ func setDefaults() {
 	// Subscription Maintenance (bounded queue + worker pool)
 	viper.SetDefault("subscription_maintenance.worker_count", 2)
 	viper.SetDefault("subscription_maintenance.queue_size", 1024)
+
+	// Consult
+	viper.SetDefault("consult.control_token", "")
+	viper.SetDefault("consult.placeholder_account_id", 0)
 
 }
 
