@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"net/url"
 	"strings"
@@ -40,6 +41,9 @@ var (
 	ErrTeamDissolveHasBalance    = infraerrors.Conflict("TEAM_DISSOLVE_HAS_BALANCE", "team has remaining balance; zero it before dissolving")
 	ErrTeamDissolveHasActiveKeys = infraerrors.Conflict("TEAM_DISSOLVE_HAS_ACTIVE_KEYS", "team has active API keys; delete them before dissolving")
 )
+
+// MaxTeamsPerOwner 普通用户自助创建团队的上限（owner 口径）。admin 经 AdminCreateTeam 不受此限。
+const MaxTeamsPerOwner = 5
 
 type Team struct {
 	ID               int64
@@ -116,6 +120,9 @@ type CreateTeamInput struct {
 	// platform admin can create a team on behalf of another user). When 0 the owner
 	// defaults to ActorUserID (user self-service path).
 	OwnerUserID int64
+	// Concurrency/RpmLimit：nil = 用默认(5/0)，非 nil = 用该值(含 0=不限制)。仅 admin 创建路径会传。
+	Concurrency *int
+	RpmLimit    *int
 }
 
 // AdminCreateTeamInput holds the input for AdminCreateTeam. The owner is resolved
@@ -127,6 +134,8 @@ type AdminCreateTeamInput struct {
 	OwnerUserID int64
 	OwnerEmail  string
 	AdminUserID int64
+	Concurrency *int
+	RpmLimit    *int
 }
 
 type InviteTeamMemberInput struct {
@@ -149,7 +158,10 @@ type AdminTeamSummary struct {
 	Team
 	OwnerUser   *User
 	Balance     float64
-	MemberCount int
+	Concurrency int
+	RpmLimit    int
+	MemberCount    int
+	ActiveKeyCount int
 }
 
 // AdminTeamListFilter holds the optional filters for AdminListTeams.
@@ -160,8 +172,10 @@ type AdminTeamListFilter struct {
 
 // AdminUpdateTeamInput holds the mutable team fields for AdminUpdateTeam.
 type AdminUpdateTeamInput struct {
-	Name   *string
-	Status *string
+	Name        *string
+	Status      *string
+	Concurrency *int
+	RpmLimit    *int
 }
 
 // AdminAddMemberInput holds the input for AdminAddMember. The target user is
@@ -212,6 +226,8 @@ type TeamRepository interface {
 	UpdateTeam(ctx context.Context, teamID int64, name *string, status *string) (*Team, error)
 	// CountActiveAPIKeysByBillingSubjectID 统计该计费主体名下「启用中」的 API Key 数（解散前置校验）。
 	CountActiveAPIKeysByBillingSubjectID(ctx context.Context, billingSubjectID int64) (int, error)
+	// CountActiveTeamsByOwner 统计某用户作为 owner 拥有的「活跃」团队数（status=active 且未软删），用于自助建团队上限。
+	CountActiveTeamsByOwner(ctx context.Context, ownerUserID int64) (int, error)
 	// DissolveTeam 在单事务内软删团队成员、团队与团队计费主体（高危不可逆，调用方须已校验 owner + 前置条件）。
 	DissolveTeam(ctx context.Context, teamID int64) error
 	// UsageByMember 返回团队在 [start, end) 时间窗内按成员（actor_user_id）聚合的用量明细。
@@ -234,18 +250,25 @@ type TeamUserLookup interface {
 	GetByID(ctx context.Context, id int64) (*User, error)
 }
 
-type TeamService struct {
-	repo           TeamRepository
-	billingSubject BillingSubjectRepository
-	userLookup     TeamUserLookup
-	inviteNotifier TeamInviteNotifier
+// SubjectBalanceInvalidator 失效计费主体余额缓存（*BillingCacheService 实现）。
+type SubjectBalanceInvalidator interface {
+	InvalidateSubjectBalance(ctx context.Context, subjectID int64) error
 }
 
-func NewTeamService(repo TeamRepository, billingSubject BillingSubjectRepository, userRepo UserRepository) *TeamService {
+type TeamService struct {
+	repo                TeamRepository
+	billingSubject      BillingSubjectRepository
+	userLookup          TeamUserLookup
+	inviteNotifier      TeamInviteNotifier
+	redeemCodeRepo      RedeemCodeRepository
+	subjectBalanceCache SubjectBalanceInvalidator
+}
+
+func NewTeamService(repo TeamRepository, billingSubject BillingSubjectRepository, userRepo UserRepository, redeemCodeRepo RedeemCodeRepository, subjectBalanceCache SubjectBalanceInvalidator) *TeamService {
 	// userRepo (the full UserRepository) is stored behind the narrow TeamUserLookup
 	// interface; accepting the full interface keeps wire injection binding-free,
 	// while the narrow field keeps the admin email-resolution dependency minimal.
-	s := &TeamService{repo: repo, billingSubject: billingSubject}
+	s := &TeamService{repo: repo, billingSubject: billingSubject, redeemCodeRepo: redeemCodeRepo, subjectBalanceCache: subjectBalanceCache}
 	if userRepo != nil {
 		s.userLookup = userRepo
 	}
@@ -263,6 +286,15 @@ func (s *TeamService) CreateTeam(ctx context.Context, input CreateTeamInput) (*T
 	input.Slug = strings.TrimSpace(input.Slug)
 	if input.ActorUserID <= 0 || input.Name == "" {
 		return nil, infraerrors.BadRequest("TEAM_INVALID_INPUT", "team name is required")
+	}
+	// 自助创建上限（owner 口径）。admin 路径走 AdminCreateTeam，不经此处。
+	count, err := s.repo.CountActiveTeamsByOwner(ctx, input.ActorUserID)
+	if err != nil {
+		return nil, err
+	}
+	if count >= MaxTeamsPerOwner {
+		return nil, infraerrors.BadRequest("TEAM_LIMIT_REACHED",
+			fmt.Sprintf("已达自助创建团队上限（%d 个），如需更多请联系管理员", MaxTeamsPerOwner))
 	}
 	slug, err := buildTeamSlug(input.Name, input.Slug)
 	if err != nil {
@@ -534,6 +566,15 @@ func (s *TeamService) TransferOwnership(ctx context.Context, actorUserID, teamID
 	return s.repo.TransferOwnership(ctx, teamID, newOwnerUserID, team.OwnerUserID)
 }
 
+// AdminDeleteTeam 平台 admin 强删团队：直接软删 成员/团队/团队计费主体，无 owner/余额/启用-key 守卫
+// （守卫仅作用于 owner 自助 DissolveTeam）。团队 API key 的删除与缓存失效由调用方在此之前完成。
+func (s *TeamService) AdminDeleteTeam(ctx context.Context, teamID int64) error {
+	if teamID <= 0 {
+		return ErrTeamNotFound
+	}
+	return s.repo.DissolveTeam(ctx, teamID)
+}
+
 // AdminTransferOwnership transfers team ownership as a platform admin (no
 // membership gating on the actor). The new owner must still be an active member;
 // the previous owner is demoted to admin.
@@ -607,6 +648,8 @@ func (s *TeamService) AdminCreateTeam(ctx context.Context, input AdminCreateTeam
 		OwnerUserID: ownerID,
 		Name:        input.Name,
 		Slug:        slug,
+		Concurrency: input.Concurrency,
+		RpmLimit:    input.RpmLimit,
 	})
 	if err != nil {
 		return nil, err
@@ -660,6 +703,13 @@ func (s *TeamService) AdminGetTeam(ctx context.Context, teamID int64) (*AdminTea
 	summary, err := s.repo.AdminGetTeamSummary(ctx, teamID)
 	if err != nil {
 		return nil, nil, nil, err
+	}
+	if summary.BillingSubjectID != nil && *summary.BillingSubjectID > 0 {
+		count, err := s.repo.CountActiveAPIKeysByBillingSubjectID(ctx, *summary.BillingSubjectID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		summary.ActiveKeyCount = count
 	}
 	members, invitations, err := s.repo.ListMembers(ctx, teamID)
 	if err != nil {
@@ -723,8 +773,8 @@ func (s *TeamService) DissolveTeam(ctx context.Context, actorUserID, teamID int6
 	return s.repo.DissolveTeam(ctx, teamID)
 }
 
-// AdminUpdateTeam updates a team's name and/or status. An empty update is
-// rejected. No membership checks are performed.
+// AdminUpdateTeam updates a team's name, status, concurrency and/or rpm_limit.
+// An empty update is rejected. No membership checks are performed.
 func (s *TeamService) AdminUpdateTeam(ctx context.Context, teamID int64, input AdminUpdateTeamInput) (*AdminTeamSummary, error) {
 	if teamID <= 0 {
 		return nil, ErrTeamNotFound
@@ -742,11 +792,39 @@ func (s *TeamService) AdminUpdateTeam(ctx context.Context, teamID int64, input A
 			return nil, infraerrors.BadRequest("TEAM_INVALID_STATUS", "invalid team status")
 		}
 	}
-	if name == nil && input.Status == nil {
+	if input.Concurrency != nil && *input.Concurrency < 0 {
+		return nil, infraerrors.BadRequest("TEAM_INVALID_LIMIT", "concurrency must be >= 0")
+	}
+	if input.RpmLimit != nil && *input.RpmLimit < 0 {
+		return nil, infraerrors.BadRequest("TEAM_INVALID_LIMIT", "rpm_limit must be >= 0")
+	}
+	if name == nil && input.Status == nil && input.Concurrency == nil && input.RpmLimit == nil {
 		return nil, infraerrors.BadRequest("TEAM_UPDATE_EMPTY", "team update is empty")
 	}
-	if _, err := s.repo.UpdateTeam(ctx, teamID, name, input.Status); err != nil {
-		return nil, err
+	if name != nil || input.Status != nil {
+		if _, err := s.repo.UpdateTeam(ctx, teamID, name, input.Status); err != nil {
+			return nil, err
+		}
+	}
+	if input.Concurrency != nil || input.RpmLimit != nil {
+		summary, err := s.repo.AdminGetTeamSummary(ctx, teamID)
+		if err != nil {
+			return nil, err
+		}
+		if summary.BillingSubjectID == nil {
+			return nil, ErrTeamNotFound
+		}
+		concurrency := summary.Concurrency
+		if input.Concurrency != nil {
+			concurrency = *input.Concurrency
+		}
+		rpmLimit := summary.RpmLimit
+		if input.RpmLimit != nil {
+			rpmLimit = *input.RpmLimit
+		}
+		if err := s.billingSubject.UpdateLimits(ctx, *summary.BillingSubjectID, concurrency, rpmLimit); err != nil {
+			return nil, err
+		}
 	}
 	return s.repo.AdminGetTeamSummary(ctx, teamID)
 }
@@ -894,6 +972,99 @@ func slugifyTeamName(name string) string {
 		slug = strings.Trim(slug[:maxTeamSlugBaseLen], "-")
 	}
 	return slug
+}
+
+// AdminAdjustTeamBalance 平台 admin 调整团队（计费主体）余额。
+// operation: "set"（绝对值）/ "add"（加）/ "subtract"（减）。
+// 结果余额不得为负。写带 BillingSubjectID 的审计记录（best-effort），并异步失效主体余额缓存。
+func (s *TeamService) AdminAdjustTeamBalance(ctx context.Context, teamID int64, amount float64, operation, notes string) (*AdminTeamSummary, error) {
+	summary, err := s.repo.AdminGetTeamSummary(ctx, teamID)
+	if err != nil {
+		return nil, err
+	}
+	if summary.BillingSubjectID == nil || *summary.BillingSubjectID <= 0 {
+		return nil, infraerrors.BadRequest("TEAM_NO_BILLING_SUBJECT", "team has no billing subject")
+	}
+	subjectID := *summary.BillingSubjectID
+	oldBalance := summary.Balance
+
+	var newBalance float64
+	switch operation {
+	case "set":
+		newBalance = amount
+	case "add":
+		newBalance = oldBalance + amount
+	case "subtract":
+		newBalance = oldBalance - amount
+	default:
+		return nil, infraerrors.BadRequest("TEAM_BALANCE_BAD_OP", "invalid operation")
+	}
+	if newBalance < 0 {
+		return nil, infraerrors.BadRequest("TEAM_BALANCE_NEGATIVE",
+			fmt.Sprintf("balance cannot be negative, current: %.2f, result would be: %.2f", oldBalance, newBalance))
+	}
+
+	delta := newBalance - oldBalance
+	if err := s.billingSubject.UpdateBalance(ctx, subjectID, delta); err != nil {
+		return nil, err
+	}
+
+	// 审计（best-effort，失败仅记日志，不阻断主流程）
+	if delta != 0 && s.redeemCodeRepo != nil {
+		if code, gerr := GenerateRedeemCode(); gerr == nil {
+			now := time.Now()
+			rec := &RedeemCode{
+				Code:             code,
+				Type:             AdjustmentTypeAdminBalance,
+				Value:            delta,
+				Status:           StatusUsed,
+				UsedAt:           &now,
+				Notes:            notes,
+				BillingSubjectID: &subjectID,
+			}
+			if cerr := s.redeemCodeRepo.Create(ctx, rec); cerr != nil {
+				slog.WarnContext(ctx, "AdminAdjustTeamBalance: failed to write audit record",
+					"team_id", teamID, "error", cerr.Error())
+			}
+		} else {
+			slog.WarnContext(ctx, "AdminAdjustTeamBalance: failed to generate audit code",
+				"team_id", teamID, "error", gerr.Error())
+		}
+	}
+
+	// 异步失效主体余额缓存
+	if delta != 0 && s.subjectBalanceCache != nil {
+		go func() {
+			cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if ierr := s.subjectBalanceCache.InvalidateSubjectBalance(cacheCtx, subjectID); ierr != nil {
+				slog.Warn("AdminAdjustTeamBalance: invalidate subject balance cache failed",
+					"subject_id", subjectID, "error", ierr.Error())
+			}
+		}()
+	}
+
+	// 返回更新后的 summary（内存中改余额，避免提交后再读失败导致"已扣款却报错"）。
+	summary.Balance = newBalance
+	return summary, nil
+}
+
+// AdminGetTeamBalanceHistory 返回团队（计费主体）的余额变动历史，分页；codeType 可选过滤。
+// 团队无计费主体时返回空切片（不报错）。
+func (s *TeamService) AdminGetTeamBalanceHistory(ctx context.Context, teamID int64, page, pageSize int, codeType string) ([]RedeemCode, int64, error) {
+	summary, err := s.repo.AdminGetTeamSummary(ctx, teamID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if summary.BillingSubjectID == nil || *summary.BillingSubjectID <= 0 || s.redeemCodeRepo == nil {
+		return nil, 0, nil
+	}
+	params := pagination.PaginationParams{Page: page, PageSize: pageSize}
+	items, result, err := s.redeemCodeRepo.ListBySubjectID(ctx, *summary.BillingSubjectID, params, codeType)
+	if err != nil {
+		return nil, 0, err
+	}
+	return items, result.Total, nil
 }
 
 // randHexSuffix returns ~6 hex chars of crypto-random entropy, reusing the

@@ -31,6 +31,14 @@ type APIKeyAuthSnapshot struct {
 	RateLimit5h float64 `json:"rate_limit_5h"`
 	RateLimit1d float64 `json:"rate_limit_1d"`
 	RateLimit7d float64 `json:"rate_limit_7d"`
+
+	// SubjectConcurrency 团队计费主体的并发上限（来自 billing_subjects.concurrency）。
+	// nil = 个人 key 或加载失败；非 nil（含 0）= 主体值，0 表示不限制。
+	SubjectConcurrency *int `json:"subject_concurrency,omitempty"`
+
+	// SubjectRPMLimit 团队计费主体的 RPM 上限（来自 billing_subjects.rpm_limit）。
+	// nil = 个人 key 或加载失败；非 nil（含 0）= 主体值，0 表示不限制。
+	SubjectRPMLimit *int `json:"subject_rpm_limit,omitempty"`
 }
 
 // APIKeyAuthUserSnapshot 用户快照

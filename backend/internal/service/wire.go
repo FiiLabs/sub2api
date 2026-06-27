@@ -460,8 +460,8 @@ func ProvideOpsService(
 // ProvideTeamService wires TeamService and injects the best-effort invitation
 // email notifier (over EmailService + SettingService). NewTeamService stays
 // binding-free; the notifier is attached post-construction.
-func ProvideTeamService(repo TeamRepository, billingSubject BillingSubjectRepository, userRepo UserRepository, emailService *EmailService, settingService *SettingService) *TeamService {
-	svc := NewTeamService(repo, billingSubject, userRepo)
+func ProvideTeamService(repo TeamRepository, billingSubject BillingSubjectRepository, userRepo UserRepository, emailService *EmailService, settingService *SettingService, redeemCodeRepo RedeemCodeRepository, billingCacheService *BillingCacheService) *TeamService {
+	svc := NewTeamService(repo, billingSubject, userRepo, redeemCodeRepo, billingCacheService)
 	svc.SetInviteNotifier(ProvideTeamInviteNotifier(emailService, settingService))
 	return svc
 }
@@ -493,7 +493,8 @@ func ProvideBillingCacheService(
 	return NewBillingCacheService(cache, userRepo, subRepo, apiKeyRepo, rpmCache, rateRepo, cfg, userPlatformQuotaRepo, billingSubjectRepo)
 }
 
-// ProvideAPIKeyService wires APIKeyService and connects rate-limit cache invalidation.
+// ProvideAPIKeyService wires APIKeyService and connects rate-limit cache invalidation
+// and the billing subject repository (for team key concurrency limit loading).
 func ProvideAPIKeyService(
 	apiKeyRepo APIKeyRepository,
 	userRepo UserRepository,
@@ -503,9 +504,11 @@ func ProvideAPIKeyService(
 	cache APIKeyCache,
 	cfg *config.Config,
 	billingCacheService *BillingCacheService,
+	billingSubjectRepo BillingSubjectRepository,
 ) *APIKeyService {
 	svc := NewAPIKeyService(apiKeyRepo, userRepo, groupRepo, userSubRepo, userGroupRateRepo, cache, cfg)
 	svc.SetRateLimitCacheInvalidator(billingCacheService)
+	svc.SetBillingSubjectRepo(billingSubjectRepo)
 	return svc
 }
 

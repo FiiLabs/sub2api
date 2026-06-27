@@ -20,6 +20,8 @@ type authRepoStub struct {
 	getByKeyForAuth   func(ctx context.Context, key string) (*APIKey, error)
 	listKeysByUserID  func(ctx context.Context, userID int64) ([]string, error)
 	listKeysByGroupID func(ctx context.Context, groupID int64) ([]string, error)
+	listKeysByTeamID  func(ctx context.Context, teamID int64) ([]string, error)
+	deleteByTeamID    func(ctx context.Context, teamID int64) ([]string, error)
 }
 
 func (s *authRepoStub) Create(ctx context.Context, key *APIKey) error {
@@ -107,6 +109,19 @@ func (s *authRepoStub) ListKeysByGroupID(ctx context.Context, groupID int64) ([]
 		panic("unexpected ListKeysByGroupID call")
 	}
 	return s.listKeysByGroupID(ctx, groupID)
+}
+
+func (s *authRepoStub) ListKeysByTeamID(ctx context.Context, teamID int64) ([]string, error) {
+	if s.listKeysByTeamID == nil {
+		panic("unexpected ListKeysByTeamID call")
+	}
+	return s.listKeysByTeamID(ctx, teamID)
+}
+func (s *authRepoStub) DeleteByTeamID(ctx context.Context, teamID int64) ([]string, error) {
+	if s.deleteByTeamID != nil {
+		return s.deleteByTeamID(ctx, teamID)
+	}
+	return nil, nil
 }
 
 func (s *authRepoStub) IncrementQuotaUsed(ctx context.Context, id int64, amount float64) (float64, error) {
@@ -493,6 +508,27 @@ func TestAPIKeyService_InvalidateAuthCacheByGroupID(t *testing.T) {
 	require.Len(t, cache.deleteAuthKeys, 2)
 }
 
+func TestAPIKeyService_InvalidateAuthCacheByTeamID(t *testing.T) {
+	cache := &authCacheStub{}
+	var gotTeamID int64
+	repo := &authRepoStub{
+		listKeysByTeamID: func(ctx context.Context, teamID int64) ([]string, error) {
+			gotTeamID = teamID
+			return []string{"k1", "k2"}, nil
+		},
+	}
+	cfg := &config.Config{
+		APIKeyAuth: config.APIKeyAuthCacheConfig{
+			L2TTLSeconds: 60,
+		},
+	}
+	svc := NewAPIKeyService(repo, nil, nil, nil, nil, cache, cfg)
+
+	svc.InvalidateAuthCacheByTeamID(context.Background(), 7)
+	require.Len(t, cache.deleteAuthKeys, 2)
+	require.Equal(t, int64(7), gotTeamID)
+}
+
 func TestAPIKeyService_InvalidateAuthCacheByKey(t *testing.T) {
 	cache := &authCacheStub{}
 	repo := &authRepoStub{
@@ -532,6 +568,295 @@ func TestAPIKeyService_GetByKey_CachesNegativeOnRepoMiss(t *testing.T) {
 	_, err := svc.GetByKey(context.Background(), "missing")
 	require.ErrorIs(t, err, ErrAPIKeyNotFound)
 	require.Len(t, cache.setAuthKeys, 1)
+}
+
+// TestSnapshotCarriesSubjectConcurrency 验证 snapshotFromAPIKey 对团队 key 加载
+// billing_subject.concurrency，并且 snapshotToAPIKey 还原时正确传递给 APIKey。
+func TestSnapshotCarriesSubjectConcurrency(t *testing.T) {
+	intPtr := func(v int) *int { return &v }
+	int64Ptr := func(v int64) *int64 { return &v }
+
+	t.Run("team_key_snapshot_loads_subject_concurrency", func(t *testing.T) {
+		// stub billingSubjectRepo 返回 concurrency=7
+		billingSubjRepo := &stubBillingSubjectRepo{
+			getByID: func(ctx context.Context, id int64) (*BillingSubject, error) {
+				return &BillingSubject{ID: id, Concurrency: 7}, nil
+			},
+		}
+		svc := &APIKeyService{}
+		svc.SetBillingSubjectRepo(billingSubjRepo)
+
+		teamID := int64(55)
+		apiKey := &APIKey{
+			ID:               10,
+			UserID:           42,
+			BillingSubjectID: 900,
+			TeamID:           int64Ptr(teamID),
+			Key:              "sk-team-key",
+			Name:             "team key",
+			Status:           StatusActive,
+			User: &User{
+				ID:          42,
+				Status:      StatusActive,
+				Role:        RoleUser,
+				Balance:     10,
+				Concurrency: 3, // 个人值，不应出现在快照的 SubjectConcurrency 中
+			},
+		}
+
+		snapshot := svc.snapshotFromAPIKey(context.Background(), apiKey)
+
+		require.NotNil(t, snapshot)
+		require.NotNil(t, snapshot.SubjectConcurrency, "团队 key 快照必须包含 SubjectConcurrency")
+		require.Equal(t, 7, *snapshot.SubjectConcurrency, "快照 SubjectConcurrency 必须来自 billing_subject.concurrency")
+	})
+
+	t.Run("personal_key_snapshot_no_subject_concurrency", func(t *testing.T) {
+		svc := &APIKeyService{}
+
+		apiKey := &APIKey{
+			ID:     11,
+			UserID: 31,
+			Key:    "sk-personal",
+			Name:   "personal",
+			Status: StatusActive,
+			User: &User{
+				ID:          31,
+				Status:      StatusActive,
+				Role:        RoleUser,
+				Balance:     10,
+				Concurrency: 4,
+			},
+		}
+
+		snapshot := svc.snapshotFromAPIKey(context.Background(), apiKey)
+
+		require.NotNil(t, snapshot)
+		require.Nil(t, snapshot.SubjectConcurrency, "个人 key 快照不应包含 SubjectConcurrency")
+	})
+
+	t.Run("snapshot_to_api_key_restores_subject_concurrency", func(t *testing.T) {
+		svc := &APIKeyService{}
+		teamID := int64(55)
+		snapshot := &APIKeyAuthSnapshot{
+			Version:            apiKeyAuthSnapshotVersion,
+			APIKeyID:           10,
+			UserID:             42,
+			BillingSubjectID:   900,
+			TeamID:             int64Ptr(teamID),
+			Status:             StatusActive,
+			SubjectConcurrency: intPtr(7),
+			User: APIKeyAuthUserSnapshot{
+				ID:          42,
+				Status:      StatusActive,
+				Role:        RoleUser,
+				Balance:     10,
+				Concurrency: 3,
+			},
+		}
+
+		apiKey := svc.snapshotToAPIKey("sk-team-key", snapshot)
+
+		require.NotNil(t, apiKey)
+		require.NotNil(t, apiKey.SubjectConcurrency, "snapshotToAPIKey 必须还原 SubjectConcurrency 字段")
+		require.Equal(t, 7, *apiKey.SubjectConcurrency)
+	})
+
+	t.Run("billing_subject_repo_nil_leaves_subject_concurrency_nil", func(t *testing.T) {
+		// billingSubjectRepo 未注入（单元测试场景）→ SubjectConcurrency 应为 nil，不应 panic
+		svc := &APIKeyService{} // billingSubjectRepo == nil
+
+		teamID := int64(55)
+		apiKey := &APIKey{
+			ID:               10,
+			UserID:           42,
+			BillingSubjectID: 900,
+			TeamID:           int64Ptr(teamID),
+			Key:              "sk-team-key-no-repo",
+			Status:           StatusActive,
+			User: &User{
+				ID:          42,
+				Status:      StatusActive,
+				Role:        RoleUser,
+				Balance:     10,
+				Concurrency: 3,
+			},
+		}
+
+		snapshot := svc.snapshotFromAPIKey(context.Background(), apiKey)
+
+		require.NotNil(t, snapshot)
+		require.Nil(t, snapshot.SubjectConcurrency, "billingSubjectRepo 未注入时 SubjectConcurrency 应为 nil")
+	})
+
+	t.Run("billing_subject_repo_error_leaves_subject_concurrency_nil", func(t *testing.T) {
+		// billingSubjectRepo.GetByID 失败 → best-effort，SubjectConcurrency 留 nil
+		billingSubjRepo := &stubBillingSubjectRepo{
+			getByID: func(ctx context.Context, id int64) (*BillingSubject, error) {
+				return nil, errors.New("db error")
+			},
+		}
+		svc := &APIKeyService{}
+		svc.SetBillingSubjectRepo(billingSubjRepo)
+
+		teamID := int64(55)
+		apiKey := &APIKey{
+			ID:               10,
+			UserID:           42,
+			BillingSubjectID: 900,
+			TeamID:           int64Ptr(teamID),
+			Status:           StatusActive,
+			User: &User{
+				ID:          42,
+				Status:      StatusActive,
+				Role:        RoleUser,
+				Balance:     10,
+				Concurrency: 3,
+			},
+		}
+
+		snapshot := svc.snapshotFromAPIKey(context.Background(), apiKey)
+
+		require.NotNil(t, snapshot)
+		require.Nil(t, snapshot.SubjectConcurrency, "billingSubjectRepo 出错时应 best-effort 留 nil")
+	})
+}
+
+// stubBillingSubjectRepo 是 BillingSubjectRepository 的最小测试桩。
+type stubBillingSubjectRepo struct {
+	getByID func(ctx context.Context, id int64) (*BillingSubject, error)
+}
+
+func (r *stubBillingSubjectRepo) GetByID(ctx context.Context, id int64) (*BillingSubject, error) {
+	if r.getByID != nil {
+		return r.getByID(ctx, id)
+	}
+	return nil, errors.New("not implemented")
+}
+
+func (r *stubBillingSubjectRepo) GetPersonalByUserID(ctx context.Context, userID int64) (*BillingSubject, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (r *stubBillingSubjectRepo) EnsurePersonalForUser(ctx context.Context, user *User) (*BillingSubject, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (r *stubBillingSubjectRepo) CreateTeamSubject(ctx context.Context, teamID int64, seed BillingSubject) (*BillingSubject, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (r *stubBillingSubjectRepo) UpdateBalance(ctx context.Context, subjectID int64, delta float64) error {
+	return errors.New("not implemented")
+}
+
+func (r *stubBillingSubjectRepo) DeductBalance(ctx context.Context, subjectID int64, amount float64) error {
+	return errors.New("not implemented")
+}
+
+func (r *stubBillingSubjectRepo) UpdateLimits(ctx context.Context, subjectID int64, concurrency, rpmLimit int) error {
+	return nil
+}
+
+// TestSnapshotCarriesSubjectRPMLimit 验证 snapshotFromAPIKey 对团队 key 一并加载
+// billing_subject.rpm_limit，并且 snapshotToAPIKey 还原时正确传递给 APIKey。
+// 镜像 TestSnapshotCarriesSubjectConcurrency，使用同一 GetByID 调用（无额外查询）。
+func TestSnapshotCarriesSubjectRPMLimit(t *testing.T) {
+	intPtr := func(v int) *int { return &v }
+	int64Ptr := func(v int64) *int64 { return &v }
+
+	t.Run("team_key_snapshot_loads_subject_rpm_limit", func(t *testing.T) {
+		// stub billingSubjectRepo 返回 Concurrency=7, RPMLimit=9
+		billingSubjRepo := &stubBillingSubjectRepo{
+			getByID: func(ctx context.Context, id int64) (*BillingSubject, error) {
+				return &BillingSubject{ID: id, Concurrency: 7, RPMLimit: 9}, nil
+			},
+		}
+		svc := &APIKeyService{}
+		svc.SetBillingSubjectRepo(billingSubjRepo)
+
+		teamID := int64(55)
+		apiKey := &APIKey{
+			ID:               10,
+			UserID:           42,
+			BillingSubjectID: 900,
+			TeamID:           int64Ptr(teamID),
+			Key:              "sk-team-key-rpm",
+			Name:             "team key rpm",
+			Status:           StatusActive,
+			User: &User{
+				ID:          42,
+				Status:      StatusActive,
+				Role:        RoleUser,
+				Balance:     10,
+				Concurrency: 3,
+				RPMLimit:    1, // 个人值，不应出现在 SubjectRPMLimit 中
+			},
+		}
+
+		snapshot := svc.snapshotFromAPIKey(context.Background(), apiKey)
+
+		require.NotNil(t, snapshot)
+		// 并发上限仍在
+		require.NotNil(t, snapshot.SubjectConcurrency, "SubjectConcurrency 应已填充")
+		require.Equal(t, 7, *snapshot.SubjectConcurrency)
+		// RPM 上限新增
+		require.NotNil(t, snapshot.SubjectRPMLimit, "团队 key 快照必须包含 SubjectRPMLimit")
+		require.Equal(t, 9, *snapshot.SubjectRPMLimit, "SubjectRPMLimit 必须来自 billing_subject.rpm_limit")
+	})
+
+	t.Run("personal_key_snapshot_no_subject_rpm_limit", func(t *testing.T) {
+		svc := &APIKeyService{}
+
+		apiKey := &APIKey{
+			ID:     11,
+			UserID: 31,
+			Key:    "sk-personal-rpm",
+			Name:   "personal rpm",
+			Status: StatusActive,
+			User: &User{
+				ID:       31,
+				Status:   StatusActive,
+				Role:     RoleUser,
+				Balance:  10,
+				RPMLimit: 5,
+			},
+		}
+
+		snapshot := svc.snapshotFromAPIKey(context.Background(), apiKey)
+
+		require.NotNil(t, snapshot)
+		require.Nil(t, snapshot.SubjectRPMLimit, "个人 key 快照不应包含 SubjectRPMLimit")
+	})
+
+	t.Run("snapshot_to_api_key_restores_subject_rpm_limit", func(t *testing.T) {
+		svc := &APIKeyService{}
+		teamID := int64(55)
+		snapshot := &APIKeyAuthSnapshot{
+			Version:            apiKeyAuthSnapshotVersion,
+			APIKeyID:           10,
+			UserID:             42,
+			BillingSubjectID:   900,
+			TeamID:             int64Ptr(teamID),
+			Status:             StatusActive,
+			SubjectConcurrency: intPtr(7),
+			SubjectRPMLimit:    intPtr(9),
+			User: APIKeyAuthUserSnapshot{
+				ID:          42,
+				Status:      StatusActive,
+				Role:        RoleUser,
+				Balance:     10,
+				Concurrency: 3,
+				RPMLimit:    1,
+			},
+		}
+
+		apiKey := svc.snapshotToAPIKey("sk-team-key-rpm", snapshot)
+
+		require.NotNil(t, apiKey)
+		require.NotNil(t, apiKey.SubjectRPMLimit, "snapshotToAPIKey 必须还原 SubjectRPMLimit 字段")
+		require.Equal(t, 9, *apiKey.SubjectRPMLimit)
+	})
 }
 
 func TestAPIKeyService_GetByKey_SingleflightCollapses(t *testing.T) {

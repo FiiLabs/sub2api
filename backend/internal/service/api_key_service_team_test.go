@@ -256,6 +256,12 @@ func (r *teamAPIKeyRepoStub) ListKeysByUserID(context.Context, int64) ([]string,
 func (r *teamAPIKeyRepoStub) ListKeysByGroupID(context.Context, int64) ([]string, error) {
 	panic("unexpected ListKeysByGroupID")
 }
+func (r *teamAPIKeyRepoStub) ListKeysByTeamID(context.Context, int64) ([]string, error) {
+	return nil, nil
+}
+func (r *teamAPIKeyRepoStub) DeleteByTeamID(ctx context.Context, teamID int64) ([]string, error) {
+	return nil, nil
+}
 func (r *teamAPIKeyRepoStub) IncrementQuotaUsed(context.Context, int64, float64) (float64, error) {
 	panic("unexpected IncrementQuotaUsed")
 }

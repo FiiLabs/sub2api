@@ -50,12 +50,20 @@ func (r *teamRepository) CreateTeam(ctx context.Context, input service.CreateTea
 		return nil, err
 	}
 
+	concurrency := 5
+	if input.Concurrency != nil {
+		concurrency = *input.Concurrency
+	}
+	rpmLimit := 0
+	if input.RpmLimit != nil {
+		rpmLimit = *input.RpmLimit
+	}
 	subject, err := tx.BillingSubject.Create().
 		SetType(domain.BillingSubjectTypeTeam).
 		SetTeamID(created.ID).
 		SetStatus(domain.StatusActive).
-		SetConcurrency(5).
-		SetRpmLimit(0).
+		SetConcurrency(concurrency).
+		SetRpmLimit(rpmLimit).
 		SetBalanceNotifyEnabled(true).
 		SetBalanceNotifyThresholdType("fixed").
 		SetBalanceNotifyExtraEmails("[]").
@@ -751,6 +759,18 @@ func (r *teamRepository) CountActiveAPIKeysByBillingSubjectID(ctx context.Contex
 		Count(ctx)
 }
 
+// CountActiveTeamsByOwner 统计某用户作为 owner 的「活跃」团队数（status=active 且未软删）。
+func (r *teamRepository) CountActiveTeamsByOwner(ctx context.Context, ownerUserID int64) (int, error) {
+	client := clientFromContext(ctx, r.client)
+	return client.Team.Query().
+		Where(
+			dbteam.OwnerUserIDEQ(ownerUserID),
+			dbteam.StatusEQ(domain.TeamStatusActive),
+			dbteam.DeletedAtIsNil(),
+		).
+		Count(ctx)
+}
+
 // DissolveTeam 在单事务内软删团队成员、团队与团队计费主体（高危不可逆）。
 //
 // 软删顺序至关重要：必须先软删团队，再软删其计费主体。migration 150 的触发器
@@ -851,6 +871,8 @@ func adminTeamSummaryFromEntity(row *dbent.Team) *service.AdminTeamSummary {
 	}
 	if row.Edges.BillingSubject != nil {
 		summary.Balance = row.Edges.BillingSubject.Balance
+		summary.Concurrency = row.Edges.BillingSubject.Concurrency
+		summary.RpmLimit = row.Edges.BillingSubject.RpmLimit
 	}
 	return summary
 }

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -25,18 +26,38 @@ type AdminTeamService interface {
 	AdminUpdateMember(ctx context.Context, adminUserID, teamID, userID int64, input service.UpdateTeamMemberInput) (*service.TeamMember, error)
 	AdminRemoveMember(ctx context.Context, adminUserID, teamID, userID int64) error
 	AdminTransferOwnership(ctx context.Context, teamID, newOwnerUserID int64) error
+	AdminDeleteTeam(ctx context.Context, teamID int64) error
+	AdminAdjustTeamBalance(ctx context.Context, teamID int64, amount float64, operation, notes string) (*service.AdminTeamSummary, error)
+	AdminGetTeamBalanceHistory(ctx context.Context, teamID int64, page, pageSize int, codeType string) ([]service.RedeemCode, int64, error)
+}
+
+// teamAuthCacheInvalidator 由 *service.APIKeyService 实现（按团队失效鉴权缓存）。
+type teamAuthCacheInvalidator interface {
+	InvalidateAuthCacheByTeamID(ctx context.Context, teamID int64)
+	DeleteTeamKeys(ctx context.Context, teamID int64) error
+}
+
+// teamConcurrencyLoader 由 *service.ConcurrencyService 实现（取成员当前并发）。
+type teamConcurrencyLoader interface {
+	GetUsersLoadBatch(ctx context.Context, users []service.UserWithConcurrency) (map[int64]*service.UserLoadInfo, error)
 }
 
 // AdminTeamHandler handles platform-admin team management. Access is gated by the
 // admin auth middleware at the route level; no team-membership checks apply.
 type AdminTeamHandler struct {
-	teamService AdminTeamService
+	teamService          AdminTeamService
+	authCacheInvalidator teamAuthCacheInvalidator
+	concurrencyLoader    teamConcurrencyLoader
 }
 
 // NewAdminTeamHandler creates a new admin team handler. *service.TeamService is
 // passed directly (it implements AdminTeamService).
-func NewAdminTeamHandler(teamService *service.TeamService) *AdminTeamHandler {
-	return &AdminTeamHandler{teamService: teamService}
+func NewAdminTeamHandler(teamService *service.TeamService, apiKeyService *service.APIKeyService, concurrencyService *service.ConcurrencyService) *AdminTeamHandler {
+	return &AdminTeamHandler{
+		teamService:          teamService,
+		authCacheInvalidator: apiKeyService,
+		concurrencyLoader:    concurrencyService,
+	}
 }
 
 // --- DTOs ---------------------------------------------------------------------
@@ -56,20 +77,24 @@ type adminTeamDTO struct {
 	Owner            *adminTeamUserDTO `json:"owner"`
 	BillingSubjectID *int64            `json:"billing_subject_id"`
 	Balance          float64           `json:"balance"`
+	Concurrency      int               `json:"concurrency"`
+	RpmLimit         int               `json:"rpm_limit"`
 	MemberCount      int               `json:"member_count"`
+	ActiveKeyCount   int               `json:"active_key_count"`
 	CreatedAt        time.Time         `json:"created_at"`
 	UpdatedAt        time.Time         `json:"updated_at"`
 }
 
 type adminTeamMemberDTO struct {
-	ID           int64             `json:"id"`
-	TeamID       int64             `json:"team_id"`
-	UserID       int64             `json:"user_id"`
-	Role         string            `json:"role"`
-	Status       string            `json:"status"`
-	JoinedAt     *time.Time        `json:"joined_at"`
-	LastActiveAt *time.Time        `json:"last_active_at"`
-	User         *adminTeamUserDTO `json:"user"`
+	ID                 int64             `json:"id"`
+	TeamID             int64             `json:"team_id"`
+	UserID             int64             `json:"user_id"`
+	Role               string            `json:"role"`
+	Status             string            `json:"status"`
+	JoinedAt           *time.Time        `json:"joined_at"`
+	LastActiveAt       *time.Time        `json:"last_active_at"`
+	User               *adminTeamUserDTO `json:"user"`
+	CurrentConcurrency int               `json:"current_concurrency"`
 }
 
 type adminTeamInvitationDTO struct {
@@ -99,7 +124,10 @@ func adminTeamDTOFromSummary(s *service.AdminTeamSummary) adminTeamDTO {
 		Owner:            adminTeamUserDTOFromService(s.OwnerUser),
 		BillingSubjectID: s.BillingSubjectID,
 		Balance:          s.Balance,
+		Concurrency:      s.Concurrency,
+		RpmLimit:         s.RpmLimit,
 		MemberCount:      s.MemberCount,
+		ActiveKeyCount:   s.ActiveKeyCount,
 		CreatedAt:        s.CreatedAt,
 		UpdatedAt:        s.UpdatedAt,
 	}
@@ -137,11 +165,15 @@ type adminCreateTeamRequest struct {
 	Slug        string `json:"slug"`
 	OwnerUserID int64  `json:"owner_user_id"`
 	OwnerEmail  string `json:"owner_email" binding:"omitempty,email"`
+	Concurrency *int   `json:"concurrency" binding:"omitempty,min=0"`
+	RpmLimit    *int   `json:"rpm_limit" binding:"omitempty,min=0"`
 }
 
 type adminUpdateTeamRequest struct {
-	Name   *string `json:"name"`
-	Status *string `json:"status" binding:"omitempty,oneof=active disabled"`
+	Name        *string `json:"name"`
+	Status      *string `json:"status" binding:"omitempty,oneof=active disabled"`
+	Concurrency *int    `json:"concurrency" binding:"omitempty,min=0"`
+	RpmLimit    *int    `json:"rpm_limit" binding:"omitempty,min=0"`
 }
 
 type adminAddTeamMemberRequest struct {
@@ -221,6 +253,8 @@ func (h *AdminTeamHandler) Create(c *gin.Context) {
 		OwnerUserID: req.OwnerUserID,
 		OwnerEmail:  req.OwnerEmail,
 		AdminUserID: adminUserID,
+		Concurrency: req.Concurrency,
+		RpmLimit:    req.RpmLimit,
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)
@@ -255,6 +289,19 @@ func (h *AdminTeamHandler) GetByID(c *gin.Context) {
 	}
 
 	team := adminTeamDTOFromSummary(summary)
+	if h.concurrencyLoader != nil && len(memberDTOs) > 0 {
+		reqs := make([]service.UserWithConcurrency, 0, len(memberDTOs))
+		for i := range memberDTOs {
+			reqs = append(reqs, service.UserWithConcurrency{ID: memberDTOs[i].UserID, MaxConcurrency: team.Concurrency})
+		}
+		if load, err := h.concurrencyLoader.GetUsersLoadBatch(c.Request.Context(), reqs); err == nil {
+			for i := range memberDTOs {
+				if info := load[memberDTOs[i].UserID]; info != nil {
+					memberDTOs[i].CurrentConcurrency = info.CurrentConcurrency
+				}
+			}
+		}
+	}
 	response.Success(c, gin.H{
 		"team":        team,
 		"members":     memberDTOs,
@@ -277,12 +324,18 @@ func (h *AdminTeamHandler) Update(c *gin.Context) {
 	}
 
 	summary, err := h.teamService.AdminUpdateTeam(c.Request.Context(), teamID, service.AdminUpdateTeamInput{
-		Name:   req.Name,
-		Status: req.Status,
+		Name:        req.Name,
+		Status:      req.Status,
+		Concurrency: req.Concurrency,
+		RpmLimit:    req.RpmLimit,
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
+	}
+
+	if (req.Concurrency != nil || req.RpmLimit != nil) && h.authCacheInvalidator != nil {
+		h.authCacheInvalidator.InvalidateAuthCacheByTeamID(c.Request.Context(), teamID)
 	}
 
 	team := adminTeamDTOFromSummary(summary)
@@ -413,4 +466,87 @@ func (h *AdminTeamHandler) TransferOwnership(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"message": "ownership transferred"})
+}
+
+// Delete handles DELETE /api/v1/admin/teams/:id —— admin 强删团队（先删 key 失效缓存，再软删团队体）。
+func (h *AdminTeamHandler) Delete(c *gin.Context) {
+	teamID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || teamID <= 0 {
+		response.BadRequest(c, "Invalid team ID")
+		return
+	}
+	if h.authCacheInvalidator != nil {
+		if err := h.authCacheInvalidator.DeleteTeamKeys(c.Request.Context(), teamID); err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+	}
+	if err := h.teamService.AdminDeleteTeam(c.Request.Context(), teamID); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "team deleted"})
+}
+
+// adminTeamUpdateBalanceRequest 是 UpdateBalance 的请求体。
+type adminTeamUpdateBalanceRequest struct {
+	Balance   float64 `json:"balance" binding:"required,gt=0"`
+	Operation string  `json:"operation" binding:"required,oneof=set add subtract"`
+	Notes     string  `json:"notes"`
+}
+
+// UpdateBalance handles POST /api/v1/admin/teams/:id/balance
+func (h *AdminTeamHandler) UpdateBalance(c *gin.Context) {
+	teamID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid team ID")
+		return
+	}
+	var req adminTeamUpdateBalanceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	payload := struct {
+		TeamID int64                        `json:"team_id"`
+		Body   adminTeamUpdateBalanceRequest `json:"body"`
+	}{TeamID: teamID, Body: req}
+	executeAdminIdempotentJSON(c, "admin.teams.balance.update", payload, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
+		summary, execErr := h.teamService.AdminAdjustTeamBalance(ctx, teamID, req.Balance, req.Operation, req.Notes)
+		if execErr != nil {
+			return nil, execErr
+		}
+		return adminTeamDTOFromSummary(summary), nil
+	})
+}
+
+// BalanceHistory handles GET /api/v1/admin/teams/:id/balance-history
+func (h *AdminTeamHandler) BalanceHistory(c *gin.Context) {
+	teamID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid team ID")
+		return
+	}
+	page, pageSize := response.ParsePagination(c)
+	codeType := c.Query("type")
+	codes, total, err := h.teamService.AdminGetTeamBalanceHistory(c.Request.Context(), teamID, page, pageSize, codeType)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	out := make([]dto.AdminRedeemCode, 0, len(codes))
+	for i := range codes {
+		out = append(out, *dto.RedeemCodeFromServiceAdmin(&codes[i]))
+	}
+	pages := int((total + int64(pageSize) - 1) / int64(pageSize))
+	if pages < 1 {
+		pages = 1
+	}
+	response.Success(c, gin.H{
+		"items":     out,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+		"pages":     pages,
+	})
 }

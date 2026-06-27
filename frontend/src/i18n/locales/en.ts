@@ -630,6 +630,17 @@ export default {
   // Workspace
   workspace: {
     active: 'Workspace',
+    personal: 'Personal',
+    team: 'Team',
+    youAreIn: 'You are in',
+    roleLabel: 'Your role',
+    roles: {
+      owner: 'Owner',
+      admin: 'Admin',
+      billing: 'Billing',
+      developer: 'Developer',
+      viewer: 'Viewer'
+    },
     billingTarget: 'Billing target: {name}',
     createTeam: 'Create team',
     createTeamTitle: 'Create team workspace',
@@ -637,7 +648,9 @@ export default {
     teamNamePlaceholder: 'Enter a team name',
     teamNameRequired: 'Team name is required',
     createTeamSuccess: 'Team created',
-    createTeamFailed: 'Failed to create team'
+    createTeamFailed: 'Failed to create team',
+    teamLimitReached: 'You have reached the maximum number of teams you can create. Please contact an administrator if you need more.',
+    createKeyTeamAck: 'I understand this API key will be billed to team "{name}"'
   },
 
   // Auth
@@ -2084,6 +2097,7 @@ export default {
       memberAdded: 'Member added',
       memberUpdated: 'Member updated',
       memberRemoved: 'Member removed',
+      updateSuccess: 'Team limits updated',
       failedToLoad: 'Failed to load teams',
       failedToUpdate: 'Failed to update team',
       failedToAddMember: 'Failed to add member',
@@ -2096,7 +2110,9 @@ export default {
         members: 'Members',
         balance: 'Balance',
         created: 'Created',
-        actions: 'Actions'
+        actions: 'Actions',
+        concurrency: 'Concurrency',
+        rpmLimit: 'RPM'
       },
       roles: {
         owner: 'Owner',
@@ -2109,7 +2125,35 @@ export default {
         active: 'Active',
         suspended: 'Suspended',
         left: 'Left'
-      }
+      },
+      concurrency: 'Concurrency',
+      rpmLimit: 'RPM limit',
+      unlimited: 'Unlimited',
+      concurrencyHint: '0 = unlimited',
+      rpmLimitHint: '0 = unlimited',
+      currentConcurrency: 'Current concurrency',
+      deleteTeam: 'Delete team',
+      deleteTeamTitle: 'Delete team',
+      deleteTeamWarning: 'This permanently deletes team "{name}", revokes all its API keys, and forfeits its balance (${balance}). This cannot be undone.',
+      deleteTeamActiveKeys: 'Active API keys to be revoked: {count}',
+      deleteTeamTypeName: 'Type the team name to confirm',
+      teamDeleted: 'Team deleted',
+      failedToDeleteTeam: 'Failed to delete team',
+      deposit: 'Deposit',
+      withdraw: 'Withdraw',
+      depositAmount: 'Deposit amount',
+      withdrawAmount: 'Withdraw amount',
+      withdrawAll: 'All',
+      currentBalance: 'Current balance',
+      newBalance: 'New balance',
+      balanceNotes: 'Notes',
+      amountRequired: 'Please enter an amount',
+      insufficientBalance: 'Amount exceeds current balance',
+      balanceUpdated: 'Balance updated',
+      failedToUpdateBalance: 'Failed to update balance',
+      balanceHistory: 'Balance history',
+      balanceHistoryTitle: 'Team balance history',
+      noBalanceHistory: 'No balance changes yet'
     },
 
     // Users

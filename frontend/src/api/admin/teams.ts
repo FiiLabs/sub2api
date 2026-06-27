@@ -57,7 +57,7 @@ export async function list(
  * @returns Created team
  */
 export async function create(
-  payload: { name: string; owner_user_id?: number; owner_email?: string }
+  payload: { name: string; owner_user_id?: number; owner_email?: string; concurrency?: number; rpm_limit?: number }
 ): Promise<{ team: AdminTeam }> {
   const { data } = await apiClient.post<{ team: AdminTeam }>('/admin/teams', payload)
   return data
@@ -81,7 +81,7 @@ export async function get(id: number): Promise<AdminTeamDetail> {
  */
 export async function update(
   id: number,
-  payload: { name?: string; status?: 'active' | 'disabled' }
+  payload: { name?: string; status?: 'active' | 'disabled'; concurrency?: number; rpm_limit?: number }
 ): Promise<{ team: AdminTeam }> {
   const { data } = await apiClient.patch<{ team: AdminTeam }>(`/admin/teams/${id}`, payload)
   return data
@@ -136,6 +136,12 @@ export async function removeMember(id: number, userId: number): Promise<{ messag
   return data
 }
 
+/** Delete a team (platform admin force-delete). */
+export async function deleteTeam(id: number): Promise<{ message: string }> {
+  const { data } = await apiClient.delete<{ message: string }>(`/admin/teams/${id}`)
+  return data
+}
+
 /**
  * Transfer team ownership to another member (platform admin)
  * @param id - Team ID
@@ -150,6 +156,50 @@ export async function transferOwnership(id: number, userId: number): Promise<unk
   return data
 }
 
+/** Team balance history item (admin balance adjustments attributed to the team's billing subject). */
+export interface TeamBalanceHistoryItem {
+  id: number
+  code: string
+  type: string
+  value: number
+  status: string
+  billing_subject_id: number | null
+  used_at: string | null
+  created_at: string
+  notes: string
+}
+
+/** Adjust a team's billing-subject balance (platform admin). */
+export async function updateBalance(
+  id: number,
+  balance: number,
+  operation: 'set' | 'add' | 'subtract',
+  notes?: string
+): Promise<AdminTeam> {
+  const { data } = await apiClient.post<AdminTeam>(`/admin/teams/${id}/balance`, {
+    balance,
+    operation,
+    notes: notes || ''
+  })
+  return data
+}
+
+/** Get a team's balance change history (paginated). */
+export async function getTeamBalanceHistory(
+  id: number,
+  page = 1,
+  pageSize = 15,
+  type?: string
+): Promise<PaginatedResponse<TeamBalanceHistoryItem>> {
+  const params: Record<string, any> = { page, page_size: pageSize }
+  if (type) params.type = type
+  const { data } = await apiClient.get<PaginatedResponse<TeamBalanceHistoryItem>>(
+    `/admin/teams/${id}/balance-history`,
+    { params }
+  )
+  return data
+}
+
 export const adminTeamsAPI = {
   list,
   get,
@@ -158,7 +208,10 @@ export const adminTeamsAPI = {
   addMember,
   updateMember,
   removeMember,
-  transferOwnership
+  deleteTeam,
+  transferOwnership,
+  updateBalance,
+  getTeamBalanceHistory
 }
 
 export default adminTeamsAPI

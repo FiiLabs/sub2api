@@ -170,6 +170,20 @@ func (_c *RedeemCodeCreate) SetNillableValidityDays(v *int) *RedeemCodeCreate {
 	return _c
 }
 
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (_c *RedeemCodeCreate) SetBillingSubjectID(v int64) *RedeemCodeCreate {
+	_c.mutation.SetBillingSubjectID(v)
+	return _c
+}
+
+// SetNillableBillingSubjectID sets the "billing_subject_id" field if the given value is not nil.
+func (_c *RedeemCodeCreate) SetNillableBillingSubjectID(v *int64) *RedeemCodeCreate {
+	if v != nil {
+		_c.SetBillingSubjectID(*v)
+	}
+	return _c
+}
+
 // SetUserID sets the "user" edge to the User entity by ID.
 func (_c *RedeemCodeCreate) SetUserID(id int64) *RedeemCodeCreate {
 	_c.mutation.SetUserID(id)
@@ -348,6 +362,10 @@ func (_c *RedeemCodeCreate) createSpec() (*RedeemCode, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.ValidityDays(); ok {
 		_spec.SetField(redeemcode.FieldValidityDays, field.TypeInt, value)
 		_node.ValidityDays = value
+	}
+	if value, ok := _c.mutation.BillingSubjectID(); ok {
+		_spec.SetField(redeemcode.FieldBillingSubjectID, field.TypeInt64, value)
+		_node.BillingSubjectID = &value
 	}
 	if nodes := _c.mutation.UserIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
@@ -597,6 +615,30 @@ func (u *RedeemCodeUpsert) AddValidityDays(v int) *RedeemCodeUpsert {
 	return u
 }
 
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (u *RedeemCodeUpsert) SetBillingSubjectID(v int64) *RedeemCodeUpsert {
+	u.Set(redeemcode.FieldBillingSubjectID, v)
+	return u
+}
+
+// UpdateBillingSubjectID sets the "billing_subject_id" field to the value that was provided on create.
+func (u *RedeemCodeUpsert) UpdateBillingSubjectID() *RedeemCodeUpsert {
+	u.SetExcluded(redeemcode.FieldBillingSubjectID)
+	return u
+}
+
+// AddBillingSubjectID adds v to the "billing_subject_id" field.
+func (u *RedeemCodeUpsert) AddBillingSubjectID(v int64) *RedeemCodeUpsert {
+	u.Add(redeemcode.FieldBillingSubjectID, v)
+	return u
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (u *RedeemCodeUpsert) ClearBillingSubjectID() *RedeemCodeUpsert {
+	u.SetNull(redeemcode.FieldBillingSubjectID)
+	return u
+}
+
 // UpdateNewValues updates the mutable fields using the new values that were set on create.
 // Using this option is equivalent to using:
 //
@@ -828,6 +870,34 @@ func (u *RedeemCodeUpsertOne) AddValidityDays(v int) *RedeemCodeUpsertOne {
 func (u *RedeemCodeUpsertOne) UpdateValidityDays() *RedeemCodeUpsertOne {
 	return u.Update(func(s *RedeemCodeUpsert) {
 		s.UpdateValidityDays()
+	})
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (u *RedeemCodeUpsertOne) SetBillingSubjectID(v int64) *RedeemCodeUpsertOne {
+	return u.Update(func(s *RedeemCodeUpsert) {
+		s.SetBillingSubjectID(v)
+	})
+}
+
+// AddBillingSubjectID adds v to the "billing_subject_id" field.
+func (u *RedeemCodeUpsertOne) AddBillingSubjectID(v int64) *RedeemCodeUpsertOne {
+	return u.Update(func(s *RedeemCodeUpsert) {
+		s.AddBillingSubjectID(v)
+	})
+}
+
+// UpdateBillingSubjectID sets the "billing_subject_id" field to the value that was provided on create.
+func (u *RedeemCodeUpsertOne) UpdateBillingSubjectID() *RedeemCodeUpsertOne {
+	return u.Update(func(s *RedeemCodeUpsert) {
+		s.UpdateBillingSubjectID()
+	})
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (u *RedeemCodeUpsertOne) ClearBillingSubjectID() *RedeemCodeUpsertOne {
+	return u.Update(func(s *RedeemCodeUpsert) {
+		s.ClearBillingSubjectID()
 	})
 }
 
@@ -1228,6 +1298,34 @@ func (u *RedeemCodeUpsertBulk) AddValidityDays(v int) *RedeemCodeUpsertBulk {
 func (u *RedeemCodeUpsertBulk) UpdateValidityDays() *RedeemCodeUpsertBulk {
 	return u.Update(func(s *RedeemCodeUpsert) {
 		s.UpdateValidityDays()
+	})
+}
+
+// SetBillingSubjectID sets the "billing_subject_id" field.
+func (u *RedeemCodeUpsertBulk) SetBillingSubjectID(v int64) *RedeemCodeUpsertBulk {
+	return u.Update(func(s *RedeemCodeUpsert) {
+		s.SetBillingSubjectID(v)
+	})
+}
+
+// AddBillingSubjectID adds v to the "billing_subject_id" field.
+func (u *RedeemCodeUpsertBulk) AddBillingSubjectID(v int64) *RedeemCodeUpsertBulk {
+	return u.Update(func(s *RedeemCodeUpsert) {
+		s.AddBillingSubjectID(v)
+	})
+}
+
+// UpdateBillingSubjectID sets the "billing_subject_id" field to the value that was provided on create.
+func (u *RedeemCodeUpsertBulk) UpdateBillingSubjectID() *RedeemCodeUpsertBulk {
+	return u.Update(func(s *RedeemCodeUpsert) {
+		s.UpdateBillingSubjectID()
+	})
+}
+
+// ClearBillingSubjectID clears the value of the "billing_subject_id" field.
+func (u *RedeemCodeUpsertBulk) ClearBillingSubjectID() *RedeemCodeUpsertBulk {
+	return u.Update(func(s *RedeemCodeUpsert) {
+		s.ClearBillingSubjectID()
 	})
 }
 

@@ -1965,6 +1965,10 @@ func (stubRedeemCodeRepo) ListByUserPaginated(ctx context.Context, userID int64,
 	return nil, nil, errors.New("not implemented")
 }
 
+func (stubRedeemCodeRepo) ListBySubjectID(_ context.Context, subjectID int64, params pagination.PaginationParams, codeType string) ([]service.RedeemCode, *pagination.PaginationResult, error) {
+	return nil, &pagination.PaginationResult{Total: 0, Page: params.Page, PageSize: params.PageSize, Pages: 1}, nil
+}
+
 func (stubRedeemCodeRepo) SumPositiveBalanceByUser(ctx context.Context, userID int64) (float64, error) {
 	return 0, errors.New("not implemented")
 }
@@ -2137,6 +2141,10 @@ func (r *stubApiKeyRepo) GetByKeyForAuth(ctx context.Context, key string) (*serv
 	return r.GetByKey(ctx, key)
 }
 
+func (r *stubApiKeyRepo) GetByKeyHash(ctx context.Context, hash string) (*service.APIKey, error) {
+	return nil, service.ErrAPIKeyNotFound
+}
+
 func (r *stubApiKeyRepo) Update(ctx context.Context, key *service.APIKey) error {
 	if key == nil {
 		return errors.New("nil key")
@@ -2277,6 +2285,13 @@ func (r *stubApiKeyRepo) ListKeysByUserID(ctx context.Context, userID int64) ([]
 
 func (r *stubApiKeyRepo) ListKeysByGroupID(ctx context.Context, groupID int64) ([]string, error) {
 	return nil, errors.New("not implemented")
+}
+
+func (r *stubApiKeyRepo) ListKeysByTeamID(ctx context.Context, teamID int64) ([]string, error) {
+	return nil, nil
+}
+func (r *stubApiKeyRepo) DeleteByTeamID(ctx context.Context, teamID int64) ([]string, error) {
+	return nil, nil
 }
 
 func (r *stubApiKeyRepo) IncrementQuotaUsed(ctx context.Context, id int64, amount float64) (float64, error) {

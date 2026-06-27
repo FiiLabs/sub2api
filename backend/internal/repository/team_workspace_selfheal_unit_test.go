@@ -27,6 +27,8 @@ func TestListWorkspacesSelfHealsMissingPersonalSubject(t *testing.T) {
 		NewTeamRepository(client),
 		NewBillingSubjectRepository(client),
 		NewUserRepository(client, nil),
+		nil,
+		nil,
 	)
 
 	// First call heals: personal workspace appears.
@@ -70,6 +72,8 @@ func TestListWorkspacesNoHealWhenPersonalPresent(t *testing.T) {
 		NewTeamRepository(client),
 		NewBillingSubjectRepository(client),
 		NewUserRepository(client, nil),
+		nil,
+		nil,
 	)
 
 	ws, err := svc.ListWorkspaces(ctx, u.ID)
@@ -90,6 +94,8 @@ func TestListWorkspacesDeletedUserDoesNotHeal(t *testing.T) {
 		NewTeamRepository(client),
 		NewBillingSubjectRepository(client),
 		NewUserRepository(client, nil),
+		nil,
+		nil,
 	)
 
 	ws, err := svc.ListWorkspaces(ctx, 99999) // no such user

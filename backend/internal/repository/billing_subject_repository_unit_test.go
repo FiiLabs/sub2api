@@ -143,3 +143,58 @@ func TestEnsurePersonalForUserRejectsInvalidUser(t *testing.T) {
 	_, err = repo.EnsurePersonalForUser(context.Background(), &service.User{ID: 0})
 	require.ErrorIs(t, err, service.ErrUserNotFound)
 }
+
+func TestUpdateLimitsSetsConcurrencyAndRPM(t *testing.T) {
+	client := newWorkspaceEntClient(t)
+	repo := NewBillingSubjectRepository(client)
+	ctx := context.Background()
+
+	// 建一个 user（team 需要 owner）
+	user, err := client.User.Create().
+		SetEmail("team-owner@example.com").
+		SetUsername("team-owner@example.com").
+		SetPasswordHash("hash").
+		SetRole(service.RoleUser).
+		SetStatus(service.StatusActive).
+		SetBalance(0).
+		SetConcurrency(0).
+		Save(ctx)
+	require.NoError(t, err)
+
+	// 建一个 team
+	team, err := client.Team.Create().
+		SetName("test-team").
+		SetSlug("test-team").
+		SetOwnerUserID(user.ID).
+		SetCreatedByUserID(user.ID).
+		SetStatus(domain.TeamStatusActive).
+		Save(ctx)
+	require.NoError(t, err)
+
+	// 建一个 team 主体（直接用 ent，避免依赖 team repo）
+	sub, err := client.BillingSubject.Create().
+		SetType(domain.BillingSubjectTypeTeam).
+		SetTeamID(team.ID).
+		SetStatus(domain.StatusActive).
+		SetConcurrency(5).
+		SetRpmLimit(0).
+		SetBalanceNotifyEnabled(true).
+		SetBalanceNotifyThresholdType("fixed").
+		SetBalanceNotifyExtraEmails("[]").
+		Save(ctx)
+	require.NoError(t, err)
+
+	require.NoError(t, repo.UpdateLimits(ctx, sub.ID, 20, 120))
+
+	got, err := repo.GetByID(ctx, sub.ID)
+	require.NoError(t, err)
+	require.Equal(t, 20, got.Concurrency)
+	require.Equal(t, 120, got.RPMLimit)
+
+	// 0 = 不限制，必须能落 0（非"未改"）
+	require.NoError(t, repo.UpdateLimits(ctx, sub.ID, 0, 0))
+	got2, err := repo.GetByID(ctx, sub.ID)
+	require.NoError(t, err)
+	require.Equal(t, 0, got2.Concurrency)
+	require.Equal(t, 0, got2.RPMLimit)
+}

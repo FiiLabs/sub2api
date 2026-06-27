@@ -21,6 +21,17 @@
       </div>
     </div>
 
+    <!-- 当前工作区指示器 -->
+    <div v-if="activeWorkspace" class="px-3 pb-2 pt-1">
+      <WorkspaceBadge
+        :subject="activeWorkspace"
+        :show-type="!sidebarCollapsed"
+        :compact="sidebarCollapsed"
+        size="sm"
+        class="w-full"
+      />
+    </div>
+
     <!-- Navigation -->
     <nav class="sidebar-nav scrollbar-hide">
       <!-- Admin View: Admin menu first, then personal menu -->
@@ -185,6 +196,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore, useWorkspaceStore } from '@/stores'
 import VersionBadge from '@/components/common/VersionBadge.vue'
+import WorkspaceBadge from '@/components/common/WorkspaceBadge.vue'
 import { sanitizeSvg } from '@/utils/sanitize'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
 
@@ -233,6 +245,8 @@ const authStore = useAuthStore()
 const onboardingStore = useOnboardingStore()
 const adminSettingsStore = useAdminSettingsStore()
 const workspaceStore = useWorkspaceStore()
+
+const activeWorkspace = computed(() => workspaceStore.activeWorkspace)
 
 const sidebarCollapsed = computed(() => appStore.sidebarCollapsed)
 const mobileOpen = computed(() => appStore.mobileOpen)

@@ -75,6 +75,8 @@ type APIKeyRepository interface {
 	CountByGroupID(ctx context.Context, groupID int64) (int64, error)
 	ListKeysByUserID(ctx context.Context, userID int64) ([]string, error)
 	ListKeysByGroupID(ctx context.Context, groupID int64) ([]string, error)
+	ListKeysByTeamID(ctx context.Context, teamID int64) ([]string, error)
+	DeleteByTeamID(ctx context.Context, teamID int64) ([]string, error)
 
 	// Quota methods
 	IncrementQuotaUsed(ctx context.Context, id int64, amount float64) (float64, error)
@@ -217,6 +219,7 @@ type APIKeyService struct {
 	userGroupRateRepo     UserGroupRateRepository
 	cache                 APIKeyCache
 	rateLimitCacheInvalid RateLimitCacheInvalidator // optional: invalidate Redis rate limit cache
+	billingSubjectRepo    BillingSubjectRepository  // optional: load team billing subject concurrency
 	cfg                   *config.Config
 	authCacheL1           *ristretto.Cache
 	authCfg               apiKeyAuthCacheConfig
@@ -252,6 +255,14 @@ func NewAPIKeyService(
 // Called after construction (e.g. in wire) to avoid circular dependencies.
 func (s *APIKeyService) SetRateLimitCacheInvalidator(inv RateLimitCacheInvalidator) {
 	s.rateLimitCacheInvalid = inv
+}
+
+// SetBillingSubjectRepo 设置可选的计费主体仓储，用于在认证快照构建时
+// 加载团队 key 的 billing_subject.concurrency。
+// 构建后由 wire/ProvideAPIKeyService 注入，避免循环依赖和修改构造函数签名。
+// 单元测试不注入时保持 nil → SubjectConcurrency 留 nil → 回退到用户个人值。
+func (s *APIKeyService) SetBillingSubjectRepo(repo BillingSubjectRepository) {
+	s.billingSubjectRepo = repo
 }
 
 func (s *APIKeyService) compileAPIKeyIPRules(apiKey *APIKey) {

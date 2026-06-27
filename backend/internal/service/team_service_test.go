@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -350,6 +352,17 @@ func (r *teamRepoMemory) CountActiveAPIKeysByBillingSubjectID(ctx context.Contex
 	return 0, nil
 }
 
+// CountActiveTeamsByOwner 统计内存桩中该 owner 的活跃团队数（status=active；内存桩中已解散的团队从 map 删除，故无需检查软删标记）。
+func (r *teamRepoMemory) CountActiveTeamsByOwner(ctx context.Context, ownerUserID int64) (int, error) {
+	n := 0
+	for _, tm := range r.teams {
+		if tm.OwnerUserID == ownerUserID && tm.Status == domain.TeamStatusActive {
+			n++
+		}
+	}
+	return n, nil
+}
+
 // DissolveTeam 内存桩解散：成员标记为 left（与 RemoveMember 一致的软删标记），
 // 团队从 map 移除（模拟软删后不可再查到）。
 func (r *teamRepoMemory) DissolveTeam(ctx context.Context, teamID int64) error {
@@ -374,7 +387,7 @@ func teamTestPtrTime(t time.Time) *time.Time { return &t }
 
 func TestTeamServiceListMembersRequiresViewPermission(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 
@@ -389,7 +402,7 @@ func TestTeamServiceListMembersRequiresViewPermission(t *testing.T) {
 
 func TestTeamServiceInviteMemberRejectsOwnerRole(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 
@@ -407,7 +420,7 @@ func TestTeamServiceInviteMemberRejectsOwnerRole(t *testing.T) {
 
 func TestTeamServiceUpdateMemberValidations(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 	repo.members[team.ID] = append(repo.members[team.ID], TeamMember{TeamID: team.ID, UserID: 8, Role: domain.TeamRoleViewer, Status: domain.TeamMemberStatusActive})
@@ -429,7 +442,7 @@ func TestTeamServiceUpdateMemberValidations(t *testing.T) {
 
 func TestTeamServiceCreateTeamCreatesOwnerWorkspace(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 42, Name: "Platform Team", Slug: "platform-team"})
 	require.NoError(t, err)
@@ -442,7 +455,7 @@ func TestTeamServiceCreateTeamCreatesOwnerWorkspace(t *testing.T) {
 
 func TestTeamServiceCreateTeamAutoGeneratesSlug(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 
 	// Name only (no slug): slug is auto-generated from the name plus a suffix.
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 42, Name: "Platform Team"})
@@ -460,7 +473,7 @@ func TestTeamServiceCreateTeamAutoGeneratesSlug(t *testing.T) {
 
 func TestTeamServiceCreateTeamSlugFallbackForNonASCIIName(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 
 	// All-non-ASCII name slugifies to "" -> falls back to "team-<suffix>".
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "团队名称"})
@@ -471,7 +484,7 @@ func TestTeamServiceCreateTeamSlugFallbackForNonASCIIName(t *testing.T) {
 
 func TestTeamServiceCreateTeamRequiresName(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 
 	// Name is required even though slug is now optional.
 	_, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Slug: "ops"})
@@ -546,7 +559,7 @@ func TestTeamServiceAdminCreateTeamRequiresOwner(t *testing.T) {
 
 func TestTeamServiceCanChecksRolePermissions(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Billing Team", Slug: "billing-team"})
 	require.NoError(t, err)
 
@@ -561,7 +574,7 @@ func TestTeamServiceCanChecksRolePermissions(t *testing.T) {
 
 func TestTeamServiceListWorkspacesIncludesPersonalAndTeams(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	_, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 9, Name: "AI Ops", Slug: "ai-ops"})
 	require.NoError(t, err)
 
@@ -575,7 +588,7 @@ func TestTeamServiceListWorkspacesIncludesPersonalAndTeams(t *testing.T) {
 
 func TestTeamServiceAdminAddMemberCreatesActiveMembership(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 
@@ -590,7 +603,7 @@ func TestTeamServiceAdminAddMemberCreatesActiveMembership(t *testing.T) {
 
 func TestTeamServiceAdminAddMemberRejectsOwnerRole(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 
@@ -600,7 +613,7 @@ func TestTeamServiceAdminAddMemberRejectsOwnerRole(t *testing.T) {
 
 func TestTeamServiceAdminAddMemberRejectsDuplicateActive(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 
@@ -614,7 +627,7 @@ func TestTeamServiceAdminAddMemberRejectsDuplicateActive(t *testing.T) {
 
 func TestTeamServiceAdminAddMemberReactivatesLeftMembership(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 
@@ -688,7 +701,7 @@ func TestTeamServiceAdminAddMemberResolvesByEmail(t *testing.T) {
 
 func TestTeamServiceAdminAddMemberMissingUserAndEmail(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 
@@ -698,7 +711,7 @@ func TestTeamServiceAdminAddMemberMissingUserAndEmail(t *testing.T) {
 
 func TestTeamServiceAdminUpdateMemberProtectsOwner(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 
@@ -710,7 +723,7 @@ func TestTeamServiceAdminUpdateMemberProtectsOwner(t *testing.T) {
 
 func TestTeamServiceAdminUpdateMemberValidations(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 	_, err = svc.AdminAddMember(context.Background(), AdminAddMemberInput{TeamID: team.ID, UserID: 8, Role: domain.TeamRoleViewer, AdminUserID: 1})
@@ -734,7 +747,7 @@ func TestTeamServiceAdminUpdateMemberValidations(t *testing.T) {
 
 func TestTeamServiceAdminRemoveMemberProtectsOwner(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 
@@ -744,7 +757,7 @@ func TestTeamServiceAdminRemoveMemberProtectsOwner(t *testing.T) {
 
 func TestTeamServiceAdminUpdateTeamValidations(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 
@@ -768,7 +781,7 @@ func TestTeamServiceAdminUpdateTeamValidations(t *testing.T) {
 
 func TestTeamServiceAdminListAndGetTeam(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 	_, err = svc.AdminAddMember(context.Background(), AdminAddMemberInput{TeamID: team.ID, UserID: 8, Role: domain.TeamRoleViewer, AdminUserID: 1})
@@ -964,7 +977,7 @@ func TestTeamServicePreviewInvitationNoMutation(t *testing.T) {
 
 func TestTeamServiceTransferOwnershipSwapsRoles(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 	_, err = svc.AdminAddMember(context.Background(), AdminAddMemberInput{TeamID: team.ID, UserID: 8, Role: domain.TeamRoleDeveloper, AdminUserID: 7})
@@ -988,7 +1001,7 @@ func TestTeamServiceTransferOwnershipSwapsRoles(t *testing.T) {
 
 func TestTeamServiceTransferOwnershipRejectsNonOwner(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 	_, err = svc.AdminAddMember(context.Background(), AdminAddMemberInput{TeamID: team.ID, UserID: 8, Role: domain.TeamRoleAdmin, AdminUserID: 7})
@@ -1007,7 +1020,7 @@ func TestTeamServiceTransferOwnershipRejectsNonOwner(t *testing.T) {
 
 func TestTeamServiceTransferOwnershipRequiresActiveNewOwner(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 
@@ -1018,7 +1031,7 @@ func TestTeamServiceTransferOwnershipRequiresActiveNewOwner(t *testing.T) {
 
 func TestTeamServiceAdminTransferOwnershipBypassesGating(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 	_, err = svc.AdminAddMember(context.Background(), AdminAddMemberInput{TeamID: team.ID, UserID: 8, Role: domain.TeamRoleDeveloper, AdminUserID: 7})
@@ -1064,7 +1077,7 @@ func (s *inviteNotifierSpyWithBase) AcceptBaseURL(_ context.Context) string { re
 
 func TestTeamServiceInviteMemberInvokesNotifier(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	_, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 	spy := &inviteNotifierSpyWithBase{base: "https://app.example.com"}
@@ -1087,7 +1100,7 @@ func TestTeamServiceInviteMemberInvokesNotifier(t *testing.T) {
 
 func TestTeamServiceInviteMemberNotifierErrorIsNonFatal(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	_, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
 	require.NoError(t, err)
 	spy := &inviteNotifierSpy{returnErr: ErrEmailNotConfigured}
@@ -1103,4 +1116,385 @@ func TestTeamServiceInviteMemberNotifierErrorIsNonFatal(t *testing.T) {
 	require.True(t, spy.called)
 	// With no base URL the link is a relative path.
 	require.Equal(t, "/teams/accept?token="+token, acceptLink)
+}
+
+// --- AdminUpdateTeam concurrency/rpm tests -----------------------------------
+
+// adminUpdateRepoStub 内嵌 teamRepoMemory，覆写 AdminGetTeamSummary 以注入非 nil 的 BillingSubjectID。
+type adminUpdateRepoStub struct {
+	*teamRepoMemory
+	billingSubjectID int64
+}
+
+func (s *adminUpdateRepoStub) AdminGetTeamSummary(ctx context.Context, teamID int64) (*AdminTeamSummary, error) {
+	summary, err := s.teamRepoMemory.AdminGetTeamSummary(ctx, teamID)
+	if err != nil {
+		return nil, err
+	}
+	summary.BillingSubjectID = &s.billingSubjectID
+	return summary, nil
+}
+
+// updateLimitsBillingStub 内嵌 BillingSubjectRepository，记录 UpdateLimits 的调用参数。
+type updateLimitsBillingStub struct {
+	BillingSubjectRepository
+	calledSubjectID int64
+	calledConc      int
+	calledRpm       int
+}
+
+func (s *updateLimitsBillingStub) UpdateLimits(_ context.Context, subjectID int64, concurrency, rpmLimit int) error {
+	s.calledSubjectID = subjectID
+	s.calledConc = concurrency
+	s.calledRpm = rpmLimit
+	return nil
+}
+
+func TestTeamServiceAdminUpdateTeamConcurrencyCallsUpdateLimits(t *testing.T) {
+	base := newTeamRepoMemory()
+	repo := &adminUpdateRepoStub{teamRepoMemory: base, billingSubjectID: 42}
+	billingStub := &updateLimitsBillingStub{}
+	svc := NewTeamService(repo, billingStub, nil, nil, nil)
+
+	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Ops", Slug: "ops"})
+	require.NoError(t, err)
+
+	conc := 20
+	_, err = svc.AdminUpdateTeam(context.Background(), team.ID, AdminUpdateTeamInput{Concurrency: &conc})
+	require.NoError(t, err)
+
+	require.Equal(t, int64(42), billingStub.calledSubjectID)
+	require.Equal(t, 20, billingStub.calledConc)
+	require.Equal(t, 0, billingStub.calledRpm)
+}
+
+// --- Owner cap tests ----------------------------------------------------------
+
+func TestTeamService_CreateTeam_OwnerCapEnforced(t *testing.T) {
+	repo := newTeamRepoMemory()
+	svc := NewTeamService(repo, nil, nil, nil, nil)
+	owner := int64(7)
+	for i := 0; i < MaxTeamsPerOwner; i++ {
+		_, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: owner, Name: fmt.Sprintf("T%d", i)})
+		require.NoError(t, err)
+	}
+	// 第 MaxTeamsPerOwner+1 个应被拦截
+	_, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: owner, Name: "overflow"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "TEAM_LIMIT_REACHED")
+}
+
+func TestTeamService_AdminCreateTeam_BypassesOwnerCap(t *testing.T) {
+	repo := newTeamRepoMemory()
+	lookup := teamUserLookupStub{byID: map[int64]*User{
+		8: {ID: 8, Email: "owner@example.com", Username: "owner"},
+	}}
+	svc := &TeamService{repo: repo, userLookup: lookup}
+	owner := int64(8)
+	for i := 0; i < MaxTeamsPerOwner; i++ {
+		_, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: owner, Name: fmt.Sprintf("S%d", i)})
+		require.NoError(t, err)
+	}
+	// admin 代建第 6 个、指派同一 owner —— 不受上限影响
+	_, err := svc.AdminCreateTeam(context.Background(), AdminCreateTeamInput{AdminUserID: 1, OwnerUserID: owner, Name: "admin-extra"})
+	require.NoError(t, err)
+}
+
+// --- AdminAdjustTeamBalance tests -----------------------------------------------
+
+// adminBalanceRepoStub 内嵌 teamRepoMemory，覆写 AdminGetTeamSummary 以注入
+// BillingSubjectID 和 Balance（这样 AdminAdjustTeamBalance 能读到初始余额并在最
+// 终重读时返回更新后的余额）。subjectID=0 表示无主体（返回 BillingSubjectID=nil）。
+type adminBalanceRepoStub struct {
+	*teamRepoMemory
+	billingSubjectID int64
+	// balance 是 AdminGetTeamSummary 返回的当前余额，在 UpdateBalance 被调用后由
+	// fakeBillingSubjectForBalance 通过回调更新。
+	mu      sync.Mutex
+	balance float64
+}
+
+func newAdminBalanceRepoStub(base *teamRepoMemory, subjectID int64, balance float64) *adminBalanceRepoStub {
+	return &adminBalanceRepoStub{teamRepoMemory: base, billingSubjectID: subjectID, balance: balance}
+}
+
+func (s *adminBalanceRepoStub) AdminGetTeamSummary(ctx context.Context, teamID int64) (*AdminTeamSummary, error) {
+	summary, err := s.teamRepoMemory.AdminGetTeamSummary(ctx, teamID)
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.billingSubjectID > 0 {
+		sid := s.billingSubjectID
+		summary.BillingSubjectID = &sid
+	} else {
+		summary.BillingSubjectID = nil
+	}
+	summary.Balance = s.balance
+	return summary, nil
+}
+
+func (s *adminBalanceRepoStub) applyDelta(delta float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.balance += delta
+}
+
+// fakeBillingSubjectForBalance 记录 UpdateBalance 的累计 delta，并将变化同步回 repo stub。
+type fakeBillingSubjectForBalance struct {
+	BillingSubjectRepository
+	mu      sync.Mutex
+	deltas  map[int64]float64
+	onDelta func(subjectID int64, delta float64)
+}
+
+func newFakeBillingSubjectForBalance() *fakeBillingSubjectForBalance {
+	return &fakeBillingSubjectForBalance{deltas: make(map[int64]float64)}
+}
+
+func (f *fakeBillingSubjectForBalance) UpdateBalance(_ context.Context, subjectID int64, delta float64) error {
+	f.mu.Lock()
+	f.deltas[subjectID] += delta
+	f.mu.Unlock()
+	if f.onDelta != nil {
+		f.onDelta(subjectID, delta)
+	}
+	return nil
+}
+
+func (f *fakeBillingSubjectForBalance) lastDelta(subjectID int64) float64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.deltas[subjectID]
+}
+
+// fakeRedeemCodeRepoForBalance 记录 Create 调用的关键字段，并可为指定 subjectID
+// 预填若干行以供 ListBySubjectID 返回（Task 8 扩展）。
+type fakeRedeemCodeRepoForBalance struct {
+	RedeemCodeRepository
+	mu                   sync.Mutex
+	created              int
+	lastType             string
+	lastBillingSubjectID *int64
+	lastUsedBy           *int64
+	// subjectRows 由 seedSubjectRows 填充；ListBySubjectID 按 subjectID 查找。
+	subjectRows map[int64][]RedeemCode
+}
+
+func newFakeRedeemCodeRepoForBalance() *fakeRedeemCodeRepoForBalance {
+	return &fakeRedeemCodeRepoForBalance{subjectRows: make(map[int64][]RedeemCode)}
+}
+
+// newFakeRedeemCodeRepo 是 newFakeRedeemCodeRepoForBalance 的短名别名，供 Task 8 测试使用。
+func newFakeRedeemCodeRepo() *fakeRedeemCodeRepoForBalance {
+	return newFakeRedeemCodeRepoForBalance()
+}
+
+func (f *fakeRedeemCodeRepoForBalance) Create(_ context.Context, code *RedeemCode) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.created++
+	f.lastType = code.Type
+	f.lastUsedBy = code.UsedBy
+	if code.BillingSubjectID != nil {
+		sid := *code.BillingSubjectID
+		f.lastBillingSubjectID = &sid
+	} else {
+		f.lastBillingSubjectID = nil
+	}
+	return nil
+}
+
+// seedSubjectRows 预填 n 行 RedeemCode（BillingSubjectID=subjectID），
+// 使 ListBySubjectID 对该 subjectID 返回 n 行、Total=n。
+func (f *fakeRedeemCodeRepoForBalance) seedSubjectRows(subjectID int64, n int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	rows := make([]RedeemCode, n)
+	for i := range rows {
+		id := int64(i + 1)
+		rows[i] = RedeemCode{ID: id, BillingSubjectID: &subjectID, Type: AdjustmentTypeAdminBalance}
+	}
+	f.subjectRows[subjectID] = rows
+}
+
+// ListBySubjectID 返回已播种的行，对未播种的 subjectID 返回空切片。
+func (f *fakeRedeemCodeRepoForBalance) ListBySubjectID(_ context.Context, subjectID int64, params pagination.PaginationParams, _ string) ([]RedeemCode, *pagination.PaginationResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	rows := f.subjectRows[subjectID]
+	total := int64(len(rows))
+	return rows, &pagination.PaginationResult{Total: total, Page: params.Page, PageSize: params.PageSize}, nil
+}
+
+// fakeSubjectBalanceCacheForBalance 线程安全地记录被失效的 subjectID。
+type fakeSubjectBalanceCacheForBalance struct {
+	mu          sync.Mutex
+	invalidated map[int64]bool
+}
+
+func newFakeSubjectBalanceCacheForBalance() *fakeSubjectBalanceCacheForBalance {
+	return &fakeSubjectBalanceCacheForBalance{invalidated: make(map[int64]bool)}
+}
+
+func (f *fakeSubjectBalanceCacheForBalance) InvalidateSubjectBalance(_ context.Context, subjectID int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.invalidated[subjectID] = true
+	return nil
+}
+
+func (f *fakeSubjectBalanceCacheForBalance) wasInvalidated(subjectID int64) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.invalidated[subjectID]
+}
+
+func TestTeamService_AdminAdjustTeamBalance_AddAndAudit(t *testing.T) {
+	base := newTeamRepoMemory()
+	_, err := base.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 1, Name: "T10"})
+	require.NoError(t, err)
+	teamID := int64(1)
+
+	repo := newAdminBalanceRepoStub(base, 500, 20.0)
+	bs := newFakeBillingSubjectForBalance()
+	// 让 bs.UpdateBalance 把变化同步回 repo stub（这样二次读返回新余额）
+	bs.onDelta = func(subjectID int64, delta float64) { repo.applyDelta(delta) }
+	redeem := newFakeRedeemCodeRepoForBalance()
+	cache := newFakeSubjectBalanceCacheForBalance()
+	svc := NewTeamService(repo, bs, nil, redeem, cache)
+
+	sum, err := svc.AdminAdjustTeamBalance(context.Background(), teamID, 5.0, "add", "topup")
+	require.NoError(t, err)
+	require.InDelta(t, 25.0, sum.Balance, 1e-9)
+	require.InDelta(t, 5.0, bs.lastDelta(500), 1e-9) // delta = +5
+	redeem.mu.Lock()
+	created := redeem.created
+	lastType := redeem.lastType
+	lastBSID := redeem.lastBillingSubjectID
+	lastUsedBy := redeem.lastUsedBy
+	redeem.mu.Unlock()
+	require.Equal(t, 1, created)                              // 审计写入
+	require.Equal(t, AdjustmentTypeAdminBalance, lastType)
+	require.NotNil(t, lastBSID)
+	require.Equal(t, int64(500), *lastBSID)
+	require.Nil(t, lastUsedBy)
+	require.Eventually(t, func() bool { return cache.wasInvalidated(500) }, time.Second, 10*time.Millisecond)
+}
+
+func TestTeamService_AdminAdjustTeamBalance_SubtractBelowZeroRejected(t *testing.T) {
+	base := newTeamRepoMemory()
+	_, err := base.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 1, Name: "T11"})
+	require.NoError(t, err)
+
+	repo := newAdminBalanceRepoStub(base, 501, 3.0)
+	bs := newFakeBillingSubjectForBalance()
+	svc := NewTeamService(repo, bs, nil, newFakeRedeemCodeRepoForBalance(), newFakeSubjectBalanceCacheForBalance())
+
+	_, err = svc.AdminAdjustTeamBalance(context.Background(), 1, 10.0, "subtract", "")
+	require.Error(t, err) // 结果 3-10 = -7 < 0
+}
+
+func TestTeamService_AdminAdjustTeamBalance_SetAndNoSubjectGuard(t *testing.T) {
+	// set 到绝对值
+	base := newTeamRepoMemory()
+	_, err := base.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 1, Name: "T12"})
+	require.NoError(t, err)
+
+	repo := newAdminBalanceRepoStub(base, 502, 8.0)
+	bs := newFakeBillingSubjectForBalance()
+	bs.onDelta = func(subjectID int64, delta float64) { repo.applyDelta(delta) }
+	svc := NewTeamService(repo, bs, nil, newFakeRedeemCodeRepoForBalance(), newFakeSubjectBalanceCacheForBalance())
+
+	sum, err := svc.AdminAdjustTeamBalance(context.Background(), 1, 30.0, "set", "")
+	require.NoError(t, err)
+	require.InDelta(t, 30.0, sum.Balance, 1e-9)
+
+	// 无计费主体的团队 → 报错
+	base2 := newTeamRepoMemory()
+	_, err = base2.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 2, Name: "T13"})
+	require.NoError(t, err)
+	repo2 := newAdminBalanceRepoStub(base2, 0 /*no subject*/, 0)
+	svc2 := NewTeamService(repo2, newFakeBillingSubjectForBalance(), nil, newFakeRedeemCodeRepoForBalance(), newFakeSubjectBalanceCacheForBalance())
+	_, err = svc2.AdminAdjustTeamBalance(context.Background(), 1, 1.0, "add", "")
+	require.Error(t, err)
+}
+
+// --- AdminGetTeamBalanceHistory helpers & tests --------------------------------
+
+// newTeamRepoMemoryWithTeam 创建含一个团队（固定 teamID）的内存仓储桩。
+// subjectID > 0 时 AdminGetTeamSummary 返回非 nil BillingSubjectID；= 0 则返回 nil。
+// balance 注入到 AdminGetTeamSummary 返回值的 Balance 字段。
+// t 仅用于保证 teamID 可被追踪（暂未断言，预留）。
+func newTeamRepoMemoryWithTeam(t *testing.T, teamID, subjectID int64, balance float64) *adminBalanceRepoStub {
+	t.Helper()
+	base := newTeamRepoMemory()
+	// nextID 默认从 1 开始；若 teamID != 1 先用虚拟团队占位填满 nextID 到 teamID。
+	for base.nextID < teamID {
+		_, _ = base.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 1, Name: fmt.Sprintf("placeholder-%d", base.nextID)})
+	}
+	_, _ = base.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 1, Name: fmt.Sprintf("team-%d", teamID)})
+	return newAdminBalanceRepoStub(base, subjectID, balance)
+}
+
+// newFakeBillingSubjectRepo 返回一个满足 BillingSubjectRepository 接口的最小桩（无计费主体 subject 操作需求）。
+func newFakeBillingSubjectRepo() *fakeBillingSubjectForBalance {
+	return newFakeBillingSubjectForBalance()
+}
+
+// newFakeSubjectBalanceCache 返回一个满足 SubjectBalanceInvalidator 接口的最小桩。
+func newFakeSubjectBalanceCache() *fakeSubjectBalanceCacheForBalance {
+	return newFakeSubjectBalanceCacheForBalance()
+}
+
+func TestTeamService_AdminGetTeamBalanceHistory(t *testing.T) {
+	repo := newTeamRepoMemoryWithTeam(t, 20, 700, 0)
+	redeem := newFakeRedeemCodeRepo()
+	redeem.seedSubjectRows(700, 3) // 让 ListBySubjectID 返回 3 行 total=3
+	svc := NewTeamService(repo, newFakeBillingSubjectRepo(), nil, redeem, newFakeSubjectBalanceCache())
+
+	items, total, err := svc.AdminGetTeamBalanceHistory(context.Background(), 20, 1, 10, "")
+	require.NoError(t, err)
+	require.Equal(t, int64(3), total)
+	require.Len(t, items, 3)
+}
+
+func TestTeamService_AdminGetTeamBalanceHistory_NoSubject(t *testing.T) {
+	repo := newTeamRepoMemoryWithTeam(t, 21, 0, 0)
+	svc := NewTeamService(repo, newFakeBillingSubjectRepo(), nil, newFakeRedeemCodeRepo(), newFakeSubjectBalanceCache())
+	items, total, err := svc.AdminGetTeamBalanceHistory(context.Background(), 21, 1, 10, "")
+	require.NoError(t, err)
+	require.Equal(t, int64(0), total)
+	require.Empty(t, items)
+}
+
+func TestTeamService_AdminAdjustTeamBalance_NoOpDeltaZero(t *testing.T) {
+	base := newTeamRepoMemory()
+	_, err := base.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 1, Name: "T-noop"})
+	require.NoError(t, err)
+	teamID := int64(1)
+
+	const subjectID = int64(600)
+	const startBalance = 20.0
+
+	repo := newAdminBalanceRepoStub(base, subjectID, startBalance)
+	bs := newFakeBillingSubjectForBalance()
+	redeem := newFakeRedeemCodeRepoForBalance()
+	cache := newFakeSubjectBalanceCacheForBalance()
+	svc := NewTeamService(repo, bs, nil, redeem, cache)
+
+	// set → 20.0（与当前余额相同），delta == 0 → 审计跳过，缓存不失效
+	sum, err := svc.AdminAdjustTeamBalance(context.Background(), teamID, startBalance, "set", "noop")
+	require.NoError(t, err)
+	require.InDelta(t, startBalance, sum.Balance, 1e-9)
+
+	// 审计未写入
+	redeem.mu.Lock()
+	created := redeem.created
+	redeem.mu.Unlock()
+	require.Equal(t, 0, created)
+
+	// 缓存未失效（delta==0 直接短路，无 goroutine 调度）
+	require.False(t, cache.wasInvalidated(subjectID))
 }

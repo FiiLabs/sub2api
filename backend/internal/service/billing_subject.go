@@ -25,4 +25,5 @@ type BillingSubjectRepository interface {
 	CreateTeamSubject(ctx context.Context, teamID int64, seed BillingSubject) (*BillingSubject, error)
 	UpdateBalance(ctx context.Context, subjectID int64, delta float64) error
 	DeductBalance(ctx context.Context, subjectID int64, amount float64) error
+	UpdateLimits(ctx context.Context, subjectID int64, concurrency, rpmLimit int) error
 }

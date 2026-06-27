@@ -42,23 +42,37 @@
         <LocaleSwitcher />
 
         <!-- Workspace Switcher + Create team -->
-        <div v-if="user" class="hidden items-center gap-1.5 sm:flex">
+        <div v-if="user" class="flex items-center gap-1.5">
           <!-- Switcher (only when the user belongs to more than one workspace) -->
-          <select
+          <Select
             v-if="workspaceStore.workspaces.length > 1"
-            :value="activeWorkspace?.billing_subject_id"
+            :model-value="activeWorkspace?.billing_subject_id"
+            :options="workspaceStore.workspaces"
+            value-key="billing_subject_id"
+            label-key="name"
             :aria-label="t('nav.workspace')"
-            class="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-700 dark:border-dark-700 dark:bg-dark-900 dark:text-dark-200"
-            @change="workspaceStore.switchWorkspace(Number(($event.target as HTMLSelectElement).value))"
+            class="w-20 sm:w-44"
+            @change="(value) => workspaceStore.switchWorkspace(Number(value))"
           >
-            <option
-              v-for="workspace in workspaceStore.workspaces"
-              :key="workspace.billing_subject_id"
-              :value="workspace.billing_subject_id"
-            >
-              {{ workspace.name }}
-            </option>
-          </select>
+            <template #selected="{ option }">
+              <WorkspaceBadge
+                :subject="(option as WorkspaceSubject | null) ?? activeWorkspace"
+                variant="plain"
+                responsive-compact
+                size="sm"
+              />
+            </template>
+            <template #option="{ option }">
+              <WorkspaceBadge :subject="option as WorkspaceSubject" variant="plain" show-type size="sm" />
+            </template>
+          </Select>
+          <WorkspaceBadge
+            v-else-if="activeWorkspace"
+            :subject="activeWorkspace"
+            show-type
+            responsive-compact
+            size="sm"
+          />
 
           <!-- Create team -->
           <button
@@ -306,6 +320,9 @@ import SubscriptionProgressMini from '@/components/common/SubscriptionProgressMi
 import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
+import Select from '@/components/common/Select.vue'
+import WorkspaceBadge from '@/components/common/WorkspaceBadge.vue'
+import type { WorkspaceSubject } from '@/types'
 import { workspacesAPI } from '@/api/workspaces'
 
 const router = useRouter()
@@ -440,7 +457,11 @@ async function handleCreateTeam() {
     appStore.showSuccess(t('workspace.createTeamSuccess'))
     closeCreateTeam()
   } catch (error: any) {
-    appStore.showError(error?.message || t('workspace.createTeamFailed'))
+    appStore.showError(
+      error?.code === 'TEAM_LIMIT_REACHED'
+        ? t('workspace.teamLimitReached')
+        : error?.message || t('workspace.createTeamFailed')
+    )
     console.error('Failed to create team:', error)
   } finally {
     creatingTeam.value = false

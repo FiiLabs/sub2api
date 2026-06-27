@@ -13,7 +13,7 @@ import (
 
 func TestUpdateTeamSettings_OwnerCanRename(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Old"})
 	require.NoError(t, err)
 
@@ -25,7 +25,7 @@ func TestUpdateTeamSettings_OwnerCanRename(t *testing.T) {
 
 func TestUpdateTeamSettings_NonMemberDenied(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Old"})
 	require.NoError(t, err)
 
@@ -36,7 +36,7 @@ func TestUpdateTeamSettings_NonMemberDenied(t *testing.T) {
 
 func TestUpdateTeamSettings_EmptyRejected(t *testing.T) {
 	repo := newTeamRepoMemory()
-	svc := NewTeamService(repo, nil, nil)
+	svc := NewTeamService(repo, nil, nil, nil, nil)
 	team, err := svc.CreateTeam(context.Background(), CreateTeamInput{ActorUserID: 7, Name: "Old"})
 	require.NoError(t, err)
 
@@ -48,10 +48,11 @@ func TestUpdateTeamSettings_EmptyRejected(t *testing.T) {
 // 用于精确控制成员角色、活跃 key 数与被解散的团队 id，便于断言守卫语义。
 type dissolveRepoStub struct {
 	TeamRepository
-	member     *TeamMember
-	team       *Team
-	activeKeys int
-	dissolved  []int64
+	member         *TeamMember
+	team           *Team
+	activeKeys     int
+	dissolved      []int64
+	dissolvedTeamID int64 // 记录最近一次 DissolveTeam 调用的 teamID（供 AdminDeleteTeam 测试使用）
 }
 
 func (s *dissolveRepoStub) GetMembership(_ context.Context, _, _ int64) (*TeamMember, error) {
@@ -63,7 +64,12 @@ func (s *dissolveRepoStub) CountActiveAPIKeysByBillingSubjectID(_ context.Contex
 }
 func (s *dissolveRepoStub) DissolveTeam(_ context.Context, teamID int64) error {
 	s.dissolved = append(s.dissolved, teamID)
+	s.dissolvedTeamID = teamID
 	return nil
+}
+
+func (s *dissolveRepoStub) CountActiveTeamsByOwner(_ context.Context, _ int64) (int, error) {
+	return 0, nil
 }
 
 func (s *dissolveRepoStub) UsageByMember(_ context.Context, _ int64, _, _ time.Time) ([]TeamMemberUsage, error) {
@@ -88,7 +94,7 @@ func newDissolveService(role string, balance float64, activeKeys int) (*TeamServ
 		team:       &Team{ID: 1, BillingSubjectID: dissolvePtrInt64(900)},
 		activeKeys: activeKeys,
 	}
-	svc := NewTeamService(repo, &dissolveSubjectStub{balance: balance}, nil)
+	svc := NewTeamService(repo, &dissolveSubjectStub{balance: balance}, nil, nil, nil)
 	return svc, repo
 }
 
@@ -114,4 +120,11 @@ func TestDissolveTeam_RejectsWithActiveKeys(t *testing.T) {
 	svc, repo := newDissolveService(domain.TeamRoleOwner, 0, 2)
 	require.ErrorIs(t, svc.DissolveTeam(context.Background(), 7, 1), ErrTeamDissolveHasActiveKeys)
 	require.Empty(t, repo.dissolved)
+}
+
+func TestAdminDeleteTeamCallsRepoDissolveWithoutGuards(t *testing.T) {
+	repo := &dissolveRepoStub{}
+	svc := NewTeamService(repo, nil, nil, nil, nil)
+	require.NoError(t, svc.AdminDeleteTeam(context.Background(), 7))
+	require.Equal(t, int64(7), repo.dissolvedTeamID)
 }

@@ -627,6 +627,17 @@ export default {
   // Workspace
   workspace: {
     active: '工作空间',
+    personal: '个人',
+    team: '团队',
+    youAreIn: '你正在',
+    roleLabel: '你的角色',
+    roles: {
+      owner: '所有者',
+      admin: '管理员',
+      billing: '财务',
+      developer: '开发者',
+      viewer: '只读'
+    },
     billingTarget: '账单主体：{name}',
     createTeam: '创建团队',
     createTeamTitle: '创建团队工作空间',
@@ -634,7 +645,9 @@ export default {
     teamNamePlaceholder: '请输入团队名称',
     teamNameRequired: '请输入团队名称',
     createTeamSuccess: '团队已创建',
-    createTeamFailed: '创建团队失败'
+    createTeamFailed: '创建团队失败',
+    teamLimitReached: '已达到可自助创建的团队数量上限，如需更多请联系管理员。',
+    createKeyTeamAck: '我了解此 API Key 将计入团队「{name}」的账单'
   },
 
   // Auth
@@ -2102,6 +2115,7 @@ export default {
       memberAdded: '成员已添加',
       memberUpdated: '成员已更新',
       memberRemoved: '成员已移除',
+      updateSuccess: '团队限制已更新',
       failedToLoad: '加载团队失败',
       failedToUpdate: '更新团队失败',
       failedToAddMember: '添加成员失败',
@@ -2114,7 +2128,9 @@ export default {
         members: '成员数',
         balance: '余额',
         created: '创建时间',
-        actions: '操作'
+        actions: '操作',
+        concurrency: '并发',
+        rpmLimit: 'RPM'
       },
       roles: {
         owner: '所有者',
@@ -2127,7 +2143,35 @@ export default {
         active: '正常',
         suspended: '已暂停',
         left: '已退出'
-      }
+      },
+      concurrency: '并发上限',
+      rpmLimit: 'RPM 上限',
+      unlimited: '不限制',
+      concurrencyHint: '0 = 不限制',
+      rpmLimitHint: '0 = 不限制',
+      currentConcurrency: '当前并发',
+      deleteTeam: '删除团队',
+      deleteTeamTitle: '删除团队',
+      deleteTeamWarning: '将永久删除团队「{name}」、吊销其所有 API Key、并作废其余额（${balance}）。此操作不可撤销。',
+      deleteTeamActiveKeys: '将被吊销的启用中 API Key 数：{count}',
+      deleteTeamTypeName: '输入团队名以确认',
+      teamDeleted: '团队已删除',
+      failedToDeleteTeam: '删除团队失败',
+      deposit: '充值',
+      withdraw: '扣减',
+      depositAmount: '充值金额',
+      withdrawAmount: '扣减金额',
+      withdrawAll: '全部',
+      currentBalance: '当前余额',
+      newBalance: '调整后余额',
+      balanceNotes: '备注',
+      amountRequired: '请输入金额',
+      insufficientBalance: '金额超过当前余额',
+      balanceUpdated: '余额已更新',
+      failedToUpdateBalance: '余额更新失败',
+      balanceHistory: '余额历史',
+      balanceHistoryTitle: '团队余额历史',
+      noBalanceHistory: '暂无余额变动记录'
     },
 
     // Users Management

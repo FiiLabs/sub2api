@@ -725,6 +725,37 @@ func (r *apiKeyRepository) ListKeysByGroupID(ctx context.Context, groupID int64)
 	return keys, nil
 }
 
+// ListKeysByTeamID 返回团队名下所有 active API key 的 key 字符串（用于按团队失效鉴权缓存）。
+func (r *apiKeyRepository) ListKeysByTeamID(ctx context.Context, teamID int64) ([]string, error) {
+	keys, err := r.activeQuery().
+		Where(apikey.TeamIDEQ(teamID)).
+		Select(apikey.FieldKey).
+		Strings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return keys, nil
+}
+
+// DeleteByTeamID 软删团队名下所有 active API key，返回被删 key 的明文串（供失效鉴权缓存）。
+// 先取出 (id, key) 再逐个 Delete（Delete 会用 tombstone 覆盖 key 列，故须先捕获明文）。
+func (r *apiKeyRepository) DeleteByTeamID(ctx context.Context, teamID int64) ([]string, error) {
+	rows, err := r.activeQuery().
+		Where(apikey.TeamIDEQ(teamID)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]string, 0, len(rows))
+	for _, row := range rows {
+		keys = append(keys, row.Key)
+		if err := r.Delete(ctx, row.ID); err != nil {
+			return nil, err
+		}
+	}
+	return keys, nil
+}
+
 // IncrementQuotaUsed 使用 Ent 原子递增 quota_used 字段并返回新值
 func (r *apiKeyRepository) IncrementQuotaUsed(ctx context.Context, id int64, amount float64) (float64, error) {
 	updated, err := r.client.APIKey.UpdateOneID(id).

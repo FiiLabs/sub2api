@@ -152,6 +152,13 @@ func (s *apiKeyRepoStub) ListKeysByGroupID(ctx context.Context, groupID int64) (
 	panic("unexpected ListKeysByGroupID call")
 }
 
+func (s *apiKeyRepoStub) ListKeysByTeamID(ctx context.Context, teamID int64) ([]string, error) {
+	return nil, nil
+}
+func (s *apiKeyRepoStub) DeleteByTeamID(ctx context.Context, teamID int64) ([]string, error) {
+	return nil, nil
+}
+
 func (s *apiKeyRepoStub) IncrementQuotaUsed(ctx context.Context, id int64, amount float64) (float64, error) {
 	panic("unexpected IncrementQuotaUsed call")
 }

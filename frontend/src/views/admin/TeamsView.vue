@@ -96,6 +96,13 @@
             <span class="font-medium text-gray-900 dark:text-white">${{ Number(value).toFixed(2) }}</span>
           </template>
 
+          <template #cell-concurrency="{ value }">
+            <span class="text-sm text-gray-700 dark:text-gray-300">{{ value === 0 ? t('admin.teams.unlimited') : value }}</span>
+          </template>
+          <template #cell-rpm_limit="{ value }">
+            <span class="text-sm text-gray-700 dark:text-gray-300">{{ value === 0 ? t('admin.teams.unlimited') : value }}</span>
+          </template>
+
           <template #cell-created_at="{ value }">
             <span class="text-sm text-gray-500 dark:text-dark-400">{{ formatDateTime(value) }}</span>
           </template>
@@ -181,6 +188,26 @@
           </div>
         </div>
 
+        <!-- Balance actions -->
+        <div class="flex flex-wrap items-center gap-2">
+          <button type="button" class="btn btn-secondary" @click="openBalance('add')">{{ t('admin.teams.deposit') }}</button>
+          <button type="button" class="btn btn-secondary" @click="openBalance('subtract')">{{ t('admin.teams.withdraw') }}</button>
+          <button type="button" class="btn btn-secondary" @click="showBalanceHistory = true">{{ t('admin.teams.balanceHistory') }}</button>
+        </div>
+
+        <!-- Edit limits -->
+        <div class="flex items-end gap-2">
+          <div>
+            <label class="input-label">{{ t('admin.teams.concurrency') }}</label>
+            <input v-model.number="editLimits.concurrency" type="number" min="0" class="input w-28" />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.teams.rpmLimit') }}</label>
+            <input v-model.number="editLimits.rpm_limit" type="number" min="0" class="input w-28" />
+          </div>
+          <button class="btn btn-primary" :disabled="savingLimits" @click="handleUpdateLimits">{{ t('common.save') }}</button>
+        </div>
+
         <!-- Add member -->
         <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-700">
           <h4 class="mb-3 text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.teams.addMember') }}</h4>
@@ -221,6 +248,7 @@
                   <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">{{ t('common.user') }}</th>
                   <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">{{ t('admin.teams.role') }}</th>
                   <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">{{ t('admin.teams.status') }}</th>
+                  <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">{{ t('admin.teams.currentConcurrency') }}</th>
                   <th class="px-4 py-2 text-right text-xs font-medium uppercase text-gray-500">{{ t('admin.teams.actions') }}</th>
                 </tr>
               </thead>
@@ -245,6 +273,9 @@
                   <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
                     {{ t('admin.teams.memberStatus.' + member.status) }}
                   </td>
+                  <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
+                    {{ member.current_concurrency ?? 0 }} / {{ detailTeam?.concurrency === 0 ? '∞' : detailTeam?.concurrency ?? '-' }}
+                  </td>
                   <td class="px-4 py-3">
                     <div v-if="member.role !== 'owner'" class="flex items-center justify-end gap-1">
                       <button
@@ -268,7 +299,7 @@
                   </td>
                 </tr>
                 <tr v-if="members.length === 0">
-                  <td colspan="4" class="px-4 py-8 text-center text-sm text-gray-500">{{ t('common.noData') }}</td>
+                  <td colspan="5" class="px-4 py-8 text-center text-sm text-gray-500">{{ t('common.noData') }}</td>
                 </tr>
               </tbody>
             </table>
@@ -300,8 +331,45 @@
       </div>
 
       <template #footer>
-        <div class="flex justify-end">
+        <div class="flex items-center justify-between">
+          <button type="button" class="btn bg-red-600 text-white hover:bg-red-700" @click="openDeleteConfirm">
+            {{ t('admin.teams.deleteTeam') }}
+          </button>
           <button type="button" class="btn btn-secondary" @click="closeDetail">{{ t('common.close') }}</button>
+        </div>
+      </template>
+    </BaseDialog>
+
+    <!-- Delete team confirm modal -->
+    <BaseDialog
+      :show="showDeleteConfirm"
+      :title="t('admin.teams.deleteTeamTitle')"
+      width="narrow"
+      @close="closeDeleteConfirm"
+    >
+      <div v-if="detailTeam" class="space-y-3">
+        <p class="text-sm text-red-600 dark:text-red-400">
+          {{ t('admin.teams.deleteTeamWarning', { name: detailTeam.name, balance: Number(detailTeam.balance).toFixed(2) }) }}
+        </p>
+        <p class="text-sm text-gray-600 dark:text-gray-400">
+          {{ t('admin.teams.deleteTeamActiveKeys', { count: detailTeam.active_key_count ?? 0 }) }}
+        </p>
+        <div>
+          <label class="input-label">{{ t('admin.teams.deleteTeamTypeName') }}</label>
+          <input v-model="deleteConfirmName" type="text" class="input" :placeholder="detailTeam.name" />
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-3">
+          <button type="button" class="btn btn-secondary" @click="closeDeleteConfirm">{{ t('common.cancel') }}</button>
+          <button
+            type="button"
+            class="btn bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+            :disabled="deleting || deleteConfirmName !== detailTeam?.name"
+            @click="handleDeleteTeam"
+          >
+            {{ t('admin.teams.deleteTeam') }}
+          </button>
         </div>
       </template>
     </BaseDialog>
@@ -336,6 +404,16 @@
             class="input"
             :placeholder="t('admin.teams.ownerPlaceholder')"
           />
+        </div>
+        <div>
+          <label class="input-label" for="create-team-concurrency">{{ t('admin.teams.concurrency') }}</label>
+          <input id="create-team-concurrency" v-model.number="createForm.concurrency" type="number" min="0" class="input" />
+          <p class="mt-1 text-xs text-gray-400">{{ t('admin.teams.concurrencyHint') }}</p>
+        </div>
+        <div>
+          <label class="input-label" for="create-team-rpm">{{ t('admin.teams.rpmLimit') }}</label>
+          <input id="create-team-rpm" v-model.number="createForm.rpm_limit" type="number" min="0" class="input" />
+          <p class="mt-1 text-xs text-gray-400">{{ t('admin.teams.rpmLimitHint') }}</p>
         </div>
       </form>
 
@@ -378,6 +456,10 @@
       @confirm="confirmRemoveMember"
       @cancel="showRemoveConfirm = false"
     />
+
+    <!-- Balance modals -->
+    <TeamBalanceModal :show="showBalanceModal" :team="detailTeam" :operation="balanceOperation" @close="showBalanceModal = false" @success="onBalanceSuccess" />
+    <TeamBalanceHistoryModal :show="showBalanceHistory" :team="detailTeam" @close="showBalanceHistory = false" />
   </AppLayout>
 </template>
 
@@ -400,6 +482,8 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import TeamBalanceModal from '@/components/admin/team/TeamBalanceModal.vue'
+import TeamBalanceHistoryModal from '@/components/admin/team/TeamBalanceHistoryModal.vue'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -410,6 +494,8 @@ const columns = computed<Column[]>(() => [
   { key: 'status', label: t('admin.teams.columns.status'), sortable: false },
   { key: 'member_count', label: t('admin.teams.columns.members'), sortable: false },
   { key: 'balance', label: t('admin.teams.columns.balance'), sortable: false },
+  { key: 'concurrency', label: t('admin.teams.columns.concurrency'), sortable: false },
+  { key: 'rpm_limit', label: t('admin.teams.columns.rpmLimit'), sortable: false },
   { key: 'created_at', label: t('admin.teams.columns.created'), sortable: false },
   { key: 'actions', label: t('admin.teams.columns.actions'), sortable: false }
 ])
@@ -520,11 +606,13 @@ const handleToggleTeamStatus = async (team: AdminTeam) => {
 
 const showCreate = ref(false)
 const createSubmitting = ref(false)
-const createForm = reactive({ name: '', owner: '' })
+const createForm = reactive({ name: '', owner: '', concurrency: 5, rpm_limit: 0 })
 
 const openCreate = () => {
   createForm.name = ''
   createForm.owner = ''
+  createForm.concurrency = 5
+  createForm.rpm_limit = 0
   showCreate.value = true
 }
 
@@ -532,6 +620,8 @@ const closeCreate = () => {
   showCreate.value = false
   createForm.name = ''
   createForm.owner = ''
+  createForm.concurrency = 5
+  createForm.rpm_limit = 0
 }
 
 // Owner accepts either a numeric user id or an email address.
@@ -546,12 +636,14 @@ const handleCreate = async () => {
     appStore.showError(t('admin.teams.ownerRequired'))
     return
   }
-  const payload: { name: string; owner_user_id?: number; owner_email?: string } = { name }
+  const payload: { name: string; owner_user_id?: number; owner_email?: string; concurrency?: number; rpm_limit?: number } = { name }
   if (/^\d+$/.test(owner)) {
     payload.owner_user_id = Number(owner)
   } else {
     payload.owner_email = owner
   }
+  payload.concurrency = createForm.concurrency
+  payload.rpm_limit = createForm.rpm_limit
   createSubmitting.value = true
   try {
     await adminTeamsAPI.create(payload)
@@ -578,6 +670,9 @@ const addMemberInput = ref('')
 const addMemberRole = ref<AdminAssignableRole>('developer')
 const addMemberSubmitting = ref(false)
 
+const editLimits = reactive({ concurrency: 0, rpm_limit: 0 })
+const savingLimits = ref(false)
+
 const loadDetail = async (teamId: number) => {
   detailLoading.value = true
   try {
@@ -585,11 +680,32 @@ const loadDetail = async (teamId: number) => {
     detailTeam.value = data.team
     members.value = data.members
     invitations.value = data.invitations
+    editLimits.concurrency = data.team.concurrency
+    editLimits.rpm_limit = data.team.rpm_limit
   } catch (error: any) {
     appStore.showError(error?.message || t('admin.teams.failedToLoad'))
     console.error('Error loading team detail:', error)
   } finally {
     detailLoading.value = false
+  }
+}
+
+const handleUpdateLimits = async () => {
+  if (!detailTeam.value) return
+  savingLimits.value = true
+  try {
+    await adminTeamsAPI.update(detailTeam.value.id, {
+      concurrency: editLimits.concurrency,
+      rpm_limit: editLimits.rpm_limit
+    })
+    appStore.showSuccess(t('admin.teams.updateSuccess'))
+    await loadDetail(detailTeam.value.id)
+    loadTeams()
+  } catch (error: any) {
+    appStore.showError(error?.message || t('admin.teams.failedToUpdate'))
+    console.error('Error updating team limits:', error)
+  } finally {
+    savingLimits.value = false
   }
 }
 
@@ -689,6 +805,53 @@ const confirmRemoveMember = async () => {
   } catch (error: any) {
     appStore.showError(error?.message || t('admin.teams.failedToRemoveMember'))
     console.error('Error removing team member:', error)
+  }
+}
+
+// ==================== Balance modals ====================
+
+const showBalanceModal = ref(false)
+const balanceOperation = ref<'add' | 'subtract'>('add')
+const showBalanceHistory = ref(false)
+
+const openBalance = (op: 'add' | 'subtract') => {
+  balanceOperation.value = op
+  showBalanceModal.value = true
+}
+
+const onBalanceSuccess = async () => {
+  if (detailTeam.value) await loadDetail(detailTeam.value.id)
+}
+
+// ==================== Delete team ====================
+
+const showDeleteConfirm = ref(false)
+const deleteConfirmName = ref('')
+const deleting = ref(false)
+
+const openDeleteConfirm = () => {
+  deleteConfirmName.value = ''
+  showDeleteConfirm.value = true
+}
+
+const closeDeleteConfirm = () => {
+  showDeleteConfirm.value = false
+  deleteConfirmName.value = ''
+}
+
+const handleDeleteTeam = async () => {
+  if (!detailTeam.value || deleteConfirmName.value !== detailTeam.value.name) return
+  deleting.value = true
+  try {
+    await adminTeamsAPI.deleteTeam(detailTeam.value.id)
+    appStore.showSuccess(t('admin.teams.teamDeleted'))
+    closeDeleteConfirm()
+    closeDetail()
+    await loadTeams()
+  } catch (e: any) {
+    appStore.showError(e?.message || t('admin.teams.failedToDeleteTeam'))
+  } finally {
+    deleting.value = false
   }
 }
 

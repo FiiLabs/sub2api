@@ -3,9 +3,7 @@
     <TablePageLayout>
       <template #filters>
         <div class="flex flex-col gap-3">
-          <p v-if="workspaceStore.activeWorkspace" class="text-sm text-gray-500 dark:text-dark-400">
-            {{ t('workspace.active') }}: {{ workspaceStore.activeWorkspace.name }}
-          </p>
+          <WorkspaceContextBar />
           <div class="flex flex-wrap items-center gap-3">
             <SearchInput
               v-model="filterSearch"
@@ -857,6 +855,13 @@
             </div>
           </div>
         </div>
+        <label
+          v-if="showCreateModal && workspaceStore.isTeamWorkspace"
+          class="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-300"
+        >
+          <input v-model="teamBillingAck" type="checkbox" class="mt-0.5 flex-shrink-0" />
+          <span>{{ t('workspace.createKeyTeamAck', { name: workspaceStore.activeWorkspace?.name }) }}</span>
+        </label>
       </form>
       <template #footer>
         <div class="flex justify-end gap-3">
@@ -866,7 +871,7 @@
           <button
             form="key-form"
             type="submit"
-            :disabled="submitting"
+            :disabled="submitting || (showCreateModal && workspaceStore.isTeamWorkspace && !teamBillingAck)"
             class="btn btn-primary"
             data-tour="key-form-submit"
           >
@@ -1091,6 +1096,7 @@ import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 	import EndpointPopover from '@/components/keys/EndpointPopover.vue'
 	import GroupBadge from '@/components/common/GroupBadge.vue'
 	import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
+import WorkspaceContextBar from '@/components/common/WorkspaceContextBar.vue'
 	import type { ApiKey, Group, PublicSettings, SubscriptionType, GroupPlatform } from '@/types'
 import type { Column } from '@/components/common/types'
 import type { BatchApiKeyUsageStats } from '@/api/usage'
@@ -1202,6 +1208,8 @@ const filterStatus = ref('')
 const filterGroupId = ref<string | number>('')
 
 const showCreateModal = ref(false)
+// 团队空间建 Key 的"计费归属"确认
+const teamBillingAck = ref(false)
 const showEditModal = ref(false)
 const showDeleteDialog = ref(false)
 const showResetQuotaDialog = ref(false)
@@ -1551,6 +1559,12 @@ const confirmDelete = (key: ApiKey) => {
 }
 
 const handleSubmit = async () => {
+  // Prevent team-key creation without billing acknowledgement (guards Enter-submit bypass)
+  if (showCreateModal.value && workspaceStore.isTeamWorkspace && !teamBillingAck.value) {
+    appStore.showError(t('workspace.createKeyTeamAck', { name: workspaceStore.activeWorkspace?.name }))
+    return
+  }
+
   // Validate group_id is required
   if (formData.value.group_id === null) {
     appStore.showError(t('keys.groupRequired'))
@@ -1671,6 +1685,7 @@ const handleDelete = async () => {
 
 const closeModals = () => {
   showCreateModal.value = false
+  teamBillingAck.value = false
   showEditModal.value = false
   selectedKey.value = null
   formData.value = {

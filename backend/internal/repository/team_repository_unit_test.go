@@ -253,3 +253,79 @@ func mustCreateTeamUsage(t *testing.T, client *dbent.Client, teamID, actorUserID
 		Save(context.Background())
 	require.NoError(t, err)
 }
+
+func TestCreateTeamAppliesConcurrencyOverrideAndDefault(t *testing.T) {
+	client := newWorkspaceEntClient(t)
+	repo := NewTeamRepository(client)
+	bsRepo := NewBillingSubjectRepository(client)
+	ctx := context.Background()
+
+	owner := createWorkspaceTestUser(t, client, "ov@example.com")
+	// 显式设并发 0(=不限) / rpm 200
+	c0, r200 := 0, 200
+	team, err := repo.CreateTeam(ctx, service.CreateTeamInput{
+		ActorUserID: owner.ID, OwnerUserID: owner.ID, Name: "Override", Slug: "ov-1",
+		Concurrency: &c0, RpmLimit: &r200,
+	})
+	require.NoError(t, err)
+	sub, err := bsRepo.GetByID(ctx, *team.BillingSubjectID)
+	require.NoError(t, err)
+	require.Equal(t, 0, sub.Concurrency)
+	require.Equal(t, 200, sub.RPMLimit)
+
+	// 不设 → 默认 5/0（用户自助路径）
+	team2, err := repo.CreateTeam(ctx, service.CreateTeamInput{
+		ActorUserID: owner.ID, OwnerUserID: owner.ID, Name: "Default", Slug: "df-1",
+	})
+	require.NoError(t, err)
+	sub2, err := bsRepo.GetByID(ctx, *team2.BillingSubjectID)
+	require.NoError(t, err)
+	require.Equal(t, 5, sub2.Concurrency)
+	require.Equal(t, 0, sub2.RPMLimit)
+}
+
+func TestTeamRepository_CountActiveTeamsByOwner(t *testing.T) {
+	client := newWorkspaceEntClient(t)
+	ctx := context.Background()
+	repo := NewTeamRepository(client)
+
+	ownerUser := createWorkspaceTestUser(t, client, "owner1001@example.com")
+	otherUser := createWorkspaceTestUser(t, client, "other2002@example.com")
+
+	// ownerUser 拥有 2 个 active 团队
+	_, err := repo.CreateTeam(ctx, service.CreateTeamInput{ActorUserID: ownerUser.ID, OwnerUserID: ownerUser.ID, Name: "T1", Slug: "t1"})
+	require.NoError(t, err)
+	_, err = repo.CreateTeam(ctx, service.CreateTeamInput{ActorUserID: ownerUser.ID, OwnerUserID: ownerUser.ID, Name: "T2", Slug: "t2"})
+	require.NoError(t, err)
+	// otherUser 拥有 1 个，不应计入 ownerUser
+	_, err = repo.CreateTeam(ctx, service.CreateTeamInput{ActorUserID: otherUser.ID, OwnerUserID: otherUser.ID, Name: "T3", Slug: "t3"})
+	require.NoError(t, err)
+
+	n, err := repo.CountActiveTeamsByOwner(ctx, ownerUser.ID)
+	require.NoError(t, err)
+	require.Equal(t, 2, n)
+
+	n0, err := repo.CountActiveTeamsByOwner(ctx, int64(9999))
+	require.NoError(t, err)
+	require.Equal(t, 0, n0)
+}
+
+func TestAdminGetTeamSummaryIncludesLimits(t *testing.T) {
+	client := newWorkspaceEntClient(t)
+	repo := NewTeamRepository(client)
+	ctx := context.Background()
+
+	// Create a team (default 5/0), then directly update subject to verify reading
+	owner := createWorkspaceTestUser(t, client, "ownerlimits@example.com")
+	team, err := repo.CreateTeam(ctx, service.CreateTeamInput{ActorUserID: owner.ID, OwnerUserID: owner.ID, Name: "Acme", Slug: "acme-limits"})
+	require.NoError(t, err)
+
+	bsRepo := NewBillingSubjectRepository(client)
+	require.NotNil(t, team.BillingSubjectID)
+	require.NoError(t, bsRepo.UpdateLimits(ctx, *team.BillingSubjectID, 30, 90))
+
+	summary, err := repo.AdminGetTeamSummary(ctx, team.ID)
+	require.NoError(t, err)
+	require.Equal(t, 30, summary.Concurrency)
+	require.Equal(t, 90, summary.RpmLimit)
+}

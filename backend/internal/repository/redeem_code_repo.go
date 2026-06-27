@@ -34,6 +34,7 @@ func (r *redeemCodeRepository) Create(ctx context.Context, code *service.RedeemC
 		SetNillableUsedBy(code.UsedBy).
 		SetNillableUsedAt(code.UsedAt).
 		SetNillableGroupID(code.GroupID).
+		SetNillableBillingSubjectID(code.BillingSubjectID).
 		Save(ctx)
 	if err == nil {
 		code.ID = created.ID
@@ -60,7 +61,8 @@ func (r *redeemCodeRepository) CreateBatch(ctx context.Context, codes []service.
 			SetNillableExpiresAt(c.ExpiresAt).
 			SetNillableUsedBy(c.UsedBy).
 			SetNillableUsedAt(c.UsedAt).
-			SetNillableGroupID(c.GroupID)
+			SetNillableGroupID(c.GroupID).
+			SetNillableBillingSubjectID(c.BillingSubjectID)
 		builders = append(builders, b)
 	}
 
@@ -218,6 +220,11 @@ func (r *redeemCodeRepository) Update(ctx context.Context, code *service.RedeemC
 		up.SetGroupID(*code.GroupID)
 	} else {
 		up.ClearGroupID()
+	}
+	if code.BillingSubjectID != nil {
+		up.SetBillingSubjectID(*code.BillingSubjectID)
+	} else {
+		up.ClearBillingSubjectID()
 	}
 	if code.ExpiresAt != nil {
 		up.SetExpiresAt(*code.ExpiresAt)
@@ -386,6 +393,28 @@ func (r *redeemCodeRepository) ListByUserPaginated(ctx context.Context, userID i
 	return redeemCodeEntitiesToService(codes), paginationResultFromTotal(int64(total), params), nil
 }
 
+// ListBySubjectID 返回某计费主体的余额调整历史（团队充值/扣减审计），按 created_at 倒序分页。
+func (r *redeemCodeRepository) ListBySubjectID(ctx context.Context, subjectID int64, params pagination.PaginationParams, codeType string) ([]service.RedeemCode, *pagination.PaginationResult, error) {
+	q := r.client.RedeemCode.Query().
+		Where(redeemcode.BillingSubjectIDEQ(subjectID))
+	if codeType != "" {
+		q = q.Where(redeemcode.TypeEQ(codeType))
+	}
+	total, err := q.Count(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	codes, err := q.
+		Offset(params.Offset()).
+		Limit(params.Limit()).
+		Order(dbent.Desc(redeemcode.FieldCreatedAt)).
+		All(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	return redeemCodeEntitiesToService(codes), paginationResultFromTotal(int64(total), params), nil
+}
+
 // SumPositiveBalanceByUser returns total recharged amount (sum of value > 0 where type is balance/admin_balance).
 func (r *redeemCodeRepository) SumPositiveBalanceByUser(ctx context.Context, userID int64) (float64, error) {
 	var result []struct {
@@ -423,8 +452,9 @@ func redeemCodeEntityToService(m *dbent.RedeemCode) *service.RedeemCode {
 		Notes:        derefString(m.Notes),
 		CreatedAt:    m.CreatedAt,
 		ExpiresAt:    m.ExpiresAt,
-		GroupID:      m.GroupID,
-		ValidityDays: m.ValidityDays,
+		GroupID:          m.GroupID,
+		ValidityDays:     m.ValidityDays,
+		BillingSubjectID: m.BillingSubjectID,
 	}
 	if m.Edges.User != nil {
 		out.User = userEntityToService(m.Edges.User)
