@@ -141,6 +141,11 @@ func (APIKey) Edges() []ent.Edge {
 func (APIKey) Indexes() []ent.Index {
 	return []ent.Index{
 		// key 字段已在 Fields() 中声明 Unique()，无需重复索引
+		// NOTE: The RUNTIME migration (950_add_api_key_key_hash.sql) creates a PARTIAL
+		// unique index on key_hash WHERE deleted_at IS NULL, so soft-deleted rows are
+		// excluded — the same approach used for the "key" field's uniqueness. Production
+		// applies the embedded SQL migrations (not ent auto-migrate), so the partial index
+		// in the SQL file is authoritative; this ent index declaration drives codegen only.
 		index.Fields("key_hash").Unique(),
 		index.Fields("user_id"),
 		index.Fields("group_id"),
