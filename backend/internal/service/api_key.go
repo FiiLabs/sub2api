@@ -31,6 +31,8 @@ type APIKey struct {
 	ID          int64
 	UserID      int64
 	Key         string
+	// KeyHash is the hex-encoded SHA-256 of Key, written on create for TEE lookup.
+	KeyHash     *string
 	Name        string
 	GroupID     *int64
 	Status      string

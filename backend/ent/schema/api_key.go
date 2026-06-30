@@ -38,6 +38,11 @@ func (APIKey) Fields() []ent.Field {
 			MaxLen(128).
 			NotEmpty().
 			Unique(),
+		field.String("key_hash").
+			MaxLen(64).
+			Optional().
+			Nillable().
+			Comment("SHA256(key) hex,用于 consult 按哈希查 key"),
 		field.String("name").
 			MaxLen(100).
 			NotEmpty(),
@@ -136,6 +141,7 @@ func (APIKey) Edges() []ent.Edge {
 func (APIKey) Indexes() []ent.Index {
 	return []ent.Index{
 		// key 字段已在 Fields() 中声明 Unique()，无需重复索引
+		index.Fields("key_hash").Unique(),
 		index.Fields("user_id"),
 		index.Fields("group_id"),
 		index.Fields("status"),
