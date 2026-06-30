@@ -153,6 +153,10 @@ func (s *quotaBaseAPIKeyRepoStub) GetRateLimitData(context.Context, int64) (*API
 	panic("unexpected GetRateLimitData call")
 }
 
+func (s *quotaBaseAPIKeyRepoStub) GetByKeyHash(context.Context, string) (*APIKey, error) {
+	panic("unexpected GetByKeyHash call")
+}
+
 func TestAPIKeyService_UpdateQuotaUsed_UsesAtomicStatePath(t *testing.T) {
 	repo := &quotaStateRepoStub{
 		state: &APIKeyQuotaUsageState{

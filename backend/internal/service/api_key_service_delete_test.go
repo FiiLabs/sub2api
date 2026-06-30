@@ -174,6 +174,10 @@ func (s *apiKeyRepoStub) GetRateLimitData(ctx context.Context, id int64) (*APIKe
 	panic("unexpected GetRateLimitData call")
 }
 
+func (s *apiKeyRepoStub) GetByKeyHash(ctx context.Context, hash string) (*APIKey, error) {
+	panic("unexpected GetByKeyHash call")
+}
+
 // apiKeyCacheStub 是 APIKeyCache 接口的测试桩实现。
 // 用于验证删除操作时缓存清理逻辑是否被正确调用。
 //
