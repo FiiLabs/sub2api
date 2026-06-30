@@ -273,6 +273,14 @@ curl -sS http://127.0.0.1:8086/v1/aci/receipts/$RID -H "Authorization: Bearer $K
 关注事件链:`route.selected`(选中的 routeId)、`upstream.verified`、`response.returned`。
 
 ### 9.6 验证计费(需 `placeholder_account_id` ≠ 0)
+
+> ⚠️ **本分支（tee-control）差异**：本分支为纯控制面，**无 billing_subject / 团队账本**。TEE 用量经 `POST /consult/post` 记到占位账号 `tee-gateway`（`accounts` 表）下的 `usage_logs`，并按 **user 维度**扣减个人余额。因此下文针对 `billing_subjects` / 团队账本的验证步骤在本分支**不适用**——请改为如下验证：
+> - 用量明细：`SELECT model, prompt_tokens, completion_tokens, cost FROM usage_logs WHERE account_id IN (SELECT id FROM accounts WHERE name='tee-gateway') ORDER BY id DESC LIMIT 5;`
+> - 余额扣减：`SELECT id, balance FROM users WHERE id=<user id>;`（消费后应下降）
+> - 占位账号存在：`SELECT id, name, status FROM accounts WHERE name='tee-gateway';`
+
+**（下文为旧版本（team-workspaces）内容，供参考，本分支不适用）**
+
 team key 的费用记到**团队账本(billing_subject)**,不扣个人余额:
 ```bash
 docker run --rm --network host -e PGPASSWORD=<db密码> postgres:16-alpine \
