@@ -110,7 +110,9 @@ func registerRoutes(
 	routes.RegisterAuthRoutes(v1, h, jwtAuth, redisClient, settingService)
 	routes.RegisterUserRoutes(v1, h, jwtAuth, settingService)
 	routes.RegisterAdminRoutes(v1, h, adminAuth)
-	routes.RegisterGatewayRoutes(r, h, apiKeyAuth, apiKeyService, subscriptionService, opsService, settingService, cfg)
+	// 决策①D：数据面（/v1、/v1beta、/responses、/backend-api/codex）无条件 410，
+	// 不再注册真实转发路由。RegisterGatewayRoutes 保留为无路由可达的死代码。
+	routes.RegisterDataPlaneDisabled(r)
 	routes.RegisterPaymentRoutes(v1, h.Payment, h.PaymentWebhook, h.Admin.Payment, jwtAuth, adminAuth, settingService)
 	// TEE 控制面路由（/consult/pre、/consult/post、/models），由控制面 token 鉴权
 	routes.RegisterConsultRoutes(r, h, cfg)
