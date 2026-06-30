@@ -2275,6 +2275,9 @@ func (r *stubApiKeyRepo) ResetRateLimitWindows(ctx context.Context, id int64) er
 func (r *stubApiKeyRepo) GetRateLimitData(ctx context.Context, id int64) (*service.APIKeyRateLimitData, error) {
 	return nil, nil
 }
+func (r *stubApiKeyRepo) GetByKeyHash(ctx context.Context, hash string) (*service.APIKey, error) {
+	return nil, errors.New("not implemented")
+}
 
 type stubUsageLogRepo struct {
 	userLogs map[int64][]service.UsageLog
