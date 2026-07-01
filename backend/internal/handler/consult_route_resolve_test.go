@@ -196,3 +196,27 @@ func TestConsultHandler_Models_ExcludesPatternKeys(t *testing.T) {
 	assert.NotContains(t, ids, "claude-*", "pattern key claude-* must NOT appear in catalog")
 	assert.NotContains(t, ids, "*", "catch-all * must NOT appear in catalog")
 }
+
+// TestResolveConsultRoute_MeridianClaudeIsolatesOthers verifies that adding a
+// Meridian route under an exact/prefix Claude key does NOT capture non-Claude
+// models, which must resolve to their own upstreams.
+func TestResolveConsultRoute_MeridianClaudeIsolatesOthers(t *testing.T) {
+	m := map[string]config.ConsultRoute{
+		"claude-sonnet-4-6": {RouteID: "meridian-seat1:claude-sonnet-4-6", Format: "anthropic"},
+		"claude-*":          {RouteID: "meridian-seat1:claude", Format: "anthropic"},
+		"gpt-4o":            {RouteID: "openai:gpt-4o", Format: "openai"},
+		"glm-4":             {RouteID: "tinfoil:glm-4", Format: "openai"},
+	}
+
+	claude, ok := resolveConsultRoute(m, "claude-sonnet-4-6")
+	require.True(t, ok)
+	assert.Equal(t, "meridian-seat1:claude-sonnet-4-6", claude.RouteID)
+
+	gpt, ok := resolveConsultRoute(m, "gpt-4o")
+	require.True(t, ok)
+	assert.Equal(t, "openai:gpt-4o", gpt.RouteID, "non-Claude model must NOT hit Meridian")
+
+	glm, ok := resolveConsultRoute(m, "glm-4")
+	require.True(t, ok)
+	assert.Equal(t, "tinfoil:glm-4", glm.RouteID, "confidential route must NOT hit Meridian")
+}
