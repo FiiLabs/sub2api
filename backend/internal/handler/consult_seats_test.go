@@ -62,3 +62,57 @@ func preCandidates(t *testing.T, h *ConsultHandler, hash, model string) []map[st
 	}
 	return out
 }
+
+func TestOrderSeats_SingleElement(t *testing.T) {
+	assert.Equal(t, []string{"a"}, orderSeats([]string{"a"}, 99))
+}
+
+func TestConsultPre_SingleSeatAlwaysSameCandidate(t *testing.T) {
+	cfg := makeConsultConfig(map[string]config.ConsultRoute{
+		"claude-opus-4-6": {Seats: []string{"only-seat"}, Format: "anthropic"},
+	})
+	validKey := &service.APIKey{ID: 1, UserID: 1, Status: "active",
+		User: &service.User{ID: 1, Status: "active", Balance: 100}}
+	h := newTestConsultHandler(
+		&fakeAPIKeys{byHash: map[string]*service.APIKey{"h": validKey}},
+		nil, &fakePricing{}, cfg,
+	)
+	for i := 0; i < 3; i++ {
+		cands := preCandidates(t, h, "h", "claude-opus-4-6")
+		require.Len(t, cands, 1)
+		assert.Equal(t, "only-seat:claude-opus-4-6", cands[0]["routeId"])
+	}
+}
+
+func TestConsultPre_WildcardSeatsUseRequestedModel(t *testing.T) {
+	cfg := makeConsultConfig(map[string]config.ConsultRoute{
+		"claude-*": {Seats: []string{"meridian-seat1"}, Format: "anthropic"},
+	})
+	validKey := &service.APIKey{ID: 1, UserID: 1, Status: "active",
+		User: &service.User{ID: 1, Status: "active", Balance: 100}}
+	h := newTestConsultHandler(
+		&fakeAPIKeys{byHash: map[string]*service.APIKey{"h": validKey}},
+		nil, &fakePricing{}, cfg,
+	)
+	cands := preCandidates(t, h, "h", "claude-haiku-9")
+	require.Len(t, cands, 1)
+	assert.Equal(t, "meridian-seat1:claude-haiku-9", cands[0]["routeId"],
+		"routeId must use the requested model, not the wildcard key")
+}
+
+func TestConsultPre_MultiSeatPropagatesEngine(t *testing.T) {
+	cfg := makeConsultConfig(map[string]config.ConsultRoute{
+		"claude-sonnet-4-6": {Seats: []string{"s1", "s2"}, Format: "anthropic", Engine: "sglang"},
+	})
+	validKey := &service.APIKey{ID: 1, UserID: 1, Status: "active",
+		User: &service.User{ID: 1, Status: "active", Balance: 100}}
+	h := newTestConsultHandler(
+		&fakeAPIKeys{byHash: map[string]*service.APIKey{"h": validKey}},
+		nil, &fakePricing{}, cfg,
+	)
+	cands := preCandidates(t, h, "h", "claude-sonnet-4-6")
+	require.Len(t, cands, 2)
+	for _, c := range cands {
+		assert.Equal(t, "sglang", c["engine"])
+	}
+}

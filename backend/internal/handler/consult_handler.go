@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/gin-gonic/gin"
@@ -51,7 +52,14 @@ type ConsultHandler struct {
 	gateway  consultUsage
 	accounts consultAccounts
 	cfg      *config.Config
-	seatRR   atomic.Uint64
+	seatRR   sync.Map // requestModel(string) -> *atomic.Uint64
+}
+
+// nextSeatIndex returns a monotonically increasing per-key counter value
+// (starting at 0), so each model rotates its seats independently.
+func (h *ConsultHandler) nextSeatIndex(key string) uint64 {
+	v, _ := h.seatRR.LoadOrStore(key, new(atomic.Uint64))
+	return v.(*atomic.Uint64).Add(1) - 1
 }
 
 // orderSeats returns seats rotated so seats[start % len] is first, preserving
@@ -70,6 +78,8 @@ func orderSeats(seats []string, start uint64) []string {
 }
 
 // NewConsultHandler creates a new ConsultHandler.
+// Concrete parameter types are required for google/wire DI resolution;
+// the interface-typed struct fields allow fake injection in tests.
 func NewConsultHandler(
 	apiKeys *service.APIKeyService,
 	subs *service.SubscriptionService,
@@ -151,11 +161,15 @@ func (h *ConsultHandler) Models(c *gin.Context) {
 		if strings.Contains(id, "*") {
 			continue
 		}
+		routeID := route.RouteID
+		if routeID == "" && len(route.Seats) > 0 {
+			routeID = route.Seats[0]
+		}
 		data = append(data, gin.H{
 			"id":       id,
 			"object":   "model",
 			"created":  consultModelCreated,
-			"owned_by": consultModelOwnedBy(route.RouteID),
+			"owned_by": consultModelOwnedBy(routeID),
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"object": "list", "data": data})
@@ -223,19 +237,19 @@ func (h *ConsultHandler) Pre(c *gin.Context) {
 	// 6. Build candidate(s): multi-seat round-robin + failover, or single route.
 	var candidates []gin.H
 	if len(route.Seats) > 0 {
-		for _, seat := range orderSeats(route.Seats, h.seatRR.Add(1)-1) {
-			c := gin.H{"routeId": seat + ":" + req.Model, "format": route.Format}
+		for _, seat := range orderSeats(route.Seats, h.nextSeatIndex(req.Model)) {
+			cand := gin.H{"routeId": seat + ":" + req.Model, "format": route.Format}
 			if route.Engine != "" {
-				c["engine"] = route.Engine
+				cand["engine"] = route.Engine
 			}
-			candidates = append(candidates, c)
+			candidates = append(candidates, cand)
 		}
 	} else {
-		c := gin.H{"routeId": route.RouteID, "format": route.Format}
+		cand := gin.H{"routeId": route.RouteID, "format": route.Format}
 		if route.Engine != "" {
-			c["engine"] = route.Engine
+			cand["engine"] = route.Engine
 		}
-		candidates = append(candidates, c)
+		candidates = append(candidates, cand)
 	}
 
 	// 7. Build success response.

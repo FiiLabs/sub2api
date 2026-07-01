@@ -184,7 +184,7 @@ type ConsultConfig struct {
 
 type ConsultRoute struct {
 	RouteID string   `mapstructure:"route_id"` // 单 seat：完整 "<upstream>:<model>"
-	Seats   []string `mapstructure:"seats"`    // 多 seat：上游名列表，routeId 构造为 "<seat>:<model>"
+	Seats   []string `mapstructure:"seats"` // 多 seat：上游名列表，routeId 构造为 "<seat>:<model>"；与 route_id 二选一，同时设置时 seats 优先
 	Format  string   `mapstructure:"format"`   // openai | anthropic
 	Engine  string   `mapstructure:"engine"`   // 可选 sglang/vllm
 }
