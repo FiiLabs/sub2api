@@ -14,13 +14,21 @@ stop "simulator" "dstack-simulator"
 # --- 本地 Meridian seat(若曾用 MERIDIAN_LOCAL=1 起过)---
 MERIDIAN_DIR="${SUB2API:-}/deploy/meridian"
 MERIDIAN_OVERRIDE=/tmp/pag-meridian.ports.yml
-if command -v docker >/dev/null 2>&1 && [ -f "$MERIDIAN_DIR/compose.yaml" ]; then
-  if [ -f "$MERIDIAN_OVERRIDE" ]; then
-    ( cd "$MERIDIAN_DIR" && docker compose -f compose.yaml -f "$MERIDIAN_OVERRIDE" down ) >/dev/null 2>&1 \
-      && echo "  ✓ 已停止 Meridian seat" || echo "  - Meridian seat 未在运行"
-  else
-    ( cd "$MERIDIAN_DIR" && docker compose down ) >/dev/null 2>&1 \
-      && echo "  ✓ 已停止 Meridian seat" || echo "  - Meridian seat 未在运行"
+if command -v docker >/dev/null 2>&1; then
+  # 多-seat:gen-seats.sh 生成的 compose.generated.yaml(§11)
+  if [ -f "$MERIDIAN_DIR/compose.generated.yaml" ]; then
+    ( cd "$MERIDIAN_DIR" && docker compose -f compose.generated.yaml down ) >/dev/null 2>&1 \
+      && echo "  ✓ 已停止 Meridian 多-seat(compose.generated.yaml)" || echo "  - Meridian 多-seat 未在运行"
+  fi
+  # 单-seat:start-local.sh 的 MERIDIAN_LOCAL 路径(compose.yaml [+ 端口覆盖])
+  if [ -f "$MERIDIAN_DIR/compose.yaml" ]; then
+    if [ -f "$MERIDIAN_OVERRIDE" ]; then
+      ( cd "$MERIDIAN_DIR" && docker compose -f compose.yaml -f "$MERIDIAN_OVERRIDE" down ) >/dev/null 2>&1 \
+        && echo "  ✓ 已停止 Meridian seat" || echo "  - Meridian seat 未在运行"
+    else
+      ( cd "$MERIDIAN_DIR" && docker compose down ) >/dev/null 2>&1 \
+        && echo "  ✓ 已停止 Meridian seat" || echo "  - Meridian seat 未在运行"
+    fi
   fi
 fi
 
