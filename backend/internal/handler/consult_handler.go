@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 
 	"github.com/gin-gonic/gin"
 
@@ -50,11 +51,25 @@ type ConsultHandler struct {
 	gateway  consultUsage
 	accounts consultAccounts
 	cfg      *config.Config
+	seatRR   atomic.Uint64
+}
+
+// orderSeats returns seats rotated so seats[start % len] is first, preserving
+// the remaining order for deterministic failover.
+func orderSeats(seats []string, start uint64) []string {
+	n := len(seats)
+	if n == 0 {
+		return nil
+	}
+	out := make([]string, 0, n)
+	off := int(start % uint64(n))
+	for i := 0; i < n; i++ {
+		out = append(out, seats[(off+i)%n])
+	}
+	return out
 }
 
 // NewConsultHandler creates a new ConsultHandler.
-// Parameters are concrete service types so that google/wire can resolve them from
-// the DI graph. The interface-typed fields are preserved for unit-test fake injection.
 func NewConsultHandler(
 	apiKeys *service.APIKeyService,
 	subs *service.SubscriptionService,
