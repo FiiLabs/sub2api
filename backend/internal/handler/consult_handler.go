@@ -220,19 +220,28 @@ func (h *ConsultHandler) Pre(c *gin.Context) {
 		return
 	}
 
-	// 6. Build candidate.
-	cand := gin.H{
-		"routeId": route.RouteID,
-		"format":  route.Format,
-	}
-	if route.Engine != "" {
-		cand["engine"] = route.Engine
+	// 6. Build candidate(s): multi-seat round-robin + failover, or single route.
+	var candidates []gin.H
+	if len(route.Seats) > 0 {
+		for _, seat := range orderSeats(route.Seats, h.seatRR.Add(1)-1) {
+			c := gin.H{"routeId": seat + ":" + req.Model, "format": route.Format}
+			if route.Engine != "" {
+				c["engine"] = route.Engine
+			}
+			candidates = append(candidates, c)
+		}
+	} else {
+		c := gin.H{"routeId": route.RouteID, "format": route.Format}
+		if route.Engine != "" {
+			c["engine"] = route.Engine
+		}
+		candidates = append(candidates, c)
 	}
 
 	// 7. Build success response.
 	resp := gin.H{
 		"allow":        true,
-		"candidates":   []gin.H{cand},
+		"candidates":   candidates,
 		"userId":       key.UserID,
 		"virtualKeyId": key.ID,
 		"spendMode":    "regular",
