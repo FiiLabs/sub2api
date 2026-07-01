@@ -236,8 +236,13 @@ type postReq struct {
 	RequestModel string `json:"requestModel"`
 	VirtualKeyID int64  `json:"virtualKeyId"`
 	Usage        struct {
-		PromptTokens        int `json:"prompt_tokens"`
-		CompletionTokens    int `json:"completion_tokens"`
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		// Anthropic-format upstreams (client /v1/messages) report usage as
+		// input_tokens/output_tokens rather than prompt_tokens/completion_tokens.
+		// The executor forwards raw upstream usage unchanged, so accept both.
+		InputTokens         int `json:"input_tokens"`
+		OutputTokens        int `json:"output_tokens"`
 		CacheReadTokens     int `json:"cache_read_input_tokens"`
 		CacheCreationTokens int `json:"cache_creation_input_tokens"`
 	} `json:"usage"`
@@ -282,11 +287,23 @@ func (h *ConsultHandler) Post(c *gin.Context) {
 		return
 	}
 
+	// Accept OpenAI (prompt/completion) or Anthropic (input/output) token field
+	// names — the executor forwards raw upstream usage, whose naming follows the
+	// upstream/endpoint format. Fall back so Anthropic /v1/messages bills correctly.
+	inputTokens := req.Usage.PromptTokens
+	if inputTokens == 0 {
+		inputTokens = req.Usage.InputTokens
+	}
+	outputTokens := req.Usage.CompletionTokens
+	if outputTokens == 0 {
+		outputTokens = req.Usage.OutputTokens
+	}
+
 	res := &service.ForwardResult{
 		Model: req.RequestModel,
 		Usage: service.ClaudeUsage{
-			InputTokens:              req.Usage.PromptTokens,
-			OutputTokens:             req.Usage.CompletionTokens,
+			InputTokens:              inputTokens,
+			OutputTokens:             outputTokens,
 			CacheReadInputTokens:     req.Usage.CacheReadTokens,
 			CacheCreationInputTokens: req.Usage.CacheCreationTokens,
 		},

@@ -153,6 +153,47 @@ func TestConsultPost_RecordsUsage(t *testing.T) {
 	assert.Equal(t, "/v1/messages", in.InboundEndpoint)
 }
 
+// TestConsultPost_AnthropicUsageFields: Anthropic-format upstreams (client
+// /v1/messages) report usage as input_tokens/output_tokens, not
+// prompt_tokens/completion_tokens. The executor forwards raw upstream usage, so
+// the handler must bill those fallback fields — otherwise Claude Code usage
+// records as 0. Regression test for that gap (found in real end-to-end testing).
+func TestConsultPost_AnthropicUsageFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	user := &service.User{ID: 42, Status: "active", Balance: 100}
+	key := &service.APIKey{ID: 7, UserID: 42, Status: "active", User: user}
+	apiKeys := &fakePostAPIKeys{byID: map[int64]*service.APIKey{7: key}}
+	acc := &service.Account{ID: 99}
+	accounts := &fakeConsultAccounts{acc: acc}
+	gw := &fakeConsultUsage{}
+
+	cfg := &config.Config{}
+	cfg.Consult.PlaceholderAccountID = 99
+
+	h := &ConsultHandler{apiKeys: apiKeys, accounts: accounts, gateway: gw, cfg: cfg}
+
+	body := map[string]any{
+		"endpoint":     "/v1/messages",
+		"requestModel": "claude-sonnet-4-6",
+		"virtualKeyId": int64(7),
+		"usage": map[string]any{
+			// Anthropic field names only — no prompt_tokens/completion_tokens.
+			"input_tokens":  24,
+			"output_tokens": 60,
+		},
+	}
+
+	w := postPost(t, h, body)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	require.Equal(t, 1, gw.called, "RecordUsage should be called once")
+	in := gw.last
+	require.NotNil(t, in)
+	assert.Equal(t, 24, in.Result.Usage.InputTokens, "InputTokens should fall back to input_tokens")
+	assert.Equal(t, 60, in.Result.Usage.OutputTokens, "OutputTokens should fall back to output_tokens")
+}
+
 // TestConsultPost_NilPlaceholderAccount: GetByID on accounts returns (nil, nil) →
 // 200 ok=true AND RecordUsage NOT called (no panic).
 func TestConsultPost_NilPlaceholderAccount(t *testing.T) {
