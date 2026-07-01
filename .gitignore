@@ -139,3 +139,7 @@ output/
 
 # 迁移参考目录（仅对照原始 consult 实现，不进库）
 /.migration-reference/
+deploy/meridian/gost
+deploy/meridian/secrets/
+deploy/meridian/seats.json
+deploy/meridian/*.generated.*

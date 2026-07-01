@@ -1,0 +1,48 @@
+# Meridian enclave — one service per Claude subscription "seat".
+#
+# Each seat = one Claude subscription account + one Meridian instance +
+# (optional) one ProxyLite static egress IP + one gateway upstream.
+# To add more seats, copy the meridian-seat1 service, give it its own name,
+# its own OAuth secrets dir, and (optionally) its own PROXYLITE_URL.
+#
+# The gateway (enclave A) reaches these over the private network and registers
+# each as an `openai-compatible` upstream (path=/v1/messages) in upstreams.json.
+
+services:
+  meridian-seat1:
+    build: .
+    # image: meridian-enclave:dev
+    restart: unless-stopped
+    environment:
+      MERIDIAN_HOST: "0.0.0.0"
+      MERIDIAN_PORT: "3456"
+      MERIDIAN_IDLE_TIMEOUT_SECONDS: "300"
+      NO_PROXY: "127.0.0.1,localhost"
+      # --- Optional anti-ban: route THIS seat's Anthropic traffic through a
+      #     fixed ProxyLite static IP. ProxyLite is SOCKS5; entrypoint.sh runs a
+      #     local gost SOCKS5->HTTP shim and points Meridian at it.
+      #     Unset = direct egress (enclave's own IP). Verified end-to-end (Spike 0.3).
+      # PROXYLITE_SOCKS5: "socks5://<user>:<pass>@<host>:<port>"
+    volumes:
+      # Claude subscription OAuth login state (produced by `claude login`).
+      # In dstack, inject via encrypted secrets; here bind-mount read-only.
+      - ./secrets/seat1/.credentials.json:/root/.claude/.credentials.json:ro
+      - ./secrets/seat1/.claude.json:/root/.claude.json:ro
+    expose:
+      - "3456"
+    # networks: [gateway-internal]  # keep reachable only from the gateway
+
+# Example second seat (uncomment + provide its own account + IP):
+#  meridian-seat2:
+#    build: .
+#    restart: unless-stopped
+#    environment:
+#      MERIDIAN_HOST: "0.0.0.0"
+#      MERIDIAN_PORT: "3456"
+#      NO_PROXY: "127.0.0.1,localhost"
+#      # PROXYLITE_SOCKS5: "socks5://<user>:<pass>@<host>:<port>"
+#    volumes:
+#      - ./secrets/seat2/.credentials.json:/root/.claude/.credentials.json:ro
+#      - ./secrets/seat2/.claude.json:/root/.claude.json:ro
+#    expose:
+#      - "3456"

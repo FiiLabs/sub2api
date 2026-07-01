@@ -190,4 +190,102 @@ curl -sS "$BASE/v1/attestation/report?nonce=N" > report.json
 - [ ] `GET /v1/attestation/report` 的 `source_provenance` == 审计 commit
 - [ ] 端到端推理 + 回执离线验证通过;计费按 team billing_subject 扣减
 - [ ] 向用户标注:机密 provider = 端到端机密;普通上游 = 仅防中转方
+
+---
+
+## 10. 附:部署 Meridian enclave(Claude 订阅路由,enclave B)
+
+在上面的网关(enclave A)+ sub2api 之外,再加一条**用 Claude 订阅额度**的路由:
+每个订阅账号跑一个独立的 **Meridian** 实例(enclave B),把订阅桥成 Anthropic 兼容端点
+(`/v1/messages`);网关把它当**非机密 `openai-compatible` 上游**注册,**零源码改动**。
+部署单元/镜像/脚本都在 `deploy/meridian/`(见其 `README.md`);架构见 `docs/apexone-architecture.md`。
+
+### 10.1 拓扑与 seat 模型
 ```
+[TEE CVM · enclave A] 网关 + executor ──(内网)──► [TEE CVM · enclave B] meridian-seat1 ──► Anthropic(订阅额度)
+                                          └────────► [TEE CVM · enclave B'] meridian-seat2 ──► Anthropic
+        │ consult(仅元数据, HTTPS+token)
+        ▼
+[非 TEE] sub2api(route_map: seats 轮换+failover)+ PG + Redis
+```
+- **一个 seat = 一个订阅账号 = 一个 Meridian 实例 = 网关一条 `meridian-seatN` 上游**。
+- `HTTPS_PROXY` 是**进程级**的,所以「每 seat 固定出口 IP」必须**一 seat 一实例**(不能一个实例多账号)。
+- Meridian 只承载 Claude 路由;非 Claude 模型仍走各自(机密/普通)上游,互不影响。
+
+### 10.2 镜像
+用 `deploy/meridian/Dockerfile`(`node:22-slim` + `@rynfar/meridian`,内置 gost 作 SOCKS5→HTTP shim)。
+构建前先把 gost 拉进构建上下文:`cd deploy/meridian && ./fetch-gost.sh`(gost 二进制 gitignore,不入库)。
+把镜像 digest 钉进该 CVM 的 attested `compose_hash`。
+
+### 10.3 OAuth 订阅凭证(经 dstack 加密 secrets 注入)
+Meridian 用 Claude Code 订阅登录态,需在 enclave 内提供:
+- `/root/.claude/.credentials.json`(`claudeAiOauth`:access + refresh token)
+- `/root/.claude.json`(`oauthAccount`)
+
+**生产不要 bind-mount 明文**:经 **dstack 加密 secrets / KMS** 注入,仅在 enclave 内解密。
+token 约 8h 自动刷新——挂载点需**可写**(去掉 `:ro`、用可写卷)才能让刷新跨重启持久化。
+
+### 10.4 ProxyLite 固定出口 IP(可选防封,每 seat 独立)
+给某个 seat 设 `PROXYLITE_SOCKS5="socks5://<user>:<pass>@<host>:<port>"`,`entrypoint.sh` 会起
+`gost -L http://127.0.0.1:8118 -F <PROXYLITE_SOCKS5>` 并让 Meridian 走它。**不设 = 直连**(enclave 自身 IP)。
+用**住宅/长效静态 IP**,一 seat 一 IP,跨续期保持不变(切忌高频轮换)。记录 seat↔IP 映射。
+> 已验证(见 `deploy/meridian/README.md` 的 Phase 0 spike):Meridian/Claude Code SDK 遵循 `HTTPS_PROXY`;
+> 经住宅静态 IP 出网未复现数据中心 IP 的 `403 Request not allowed`。
+
+### 10.5 网关注册上游
+每个 seat 一条上游(参考 `deploy/meridian/gateway-upstreams.example.json`):
+```json
+{
+  "name": "meridian-seat1",
+  "provider": "openai-compatible",
+  "base_url": "https://<meridian-seat1 内网端点>",
+  "path": "/v1/messages",
+  "models": { "claude-sonnet-4-6": "claude-sonnet-4-6", "claude-opus-4-6": "claude-opus-4-6" },
+  "bearer_token": "<该 seat 的 MERIDIAN_API_KEY,经 dstack secret>"
+}
+```
+经 `upstreams.json`(dstack secrets 注入)或起后 `PUT /v1/admin/upstreams` 热加载。
+`base_url` 只到域名/端点、不带 `/v1`;`path: /v1/messages` 指明走 Anthropic Messages 端点。
+
+### 10.6 sub2api route_map(单/多 seat)
+```yaml
+consult:
+  route_map:
+    # 单 seat
+    claude-opus-4-6:
+      route_id: "meridian-seat1:claude-opus-4-6"
+      format: "anthropic"
+    # 多 seat:控制面轮换选主 + 其余作有序 failover(依赖 executor 的多候选转发)
+    claude-sonnet-4-6:
+      seats: ["meridian-seat1", "meridian-seat2"]
+      format: "anthropic"
+```
+**⚠️ 只用精确名或 `claude-*` 前缀,禁止 `*` catch-all**,否则会把非 Claude/未知模型吞进 Claude 路由。
+完整示例见 `deploy/config.example.yaml`。
+
+### 10.7 多 seat 生成器
+`deploy/meridian/gen-seats.sh` 从一份 `seats.json`(见 `seats.example.json`:含 `models` + 每 seat 的
+`creds_dir`/`proxy`)一键生成:
+- `compose.generated.yaml`(一 seat 一容器)、`upstreams.generated.json`(网关上游)、`route_map.generated.yaml`(sub2api)。
+
+加 seat = 改 `seats.json` 重跑,再:`docker compose -f compose.generated.yaml up -d` → 上游经
+`PUT /v1/admin/upstreams` 热加载 → route_map 合并进 config(viper watch 热加载),**全程零重启**。
+
+### 10.8 安全边界(务必向用户讲清)
+Meridian 路由是**非机密路由**(等同第 8 节表中的 `openai-compatible` 行):
+
+| 路由 | sub2api/运营方可见? | 上游模型方可见? | fail-closed | receipt attestation |
+|---|---|---|---|---|
+| Claude(订阅,经 Meridian) | 否(数据只过 enclave) | **是(Anthropic 见明文)** | 否 | 无 |
+
+即:你的中转方拿不到 prompt/订阅凭证,但 **Anthropic 能看到明文**;要连模型方也挡住需换机密 provider。
+订阅凭证的机密性靠「Meridian 在 TEE enclave 内 + 凭证经 dstack secrets 注入」保证。
+
+### 10.9 Meridian 上线检查清单
+- [ ] 每个订阅账号一个独立 Meridian 实例(enclave B);镜像 digest 进 attested `compose_hash`
+- [ ] `.credentials.json`/`.claude.json` 经 **dstack 加密 secrets** 注入 `/root/.claude`,挂载可写以持久化刷新
+- [ ] (可选)每 seat 的 `PROXYLITE_SOCKS5` 指向各自**住宅静态 IP**,seat↔IP 映射已记录
+- [ ] 每 seat 一条 `meridian-seatN` 上游(`openai-compatible` + `path:/v1/messages`)已注册,`base_url` 不带 `/v1`
+- [ ] route_map 用精确名或 `claude-*`(**无 `*` catch-all**);多 seat 用 `seats: [...]`
+- [ ] 端到端:`claude -p` 多步任务跑通;回执 `route.selected` 为 `meridian-seatN:...` 且**无 attestation**;计费落库
+- [ ] 已向用户标注:此路由 **Anthropic 见明文**、非端到端机密
