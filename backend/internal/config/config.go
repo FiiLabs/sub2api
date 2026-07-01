@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/viper"
 )
 
@@ -180,6 +181,31 @@ type ConsultConfig struct {
 	ControlToken         string                  `mapstructure:"control_token"`
 	PlaceholderAccountID int64                   `mapstructure:"placeholder_account_id"`
 	RouteMap             map[string]ConsultRoute `mapstructure:"route_map"`
+	// live holds the hot-reloadable route map. It is initialized during load()
+	// and atomically swapped by the config watcher. It is nil in plain struct
+	// literals (e.g. unit tests), where Routes() falls back to RouteMap.
+	// Unexported so mapstructure ignores it.
+	live *atomic.Pointer[map[string]ConsultRoute]
+}
+
+// Routes returns the currently active route map: the latest atomically-published
+// map when the hot-reload holder is initialized, otherwise the statically
+// unmarshaled RouteMap.
+func (c *ConsultConfig) Routes() map[string]ConsultRoute {
+	if c.live != nil {
+		if p := c.live.Load(); p != nil {
+			return *p
+		}
+	}
+	return c.RouteMap
+}
+
+// SetRoutes atomically publishes a new route map for subsequent Routes() reads.
+func (c *ConsultConfig) SetRoutes(m map[string]ConsultRoute) {
+	if c.live == nil {
+		c.live = &atomic.Pointer[map[string]ConsultRoute]{}
+	}
+	c.live.Store(&m)
 }
 
 type ConsultRoute struct {
@@ -1400,11 +1426,13 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	// 默认值
 	setDefaults()
 
+	configFileUsed := true
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			return nil, fmt.Errorf("read config error: %w", err)
 		}
 		// 配置文件不存在时使用默认值
+		configFileUsed = false
 	}
 
 	var cfg Config
@@ -1541,7 +1569,31 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 		)
 	}
 
+	// Publish the initial consult route map and, when backed by a real config
+	// file, start watching it so route_map changes (e.g. adding a Meridian seat)
+	// take effect without restarting sub2api.
+	cfg.Consult.SetRoutes(cfg.Consult.RouteMap)
+	if configFileUsed {
+		setupConsultRouteMapWatch(&cfg)
+	}
+
 	return &cfg, nil
+}
+
+// setupConsultRouteMapWatch installs a viper file watcher that re-parses the
+// config on change and atomically republishes consult.route_map. Only the route
+// map is hot-reloaded; other settings still require a restart.
+func setupConsultRouteMapWatch(cfg *Config) {
+	viper.OnConfigChange(func(_ fsnotify.Event) {
+		var fresh Config
+		if err := viper.Unmarshal(&fresh); err != nil {
+			slog.Warn("consult route_map hot-reload: unmarshal failed, keeping previous", "error", err)
+			return
+		}
+		cfg.Consult.SetRoutes(fresh.Consult.RouteMap)
+		slog.Info("consult route_map hot-reloaded", "models", len(fresh.Consult.RouteMap))
+	})
+	viper.WatchConfig()
 }
 
 func setDefaults() {

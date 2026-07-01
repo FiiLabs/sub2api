@@ -156,8 +156,9 @@ func consultModelOwnedBy(routeID string) string {
 // Pattern keys (entries containing "*") are excluded — they are routing rules,
 // not real model identifiers.
 func (h *ConsultHandler) Models(c *gin.Context) {
-	data := make([]gin.H, 0, len(h.cfg.Consult.RouteMap))
-	for id, route := range h.cfg.Consult.RouteMap {
+	routes := h.cfg.Consult.Routes()
+	data := make([]gin.H, 0, len(routes))
+	for id, route := range routes {
 		if strings.Contains(id, "*") {
 			continue
 		}
@@ -228,7 +229,7 @@ func (h *ConsultHandler) Pre(c *gin.Context) {
 	}
 
 	// 5. Route map lookup (exact → longest-prefix wildcard → catch-all "*").
-	route, ok := resolveConsultRoute(h.cfg.Consult.RouteMap, req.Model)
+	route, ok := resolveConsultRoute(h.cfg.Consult.Routes(), req.Model)
 	if !ok {
 		deny(c, http.StatusNotFound, "Unknown model: "+req.Model)
 		return

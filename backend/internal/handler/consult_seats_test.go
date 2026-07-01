@@ -116,3 +116,29 @@ func TestConsultPre_MultiSeatPropagatesEngine(t *testing.T) {
 		assert.Equal(t, "sglang", c["engine"])
 	}
 }
+
+// TestConsultPre_HotReloadRouteMapTakesEffect verifies that atomically
+// republishing the consult route map (what the config watcher does when a seat
+// is added) is picked up by /consult/pre without rebuilding the handler.
+func TestConsultPre_HotReloadRouteMapTakesEffect(t *testing.T) {
+	cfg := makeConsultConfig(map[string]config.ConsultRoute{
+		"claude-sonnet-4-6": {RouteID: "meridian-seat1:claude-sonnet-4-6", Format: "anthropic"},
+	})
+	validKey := &service.APIKey{ID: 1, UserID: 1, Status: "active",
+		User: &service.User{ID: 1, Status: "active", Balance: 100}}
+	h := newTestConsultHandler(
+		&fakeAPIKeys{byHash: map[string]*service.APIKey{"h": validKey}},
+		nil, &fakePricing{}, cfg,
+	)
+
+	first := preCandidates(t, h, "h", "claude-sonnet-4-6")
+	require.Len(t, first, 1)
+	assert.Equal(t, "meridian-seat1:claude-sonnet-4-6", first[0]["routeId"])
+
+	// Hot-swap the route map (simulates the watcher after adding seat2).
+	cfg.Consult.SetRoutes(map[string]config.ConsultRoute{
+		"claude-sonnet-4-6": {Seats: []string{"meridian-seat1", "meridian-seat2"}, Format: "anthropic"},
+	})
+	after := preCandidates(t, h, "h", "claude-sonnet-4-6")
+	require.Len(t, after, 2, "hot-reloaded seats should be reflected without handler rebuild")
+}
