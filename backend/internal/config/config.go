@@ -183,9 +183,10 @@ type ConsultConfig struct {
 }
 
 type ConsultRoute struct {
-	RouteID string `mapstructure:"route_id"` // <upstream名>:<public model id>，对齐网关 upstreams.json
-	Format  string `mapstructure:"format"`   // openai | anthropic
-	Engine  string `mapstructure:"engine"`   // 可选 sglang/vllm
+	RouteID string   `mapstructure:"route_id"` // 单 seat：完整 "<upstream>:<model>"
+	Seats   []string `mapstructure:"seats"`    // 多 seat：上游名列表，routeId 构造为 "<seat>:<model>"
+	Format  string   `mapstructure:"format"`   // openai | anthropic
+	Engine  string   `mapstructure:"engine"`   // 可选 sglang/vllm
 }
 
 type LinuxDoConnectConfig struct {
