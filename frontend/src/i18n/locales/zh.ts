@@ -10,6 +10,13 @@ export default {
     login: '登录',
     getStarted: '立即开始',
     goToDashboard: '进入控制台',
+    nav: {
+      architecture: '架构',
+      features: '特性',
+      price: '价格',
+      trust: '可信',
+      document: '文档'
+    },
     // 新增：面向用户的价值主张
     heroSubtitle: '一个密钥，畅用多个 AI 模型',
     heroDescription: '无需管理多个订阅账号，一站式接入 Claude、GPT、Gemini 等主流 AI 服务',
@@ -105,7 +112,122 @@ export default {
       description: '注册即可获得免费试用额度，体验一站式 AI 服务',
       button: '免费注册'
     },
+    landing: {
+      hero: {
+        badge: '真实模型可验证 · TEE 远程认证隐私',
+        title: '不是最便宜的。唯一可验证的 AI 网关。',
+        subtitle:
+          '通过一个运行在已认证 TEE 内的统一 API，访问真实的 Claude、GPT 和 Gemini——全精度、不量化、不静默替换。用密码学证明你付费购买的模型就是实际响应的模型，也证明没有人（包括我们）能读取你的提示词，同时价格略低于官方直连。',
+        viewDocs: '查看文档',
+        stats: {
+          uptime: '可用性 SLA',
+          attested: 'TEE 认证路由',
+          requests: 'API 请求',
+          realModel: '真实模型保证，可验证'
+        }
+      },
+      routing: {
+        eyebrow: '// 机密路由架构',
+        caption:
+          '提示词全程端到端加密——明文只存在于已认证 TEE 内部，因此 ApexOne 运营方无法读取。每个响应也都由你请求的、经过认证的全精度模型提供：可验证，而不是凭信任。',
+        privacy: {
+          title: '隐私认证',
+          desc: '明文只存在于已认证的 TEE 内部。'
+        },
+        model: {
+          title: '模型认证',
+          desc: '实际服务模型的身份和权重端到端认证；不降级、不克隆。'
+        }
+      },
+      personal: {
+        eyebrow: '// ApexOne',
+        title: '真实模型，诚实价格，面向每位开发者。',
+        subtitle:
+          '一折价转售商之所以能卖得极低，常见代价是量化模型、静默路由到更小模型，或记录你的提示词。ApexOne 反其道而行：真实的全精度模型，通过 TEE 私密路由，端到端可验证，并且价格只略低于官方直连，而不是便宜到可疑。',
+        cost: {
+          title: '“官方价几分之一”到底让你付出了什么？',
+          desc: '对比极低价、官方直连和可验证路由分别真正提供了什么。',
+          cutRate: {
+            label: '一折价转售商',
+            desc: '是否量化？是否降级？提示词是否被记录？无法验证。'
+          },
+          direct: {
+            label: '官方直连',
+            desc: '真实模型，但没有 TEE 隐私、故障切换或治理能力。'
+          },
+          apexone: {
+            label: 'ApexOne',
+            desc: '真实全精度模型，已认证；提示词封存在 TEE 内；自动故障切换；完整审计——并且仍低于官方直连。'
+          },
+          note: '每百万 Token · 示例价格按 list × ~0.95'
+        },
+        uptime: {
+          title: '99.99% 可用性，自动故障切换',
+          desc: '我们监控模型可用性，并在服务商故障时重新路由流量，同时不牺牲模型真实性。',
+          window: '近 90 天可用性'
+        },
+        aggregation: {
+          title: '真实模型可验证',
+          desc: '每个请求都由你指定的模型提供服务——认证身份、全精度，永不静默降级。'
+        },
+        privacy: {
+          title: 'TEE 封存提示词',
+          desc: '你的提示词和响应只会在 Intel TDX TEE 内解密。技术上我们无法读取，并且你可以通过远程认证验证这一点。',
+          points: {
+            tdx: '仅在 Intel TDX 内解密',
+            noRead: 'ApexOne 运营方无法读取提示词',
+            attestation: '远程认证验证隐私边界'
+          }
+        }
+      },
+      pricing: {
+        eyebrow: '// 价格',
+        title: '诚实价格，完全可证明。',
+        subtitle:
+          '我们不是最便宜的——任何“官方价几分之一”的价格，通常意味着有人在模型或你的数据上偷工减料。ApexOne 价格略低于官方直连，并且是唯一能让你验证“真实”和“私密”的网关。',
+        personal: {
+          name: 'ApexOne',
+          tagline: '按量付费',
+          priceLine: '诚实的百万 Token 计价，略低于官方直连——对应真实且已认证的模型。',
+          desc: '面向需要真实模型、可验证隐私、透明计费和生产级路由的开发者，不依赖可疑折扣逻辑。',
+          cta: '立即开始 →',
+          features: {
+            f1: '真实全精度模型——已认证，永不降级',
+            f2: '按百万 Token 透明计费——低于官方直连',
+            f3: 'TEE 封存提示词 + 远程认证',
+            f4: '自动故障切换 & 99.99% 可用性',
+            f5: '兼容 OpenAI 的 API'
+          }
+        }
+      },
+      trust: {
+        eyebrow: '// 大规模可信赖',
+        title: '为生产环境而生。',
+        stats: {
+          requests: 'API 请求',
+          availability: '可用性',
+          infrastructure: '基础设施'
+        },
+        pills: {
+          encrypted: '🔒 传输加密',
+          noTraining: '🚫 不用你的数据训练',
+          audit: '📋 审计日志',
+          tee: '🛡 TEE 可验证',
+          verifiedReal: '✅ 真实模型可验证',
+          compatible: '⚡ 兼容 OpenAI'
+        }
+      },
+      cta: {
+        titleFirst: '基于可证明的 AI 构建。',
+        titleSecond: '真实模型。私密路由。两者都可验证。',
+        description: '专注你的产品。我们提供真实模型——价格低于官方直连——并提供它是私密的证明。',
+        primary: '立即开始 →',
+        secondary: '查看文档 →'
+      }
+    },
     footer: {
+      contactUs: '联系我们',
+      stayConnected: '保持联系',
       allRightsReserved: '保留所有权利。'
     }
   },

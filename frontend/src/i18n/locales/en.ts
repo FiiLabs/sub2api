@@ -10,6 +10,13 @@ export default {
     login: 'Login',
     getStarted: 'Get Started',
     goToDashboard: 'Go to Dashboard',
+    nav: {
+      architecture: 'Architecture',
+      features: 'Features',
+      price: 'Price',
+      trust: 'Trust',
+      document: 'Document'
+    },
     // User-focused value proposition
     heroSubtitle: 'One Key, All AI Models',
     heroDescription: 'No need to manage multiple subscriptions. Access Claude, GPT, Gemini and more with a single API key',
@@ -105,7 +112,122 @@ export default {
       description: 'Sign up now and get free trial credits to experience seamless AI access',
       button: 'Sign Up Free'
     },
+    landing: {
+      hero: {
+        badge: 'Verified-real models · TEE-attested privacy',
+        title: 'Not the cheapest. The only AI gateway you can verify.',
+        subtitle:
+          'Access the real Claude, GPT, and Gemini — full-precision, never quantized, never silently swapped — through a single API that runs inside an attested TEE. Cryptographically prove the model you paid for is the model you got, and that no one (not even us) can read your prompts — and pay a little less than going direct.',
+        viewDocs: 'View docs',
+        stats: {
+          uptime: 'Uptime SLA',
+          attested: 'TEE-attested routing',
+          requests: 'API requests',
+          realModel: 'Real-model guarantee, verified'
+        }
+      },
+      routing: {
+        eyebrow: '// Confidential routing architecture',
+        caption:
+          'Prompts stay encrypted end-to-end — plaintext exists only inside the attested TEE, so ApexOne operators cannot read it. And every response is served by the attested, full-precision model you requested — verifiably, not on trust.',
+        privacy: {
+          title: 'Privacy attestation',
+          desc: 'Plaintext exists only inside the attested TEE.'
+        },
+        model: {
+          title: 'Model attestation',
+          desc: "The served model's identity and weights are attested end-to-end; no downgrade, no clone."
+        }
+      },
+      personal: {
+        eyebrow: '// ApexOne',
+        title: 'The real model — at an honest price — for every developer.',
+        subtitle:
+          'Cut-rate resellers sell access for a fraction of list — by quantizing models, silently routing to something smaller, or selling your prompts. ApexOne does the opposite: the genuine, full-precision model, privately routed through a TEE, verifiable end-to-end — and priced just below going direct, not suspiciously cheap.',
+        cost: {
+          title: 'What does "a fraction of list price" actually cost you?',
+          desc: 'A side-by-side look at what cheap, direct, and verifiable routing really mean.',
+          cutRate: {
+            label: 'Cut-rate reseller',
+            desc: 'Quantized? Downgraded? Prompts logged? Unverifiable.'
+          },
+          direct: {
+            label: 'Provider direct',
+            desc: 'Real model, but no TEE privacy, no failover, no governance.'
+          },
+          apexone: {
+            label: 'ApexOne',
+            desc: 'The real model, full precision, attested; prompts sealed in a TEE; auto-failover; full audit — and still below going direct.'
+          },
+          note: 'Per 1M tokens · illustrative list × ~0.95 pricing'
+        },
+        uptime: {
+          title: '99.99% uptime, automatic failover',
+          desc: 'We monitor model availability and reroute traffic when a provider goes down, without trading away model authenticity.',
+          window: '90-day availability'
+        },
+        aggregation: {
+          title: 'Verified-real models',
+          desc: 'Every request is served by the model you asked for — attested identity, full precision. No silent downgrades, ever.'
+        },
+        privacy: {
+          title: 'TEE-sealed prompts',
+          desc: 'Your prompts and responses are decrypted only inside an Intel TDX TEE. We technically cannot read them — and you can verify it by remote attestation.',
+          points: {
+            tdx: 'Decrypted only inside Intel TDX',
+            noRead: 'ApexOne operators cannot read prompts',
+            attestation: 'Remote attestation verifies the privacy boundary'
+          }
+        }
+      },
+      pricing: {
+        eyebrow: '// Pricing',
+        title: 'An honest price. Fully provable.',
+        subtitle:
+          "We're not the cheapest — anything a fraction of list means someone's cutting corners on the model or your data. ApexOne is priced just below going direct, and we're the only gateway where real and private are things you can verify.",
+        personal: {
+          name: 'ApexOne',
+          tagline: 'Pay as you go',
+          priceLine: 'Honest per-million-token pricing, just below direct — for the real, attested model.',
+          desc: 'For developers who want the genuine model, verifiable privacy, transparent billing, and production routing without suspicious discount math.',
+          cta: 'Get Started →',
+          features: {
+            f1: 'The genuine, full-precision model — attested, never downgraded',
+            f2: 'Per-million-token billing, transparent — below going-direct',
+            f3: 'TEE-sealed prompts + remote attestation',
+            f4: 'Auto failover & 99.99% uptime',
+            f5: 'OpenAI-compatible API'
+          }
+        }
+      },
+      trust: {
+        eyebrow: '// Trusted at scale',
+        title: 'Built for production.',
+        stats: {
+          requests: 'API requests',
+          availability: 'Availability',
+          infrastructure: 'Infrastructure'
+        },
+        pills: {
+          encrypted: '🔒 Encrypted in transit',
+          noTraining: '🚫 No training on your data',
+          audit: '📋 Audit logs',
+          tee: '🛡 TEE-verified',
+          verifiedReal: '✅ Verified-real models',
+          compatible: '⚡ OpenAI-compatible'
+        }
+      },
+      cta: {
+        titleFirst: 'Build on AI you can prove.',
+        titleSecond: 'Real models. Private routing. Both verifiable.',
+        description: "Focus on your product. We'll give you the genuine model — for less than direct — and the proof that it's private.",
+        primary: 'Get Started →',
+        secondary: 'View docs →'
+      }
+    },
     footer: {
+      contactUs: 'Contact Us',
+      stayConnected: 'Stay Connected',
       allRightsReserved: 'All rights reserved.'
     }
   },
