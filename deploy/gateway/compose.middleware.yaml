@@ -1,0 +1,122 @@
+# dstack compose for Private AI Gateway with its IN-PROCESS middleware.
+#
+# Pinned gateway commit 975ac50f runs the control-plane middleware INSIDE the
+# gateway (Rust): with a `middleware` section in the static config, the gateway
+# consults sub2api at middleware.control_url directly. There is NO separate
+# executor process and NO UDS — that was the older out-of-process design.
+#
+# A single audited COMMIT_SHA (gateway-pin below) covers all gateway+middleware
+# source; the launcher fetches+verifies it and cargo-builds inside the TEE.
+#
+# Deploy (Phala Cloud) — run from this directory in the sub2api repo. Secrets go
+# through dstack sealed env (phala -e / phala envs), NOT plaintext in the repo:
+#
+#   cd deploy/gateway
+#   phala deploy -n private-ai-gateway -c compose.middleware.yaml -e <sealed.env>
+#
+# where <sealed.env> sets PRIVATE_AI_GATEWAY_ADMIN_TOKEN,
+# PRIVATE_AI_GATEWAY_CONTROL_TOKEN (= sub2api consult.control_token),
+# SUB2API_CONTROL_URL, and the MERIDIAN_SEAT1_* values. Everything inlined here
+# (launcher pin incl. COMMIT_SHA, gateway config, upstream seed) is measured
+# into compose_hash; the sealed env values are NOT.
+
+services:
+  # ---- Gateway (ACI frontend + in-process middleware), git-launcher ----
+  private-ai-gateway:
+    # Rust-capable launcher = dstacktee/git-launcher@4437dce + build-essential
+    # (built from deploy/gateway/launcher/, pushed to docker.io/markerdao). The
+    # stock launcher lacks a C compiler, so the gateway's cargo build failed with
+    # "linker cc not found"; this image adds it. Gateway SOURCE stays pinned via
+    # gateway-pin COMMIT_SHA below. See deploy/gateway/launcher/Dockerfile.
+    image: docker.io/markerdao/git-launcher-rust@sha256:3fe4ad9b246e131f0445b67bc193648c1247686e4d8b0401d0d73c4ce1cf4c58
+    command: ["/etc/git-launcher/gateway.conf"]
+    ports:
+      - "8086:8086"
+    configs:
+      - source: gateway-pin
+        target: /etc/git-launcher/gateway.conf
+      - source: gateway-config
+        target: /etc/private-ai-gateway/gateway.config.json
+      - source: gateway-upstreams
+        target: /etc/private-ai-gateway/upstreams.seed.json
+    environment:
+      PRIVATE_AI_GATEWAY_CONFIG_PATH: /etc/private-ai-gateway/gateway.config.json
+      PRIVATE_AI_GATEWAY_CACHE_DIR: /var/lib/private-ai-gateway/cache
+    volumes:
+      - gateway-checkout:/var/lib/git-launcher            # launcher-owned source checkout (scrubbed each boot)
+      - gateway-state:/var/lib/private-ai-gateway         # gateway mutable state + rust build cache
+      - /var/run/dstack.sock:/var/run/dstack.sock
+    restart: unless-stopped
+
+  # ---- Meridian seat1 (Claude subscription bridge) — CO-LOCATED for dev-CVM smoke ----
+  # Same CVM / same compose_hash as the gateway. The gateway reaches it over the
+  # compose network at http://meridian-seat1:3456, so the plaintext prompt/response
+  # hop NEVER leaves the CVM. Non-confidential upstream (openai-compatible, the
+  # subscription's traffic is visible to Anthropic — see production-deployment.md §8/§10).
+  #
+  # For PRODUCTION isolation, split this into a separate enclave-B CVM instead
+  # (docs/production-deployment.md §10): the gateway keeps a stable attested
+  # identity and new seats hot-load via PUT /v1/admin/upstreams — but that hop
+  # then crosses the network and needs TLS + a real bearer_token.
+  meridian-seat1:
+    # Built from deploy/meridian/ and pushed to docker.io/markerdao. Pin by DIGEST
+    # so it is measured into compose_hash. Replace the digest after `docker push`.
+    image: docker.io/markerdao/meridian-enclave@sha256:f17367529b9a5b38b033cf4ad77f4dcefcd476bba5dca4db5e42e6aeb209b9fa
+    environment:
+      MERIDIAN_HOST: "0.0.0.0"
+      MERIDIAN_PORT: "3456"
+      NO_PROXY: "127.0.0.1,localhost"
+      # Anti-ban static egress (residential SOCKS5). Recommended: a bare CVM
+      # egresses from a datacenter IP, which risked a 403 during spikes. Deliver
+      # via dstack secret (holds proxy creds). Leave unset for direct egress.
+      PROXYLITE_SOCKS5: ${MERIDIAN_SEAT1_PROXY:-}
+      # OAuth subscription state (file CONTENTS), delivered via dstack ENCRYPTED
+      # SECRETS — never inline here (configs.content is measured into compose_hash).
+      # entrypoint.sh materializes these to a WRITABLE path so the ~8h token
+      # refresh persists for the container's lifetime.
+      CLAUDE_CREDENTIALS_JSON: ${MERIDIAN_SEAT1_CREDENTIALS:?set MERIDIAN_SEAT1_CREDENTIALS (contents of secrets/seat1/.credentials.json) via dstack secret}
+      CLAUDE_JSON: ${MERIDIAN_SEAT1_CLAUDE_JSON:?set MERIDIAN_SEAT1_CLAUDE_JSON (contents of secrets/seat1/.claude.json) via dstack secret}
+    restart: unless-stopped
+
+configs:
+  gateway-pin:
+    content: |
+      REPO_URL=https://github.com/Dstack-TEE/private-ai-gateway.git
+      COMMIT_SHA=975ac50f3074ffdaf18a5e377934a8db99ba64ba
+      WORK_DIR=/var/lib/git-launcher/private-ai-gateway
+
+  # Gateway static config. The `middleware` section turns on in-process control-
+  # plane consultation: the gateway calls sub2api at middleware.control_url with
+  # middleware.control_token (metadata only — key hash, model, token counts).
+  gateway-config:
+    content: |
+      {
+        "bind": "0.0.0.0:8086",
+        "state_dir": "/var/lib/private-ai-gateway",
+        "upstream_config_seed_path": "/etc/private-ai-gateway/upstreams.seed.json",
+        "admin_token": "${PRIVATE_AI_GATEWAY_ADMIN_TOKEN:?set PRIVATE_AI_GATEWAY_ADMIN_TOKEN}",
+        "dstack_endpoint": "unix:/var/run/dstack.sock",
+        "middleware": {
+          "control_url": "${SUB2API_CONTROL_URL:?set SUB2API_CONTROL_URL to https://<sub2api-domain>/api/control}",
+          "control_token": "${PRIVATE_AI_GATEWAY_CONTROL_TOKEN:?set PRIVATE_AI_GATEWAY_CONTROL_TOKEN (must equal sub2api consult.control_token)}"
+        }
+      }
+
+  # Initial upstream routing (measured). Meridian seat1 co-located on the compose
+  # network. Model names MUST match sub2api consult.route_map exactly.
+  gateway-upstreams:
+    content: |
+      [
+        {
+          "name": "meridian-seat1",
+          "provider": "openai-compatible",
+          "base_url": "http://meridian-seat1:3456",
+          "path": "/v1/messages",
+          "models": { "claude-opus-4-8": "claude-opus-4-8", "claude-sonnet-5": "claude-sonnet-5" },
+          "bearer_token": "x"
+        }
+      ]
+
+volumes:
+  gateway-checkout:
+  gateway-state:
