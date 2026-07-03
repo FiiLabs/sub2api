@@ -174,6 +174,20 @@ curl -sS "$BASE/v1/attestation/report?nonce=N" > report.json
 - **计费对账**:`/consult/post` 是 fire-and-forget(尽力而为),控制面抖动可能丢计费——建议异步对账兜底。
 - **升级**:网关升级 = 改 `COMMIT_SHA` 重新 `phala deploy`(身份会变,需重新公告/验证)。
 
+### 7.1 生产 OS 切换(dev-os → prod-os,关键且反直觉)
+Phala 部署默认可能用 **dev OS**(`dstack-dev-*`,`is_dev=true`,**开着 SSH**)——那样 attestation 只能证明"在 TDX 硬件上跑",**证明不了机密性**(有 SSH 就有人能进去看明文),懂行的验证方会拒绝。对外宣称"数据在 TEE 受保护"前**必须换生产 OS**(`dstack-*`,非 dev)。
+
+**⚠️ OS 不能原地切**:`phala deploy --cvm-id <现有> --no-dev-os`(或 `--image dstack-0.5.9`)**无效**——OS 在建 CVM 时就固定、测进启动度量。**必须用生产 OS 新建 CVM**:
+```bash
+# 不带 --cvm-id = 新建;--no-dev-os 选生产 OS(建时用非-dev 镜像如 dstack-0.5.9)
+phala deploy -n <name>-prod -c <compose> -e <sealed.env> --no-dev-os
+# 验证: phala cvms get <new-app-id> --json | jq '.os.is_dev'  → false
+```
+切换 = 新建 CVM → 换 app_id/端点 → 一次性重新接线,顺序(避免 api.<域名> 中断):
+1. 先建**生产 Meridian CVM**,验 seat 健康;2. 建**生产网关 CVM**,其 dstack-ingress 会**自动接管** `api.<域名>` 的 Cloudflare DNS+重签证书(旧网关的记录被覆盖);3. `PUT /v1/admin/upstreams` 把新 Meridian 端点注册到新网关;4. 经 `api.<域名>` 验证 receipt 的 `upstream.verified.url_origin` 命中**新** Meridian + 两 CVM `is_dev=false`;5. **删旧 dev CVM**(`phala cvms delete <app-id> --force`)止损。
+> 网关新 CVM 是空卷 → 会重新 `cargo build`(~10min)。`GATEWAY_DOMAIN` 要匹配新 CVM 落的节点(如 `_.dstack-pha-prod5.phala.network`);落到别的节点需改 compose 里该值再重部。
+> 注意:切生产 OS **不改** attestation 的 `vendor`(仍 `private-ai-gateway-dev`,那是网关软件 0.1.0 预览的标记,非 OS)。要"外界零信任可验证"还需:发布生产参考度量值、可复现构建/SLSA。
+
 ---
 
 ## 8. 安全边界(必须向用户讲清)
