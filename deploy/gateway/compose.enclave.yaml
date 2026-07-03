@@ -1,9 +1,8 @@
-# dstack compose for the Private AI Gateway ALONE (enclave A), for the production
-# enclave-B topology where Meridian seats run as SEPARATE CVMs.
+# dstack compose for the Private AI Gateway ALONE (enclave A). Meridian seats run
+# as SEPARATE CVMs (deploy/meridian/compose.cvm.yaml) — this is the production
+# topology.
 #
-# Difference vs compose.middleware.yaml (the co-located dev-smoke variant):
-#   * No meridian-seat1 service here — seats are their own CVMs
-#     (deploy/meridian/compose.cvm.yaml).
+#   * No meridian service here — seats are their own CVMs.
 #   * Upstream seed is EMPTY. Seats are registered AFTER boot via
 #     PUT /v1/admin/upstreams, so adding/rotating a seat never changes this
 #     gateway's compose_hash / attested identity. That stable identity is the

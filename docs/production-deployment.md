@@ -10,7 +10,7 @@
 | sub2api↔网关 | 都在本机 localhost | 跨网络:**TLS + control token**,且只对网关放行 |
 | 安全保证 | 无(仅功能) | 真实:relying party 可验证 attestation + receipt |
 
-> ⚠️ **现状提醒(务必先读)**:private-ai-gateway 是 `0.1.0` 开发者预览,其自带 `deploy/compose.yaml` 是 **no-middleware 模式**(只跑网关)。**接好 sub2api 控制面的 compose 由本仓库提供**(`deploy/gateway/compose.middleware.yaml`,见 §5.2)。pin 的网关 commit 用**进程内 middleware**(非独立 executor 进程)。该 compose 已在 dev CVM **端到端冒烟通过**(attestation→推理→receipt→计费);durable 透明日志、生产存储、Meridian 拆独立 enclave B 等仍是 open items。
+> ⚠️ **现状提醒(务必先读)**:private-ai-gateway 是 `0.1.0` 开发者预览,其自带 `deploy/compose.yaml` 是 **no-middleware 模式**(只跑网关)。**接好 sub2api 控制面的 compose 由本仓库提供**(`deploy/gateway/compose.enclave.yaml`,见 §5.2)。pin 的网关 commit 用**进程内 middleware**(非独立 executor 进程)。整套(网关 enclave A + Meridian enclave B)已在 Phala dev CVM **端到端冒烟通过**(attestation→推理→receipt→计费);durable 透明日志、生产存储等仍是 open items。
 
 ---
 
@@ -95,26 +95,25 @@ phala deploy -n private-ai-gateway -c compose.yaml
 ```
 但这只是网关(no-middleware),**还没开进程内 middleware、也没接 sub2api**;下一节的 compose 才接上。
 
-### 5.2 接上 sub2api:进程内 middleware(用 `deploy/gateway/compose.middleware.yaml`)
-本仓库在 **`deploy/gateway/compose.middleware.yaml`** 提供了**接好 sub2api 控制面**的部署单元。pin 的网关 commit 把 control-plane middleware **跑在网关进程内**(Rust):静态配置里给一段 `middleware`,网关就直接调 `middleware.control_url` 咨询 sub2api——**没有独立 executor 进程、没有 UDS**(那是更早的 out-of-process 设计)。一个审计过的 `COMMIT_SHA` 覆盖网关 + middleware 全部源码,verifier 只核对一处。
+### 5.2 接上 sub2api:进程内 middleware(用 `deploy/gateway/compose.enclave.yaml`)
+本仓库在 **`deploy/gateway/compose.enclave.yaml`** 提供了**接好 sub2api 控制面**的网关部署单元。pin 的网关 commit 把 control-plane middleware **跑在网关进程内**(Rust):静态配置里给一段 `middleware`,网关就直接调 `middleware.control_url` 咨询 sub2api——**没有独立 executor 进程、没有 UDS**(那是更早的 out-of-process 设计)。一个审计过的 `COMMIT_SHA` 覆盖网关 + middleware 全部源码,verifier 只核对一处。上游(Meridian seat)不内联在此,而是独立 CVM + 起后热加载(见 §10)——网关 attested 身份不随 seat 变动。
 
 部署(Phala;敏感值走 dstack sealed env,不进仓库):
 ```bash
 cd deploy/gateway
-phala deploy -n private-ai-gateway -c compose.middleware.yaml -e <sealed.env>
+phala deploy -n private-ai-gateway -c compose.enclave.yaml -e <sealed.env>
 # 更新现有 CVM:加 --cvm-id <app_id>
 ```
-`<sealed.env>` 逐行 `KEY=VALUE`,至少含:
+`<sealed.env>` 逐行 `KEY=VALUE`,含:
 - `PRIVATE_AI_GATEWAY_ADMIN_TOKEN`(admin API,`openssl rand -hex 32`)
 - `PRIVATE_AI_GATEWAY_CONTROL_TOKEN`(= sub2api `consult.control_token`)
 - `SUB2API_CONTROL_URL=https://<sub2api域名>/api/control`
-- Meridian 若同 CVM co-locate:`MERIDIAN_SEAT1_CREDENTIALS` / `_CLAUDE_JSON` / `_PROXY`(见 §10)
 
 要点(踩过的坑,均已写进 compose 注释):
 - **`COMMIT_SHA` 必须写死进 `gateway-pin`(会被测进 `compose_hash`)**——Phala 的 `${VAR}` 是 **CVM 内运行时**解析,若把 commit 放 env 就不被测量、source-pin 失效。密钥则相反:**必须走 sealed env**,不进 compose_hash。
 - 网关静态配置用 `middleware:{ control_url, control_token }` 段开启进程内 middleware;`control_url` 指 `https://<域名>/api/control`。
 - **launcher 需含 C 编译器**:stock `dstacktee/git-launcher` 无 `cc`,网关 `cargo build` 会 `linker cc not found`。用 `deploy/gateway/launcher/`(= git-launcher + build-essential)自建镜像并按 digest 钉入 compose。
-- 三张镜像(launcher、meridian-seat1)都**按 digest** 钉入 `compose_hash`;`gateway-pin` 的 `REPO_URL` 指向你**审计的**仓库。
+- launcher 镜像**按 digest** 钉入 `compose_hash`;`gateway-pin` 的 `REPO_URL` 指向你**审计的**仓库。
 - 上游种子 `gateway-upstreams` 内联你的 provider/Meridian 上游(见 §5.3 / §10),或启动后 `PUT /v1/admin/upstreams`。
 
 > ✅ 该 compose 已在 dev CVM **端到端冒烟通过**(attestation 核对 commit → opus/sonnet 推理 200 → 签名 receipt 的 `route.selected` 命中 → 计费落 usage_logs 挂 tee-gateway 账号)。
@@ -203,14 +202,11 @@ curl -sS "$BASE/v1/attestation/report?nonce=N" > report.json
 (`/v1/messages`);网关把它当**非机密 `openai-compatible` 上游**注册,**零源码改动**。
 部署单元/镜像/脚本都在 `deploy/meridian/`(见其 `README.md`);架构见 `docs/apexone-architecture.md`。
 
-**两种拓扑(compose 各一份,均已在 Phala dev CVM 端到端冒烟通过)**:
-| | co-locate(`deploy/gateway/compose.middleware.yaml`) | 独立 enclave B(`deploy/meridian/compose.cvm.yaml` + `deploy/gateway/compose.enclave.yaml`) |
-|---|---|---|
-| Meridian 位置 | 与网关同 CVM,`http://meridian-seat1:3456` 内网 | 独立 CVM,phala 公网端点 + ingress TLS |
-| 明文 prompt 那一跳 | 不出 CVM ✅ | 跨网络(靠 ingress TLS + `MERIDIAN_API_KEY` Bearer 保护) |
-| 网关 attested 身份 | Meridian 每次变动都改 compose_hash ⚠️ | 网关身份稳定;加/换 seat 靠 `PUT /v1/admin/upstreams` 热加载 ✅ |
-| 适用 | 最快冒烟、验证整链 | **生产**:身份干净稳定、多账号热扩、故障隔离 |
-> **同一订阅账号只能跑一个 Meridian 实例**:两个实例共享账号会互相轮换/失效 refresh token。切到 enclave B 时,把 co-locate 的网关重部为 `compose.enclave.yaml`(去掉内联 meridian)。
+**拓扑:独立 enclave B**(`deploy/meridian/compose.cvm.yaml` + `deploy/gateway/compose.enclave.yaml`,已在 Phala dev CVM 端到端冒烟通过)。每个 seat 是独立 Phala CVM,暴露 phala 公网端点(ingress TLS);网关经该端点 + `MERIDIAN_API_KEY` Bearer 把它注册为上游。这样:
+- **网关 attested 身份稳定**——加/换 seat 靠 `PUT /v1/admin/upstreams` 热加载,不改网关 `compose_hash`。
+- **故障/升级隔离**——动 Meridian 不影响网关。
+- 代价:网关→Meridian 那一跳带明文 prompt、走网络,靠 ingress TLS + Bearer 保护(Anthropic 本就见明文,非机密路由,见 §8)。
+> **同一订阅账号只能跑一个 Meridian 实例**:两个实例共享账号会互相轮换/失效 refresh token。
 
 ### 10.1 拓扑与 seat 模型
 ```

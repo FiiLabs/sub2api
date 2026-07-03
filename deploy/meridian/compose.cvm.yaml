@@ -1,10 +1,10 @@
 # dstack compose for a STANDALONE Meridian seat as its own attested CVM (enclave B).
 #
-# This is the PRODUCTION isolation of the Claude-subscription bridge: instead of
-# co-locating Meridian inside the gateway CVM (see deploy/gateway/compose.middleware.yaml,
-# good for dev smoke), each subscription account runs as its own Phala CVM. The
-# gateway (enclave A) then registers this as an `openai-compatible` upstream over
-# the network. Benefits: the gateway keeps a STABLE attested identity (adding/rotating
+# This is the PRODUCTION isolation of the Claude-subscription bridge: each
+# subscription account runs as its own Phala CVM (enclave B). The gateway
+# (enclave A, deploy/gateway/compose.enclave.yaml) then registers this as an
+# `openai-compatible` upstream over the network via PUT /v1/admin/upstreams.
+# Benefits: the gateway keeps a STABLE attested identity (adding/rotating
 # seats never changes the gateway's compose_hash), seats hot-load via the gateway's
 # PUT /v1/admin/upstreams, and gateway<->meridian faults are isolated.
 #
