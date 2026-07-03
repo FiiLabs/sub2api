@@ -27,7 +27,7 @@ services:
     # Rust-capable launcher = dstacktee/git-launcher@4437dce + build-essential
     # (deploy/gateway/launcher/). Stock launcher lacks a C compiler -> cargo build
     # fails "linker cc not found". Gateway SOURCE stays pinned via gateway-pin below.
-    image: docker.io/markerdao/git-launcher-rust@sha256:3fe4ad9b246e131f0445b67bc193648c1247686e4d8b0401d0d73c4ce1cf4c58
+    image: docker.io/markerdao/git-launcher-rust@sha256:3dc0e8be4050e2cf10d2e618f103873a1331f5f5adb8f9452f4378696cc36611
     command: ["/etc/git-launcher/gateway.conf"]
     ports:
       - "8086:8086"

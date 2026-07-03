@@ -33,7 +33,7 @@ Fetch the live report and compare against these. Update this table whenever
 | source commit | `975ac50f3074ffdaf18a5e377934a8db99ba64ba` |
 | receipt signing_address | `0x6654a3347cb50616b88815fdeac7065dd3f80038` (ecdsa) |
 | measured compose | `deploy/gateway/compose.enclave.yaml` (in this repo) |
-| launcher image | `docker.io/markerdao/git-launcher-rust@sha256:3fe4ad9b246e131f0445b67bc193648c1247686e4d8b0401d0d73c4ce1cf4c58` |
+| launcher image | `docker.io/markerdao/git-launcher-rust@sha256:3dc0e8be4050e2cf10d2e618f103873a1331f5f5adb8f9452f4378696cc36611` |
 
 ### Meridian seat (enclave B — non-confidential Claude-subscription bridge)
 | Field | Expected value |
@@ -42,7 +42,7 @@ Fetch the live report and compare against these. Update this table whenever
 | os image | `dstack-0.5.9` — hash `bd369a8c…` (same as gateway) |
 | compose_hash | `8f7fc6e1780d142ec661e29ad12b6f15f74da1630e7f1def8e6629d5155af2ad` |
 | measured compose | `deploy/meridian/compose.seats.generated.yaml` (generate via `gen-seats.sh`; contains only `${VAR}` refs + the image digest + ports — NO secrets) |
-| meridian image | `docker.io/markerdao/meridian-enclave@sha256:aaef9917387c41674cf9dc3e85bd117366229fe8299b7aa555f5014f437646c6` |
+| meridian image | `docker.io/markerdao/meridian-enclave@sha256:79f828ba66c1dc96816000723c7232c9d1fa289b710d9bdcc559e67cb075cbb8` |
 
 > The Meridian route is **non-confidential** (Anthropic sees plaintext); its
 > attestation proves the bridge software + egress, not content confidentiality.

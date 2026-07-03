@@ -31,7 +31,7 @@ command -v jq >/dev/null || { echo "error: jq required"; exit 1; }
 [ -f "$SEATS" ] || { echo "error: manifest not found: $SEATS"; exit 1; }
 
 # Meridian image (pin by digest -> measured into the CVM's compose_hash).
-IMAGE="docker.io/markerdao/meridian-enclave@sha256:aaef9917387c41674cf9dc3e85bd117366229fe8299b7aa555f5014f437646c6"
+IMAGE="docker.io/markerdao/meridian-enclave@sha256:79f828ba66c1dc96816000723c7232c9d1fa289b710d9bdcc559e67cb075cbb8"
 
 PORT_BASE=$(jq -r '.meridian_host_port_base // 3456' "$SEATS")
 N=$(jq '.seats | length' "$SEATS")
