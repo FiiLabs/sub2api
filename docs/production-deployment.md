@@ -199,9 +199,18 @@ curl -sS "$BASE/v1/attestation/report?nonce=N" > report.json
 ## 10. 附:部署 Meridian enclave(Claude 订阅路由,enclave B)
 
 在上面的网关(enclave A)+ sub2api 之外,再加一条**用 Claude 订阅额度**的路由:
-每个订阅账号跑一个独立的 **Meridian** 实例(enclave B),把订阅桥成 Anthropic 兼容端点
+每个订阅账号跑一个独立的 **Meridian** 实例,把订阅桥成 Anthropic 兼容端点
 (`/v1/messages`);网关把它当**非机密 `openai-compatible` 上游**注册,**零源码改动**。
 部署单元/镜像/脚本都在 `deploy/meridian/`(见其 `README.md`);架构见 `docs/apexone-architecture.md`。
+
+**两种拓扑(compose 各一份,均已在 Phala dev CVM 端到端冒烟通过)**:
+| | co-locate(`deploy/gateway/compose.middleware.yaml`) | 独立 enclave B(`deploy/meridian/compose.cvm.yaml` + `deploy/gateway/compose.enclave.yaml`) |
+|---|---|---|
+| Meridian 位置 | 与网关同 CVM,`http://meridian-seat1:3456` 内网 | 独立 CVM,phala 公网端点 + ingress TLS |
+| 明文 prompt 那一跳 | 不出 CVM ✅ | 跨网络(靠 ingress TLS + `MERIDIAN_API_KEY` Bearer 保护) |
+| 网关 attested 身份 | Meridian 每次变动都改 compose_hash ⚠️ | 网关身份稳定;加/换 seat 靠 `PUT /v1/admin/upstreams` 热加载 ✅ |
+| 适用 | 最快冒烟、验证整链 | **生产**:身份干净稳定、多账号热扩、故障隔离 |
+> **同一订阅账号只能跑一个 Meridian 实例**:两个实例共享账号会互相轮换/失效 refresh token。切到 enclave B 时,把 co-locate 的网关重部为 `compose.enclave.yaml`(去掉内联 meridian)。
 
 ### 10.1 拓扑与 seat 模型
 ```
@@ -220,13 +229,20 @@ curl -sS "$BASE/v1/attestation/report?nonce=N" > report.json
 构建前先把 gost 拉进构建上下文:`cd deploy/meridian && ./fetch-gost.sh`(gost 二进制 gitignore,不入库)。
 把镜像 digest 钉进该 CVM 的 attested `compose_hash`。
 
-### 10.3 OAuth 订阅凭证(经 dstack 加密 secrets 注入)
-Meridian 用 Claude Code 订阅登录态,需在 enclave 内提供:
-- `/root/.claude/.credentials.json`(`claudeAiOauth`:access + refresh token)
-- `/root/.claude.json`(`oauthAccount`)
+### 10.3 OAuth 订阅凭证(经 dstack sealed env 注入)
+Meridian 用 Claude Code 订阅登录态。**生产经 dstack sealed env 注入文件内容**(不用 bind-mount 明文):
+- `MERIDIAN_SEAT1_CREDENTIALS` = `secrets/seat1/.credentials.json` 内容(`claudeAiOauth`:access+refresh token)
+- `MERIDIAN_SEAT1_CLAUDE_JSON` = `secrets/seat1/.claude.json` 内容——**只保留 `oauthAccount`**,`entrypoint.sh` 把二者落到容器内**可写**路径(`/root/.claude/*`),让 ~8h token 刷新持久化。
 
-**生产不要 bind-mount 明文**:经 **dstack 加密 secrets / KMS** 注入,仅在 enclave 内解密。
-token 约 8h 自动刷新——挂载点需**可写**(去掉 `:ro`、用可写卷)才能让刷新跨重启持久化。
+准备/刷新凭证(去掉本机隐私,只取 `oauthAccount`):
+```bash
+claude login                                  # 以该订阅账号登录(浏览器 OAuth)
+cp ~/.claude/.credentials.json deploy/meridian/secrets/seat1/.credentials.json
+jq '{oauthAccount}' ~/.claude.json > deploy/meridian/secrets/seat1/.claude.json
+```
+> `.claude.json` 原文含 `projects`/`machineID`/`userID` 等大量本机隐私,**务必只取 `oauthAccount`**。
+> access token 约 8h 过期;refresh token 用一次会**轮换**——所以本地这份 secrets 拷贝会随实例刷新而失效,重新注入时以 `claude login` 后的新副本为准,且**别让两个实例共享同一账号**(会互相轮换失效)。
+> `/health` 的 `loggedIn:true` 只表示凭证文件存在,**不代表 token 有效**;token 过期时推理会返回 `401 Claude OAuth token has expired`。
 
 ### 10.4 ProxyLite 固定出口 IP(可选防封,每 seat 独立)
 给某个 seat 设 `PROXYLITE_SOCKS5="socks5://<user>:<pass>@<host>:<port>"`,`entrypoint.sh` 会起
@@ -285,9 +301,40 @@ Meridian 路由是**非机密路由**(等同第 8 节表中的 `openai-compatibl
 即:你的中转方拿不到 prompt/订阅凭证,但 **Anthropic 能看到明文**;要连模型方也挡住需换机密 provider。
 订阅凭证的机密性靠「Meridian 在 TEE enclave 内 + 凭证经 dstack secrets 注入」保证。
 
-### 10.9 Meridian 上线检查清单
+### 10.9 独立 enclave B 部署实操(生产,已冒烟)
+每个 seat 一个独立 Phala CVM,用 `deploy/meridian/compose.cvm.yaml`;网关用 `deploy/gateway/compose.enclave.yaml`(空 seed)。部署顺序:先 seat,拿到端点,再热加载到网关。
+
+```bash
+# 1) 部署 Meridian seat 独立 CVM(sealed env 传凭证/代理/API key)
+cd deploy/meridian
+MERIDIAN_API_KEY=mrdn-$(openssl rand -hex 24)      # 记下:网关 upstream bearer_token 用相同值
+cat > /tmp/seat.env <<EOF
+MERIDIAN_API_KEY=$MERIDIAN_API_KEY
+MERIDIAN_SEAT1_PROXY=socks5://<user>:<pass>@<host>:<port>
+MERIDIAN_SEAT1_CREDENTIALS=$(jq -c . secrets/seat1/.credentials.json)
+MERIDIAN_SEAT1_CLAUDE_JSON=$(jq -c . secrets/seat1/.claude.json)
+EOF
+phala deploy -n meridian-seat1 -c compose.cvm.yaml -e /tmp/seat.env && shred -u /tmp/seat.env
+# 取 CVM 的公网 :3456 端点 E(phala cvms get <app_id> --json → endpoints[].app)
+# 校验:curl $E/health → loggedIn:true;无 key 打 /v1/messages 应 401(鉴权生效)
+
+# 2) 网关(enclave A)用 gateway-only compose(空 seed → 身份稳定)
+cd ../gateway
+phala deploy --cvm-id <网关app_id> -c compose.enclave.yaml -e <网关sealed.env>
+
+# 3) 热加载该 seat 到网关(以后加/换 seat 都只做这步,网关不重部、身份不变)
+curl -X PUT https://<网关>/v1/admin/upstreams -H "Authorization: Bearer <ADMIN_TOKEN>" \
+  -d "[{\"name\":\"meridian-seat1\",\"provider\":\"openai-compatible\",\"base_url\":\"$E\",
+       \"path\":\"/v1/messages\",\"models\":{\"claude-opus-4-8\":\"claude-opus-4-8\",\"claude-sonnet-5\":\"claude-sonnet-5\"},
+       \"bearer_token\":\"$MERIDIAN_API_KEY\"}]"
+```
+> ⚠️ 网关 `gateway-state` 卷会**持久化 upstreams.json**:空 seed 只在首次启动(无既存 state)生效;复用旧 CVM 时旧上游会残留,直到 `PUT` 覆盖。全新 enclave A 部署则空 seed 即真空,等 `PUT`。
+> 校验:receipt 的 `upstream.verified.url_origin` == 该 seat 的公网端点;seat 容器 gost 日志有 `api.anthropic.com` 经 `127.0.0.1:8118`(走 ProxyLite)。
+
+### 10.10 Meridian 上线检查清单
 - [ ] 每个订阅账号一个独立 Meridian 实例(enclave B);镜像 digest 进 attested `compose_hash`
-- [ ] `.credentials.json`/`.claude.json` 经 **dstack 加密 secrets** 注入 `/root/.claude`,挂载可写以持久化刷新
+- [ ] 公网暴露必设 `MERIDIAN_API_KEY`(无 key 应 401);网关 upstream `bearer_token` = 同值
+- [ ] `.credentials.json`/`.claude.json` 经 **dstack sealed env** 注入,容器内可写以持久化刷新;`.claude.json` 只留 `oauthAccount`
 - [ ] (可选)每 seat 的 `PROXYLITE_SOCKS5` 指向各自**住宅静态 IP**,seat↔IP 映射已记录
 - [ ] 每 seat 一条 `meridian-seatN` 上游(`openai-compatible` + `path:/v1/messages`)已注册,`base_url` 不带 `/v1`
 - [ ] route_map 用精确名或 `claude-*`(**无 `*` catch-all**);多 seat 用 `seats: [...]`

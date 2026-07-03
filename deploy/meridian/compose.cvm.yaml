@@ -1,0 +1,55 @@
+# dstack compose for a STANDALONE Meridian seat as its own attested CVM (enclave B).
+#
+# This is the PRODUCTION isolation of the Claude-subscription bridge: instead of
+# co-locating Meridian inside the gateway CVM (see deploy/gateway/compose.middleware.yaml,
+# good for dev smoke), each subscription account runs as its own Phala CVM. The
+# gateway (enclave A) then registers this as an `openai-compatible` upstream over
+# the network. Benefits: the gateway keeps a STABLE attested identity (adding/rotating
+# seats never changes the gateway's compose_hash), seats hot-load via the gateway's
+# PUT /v1/admin/upstreams, and gateway<->meridian faults are isolated.
+#
+# TRADEOFF vs co-locate: the gateway->meridian hop now crosses the network and carries
+# PLAINTEXT prompt/response. It is protected by (a) Phala ingress TLS on the public
+# endpoint and (b) a mandatory MERIDIAN_API_KEY the gateway must present as a bearer
+# token. Anthropic still sees the subscription traffic in cleartext (non-confidential
+# route, see production-deployment.md §8/§10) — that is inherent to subscription routing.
+#
+# Deploy (its OWN CVM, separate from the gateway):
+#   cd deploy/meridian
+#   phala deploy -n meridian-seat1 -c compose.cvm.yaml -e <sealed.env>
+# where <sealed.env> sets MERIDIAN_API_KEY, MERIDIAN_SEAT1_CREDENTIALS,
+# MERIDIAN_SEAT1_CLAUDE_JSON, and (optional) MERIDIAN_SEAT1_PROXY.
+#
+# After boot, take the CVM's public :3456 endpoint and register it on the gateway:
+#   curl -X PUT https://<gateway>/v1/admin/upstreams -H "Authorization: Bearer <ADMIN_TOKEN>" \
+#     -d '[{"name":"meridian-seat1","provider":"openai-compatible",
+#          "base_url":"https://<meridian-app-id>-3456.<node>.phala.network",
+#          "path":"/v1/messages",
+#          "models":{"claude-opus-4-8":"claude-opus-4-8","claude-sonnet-5":"claude-sonnet-5"},
+#          "bearer_token":"<same MERIDIAN_API_KEY>"}]'
+
+services:
+  meridian-seat1:
+    # Built from deploy/meridian/ and pushed to docker.io/markerdao. Pin by DIGEST
+    # so it is measured into this CVM's compose_hash (enclave B's attested identity).
+    image: docker.io/markerdao/meridian-enclave@sha256:f17367529b9a5b38b033cf4ad77f4dcefcd476bba5dca4db5e42e6aeb209b9fa
+    ports:
+      # Exposed so Phala's ingress gives it a public HTTPS endpoint the gateway can reach.
+      - "3456:3456"
+    environment:
+      MERIDIAN_HOST: "0.0.0.0"
+      MERIDIAN_PORT: "3456"
+      NO_PROXY: "127.0.0.1,localhost"
+      # MANDATORY on a public endpoint: turns on Meridian's requireAuth middleware
+      # (x-api-key or Authorization: Bearer, constant-time compared). Without this,
+      # anyone hitting the public :3456 endpoint could spend the Claude subscription.
+      # The gateway upstream's bearer_token MUST equal this value.
+      MERIDIAN_API_KEY: ${MERIDIAN_API_KEY:?set MERIDIAN_API_KEY (strong random) via dstack sealed env; gateway upstream bearer_token must match}
+      # Anti-ban static egress (residential SOCKS5). Verified working: egress to
+      # api.anthropic.com flows through gost->ProxyLite (exit IP 206.206.91.173).
+      PROXYLITE_SOCKS5: ${MERIDIAN_SEAT1_PROXY:-}
+      # OAuth subscription state (file CONTENTS) via dstack sealed env; entrypoint.sh
+      # materializes them to a WRITABLE path so the ~8h token refresh persists.
+      CLAUDE_CREDENTIALS_JSON: ${MERIDIAN_SEAT1_CREDENTIALS:?set MERIDIAN_SEAT1_CREDENTIALS (contents of secrets/seat1/.credentials.json) via dstack sealed env}
+      CLAUDE_JSON: ${MERIDIAN_SEAT1_CLAUDE_JSON:?set MERIDIAN_SEAT1_CLAUDE_JSON (contents of secrets/seat1/.claude.json) via dstack sealed env}
+    restart: unless-stopped

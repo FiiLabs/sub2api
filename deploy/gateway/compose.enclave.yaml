@@ -1,0 +1,80 @@
+# dstack compose for the Private AI Gateway ALONE (enclave A), for the production
+# enclave-B topology where Meridian seats run as SEPARATE CVMs.
+#
+# Difference vs compose.middleware.yaml (the co-located dev-smoke variant):
+#   * No meridian-seat1 service here — seats are their own CVMs
+#     (deploy/meridian/compose.cvm.yaml).
+#   * Upstream seed is EMPTY. Seats are registered AFTER boot via
+#     PUT /v1/admin/upstreams, so adding/rotating a seat never changes this
+#     gateway's compose_hash / attested identity. That stable identity is the
+#     whole point of the split (see production-deployment.md §10).
+#
+# The gateway still runs its in-process middleware (pinned commit 975ac50f) and
+# consults sub2api at middleware.control_url. One audited COMMIT_SHA covers all
+# gateway+middleware source.
+#
+# Deploy:
+#   cd deploy/gateway
+#   phala deploy -n private-ai-gateway -c compose.enclave.yaml -e <sealed.env>
+# <sealed.env>: PRIVATE_AI_GATEWAY_ADMIN_TOKEN, PRIVATE_AI_GATEWAY_CONTROL_TOKEN
+# (= sub2api consult.control_token), SUB2API_CONTROL_URL.
+#
+# Then register each Meridian enclave-B seat (see deploy/meridian/compose.cvm.yaml
+# header for the exact PUT /v1/admin/upstreams call; bearer_token = that seat's
+# MERIDIAN_API_KEY, base_url = that seat CVM's public :3456 endpoint).
+
+services:
+  private-ai-gateway:
+    # Rust-capable launcher = dstacktee/git-launcher@4437dce + build-essential
+    # (deploy/gateway/launcher/). Stock launcher lacks a C compiler -> cargo build
+    # fails "linker cc not found". Gateway SOURCE stays pinned via gateway-pin below.
+    image: docker.io/markerdao/git-launcher-rust@sha256:3fe4ad9b246e131f0445b67bc193648c1247686e4d8b0401d0d73c4ce1cf4c58
+    command: ["/etc/git-launcher/gateway.conf"]
+    ports:
+      - "8086:8086"
+    configs:
+      - source: gateway-pin
+        target: /etc/git-launcher/gateway.conf
+      - source: gateway-config
+        target: /etc/private-ai-gateway/gateway.config.json
+      - source: gateway-upstreams
+        target: /etc/private-ai-gateway/upstreams.seed.json
+    environment:
+      PRIVATE_AI_GATEWAY_CONFIG_PATH: /etc/private-ai-gateway/gateway.config.json
+      PRIVATE_AI_GATEWAY_CACHE_DIR: /var/lib/private-ai-gateway/cache
+    volumes:
+      - gateway-checkout:/var/lib/git-launcher
+      - gateway-state:/var/lib/private-ai-gateway
+      - /var/run/dstack.sock:/var/run/dstack.sock
+    restart: unless-stopped
+
+configs:
+  gateway-pin:
+    content: |
+      REPO_URL=https://github.com/Dstack-TEE/private-ai-gateway.git
+      COMMIT_SHA=975ac50f3074ffdaf18a5e377934a8db99ba64ba
+      WORK_DIR=/var/lib/git-launcher/private-ai-gateway
+
+  gateway-config:
+    content: |
+      {
+        "bind": "0.0.0.0:8086",
+        "state_dir": "/var/lib/private-ai-gateway",
+        "upstream_config_seed_path": "/etc/private-ai-gateway/upstreams.seed.json",
+        "admin_token": "${PRIVATE_AI_GATEWAY_ADMIN_TOKEN:?set PRIVATE_AI_GATEWAY_ADMIN_TOKEN}",
+        "dstack_endpoint": "unix:/var/run/dstack.sock",
+        "middleware": {
+          "control_url": "${SUB2API_CONTROL_URL:?set SUB2API_CONTROL_URL to https://<sub2api-domain>/api/control}",
+          "control_token": "${PRIVATE_AI_GATEWAY_CONTROL_TOKEN:?set PRIVATE_AI_GATEWAY_CONTROL_TOKEN (must equal sub2api consult.control_token)}"
+        }
+      }
+
+  # EMPTY on purpose: seats hot-load via PUT /v1/admin/upstreams after boot, so the
+  # gateway's attested identity stays stable as seats come and go.
+  gateway-upstreams:
+    content: |
+      []
+
+volumes:
+  gateway-checkout:
+  gateway-state:
