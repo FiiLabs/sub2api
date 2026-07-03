@@ -376,6 +376,21 @@ MERIDIAN_SEAT1_API_KEY=... MERIDIAN_SEAT2_API_KEY=... bash register-upstreams.ge
 > ⚠️ 迁移/重部会按 `expiresAt` "新者胜"从持久卷或 env 落地凭证;首次从单-seat `compose.cvm.yaml`(卷 `meridian-claude`)切到多-seat(卷 `meridian-<seat>-claude`)时,seat 会从 sealed env 重新落地凭证——**迁移前对相关账号 `claude login` 刷新 secrets** 再注入,避免用到旧的已轮换 token。
 > ⚠️ 单 CVM 的**爆炸半径**:重部/重启会同时影响该 CVM 上所有 seat。账号很多时可分 2–3 个 CVM 降低影响。
 
+### 10.9c 车队维护:监控 + 一键刷新(30 账号必备)
+**判断账号是否要重登不能看 `/health`**(它只查文件存在,token 过期仍报 `loggedIn:true`)——必须**逐 seat 打真实推理探测**。工具在 `deploy/meridian/`:
+
+- **`check-seats.sh`**:读 seats.json,逐 seat 打 1-token 请求并分类:`OK` / `TOKEN_EXPIRED`(该账号需 `claude login`)/ `AUTH_FAIL`(key 配错)/ `BANNED/FLAGGED`(403)/ `PROXY_OR_DOWN`(超时/5xx)。打印状态表 + 有异常时**发邮件**;任一异常退出 1(cron MAILTO 也能用)。
+  ```bash
+  # 需 env: MERIDIAN_APP_ID / MERIDIAN_NODE / 各 MERIDIAN_<SEAT>_API_KEY
+  # 邮件(可选): ALERT_TO ALERT_FROM SMTP_HOST SMTP_PORT(465=SSL/587=STARTTLS) SMTP_USER SMTP_PASS
+  # cron 每 15 分钟:
+  */15 * * * * set -a; . /path/seats.env; . /path/alert.env; set +a; \
+               /path/deploy/meridian/check-seats.sh >> /var/log/meridian-check.log 2>&1
+  ```
+- **`refresh-seat.sh <seat> <meridian-cvm-id>`**:某 seat 报 `TOKEN_EXPIRED` 时,对该账号 `claude login` + 覆盖 `secrets/<seat>/` 后,一条命令完成"更新该 seat sealed env → 重启",entrypoint "新者胜"自动采用新凭证。
+
+**关键认知**:token 过期**不是急事**——route_map `seats:[...]` 会 failover 绕过坏 seat,只是少一份配额,整体服务不断。监控告诉你修哪个,你从容处理。降低断链频率可用 `claude setup-token`(长效 token)。
+
 ### 10.10 Meridian 上线检查清单
 - [ ] 每个订阅账号一个独立 Meridian 实例(enclave B);镜像 digest 进 attested `compose_hash`
 - [ ] 公网暴露必设 `MERIDIAN_API_KEY`(无 key 应 401);网关 upstream `bearer_token` = 同值
