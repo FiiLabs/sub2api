@@ -134,6 +134,14 @@ phala deploy -n private-ai-gateway -c compose.enclave.yaml -e <sealed.env>
 - `COMMIT_SHA` 必须是你**审计过**的提交;部署后核对 `GET /v1/attestation/report` 里的 `source_provenance` == 你钉的 REPO_URL/COMMIT_SHA。
 - compose(launcher pin、gateway config、upstream seed)都进 attested `compose_hash`,改一处身份就变。
 
+### 5.5 用户接入地址(自定义域名,TLS 在 CVM 内终止)
+用户拿到 key 后填进 Claude Code 的 `ANTHROPIC_BASE_URL` **必须指向 TEE 网关,不是 sub2api 域名**——sub2api 数据面已禁用(§5.2),打它返回 `410 DATA_PLANE_DISABLED`。**切勿在 sub2api 上反代 `/v1/*` 到网关**:那会让非 TEE 服务器终止 TLS、看到明文 prompt,毁掉 TEE 保证。正确做法是给网关一个干净子域名,直达 TEE:
+
+1. **sub2api 侧**:Admin→设置→"API 端点地址"(`api_base_url`)填 `https://api.<域名>`(用户"使用密钥"里就显示这个)。注意该字段也被微信 OAuth 回调复用,若启用微信登录需拆独立设置项。
+2. **网关侧**:`compose.enclave.yaml` 内已含 `dstack-ingress` 服务(见 https://docs.phala.com/phala-cloud/networking/setup-custom-domain):用 Cloudflare "Edit zone DNS" token **自动建 DNS + Certbot DNS-01 签 Let's Encrypt 证书 + 设 CAA**,443 **在 CVM 内终止 TLS** 后转发到 `private-ai-gateway:8086`——明文不出 enclave。`DOMAIN`/`GATEWAY_DOMAIN`(=`_.<该CVM的dstack网关域>`,如 `_.dstack-pha-prod5.phala.network`)在 compose 内;`CLOUDFLARE_API_TOKEN`(secret)与 `CERTBOT_EMAIL` 走 **sealed env**。
+3. 部署后 dstack-ingress 自动完成 DNS+证书(约 2–5min,DNS-01 每次等 120s 传播);验证 `curl https://api.<域名>/v1/models` 返回模型目录、`/v1/attestation/report` 可达。旧 `<app-id>-8086.<node>.phala.network` 端点并存不受影响。
+> 已验证:`api.apex1.us` 经此上线,Let's Encrypt 证书有效,端到端推理 200、attestation 可经新域名核对。
+
 ---
 
 ## 6. 验证(上线后)

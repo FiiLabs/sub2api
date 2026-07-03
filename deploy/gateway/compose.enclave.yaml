@@ -47,6 +47,32 @@ services:
       - /var/run/dstack.sock:/var/run/dstack.sock
     restart: unless-stopped
 
+  # ---- Custom-domain ingress (TLS terminates INSIDE the CVM) ----
+  # Gives users a clean base URL (https://api.apex1.us) that points straight at
+  # this attested gateway. dstack-ingress uses the Cloudflare token to auto-create
+  # the DNS record and obtain a Let's Encrypt cert via DNS-01, terminates TLS on
+  # :443, and forwards plaintext to private-ai-gateway:8086 OVER THE COMPOSE
+  # NETWORK — so the plaintext prompt never leaves this TEE CVM. The old
+  # <app-id>-8086.<node>.phala.network endpoint keeps working alongside this.
+  # See https://docs.phala.com/phala-cloud/networking/setup-custom-domain
+  dstack-ingress:
+    image: docker.io/dstacktee/dstack-ingress:2.2@sha256:d05a7b343c37c1cca1bba8dbf7e8f3c6d2118158af2d41c455103796db4f67f0
+    ports:
+      - "443:443"
+    environment:
+      - DOMAIN=api.apex1.us
+      - TARGET_ENDPOINT=private-ai-gateway:8086      # gateway service name + port
+      - GATEWAY_DOMAIN=_.dstack-pha-prod5.phala.network   # this CVM's dstack gateway base (prod5)
+      - CERTBOT_EMAIL=${CERTBOT_EMAIL:?set CERTBOT_EMAIL (Let's Encrypt notifications)}
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN:?set CLOUDFLARE_API_TOKEN (Cloudflare Edit-zone-DNS token) via sealed env}
+      - SET_CAA=true
+    volumes:
+      - /var/run/dstack.sock:/var/run/dstack.sock
+      - /var/run/tappd.sock:/var/run/tappd.sock
+      - cert-data:/etc/letsencrypt
+      - evidences:/evidences
+    restart: unless-stopped
+
 configs:
   gateway-pin:
     content: |
@@ -77,3 +103,5 @@ configs:
 volumes:
   gateway-checkout:
   gateway-state:
+  cert-data:      # dstack-ingress Let's Encrypt certs (persist across restarts)
+  evidences:      # dstack-ingress domain-attestation evidence
