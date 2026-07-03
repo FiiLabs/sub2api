@@ -28,7 +28,7 @@ Fetch the live report and compare against these. Update this table whenever
 | endpoint | `https://api.apex1.us` (and `https://<app-id>-8086.dstack-pha-prod5.phala.network`) |
 | app_id | `d65b6fbc8df7a1a52a55807a4f5bd2c7dc67b983` |
 | os image | `dstack-0.5.9` — hash `bd369a8c2f9edb2b52dad48ac8e0b32dde5f1337c423a506b48d07403a7d8033` |
-| compose_hash | `4e1e1c2cd4f8265475a4a57e20771967141a8f3c3bc1bba8e24ddd47b2686ec3` |
+| compose_hash | `746302d09218f21a1c860b4d8a08d8715a4a2b4206ce871d9f6dba6ef3cf65c2` |
 | source repo | `https://github.com/Dstack-TEE/private-ai-gateway.git` |
 | source commit | `975ac50f3074ffdaf18a5e377934a8db99ba64ba` |
 | receipt signing_address | `0x6654a3347cb50616b88815fdeac7065dd3f80038` (ecdsa) |
@@ -40,7 +40,7 @@ Fetch the live report and compare against these. Update this table whenever
 |---|---|
 | app_id | `bbbc8691946a8575accfa86b8b533ad288d00828` |
 | os image | `dstack-0.5.9` — hash `bd369a8c…` (same as gateway) |
-| compose_hash | `8f7fc6e1780d142ec661e29ad12b6f15f74da1630e7f1def8e6629d5155af2ad` |
+| compose_hash | `53969b643beac8b0e234c99276891e737ec8ece3774c9be64707ae050cfda16f` |
 | measured compose | `deploy/meridian/compose.seats.generated.yaml` (generate via `gen-seats.sh`; contains only `${VAR}` refs + the image digest + ports — NO secrets) |
 | meridian image | `docker.io/markerdao/meridian-enclave@sha256:79f828ba66c1dc96816000723c7232c9d1fa289b710d9bdcc559e67cb075cbb8` |
 
