@@ -66,12 +66,12 @@ curl -sS "$BASE/v1/attestation/report?nonce=$NONCE" > report.json
 jq -r '.attestation.source_provenance | {repo_url, repo_commit}' report.json
 #    -> repo_commit MUST equal 975ac50f...  (the audited gateway source)
 #    Compare the quote's OS measurement to os_image_hash bd369a8c... (dstack-0.5.9),
-#    and the app compose_hash to 4e1e1c2c...  (gateway) / 8f7fc6e1... (meridian).
+#    and the app compose_hash to 746302d0...  (gateway) / 53969b64... (meridian).
 
 # 4) Recompute compose_hash from the published compose (dstack canonicalizes the
 #    docker-compose into app-compose.json and hashes THAT — it is NOT a raw
 #    sha256 of the yaml). Use dstack's app-compose hashing tool on
-#    deploy/gateway/compose.enclave.yaml and confirm it equals 4e1e1c2c...
+#    deploy/gateway/compose.enclave.yaml and confirm it equals 746302d0...
 
 # 5) Verify a receipt is signed by the attested key and binds to the same report:
 #    (fetch a receipt with x-receipt-id, then, in the private-ai-gateway repo)
