@@ -237,16 +237,21 @@ cp ~/.claude/.credentials.json deploy/meridian/secrets/seat1/.credentials.json
 jq '{oauthAccount}' ~/.claude.json > deploy/meridian/secrets/seat1/.claude.json
 ```
 > `.claude.json` 原文含 `projects`/`machineID`/`userID` 等大量本机隐私,**务必只取 `oauthAccount`**。
-> access token 约 8h 过期;refresh token 用一次会**轮换**——所以本地这份 secrets 拷贝会随实例刷新而失效,重新注入时以 `claude login` 后的新副本为准,且**别让两个实例共享同一账号**(会互相轮换失效)。
-> `/health` 的 `loggedIn:true` 只表示凭证文件存在,**不代表 token 有效**;token 过期时推理会返回 `401 Claude OAuth token has expired`。
+
+**token 自动刷新 + 跨重启持久化(已实现)**:Meridian 运行中每 ~8h 自动刷新 OAuth token,写回 `/root/.claude/.credentials.json`。`compose.cvm.yaml` 把该路径挂在**持久卷 `meridian-claude`**(dstack CVM = TEE 加密存储),`entrypoint.sh` 按 `expiresAt` **"新者胜"**:卷里凭证 ≥ env 就保留卷、否则用 env。于是:
+- 持续运行 + 重启/重部 → 刷新出的新 token 存活,seat **无人值守长期运行**(不再"重启回退旧凭证→401")。
+- 运维强制换号/救活:`claude login` 后重新注入更新的凭证,因其 `expiresAt` 更新会被采用。
+> 注意:refresh token 用一次会**轮换**,所以本地 secrets 拷贝、以及 sealed env 里的那份,会随实例刷新而变旧——正常运行靠持久卷续命,不依赖它们;只有卷丢失/长期停机过期才需 `claude login` 重注入。**同一账号只能跑一个实例**(两个会互相轮换失效)。
+> `/health` 的 `loggedIn:true` 只表示凭证文件存在,**不代表 token 有效**;token 过期时推理返回 `401 Claude OAuth token has expired`。
 
 ### 10.4 ProxyLite 固定出口 IP(可选防封,每 seat 独立)
 给某个 seat 设 `PROXYLITE_SOCKS5="socks5://<user>:<pass>@<host>:<port>"`,`entrypoint.sh` 会起
 `gost -L http://127.0.0.1:8118 -F <PROXYLITE_SOCKS5>` 并让 Meridian 走它。**不设 = 直连**(enclave 自身 IP)。
 > ⚠️ scheme 必须是 `socks5://`,**不要 `socks5h://`**:镜像内置的 gost v3 只认 `socks5://`(域名仍由 SOCKS5 端远端解析),`socks5h://` 会导致请求静默超时(`route(retry=0) unexpected EOF`)。
 用**住宅/长效静态 IP**,一 seat 一 IP,跨续期保持不变(切忌高频轮换)。记录 seat↔IP 映射。
-> 已验证(见 `deploy/meridian/README.md` 的 Phase 0 spike):Meridian/Claude Code SDK 遵循 `HTTPS_PROXY`;
-> 经住宅静态 IP 出网未复现数据中心 IP 的 `403 Request not allowed`。
+> 已验证:gost v3 兼容 `-L/-F` 语法;实测经 ProxyLite 出口 IP 与直连不同、CVM 内 meridian→anthropic 全经 `127.0.0.1:8118`。Meridian/Claude Code SDK 遵循 `HTTPS_PROXY`;经住宅静态 IP 出网未复现数据中心 IP 的 `403 Request not allowed`。
+>
+> **故障行为 = fail-closed(不自动降级直连)**:ProxyLite 过期/欠费/出 bug 时,gost 转发失败 → 该 seat 请求全失败,**不会**自动改走 CVM 数据中心 IP。这是**防封的正确取舍**(数据中心 IP 直连 Anthropic 曾触发 `403`、有风控风险),但意味着可用性依赖 ProxyLite——**务必续费别断,并加到期告警**。若确需"代理故障自动降级直连",需改 entrypoint 加探活,并接受降级期封号风险。
 
 ### 10.5 网关注册上游
 每个 seat 一条上游(参考 `deploy/meridian/gateway-upstreams.example.json`):

@@ -32,7 +32,7 @@ services:
   meridian-seat1:
     # Built from deploy/meridian/ and pushed to docker.io/markerdao. Pin by DIGEST
     # so it is measured into this CVM's compose_hash (enclave B's attested identity).
-    image: docker.io/markerdao/meridian-enclave@sha256:f17367529b9a5b38b033cf4ad77f4dcefcd476bba5dca4db5e42e6aeb209b9fa
+    image: docker.io/markerdao/meridian-enclave@sha256:aaef9917387c41674cf9dc3e85bd117366229fe8299b7aa555f5014f437646c6
     ports:
       # Exposed so Phala's ingress gives it a public HTTPS endpoint the gateway can reach.
       - "3456:3456"
@@ -52,4 +52,16 @@ services:
       # materializes them to a WRITABLE path so the ~8h token refresh persists.
       CLAUDE_CREDENTIALS_JSON: ${MERIDIAN_SEAT1_CREDENTIALS:?set MERIDIAN_SEAT1_CREDENTIALS (contents of secrets/seat1/.credentials.json) via dstack sealed env}
       CLAUDE_JSON: ${MERIDIAN_SEAT1_CLAUDE_JSON:?set MERIDIAN_SEAT1_CLAUDE_JSON (contents of secrets/seat1/.claude.json) via dstack sealed env}
+    volumes:
+      # PERSIST the OAuth credentials across restarts. Meridian refreshes the ~8h
+      # token and writes it to /root/.claude/.credentials.json; on a dstack CVM this
+      # named volume maps to TEE-encrypted persistent storage, so the refreshed token
+      # survives restarts/redeploys. entrypoint.sh then keeps the persisted copy when
+      # it is >= the env-injected one (newest wins), so a restart no longer reverts to
+      # a possibly-rotated env copy. Without this, every restart re-materializes the
+      # (immutable, possibly-stale) sealed-env creds and refresh can 401.
+      - meridian-claude:/root/.claude
     restart: unless-stopped
+
+volumes:
+  meridian-claude:

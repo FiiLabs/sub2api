@@ -4,16 +4,38 @@ set -e
 # OAuth subscription state provisioning. Two mutually-compatible sources:
 #   1. Bind-mount (local dev): compose mounts secrets/seatN/* into place.
 #   2. Env injection (dstack/Phala): CLAUDE_CREDENTIALS_JSON / CLAUDE_JSON hold
-#      the file *contents*, delivered via dstack ENCRYPTED SECRETS (never via a
-#      measured `configs.content`, which would leak the token into compose_hash).
-# When the env vars are set we materialize them to the writable container fs so
-# Meridian can persist its ~8h token refresh (no :ro mount needed in prod).
+#      the file *contents*, delivered via dstack sealed env (never via a measured
+#      `configs.content`, which would leak the token into compose_hash).
+#
+# CREDENTIALS: "newest wins". Meridian auto-refreshes the ~8h OAuth token and
+# writes it back to /root/.claude/.credentials.json. In production that path is a
+# PERSISTENT VOLUME (see compose.cvm.yaml), so a refreshed token survives restarts.
+# On boot we must NOT blindly overwrite that persisted (possibly refreshed) copy
+# with the older env copy — but we SHOULD adopt the env copy when it is fresher
+# (first boot, or an operator re-injected new creds after the volume went stale).
+# So we compare claudeAiOauth.expiresAt and keep whichever is newer.
 if [ -n "${CLAUDE_CREDENTIALS_JSON:-}" ]; then
-  echo "[entrypoint] materializing /root/.claude/.credentials.json from env"
   mkdir -p /root/.claude
-  printf '%s' "$CLAUDE_CREDENTIALS_JSON" > /root/.claude/.credentials.json
-  chmod 600 /root/.claude/.credentials.json
+  DEST=/root/.claude/.credentials.json
+  WRITE_ENV=1
+  if [ -f "$DEST" ] && node -e '
+      const fs=require("fs");
+      const exp=(o)=>{try{return JSON.parse(o).claudeAiOauth.expiresAt||0}catch(e){return 0}};
+      const disk=exp(fs.readFileSync(process.argv[1],"utf8"));
+      const env=exp(process.env.CLAUDE_CREDENTIALS_JSON);
+      process.exit(disk>=env?0:1);   // 0 = disk is newer/equal -> keep disk
+    ' "$DEST" 2>/dev/null; then
+    WRITE_ENV=0
+    echo "[entrypoint] keeping persisted credentials (>= env freshness)"
+  fi
+  if [ "$WRITE_ENV" = "1" ]; then
+    echo "[entrypoint] writing credentials from env (first boot or fresher than disk)"
+    printf '%s' "$CLAUDE_CREDENTIALS_JSON" > "$DEST"
+    chmod 600 "$DEST"
+  fi
 fi
+# .claude.json is static account metadata (oauthAccount), not refreshed — always
+# materialize from env when provided.
 if [ -n "${CLAUDE_JSON:-}" ]; then
   echo "[entrypoint] materializing /root/.claude.json from env"
   printf '%s' "$CLAUDE_JSON" > /root/.claude.json
