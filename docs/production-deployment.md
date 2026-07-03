@@ -244,6 +244,15 @@ jq '{oauthAccount}' ~/.claude.json > deploy/meridian/secrets/seat1/.claude.json
 > 注意:refresh token 用一次会**轮换**,所以本地 secrets 拷贝、以及 sealed env 里的那份,会随实例刷新而变旧——正常运行靠持久卷续命,不依赖它们;只有卷丢失/长期停机过期才需 `claude login` 重注入。**同一账号只能跑一个实例**(两个会互相轮换失效)。
 > `/health` 的 `loggedIn:true` 只表示凭证文件存在,**不代表 token 有效**;token 过期时推理返回 `401 Claude OAuth token has expired`。
 
+### 10.3b 关闭内置 SDK 遥测(干净出网)
+Meridian 打包的 `@anthropic-ai/claude-code` SDK 自带遥测(Statsig 特性开关 + Datadog 日志 + 错误上报),会外发**元数据**(非 prompt 正文)到 Anthropic 遥测设施。对 TEE 出网审计不利(enclave 除了必要的 `api.anthropic.com` 还会连 `datadoghq.com`),且占 ProxyLite 带宽。`compose.cvm.yaml` 已设 env 关闭:
+```yaml
+CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"   # 一把关遥测+错误上报+自动更新
+DISABLE_TELEMETRY: "1"
+DISABLE_ERROR_REPORTING: "1"
+```
+> 已验证:关闭后 gost 出网日志只剩 `api.anthropic.com:443`,无 `datadoghq`。功能无损。
+
 ### 10.4 ProxyLite 固定出口 IP(可选防封,每 seat 独立)
 给某个 seat 设 `PROXYLITE_SOCKS5="socks5://<user>:<pass>@<host>:<port>"`,`entrypoint.sh` 会起
 `gost -L http://127.0.0.1:8118 -F <PROXYLITE_SOCKS5>` 并让 Meridian 走它。**不设 = 直连**(enclave 自身 IP)。

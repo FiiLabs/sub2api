@@ -40,6 +40,15 @@ services:
       MERIDIAN_HOST: "0.0.0.0"
       MERIDIAN_PORT: "3456"
       NO_PROXY: "127.0.0.1,localhost"
+      # Silence the bundled @anthropic-ai/claude-code SDK's own telemetry so the
+      # ONLY egress from this enclave is the necessary api.anthropic.com call.
+      # (Its telemetry — Statsig flags + Datadog logs + error reporting — otherwise
+      # phones home to Anthropic infra; harmless for this non-confidential route but
+      # it muddies the "enclave only talks to the model" audit story and rides the
+      # ProxyLite egress.) Umbrella flag + two specific ones as belt-and-suspenders.
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+      DISABLE_TELEMETRY: "1"
+      DISABLE_ERROR_REPORTING: "1"
       # MANDATORY on a public endpoint: turns on Meridian's requireAuth middleware
       # (x-api-key or Authorization: Bearer, constant-time compared). Without this,
       # anyone hitting the public :3456 endpoint could spend the Claude subscription.
