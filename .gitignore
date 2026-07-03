@@ -144,3 +144,4 @@ deploy/meridian/gost
 deploy/meridian/secrets/
 deploy/meridian/seats.json
 deploy/meridian/*.generated.*
+deploy/meridian/seats.env.template
