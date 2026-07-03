@@ -349,6 +349,33 @@ curl -X PUT https://<网关>/v1/admin/upstreams -H "Authorization: Bearer <ADMIN
 > ⚠️ 网关 `gateway-state` 卷会**持久化 upstreams.json**:空 seed 只在首次启动(无既存 state)生效;复用旧 CVM 时旧上游会残留,直到 `PUT` 覆盖。全新 enclave A 部署则空 seed 即真空,等 `PUT`。
 > 校验:receipt 的 `upstream.verified.url_origin` == 该 seat 的公网端点;seat 容器 gost 日志有 `api.anthropic.com` 经 `127.0.0.1:8118`(走 ProxyLite)。
 
+### 10.9b 多账号:一个 CVM 跑 N 个 seat(省成本,推荐)
+"一账号一 CVM"成本随账号线性涨。因**每 Meridian 空闲仅 ~60MB**、真正吃资源的是并发(默认 `MERIDIAN_MAX_CONCURRENT=10`/seat),可把 **N 个 seat 容器塞进一个 CVM**。每 seat 仍有:独立端口、独立 `MERIDIAN_<SEAT>_API_KEY`、独立 ProxyLite 静态 IP、独立持久卷——**每账号独立出口 IP 不打折**。网关把每 seat 当独立 `base_url` 上游注册(沿用现有路由,零改动)。
+
+**选型**:单 CVM 目标 30 账号用 **`tdx.xlarge`(8vCPU/16GB)**(空闲 ~2GB + ~14GB 并发余量)。账号少时先用小规格,`phala cvms resize <cvm> tdx.xlarge` 按需长大。
+
+用 `deploy/meridian/gen-seats.sh` 从一份 `seats.json` 一键生成:
+```bash
+cd deploy/meridian
+# seats.json 每账号一条: {"name":"seatN","creds_dir":"secrets/seatN","proxy":"socks5://<seatN 静态IP>"}
+./gen-seats.sh
+#   -> compose.seats.generated.yaml  (N 容器/单 CVM,含持久卷/关遥测/鉴权/proxy)
+#   -> route_map.generated.yaml       (consult.route_map: 各模型 -> 全 seat 轮换+failover)
+#   -> seats.env.template             (要填的 sealed env 变量名)
+#   -> register-upstreams.generated.sh(把全部 seat PUT 到网关)
+
+# 按 seats.env.template 填 seats.env(每 seat 的 API key/proxy/creds),然后:
+phala deploy -n meridian-seats -c compose.seats.generated.yaml -e seats.env
+# 取该 CVM 的 app_id 与 node 域(phala cvms get），注册全部上游:
+GATEWAY_URL=https://<网关> GATEWAY_ADMIN_TOKEN=<admin> \
+MERIDIAN_APP_ID=<meridian-cvm app_id> MERIDIAN_NODE=dstack-pha-prodX.phala.network \
+MERIDIAN_SEAT1_API_KEY=... MERIDIAN_SEAT2_API_KEY=... bash register-upstreams.generated.sh
+# 把 route_map.generated.yaml 并进 sub2api config.yaml(viper 热加载)
+```
+**加账号** = seats.json 加一条 → `./gen-seats.sh` → seats.env 补该 seat → 重部这个 CVM(接近容量先 resize)→ 跑 register 脚本 → route_map 热加载。**网关始终不动**。
+> ⚠️ 迁移/重部会按 `expiresAt` "新者胜"从持久卷或 env 落地凭证;首次从单-seat `compose.cvm.yaml`(卷 `meridian-claude`)切到多-seat(卷 `meridian-<seat>-claude`)时,seat 会从 sealed env 重新落地凭证——**迁移前对相关账号 `claude login` 刷新 secrets** 再注入,避免用到旧的已轮换 token。
+> ⚠️ 单 CVM 的**爆炸半径**:重部/重启会同时影响该 CVM 上所有 seat。账号很多时可分 2–3 个 CVM 降低影响。
+
 ### 10.10 Meridian 上线检查清单
 - [ ] 每个订阅账号一个独立 Meridian 实例(enclave B);镜像 digest 进 attested `compose_hash`
 - [ ] 公网暴露必设 `MERIDIAN_API_KEY`(无 key 应 401);网关 upstream `bearer_token` = 同值
