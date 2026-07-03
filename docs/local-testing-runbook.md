@@ -1,7 +1,7 @@
 # 本地集成测试完整手册:sub2api + private-ai-gateway + Meridian + ProxyLite
 
 **目标**:只看本文档,从零在本地把整套集成跑起来并验证。链路是——你(curl / Claude Code)
-用一个 **team key** 发请求 → **private-ai-gateway**(隐私网关)→ **executor**(中间件)
+用一个 **API key** 发请求 → **private-ai-gateway**(隐私网关)→ **executor**(中间件)
 → **sub2api**(控制面:鉴权/选路/计费,只见元数据)→ **Meridian**(用你的 **Claude 订阅额度**
 调 Anthropic,**可选**经 **ProxyLite** 固定出口 IP)→ Anthropic。最终验证:鉴权、路由、
 回执(receipt)、计费,以及(可选)固定出口 IP 生效。
@@ -9,13 +9,19 @@
 > 即使你没接触过这些组件,按本文档从上到下照做即可。全程本地,不需要真 TEE 硬件
 > (用 dstack **simulator** 模拟,仅供功能测试,**不提供真实安全**)。
 
+> ℹ️ **本文档用的是网关的 out-of-process executor 本地流程**(独立 executor 进程 + UDS),
+> 便于本地分组件调试。**生产**部署(`docs/production-deployment.md` §5.2)pin 的网关
+> commit 已改为**进程内 middleware**(无独立 executor 进程、无 UDS);两者的 sub2api 侧
+> 契约(`/api/control`、route_map、计费)一致。模型名本地示例沿用当时的 `claude-*-4-6`,
+> 生产统一为 `claude-opus-4-8` / `claude-sonnet-5`。
+
 ---
 
 ## 1. 这是什么 / 各组件与链路
 
 ```
 你(curl / Claude Code)
-   │  Authorization: Bearer <team key>
+   │  Authorization: Bearer <API key>
    ▼
 private-ai-gateway(隐私网关 :8086)──► executor(中间件)──► sub2api(:8080 /api/control:鉴权/选路/计费,只见元数据)
    │                                                          
@@ -37,7 +43,7 @@ Anthropic API(用订阅额度扣减)
 
 关键名词:
 - **TEE / 控制面 / 数据面**:控制面 = 鉴权/路由/计费(只传元数据,走到 sub2api);数据面 = 真正的 prompt/响应(只经过网关+上游,**不经过 sub2api**)。
-- **team key**:带"团队"归属的 API key,设计上**只能走网关(TEE)**;personal key 走 sub2api 自己的代理。本手册测 team key。
+- **API key**:本手册用它发请求(作 `Authorization: Bearer`)。任何有效 key 都能经网关(TEE)路由——数据面只过网关+上游,不落 sub2api。
 - **seat(席位)**:一个 Claude 订阅账号 = 一个 Meridian 实例 = 网关里一条 `meridian-seatN` 上游。要多账号池化就多开 seat(见 §11)。
 - **route_map**:sub2api 里的表,把"客户端发来的模型名"映射到"网关的某条上游路由"。
 - **receipt(回执)**:网关为每次请求签名的记录,可事后核验。
@@ -119,7 +125,7 @@ cd "$DSTACK_SIM" && ./build.sh    # 生成 ./dstack-simulator
 
 ---
 
-## 6. 一次性准备(token / team key / 占位 account / 订阅登录态)
+## 6. 一次性准备(token / API key / 占位 account / 订阅登录态)
 
 ### 6.1 control token(executor 和 sub2api 共用同一个)
 ```bash
@@ -127,8 +133,8 @@ openssl rand -hex 32 | tee /tmp/pag-control-token.txt
 ```
 > 用一键脚本时(§8),缺这个文件会自动生成并打印出来。
 
-### 6.2 team key
-在 sub2api 里创建一个**带 team 的 API key**(通过 sub2api 后台/接口;新建的 key 会自动写入用于查找的哈希)。
+### 6.2 API key
+在 sub2api 里创建一个 **API key**(通过 sub2api 后台/接口;新建的 key 会自动写入用于查找的哈希 `key_hash`)。任何有效 key 都能经网关(TEE)走 consult。
 记下明文,测试时作 `Authorization: Bearer` 用。
 
 ### 6.3 占位 account id(计费用)
@@ -297,7 +303,7 @@ node build/server.js
 ## 9. 验证 / 测试(核心集成)
 
 ```bash
-KEY=<你的 team key>                       # 第 6.2 步创建的
+KEY=<你的 API key>                        # 第 6.2 步创建的
 TOK=$(cat /tmp/pag-control-token.txt)
 ```
 
@@ -341,7 +347,7 @@ curl -sS http://127.0.0.1:8086/v1/aci/receipts/$RID -H "Authorization: Bearer $K
 (Meridian 是非机密路由,**无 attestation**)、`response.returned`。
 
 ### 9.5 验证计费(需 `placeholder_account_id` ≠ 0)
-> 本分支(**tee-control**)为纯控制面,**无 billing_subject / 团队账本**。TEE 用量经
+> 本分支(**tee-control**)为纯控制面,按 **user 维度**记个人账。TEE 用量经
 > `POST /consult/post` 记到占位账号 `tee-gateway` 下的 `usage_logs`,并按 **user 维度**扣个人余额:
 ```sql
 -- 用量明细(列名:model / input_tokens / output_tokens / total_cost)
@@ -482,5 +488,4 @@ cd "$SUB2API" && docker compose -f deploy/meridian/compose.yaml down
 | ProxyLite 启用后出口 IP 仍是本机 | `PROXYLITE_SOCKS5` 没传进容器(确认 §10 的覆盖/环境变量),或 SOCKS5 端点不可达;看容器日志里 gost 是否启动。 |
 | 经 ProxyLite 的请求全部超时/`route(retry=0) unexpected EOF` | `PROXYLITE_SOCKS5` 用了 **`socks5h://`** scheme。镜像内置的 **gost v3** 只认 **`socks5://`**(域名仍由 SOCKS5 端做远端解析),`socks5h://` 会静默超时。改成 `socks5://` 重启容器。 |
 | `/v1/admin/upstreams` 返回 404 `admin ... not enabled` | 网关配置未设 `admin_token`。在 `/tmp/pag-stage2.config.json` 加 `"admin_token":"<随便一串>"` 重启网关,再带 `Authorization: Bearer <admin_token>` 调用(§11 多-seat 热加载需要它)。 |
-| team key 打 sub2api 自身 `/v1/*` 被 403 `USE_TEE_ENDPOINT` | 设计如此:team key 只能走网关(TEE);personal key 才走 sub2api 自己的代理。 |
 | 改了 sub2api 配置/代码不生效 | config.yaml 启动时读取——改完**重启 sub2api**;改了 Go 代码先 `go build -o sub2api ./cmd/server` 再重启。 |
