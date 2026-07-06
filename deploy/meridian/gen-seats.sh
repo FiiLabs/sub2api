@@ -22,8 +22,11 @@
 #   3) bash register-upstreams.generated.sh   (re-registers ALL seats on the gateway)
 #   4) merge route_map.generated.yaml into sub2api config.yaml (viper hot-reloads)
 #
-# Sizing: one Meridian idles at ~60MB; the real limit is peak concurrency (default
-# MERIDIAN_MAX_CONCURRENT=10/seat). tdx.xlarge (8 vCPU/16GB) comfortably holds ~30 seats.
+# Sizing: one Meridian idles at ~60MB; the real limit is peak concurrency × per-session
+# RAM (a busy Claude session can reach ~1GB). We cap both below: MERIDIAN_MAX_CONCURRENT
+# (default 3) and NODE_OPTIONS heap (default 1024MB). Budget ~1GB/concurrent session +
+# ~0.5GB OS/agent. So: tdx.small/2GB -> 1-2 concurrent, medium/4GB -> 3, large/8GB -> 5-6,
+# xlarge/16GB -> ~10 (and ~30 seats). global_oom means you exceeded the CVM's real RAM.
 set -euo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 SEATS="${1:-$DIR/seats.json}"
@@ -70,6 +73,11 @@ for i in $(seq 0 $((N-1))); do
     echo "      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: \"1\"   # silence bundled SDK telemetry"
     echo "      DISABLE_TELEMETRY: \"1\""
     echo "      DISABLE_ERROR_REPORTING: \"1\""
+    echo "      # RAM guards (global_oom protection). Safe defaults baked in; tune per-seat via"
+    echo "      # sealed env WITHOUT changing compose_hash again. Sized for the CVM's RAM:"
+    echo "      #   tdx.small/2GB:1-2  medium/4GB:3  large/8GB:5-6  xlarge/16GB:~10 concurrent."
+    echo "      MERIDIAN_MAX_CONCURRENT: \"\${MERIDIAN_${UP}_MAX_CONCURRENT:-3}\"           # cap concurrent Claude sessions/seat"
+    echo "      NODE_OPTIONS: \"\${MERIDIAN_${UP}_NODE_OPTIONS:---max-old-space-size=1024}\"   # per-session V8 heap cap (MB)"
     echo "      MERIDIAN_API_KEY: \${MERIDIAN_${UP}_API_KEY:?set MERIDIAN_${UP}_API_KEY (bearer for gateway upstream) via sealed env}"
     echo "      PROXYLITE_SOCKS5: \${MERIDIAN_${UP}_PROXY:-}          # this seat's own static egress IP"
     echo "      CLAUDE_CREDENTIALS_JSON: \${MERIDIAN_${UP}_CREDENTIALS:?set MERIDIAN_${UP}_CREDENTIALS via sealed env}"
@@ -107,6 +115,11 @@ done
     echo "MERIDIAN_${UP}_PROXY=$(jq -r ".seats[$i].proxy // \"socks5://<user>:<pass>@<seat static ip>:<port>\"" "$SEATS")"
     echo "MERIDIAN_${UP}_CREDENTIALS=<contents of secrets/$name/.credentials.json>"
     echo "MERIDIAN_${UP}_CLAUDE_JSON=<contents of secrets/$name/.claude.json>"
+    echo "# optional RAM guards — compose already bakes safe defaults (MAX_CONCURRENT=3, heap=1024MB);"
+    echo "# set these ONLY to override, e.g. down to 1-2 on a tdx.small/2GB CVM. Changing the VALUE"
+    echo "# here does NOT change compose_hash (it is sealed-env interpolation, not measured text)."
+    echo "#MERIDIAN_${UP}_MAX_CONCURRENT=3           # small/2GB:1-2  medium/4GB:3  large/8GB:5-6  xlarge/16GB:~10"
+    echo "#MERIDIAN_${UP}_NODE_OPTIONS=--max-old-space-size=1024"
   done
 } > "$ENVTMPL"
 

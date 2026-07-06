@@ -40,7 +40,7 @@ Fetch the live report and compare against these. Update this table whenever
 |---|---|
 | app_id | `bbbc8691946a8575accfa86b8b533ad288d00828` |
 | os image | `dstack-0.5.9` — hash `bd369a8c…` (same as gateway) |
-| compose_hash | `53969b643beac8b0e234c99276891e737ec8ece3774c9be64707ae050cfda16f` |
+| compose_hash | `3bc8be005f4ad1e1005cc5a54f540cd069ffb262dc48b850c6ca086ae2da5796` |
 | measured compose | `deploy/meridian/compose.seats.generated.yaml` (generate via `gen-seats.sh`; contains only `${VAR}` refs + the image digest + ports — NO secrets) |
 | meridian image | `docker.io/markerdao/meridian-enclave@sha256:79f828ba66c1dc96816000723c7232c9d1fa289b710d9bdcc559e67cb075cbb8` |
 
@@ -66,7 +66,7 @@ curl -sS "$BASE/v1/attestation/report?nonce=$NONCE" > report.json
 jq -r '.attestation.source_provenance | {repo_url, repo_commit}' report.json
 #    -> repo_commit MUST equal 975ac50f...  (the audited gateway source)
 #    Compare the quote's OS measurement to os_image_hash bd369a8c... (dstack-0.5.9),
-#    and the app compose_hash to 746302d0...  (gateway) / 53969b64... (meridian).
+#    and the app compose_hash to 746302d0...  (gateway) / 3bc8be00... (meridian).
 
 # 4) Recompute compose_hash from the published compose (dstack canonicalizes the
 #    docker-compose into app-compose.json and hashes THAT — it is NOT a raw
