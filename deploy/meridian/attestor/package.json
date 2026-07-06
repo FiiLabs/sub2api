@@ -1,0 +1,18 @@
+{
+  "name": "meridian-attestor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Nonce-bound Intel TDX DCAP quote + dstack event log sidecar for the Meridian enclave-B CVM.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@phala/dstack-sdk": "0.5.8",
+    "@noble/hashes": "1.7.1",
+    "@noble/curves": "1.8.1"
+  }
+}

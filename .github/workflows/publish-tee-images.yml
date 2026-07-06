@@ -43,6 +43,10 @@ jobs:
             image: docker.io/markerdao/git-launcher-rust
             context: deploy/gateway/launcher
             prebuild: ""
+          - name: meridian-attestor
+            image: docker.io/markerdao/meridian-attestor
+            context: deploy/meridian/attestor
+            prebuild: ""
     name: build-${{ matrix.name }}
     steps:
       - uses: actions/checkout@v4
