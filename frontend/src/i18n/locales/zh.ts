@@ -1,4 +1,129 @@
 export default {
+  // 隐私证明页 (~/proof)
+  proof: {
+    header: {
+      backHome: '首页'
+    },
+    hero: {
+      title: '跟着你的 prompt 走——每一跳都能验证。',
+      subtitle:
+        '本页如实展示你的 prompt 到底经过哪些节点、每一步我们能证明什么，无需你信任我们。范围刻意收窄并诚实声明：在你的设备与 Anthropic 之间，任何中间方（包括 ApexOne 运营方）都无法读取或留存你的 prompt。Anthropic 本身看得到明文（见下方披露）。',
+      scopeNote:
+        '验证全程在你的浏览器内完成：拉取报告、本地校验 ACI 绑定、并用 Intel collateral（经 Phala PCCS）验证 TDX quote——不依赖我们的服务器。某一步只有在其密码学校验全部通过时才会变绿。'
+    },
+    status: {
+      pending: '未验证',
+      checking: '验证中…',
+      pass: '已验证',
+      fail: '验证失败',
+      localSoon: '本地验证即将上线',
+      disclosure: '诚实披露·不适用'
+    },
+    journey: {
+      title: '你的 prompt 的旅程',
+      basisLabel: '依据',
+      hop1: {
+        node: '你的设备 → 网关（enclave A，CVM 内终止 TLS）',
+        claim:
+          'TLS 在被认证的 CVM 内部（由 dstack-ingress，属于被度量的 compose）终止；你的明文只在 CVM 内部网络流转、绝不出 CVM。这一点可通过 compose_hash 审计被度量的 compose 来确认。如需更强、与 TLS 无关的证明，下方的 E2EE 增强模式让你的浏览器直接加密到 enclave 的被认证密钥——只有被认证的 enclave 能解，任何中间方（包括 ApexOne）都看不到明文。',
+        basis: 'compose_hash 审计（TLS 在 CVM 内终止）+ Intel TDX DCAP quote',
+        basisE2ee:
+          'compose_hash 审计 + 浏览器级 E2EE 通道到被认证密钥（与 TLS 无关）+ Intel TDX DCAP quote'
+      },
+      hop2: {
+        node: '网关（enclave A）',
+        claim:
+          '运行的是经审计的确切源码，请求处理路径无日志、无留存，并为你这次请求签发一张可验证的 receipt。',
+        basis: 'compose_hash → 公开源码 commit；ECDSA receipt'
+      },
+      hop3: {
+        node: '网关 → Meridian（enclave B）',
+        claim: '内部这一跳仍落在第二个被认证的机密 enclave 内——即 Claude 订阅桥接。',
+        basis: '独立 TDX quote + compose_hash'
+      },
+      hop4: {
+        node: 'Meridian → Anthropic',
+        claim:
+          '这一跳无法机密：Anthropic 会按其自身政策解密并处理你的 prompt 明文。我们只能证明请求是从被认证的 enclave 发出的。',
+        basis: '诚实披露——并非机密性承诺'
+      }
+    },
+    disclosure: {
+      title: '诚实披露：Anthropic 会看到你的明文',
+      body:
+        'Claude 路由桥接的是 Claude 订阅，因此 Anthropic 必然会按其自身政策解密并处理你的 prompt 明文。我们的保证仅限于：你的设备与 Anthropic 之间的任何中间方（包括 ApexOne）都无法读取或留存它。我们从不声称对 Anthropic 保密，也从不声称你的模型“未被替换”。',
+      policyLink: 'Anthropic 隐私政策'
+    },
+    verify: {
+      checksTitle: '逐项校验结果',
+      running: {
+        title: '正在你的浏览器内验证…',
+        note: '拉取 attestation 报告、校验 ACI 绑定、并用 Intel collateral 验证 TDX quote（~426KB 验证器首次加载）。'
+      },
+      pass: {
+        title: '硬件级验证通过',
+        note: '真实 Intel TDX 硬件、运行的是经审计且被度量的确切代码（compose_hash 匹配）、对该 keyset 出具认证并绑定了你的新 nonce。hop 3（Meridian enclave B）在其 attestation 端点可达时于下方单独验证。诚实边界：网关→Meridian 这一跳跨网络传明文（由 TLS + bearer token 保护），hop 4——Anthropic——按设计看得到你的明文。'
+      },
+      fail: {
+        title: '验证失败',
+        note: '一项或多项 gating 校验未通过。不要信任该报告——见下方逐项结果。'
+      },
+      aciOnly: {
+        title: 'ACI 绑定通过——硬件 quote 未完成',
+        note: 'ACI 身份绑定已通过，但 TDX 硬件 quote 未能在你的浏览器内验证（例如 Phala PCCS collateral 服务不可达）。请重试；quote 验证通过前，这不构成硬件级证明。'
+      }
+    },
+    live: {
+      title: '实时 attestation 报告',
+      desc:
+        '拉取网关当前的 attestation 报告（绑定一个新生成的随机 nonce）。其来源溯源（repo / commit / 镜像 digest）以及——在 TDX quote 通过验证后——其硬件度量值，可与下方公布的参考值比对。重要提示：只有当 TDX quote 经过密码学验证后，报告才可信（浏览器本地验证即将上线）——自报数值本身不构成证明。',
+      fetch: '拉取并验证报告',
+      fetching: '拉取并验证中…',
+      download: '下载 report.json',
+      nonce: 'Nonce',
+      error: '无法访问 attestation 端点。它由 TEE 网关跨域提供，需要网关开启 CORS。'
+    },
+    reference: {
+      title: '公布的参考值',
+      desc: '来自 docs/attestation-verification.md。第三方据此比对实时 quote。',
+      gateway: '网关 — enclave A（机密路径）',
+      meridian: 'Meridian seat — enclave B（非机密桥接）',
+      appId: 'App ID',
+      osImage: 'OS 镜像',
+      composeHash: 'compose_hash',
+      sourceCommit: '源码 commit',
+      signingAddress: 'Receipt 签发地址'
+    },
+    e2ee: {
+      title: '浏览器级 E2EE 证明（hop-1）',
+      desc:
+        '网关在其被认证的 keyset 内公布了一把专用加密密钥（其私钥由 dstack-KMS 只释放给被认证的 enclave）。由于这把钥被 quote 绑定的 keyset digest 覆盖，你的浏览器无需信任 TLS 即可验证：任何加密到它的内容，只有在被认证的 enclave 内部才能解开。此项自动运行，不发送任何数据。',
+      statusVerified: 'E2EE 通道到被认证密钥——已在你的浏览器内验证',
+      statusUnavailable: '该部署不提供 E2EE 通道',
+      statusIdle: '先在上方拉取报告以验证 E2EE 通道。',
+      live: {
+        title: '运行一次实时 E2EE 往返（可选）',
+        desc:
+          '在你的浏览器内把 prompt 加密到 enclave 的被认证密钥、以 E2EE 发送、再解密 E2EE 响应。认证解密成功即证明 enclave 持有该私钥并实时跑通了整条通道。',
+        disclosure:
+          '诚实披露：该 demo prompt 会在 enclave 内被解密并明文转发给 Anthropic（hop 4），且会消耗 token。请勿粘贴敏感内容。你的 API key 只留在浏览器，仅随本次请求的 Authorization 头发送。',
+        apiKeyLabel: 'API key',
+        apiKeyPlaceholder: 'sk-…（仅用于本次请求，保存在你的浏览器）',
+        modelLabel: '模型',
+        promptLabel: 'Prompt',
+        run: '加密并往返',
+        running: '加密并验证中…',
+        successTitle: '被认证的 enclave 解开了你的密文',
+        successNote:
+          '你的 prompt 在浏览器内被加密到 enclave 的被认证密钥、完成往返、且 E2EE 响应通过认证解密。任何中间方（ApexOne、网络、TLS 终止方）都没看到你的明文。',
+        replyLabel: '解密后的回复',
+        failTitle: '实时往返未能完成',
+        failNote:
+          '这并不能推翻该通道——只是说明这次实时请求没能跑起来（见错误信息）。上方的验证侧证明依然成立。'
+      }
+    }
+  },
+
   // Home Page
   home: {
     viewOnGithub: '在 GitHub 上查看',

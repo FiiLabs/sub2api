@@ -1,4 +1,131 @@
 export default {
+  // Privacy Proof (~/proof)
+  proof: {
+    header: {
+      backHome: 'Home'
+    },
+    hero: {
+      title: 'Follow your prompt — and verify every hop.',
+      subtitle:
+        'This page shows exactly where your prompt travels and what we can prove at each step, without asking you to trust us. The scope is deliberately narrow and stated honestly: between your device and Anthropic, no intermediary — including the ApexOne operator — can read or retain your prompt. Anthropic itself sees plaintext (see the disclosure below).',
+      scopeNote:
+        'Verification runs entirely in your browser: it fetches the report, checks the ACI binding locally, and verifies the Intel TDX quote against Intel collateral (via Phala PCCS) — with no trust in our servers. A step turns green only when its cryptographic checks pass.'
+    },
+    status: {
+      pending: 'Not verified',
+      checking: 'Checking…',
+      pass: 'Verified',
+      fail: 'FAILED',
+      localSoon: 'Local verify coming soon',
+      disclosure: 'Disclosure — N/A'
+    },
+    journey: {
+      title: 'Your prompt’s journey',
+      basisLabel: 'Basis',
+      hop1: {
+        node: 'Your device → Gateway (enclave A, TLS terminates in-CVM)',
+        claim:
+          'TLS is terminated inside the attested CVM (by dstack-ingress, part of the measured compose); your plaintext travels only over the CVM-internal network and never leaves it. This is verifiable by auditing the measured compose via compose_hash. For a stronger, TLS-independent proof, the E2EE enhanced mode below lets your browser encrypt directly to the enclave’s attested key — so only the attested enclave can decrypt, and no intermediary (including ApexOne) ever sees plaintext.',
+        basis: 'compose_hash audit (TLS terminates in-CVM) + Intel TDX DCAP quote',
+        basisE2ee:
+          'compose_hash audit + browser-level E2EE channel to the attested key (TLS-independent) + Intel TDX DCAP quote'
+      },
+      hop2: {
+        node: 'Gateway (enclave A)',
+        claim:
+          'Runs the exact audited source with no logging or retention in the request path, and issues a signed receipt tied to your request.',
+        basis: 'compose_hash → public source commit; ECDSA receipt'
+      },
+      hop3: {
+        node: 'Gateway → Meridian (enclave B)',
+        claim:
+          'The internal hop stays inside a second attested confidential enclave — the Claude-subscription bridge.',
+        basis: 'Independent TDX quote + compose_hash'
+      },
+      hop4: {
+        node: 'Meridian → Anthropic',
+        claim:
+          'This hop cannot be confidential: Anthropic decrypts and sees your prompt in plaintext under its own policies. We only attest that the request leaves from the attested enclave.',
+        basis: 'Honest disclosure — not a confidentiality claim'
+      }
+    },
+    disclosure: {
+      title: 'Honest disclosure: Anthropic sees your plaintext',
+      body:
+        'The Claude route bridges a Claude subscription, so Anthropic necessarily decrypts and processes your prompt in plaintext under its own policies. Our guarantee is only that no intermediary between your device and Anthropic — including ApexOne — can read or retain it. We never claim confidentiality from Anthropic, and we never claim your model was “not swapped.”',
+      policyLink: 'Anthropic Privacy Policy'
+    },
+    verify: {
+      checksTitle: 'Per-check results',
+      running: {
+        title: 'Verifying in your browser…',
+        note: 'Fetching the attestation report, checking the ACI binding, and verifying the Intel TDX quote against Intel collateral (the ~426 KB verifier loads once).'
+      },
+      pass: {
+        title: 'Hardware-rooted verification passed',
+        note: 'Genuine Intel TDX hardware, running the exact audited & measured code (compose_hash matches), attesting to this keyset and bound to your fresh nonce. hop 3 (Meridian enclave B) is verified separately below when its attestation endpoint is reachable. Honest limits: the gateway→Meridian hop crosses the network as plaintext (protected by TLS + a bearer token), and hop 4 — Anthropic — sees your plaintext by design.'
+      },
+      fail: {
+        title: 'Verification FAILED',
+        note: 'One or more gating checks did not pass. Do not trust this report — see the per-check results below.'
+      },
+      aciOnly: {
+        title: 'ACI binding verified — hardware quote incomplete',
+        note: 'The ACI identity binding passed, but the Intel TDX hardware quote could not be verified in your browser (e.g. the Phala PCCS collateral service was unreachable). Retry; until the quote verifies this is not a hardware-rooted proof.'
+      }
+    },
+    live: {
+      title: 'Live attestation report',
+      desc:
+        'Fetch the gateway’s current attestation report, bound to a fresh random nonce. Its source provenance (repo / commit / image digest) and — once the TDX quote is verified — its hardware measurements can be compared against the published reference values below. Important: the report is trustworthy only once the TDX quote is cryptographically verified (browser-local verification coming soon) — a self-reported value alone is not proof.',
+      fetch: 'Fetch & verify report',
+      fetching: 'Fetching & verifying…',
+      download: 'Download report.json',
+      nonce: 'Nonce',
+      error:
+        'Could not reach the attestation endpoint. It is served cross-origin by the TEE gateway and requires CORS to be enabled.'
+    },
+    reference: {
+      title: 'Published reference values',
+      desc: 'From docs/attestation-verification.md. A third party compares the live quote against these.',
+      gateway: 'Gateway — enclave A (confidential path)',
+      meridian: 'Meridian seat — enclave B (non-confidential bridge)',
+      appId: 'App ID',
+      osImage: 'OS image',
+      composeHash: 'compose_hash',
+      sourceCommit: 'Source commit',
+      signingAddress: 'Receipt signing address'
+    },
+    e2ee: {
+      title: 'Browser-level E2EE proof (hop-1)',
+      desc:
+        'The gateway advertises a dedicated encryption key inside its attested keyset (its private half is released by dstack-KMS only to the attested enclave). Because that key is covered by the quote-bound keyset digest, your browser can verify — with no trust in TLS — that anything encrypted to it can be decrypted only inside the attested enclave. This runs automatically; no data is sent.',
+      statusVerified: 'E2EE channel to the attested key — verified in your browser',
+      statusUnavailable: 'E2EE channel not available on this deployment',
+      statusIdle: 'Fetch the report above to verify the E2EE channel.',
+      live: {
+        title: 'Run a live E2EE round-trip (optional)',
+        desc:
+          'Encrypt a prompt in your browser to the enclave’s attested key, send it E2EE, and decrypt the E2EE response. A successful authenticated decrypt proves the enclave held the key and ran the channel live.',
+        disclosure:
+          'Honest disclosure: this demo prompt is decrypted inside the enclave and forwarded to Anthropic in plaintext (hop 4), and it consumes tokens. Do not paste secrets. Your API key stays in your browser and is sent only inside this request’s Authorization header.',
+        apiKeyLabel: 'API key',
+        apiKeyPlaceholder: 'sk-… (used only for this request, kept in your browser)',
+        modelLabel: 'Model',
+        promptLabel: 'Prompt',
+        run: 'Encrypt & round-trip',
+        running: 'Encrypting & verifying…',
+        successTitle: 'The attested enclave decrypted your ciphertext',
+        successNote:
+          'Your prompt was encrypted in your browser to the enclave’s attested key, round-tripped, and the E2EE response authenticated-decrypted. No intermediary (ApexOne, the network, the TLS terminator) ever saw your plaintext.',
+        replyLabel: 'Decrypted reply',
+        failTitle: 'Live round-trip did not complete',
+        failNote:
+          'This does not disprove the channel — it means the live request could not run (see the error). The verification-side proof above still holds.'
+      }
+    }
+  },
+
   // Home Page
   home: {
     viewOnGithub: 'View on GitHub',

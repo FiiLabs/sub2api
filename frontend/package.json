@@ -17,6 +17,10 @@
   "dependencies": {
     "@airwallex/components-sdk": "^1.30.2",
     "@lobehub/icons": "^4.0.2",
+    "@noble/ciphers": "^2.2.0",
+    "@noble/curves": "^2.2.0",
+    "@noble/hashes": "^2.2.0",
+    "@phala/dcap-qvl-web": "0.3.3",
     "@stripe/stripe-js": "^9.0.1",
     "@tanstack/vue-virtual": "^3.13.23",
     "@vueuse/core": "^10.7.0",
@@ -25,6 +29,7 @@
     "dompurify": "^3.3.1",
     "driver.js": "^1.4.0",
     "file-saver": "^2.0.5",
+    "json-bigint": "^1.0.0",
     "marked": "^17.0.1",
     "pinia": "^2.1.7",
     "qrcode": "^1.5.4",
@@ -38,6 +43,7 @@
   "devDependencies": {
     "@types/dompurify": "^3.0.5",
     "@types/file-saver": "^2.0.7",
+    "@types/json-bigint": "^1.0.4",
     "@types/mdx": "^2.0.13",
     "@types/node": "^20.10.5",
     "@types/qrcode": "^1.5.6",
