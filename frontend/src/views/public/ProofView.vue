@@ -41,6 +41,70 @@
       <!-- Prompt journey (4 hops) -->
       <section class="mb-10">
         <h2 class="mb-4 text-lg font-semibold text-gray-900 dark:text-white">{{ t('proof.journey.title') }}</h2>
+
+        <!-- Beginner-friendly flow diagram: where your prompt goes + who sees plaintext -->
+        <div class="mb-6 overflow-x-auto rounded-xl border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-900 sm:p-5">
+          <div class="flex min-w-[640px] items-stretch gap-2">
+            <!-- 1. Your device -->
+            <div class="flex flex-1 flex-col items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 p-3 text-center dark:border-dark-700 dark:bg-dark-800/60">
+              <span class="text-2xl">📱</span>
+              <span class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('proof.flow.device') }}</span>
+              <span class="text-xs text-gray-500 dark:text-dark-400">{{ t('proof.flow.deviceSub') }}</span>
+            </div>
+
+            <!-- encrypted arrow -->
+            <div class="flex flex-col items-center justify-center px-1">
+              <span class="whitespace-nowrap text-[10px] font-medium text-primary-600 dark:text-primary-400">🔒 {{ t('proof.flow.arrEncrypted') }}</span>
+              <span class="text-2xl leading-none text-gray-300 dark:text-dark-600">→</span>
+            </div>
+
+            <!-- TEE boundary wrapping gateway + meridian -->
+            <div class="flex flex-[2.4] flex-col rounded-xl border-2 border-dashed border-primary-400/60 bg-primary-50/40 p-3 dark:border-primary-500/40 dark:bg-primary-500/5">
+              <span class="mb-2 inline-flex items-center justify-center gap-1 text-center text-[11px] font-semibold text-primary-700 dark:text-primary-300">
+                🔒 {{ t('proof.flow.teeLabel') }}
+              </span>
+              <div class="flex items-stretch gap-2">
+                <div class="flex flex-1 flex-col items-center gap-1 rounded-lg bg-white p-2.5 text-center shadow-sm dark:bg-dark-800">
+                  <span class="text-xl">🌐</span>
+                  <span class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('proof.flow.gateway') }}</span>
+                  <span class="text-xs text-gray-500 dark:text-dark-400">{{ t('proof.flow.gatewaySub') }}</span>
+                </div>
+                <div class="flex flex-col items-center justify-center">
+                  <span class="whitespace-nowrap text-[10px] font-medium text-primary-600 dark:text-primary-400">{{ t('proof.flow.arrInternal') }}</span>
+                  <span class="text-lg leading-none text-primary-300 dark:text-primary-500">→</span>
+                </div>
+                <div class="flex flex-1 flex-col items-center gap-1 rounded-lg bg-white p-2.5 text-center shadow-sm dark:bg-dark-800">
+                  <span class="text-xl">🌉</span>
+                  <span class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('proof.flow.meridian') }}</span>
+                  <span class="text-xs text-gray-500 dark:text-dark-400">{{ t('proof.flow.meridianSub') }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- plaintext arrow -->
+            <div class="flex flex-col items-center justify-center px-1">
+              <span class="whitespace-nowrap text-[10px] font-medium text-amber-600 dark:text-amber-400">⚠ {{ t('proof.flow.arrPlaintext') }}</span>
+              <span class="text-2xl leading-none text-gray-300 dark:text-dark-600">→</span>
+            </div>
+
+            <!-- 4. Anthropic -->
+            <div class="flex flex-1 flex-col items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 p-3 text-center dark:border-amber-500/30 dark:bg-amber-500/10">
+              <span class="text-2xl">🤖</span>
+              <span class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('proof.flow.anthropic') }}</span>
+              <span class="text-xs text-amber-700 dark:text-amber-300">{{ t('proof.flow.anthropicSub') }}</span>
+            </div>
+          </div>
+
+          <!-- legend + one-liner -->
+          <div class="mt-4 flex flex-col gap-2 border-t border-gray-100 pt-3 dark:border-dark-800">
+            <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+              <span class="inline-flex items-center gap-1.5 text-gray-600 dark:text-dark-300"><span class="h-2.5 w-2.5 flex-shrink-0 rounded-full bg-primary-500"></span>{{ t('proof.flow.legendConfidential') }}</span>
+              <span class="inline-flex items-center gap-1.5 text-gray-600 dark:text-dark-300"><span class="h-2.5 w-2.5 flex-shrink-0 rounded-full bg-amber-500"></span>{{ t('proof.flow.legendPlaintext') }}</span>
+            </div>
+            <p class="text-xs leading-5 text-gray-500 dark:text-dark-400">{{ t('proof.flow.caption') }}</p>
+          </div>
+        </div>
+
         <ol class="relative space-y-4 border-l-2 border-dashed border-gray-200 pl-6 dark:border-dark-700">
           <li v-for="(hop, i) in hops" :key="hop.key" class="relative">
             <span
@@ -89,7 +153,7 @@
             @click="loadReport"
           >
             <span v-if="busy" class="h-4 w-4 animate-spin rounded-full border-b-2 border-white"></span>
-            {{ busy ? t('proof.live.fetching') : t('proof.live.fetch') }}
+            {{ busy ? t('proof.live.fetching') : (report ? t('proof.live.refetch') : t('proof.live.fetch')) }}
           </button>
           <button
             v-if="report"
@@ -99,6 +163,30 @@
           >{{ t('proof.live.download') }}</button>
           <span v-if="nonce" class="font-mono text-xs text-gray-400 dark:text-dark-500">{{ t('proof.live.nonce') }}: {{ nonce }}</span>
         </div>
+
+        <p class="mt-3 text-xs leading-5 text-gray-500 dark:text-dark-400">{{ t('proof.live.autoNote') }}</p>
+
+        <!-- Where the data + verification collateral come from — all click-through. -->
+        <dl class="mt-3 space-y-1 text-xs text-gray-500 dark:text-dark-400">
+          <div class="flex flex-wrap gap-x-2">
+            <dt class="font-medium">{{ t('proof.live.endpointLabel') }}:</dt>
+            <dd class="min-w-0">
+              <a :href="liveReportUrl" target="_blank" rel="noopener noreferrer" class="break-all font-mono text-primary-600 underline decoration-primary-300/40 underline-offset-4 hover:text-primary-700 hover:decoration-primary-500 dark:text-primary-300">{{ liveReportUrl }}</a>
+            </dd>
+          </div>
+          <div class="flex flex-wrap gap-x-2">
+            <dt class="font-medium">{{ t('proof.live.collateralLabel') }}:</dt>
+            <dd class="min-w-0">
+              <a :href="PHALA_PCCS_URL" target="_blank" rel="noopener noreferrer" class="break-all font-mono text-primary-600 underline decoration-primary-300/40 underline-offset-4 hover:text-primary-700 hover:decoration-primary-500 dark:text-primary-300">{{ PHALA_PCCS_URL }}</a>
+            </dd>
+          </div>
+          <div class="flex flex-wrap gap-x-2">
+            <dt class="font-medium">{{ t('proof.live.explorerLabel') }}:</dt>
+            <dd class="min-w-0">
+              <a href="https://proof.t16z.com/" target="_blank" rel="noopener noreferrer" class="break-all font-mono text-primary-600 underline decoration-primary-300/40 underline-offset-4 hover:text-primary-700 hover:decoration-primary-500 dark:text-primary-300">proof.t16z.com</a>
+            </dd>
+          </div>
+        </dl>
 
         <p v-if="fetchError" class="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200">
           {{ t('proof.live.error') }}
@@ -157,6 +245,13 @@
         <div class="mt-5 rounded-lg border border-gray-200 bg-white p-5 dark:border-dark-700 dark:bg-dark-900">
           <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('proof.e2ee.live.title') }}</h3>
           <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-dark-300">{{ t('proof.e2ee.live.desc') }}</p>
+
+          <!-- State the proof up front so the point is clear even before running -->
+          <div class="mt-3 rounded-lg border border-primary-200 bg-primary-50 px-4 py-3 dark:border-primary-500/30 dark:bg-primary-500/10">
+            <p class="text-xs font-semibold text-primary-700 dark:text-primary-300">🎯 {{ t('proof.e2ee.live.claimTitle') }}</p>
+            <p class="mt-1 text-xs leading-5 text-primary-800/90 dark:text-primary-200/90">{{ t('proof.e2ee.live.claimBody') }}</p>
+          </div>
+
           <div class="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
             <Icon name="shield" size="sm" class="mt-0.5 flex-shrink-0" />
             <span>{{ t('proof.e2ee.live.disclosure') }}</span>
@@ -201,7 +296,7 @@
             {{ liveRunning ? t('proof.e2ee.live.running') : t('proof.e2ee.live.run') }}
           </button>
 
-          <!-- Result: honest green on authenticated decrypt, honest red otherwise -->
+          <!-- Result: make the proof VISIBLE — who sees plaintext vs only ciphertext -->
           <div
             v-if="liveResult"
             class="mt-4 rounded-lg border px-4 py-3 text-sm"
@@ -211,22 +306,66 @@
           >
             <p class="font-semibold">{{ liveResult.ok ? t('proof.e2ee.live.successTitle') : t('proof.e2ee.live.failTitle') }}</p>
             <p class="mt-1 leading-6">{{ liveResult.ok ? t('proof.e2ee.live.successNote') : t('proof.e2ee.live.failNote') }}</p>
-            <template v-if="liveResult.ok && liveResult.replyText">
-              <p class="mt-3 text-xs font-semibold uppercase tracking-wide opacity-70">{{ t('proof.e2ee.live.replyLabel') }}</p>
-              <pre class="mt-1 overflow-auto whitespace-pre-wrap rounded bg-white/60 p-2 font-mono text-xs text-gray-800 dark:bg-black/20 dark:text-gray-100">{{ liveResult.replyText }}</pre>
+
+            <template v-if="liveResult.ok">
+              <!-- Who saw what -->
+              <p class="mt-4 text-xs font-semibold uppercase tracking-wide opacity-70">{{ t('proof.e2ee.live.seesTitle') }}</p>
+              <div class="mt-2 grid gap-2 sm:grid-cols-3">
+                <div class="rounded-lg border border-green-300/60 bg-white/60 p-3 dark:border-green-500/30 dark:bg-black/20">
+                  <p class="text-xs font-semibold">👁 {{ t('proof.e2ee.live.youLabel') }}</p>
+                  <p class="mt-1 text-xs leading-5 opacity-80">{{ t('proof.e2ee.live.youSees') }}</p>
+                </div>
+                <div class="rounded-lg border border-gray-300 bg-white/60 p-3 dark:border-dark-600 dark:bg-black/20">
+                  <p class="text-xs font-semibold">🚫 {{ t('proof.e2ee.live.middleLabel') }}</p>
+                  <p class="mt-1 text-xs leading-5 opacity-80">{{ t('proof.e2ee.live.middleSees') }}</p>
+                </div>
+                <div class="rounded-lg border border-green-300/60 bg-white/60 p-3 dark:border-green-500/30 dark:bg-black/20">
+                  <p class="text-xs font-semibold">🔓 {{ t('proof.e2ee.live.enclaveLabel') }}</p>
+                  <p class="mt-1 text-xs leading-5 opacity-80">{{ t('proof.e2ee.live.enclaveSees') }}</p>
+                </div>
+              </div>
+
+              <!-- The actual bytes: ① plaintext prompt  ② wire ciphertext  ③ decrypted reply -->
+              <div class="mt-3 space-y-2.5">
+                <div>
+                  <p class="text-xs font-medium opacity-80">{{ t('proof.e2ee.live.promptSentLabel') }}</p>
+                  <pre class="mt-1 overflow-auto whitespace-pre-wrap rounded bg-white/60 p-2 font-mono text-xs text-gray-800 dark:bg-black/20 dark:text-gray-100">{{ liveResult.promptText }}</pre>
+                </div>
+                <div>
+                  <p class="text-xs font-medium opacity-80">{{ t('proof.e2ee.live.wireLabel') }}</p>
+                  <pre class="mt-1 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded bg-white/60 p-2 font-mono text-[11px] leading-4 text-gray-500 dark:bg-black/20 dark:text-dark-400">{{ truncateHex(liveResult.requestCiphertext) }}</pre>
+                  <p v-if="liveResult.sealedToKeyId" class="mt-1 break-all font-mono text-[11px] text-gray-400 dark:text-dark-500">{{ t('proof.e2ee.live.sealedToLabel') }}: {{ liveResult.sealedToKeyId }}</p>
+                </div>
+                <div>
+                  <p class="text-xs font-medium opacity-80">{{ t('proof.e2ee.live.replyLabel') }}</p>
+                  <pre class="mt-1 overflow-auto whitespace-pre-wrap rounded bg-white/60 p-2 font-mono text-xs text-gray-800 dark:bg-black/20 dark:text-gray-100">{{ liveResult.replyText }}</pre>
+                </div>
+              </div>
+
+              <!-- Conclusion — the takeaway in one sentence -->
+              <div class="mt-3 rounded-lg border border-green-300 bg-green-100/70 p-3 dark:border-green-500/40 dark:bg-green-500/10">
+                <p class="text-xs font-semibold">✅ {{ t('proof.e2ee.live.concludeTitle') }}</p>
+                <p class="mt-1 text-xs leading-5">{{ t('proof.e2ee.live.concludeBody') }}</p>
+              </div>
             </template>
+
             <p v-if="!liveResult.ok && liveResult.error" class="mt-2 break-all font-mono text-xs opacity-80">{{ liveResult.error }}</p>
-            <ul v-if="liveResult.checks.length" class="mt-3 space-y-1">
-              <li
-                v-for="c in liveResult.checks"
-                :key="c.id"
-                class="flex flex-wrap items-baseline gap-x-2 font-mono text-xs"
-              >
-                <span :class="c.ok ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'">{{ c.ok ? '✓' : '✗' }}</span>
-                <span class="text-gray-700 dark:text-dark-200">{{ c.id }}</span>
-                <span v-if="c.detail" class="break-all text-gray-400 dark:text-dark-500">— {{ c.detail }}</span>
-              </li>
-            </ul>
+
+            <!-- Raw per-step trace, collapsed by default (for the curious, not the newcomer) -->
+            <details v-if="liveResult.checks.length" class="mt-3">
+              <summary class="cursor-pointer text-xs font-semibold uppercase tracking-wide opacity-60">{{ t('proof.e2ee.live.stepsLabel') }}</summary>
+              <ul class="mt-1 space-y-1">
+                <li
+                  v-for="c in liveResult.checks"
+                  :key="c.id"
+                  class="flex flex-wrap items-baseline gap-x-2 font-mono text-xs"
+                >
+                  <span :class="c.ok ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'">{{ c.ok ? '✓' : '✗' }}</span>
+                  <span class="text-gray-700 dark:text-dark-200">{{ c.id }}</span>
+                  <span v-if="c.detail" class="break-all text-gray-400 dark:text-dark-500">— {{ c.detail }}</span>
+                </li>
+              </ul>
+            </details>
           </div>
         </div>
       </section>
@@ -243,14 +382,36 @@
                 <tbody>
                   <tr v-for="row in ref.rows" :key="row.label" class="border-b border-gray-100 last:border-0 dark:border-dark-800">
                     <th class="whitespace-nowrap bg-gray-50 px-3 py-2 font-medium text-gray-600 dark:bg-dark-800/60 dark:text-dark-300">{{ row.label }}</th>
-                    <td class="break-all px-3 py-2 font-mono text-gray-800 dark:text-dark-100">{{ row.value }}</td>
+                    <td class="break-all px-3 py-2 font-mono text-gray-800 dark:text-dark-100">
+                      <a
+                        v-if="row.href"
+                        :href="row.href"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="inline-flex items-center gap-1 text-primary-600 underline decoration-primary-300/40 underline-offset-4 transition hover:text-primary-700 hover:decoration-primary-500 dark:text-primary-300"
+                      >
+                        {{ row.value }}
+                        <Icon name="externalLink" size="xs" class="flex-shrink-0 opacity-60" />
+                      </a>
+                      <span v-else>{{ row.value }}</span>
+                    </td>
                   </tr>
                 </tbody>
               </table>
             </div>
           </div>
         </div>
+        <p class="mt-4 text-xs leading-5 text-gray-500 dark:text-dark-400">
+          {{ t('proof.reference.ciNote') }}
+          <a
+            :href="ciWorkflowUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-primary-600 underline decoration-primary-300/40 underline-offset-4 hover:text-primary-700 hover:decoration-primary-500 dark:text-primary-300"
+          >publish-tee-images.yml</a>
+        </p>
       </section>
+
     </main>
   </div>
 </template>
@@ -267,6 +428,7 @@ import { verifyAci, type VerifyAciResult, type Check } from '@/utils/attestation
 import {
   verifyQuoteBoundToReport,
   verifyMeridianQuote,
+  PHALA_PCCS_URL,
   type VerifyQuoteBoundResult,
 } from '@/utils/attestation/tdxVerify'
 import {
@@ -275,7 +437,13 @@ import {
   type E2eeChannelResult,
   type LiveRoundtripResult,
 } from '@/utils/attestation/e2eeProof'
-import { GATEWAY_REFERENCE, MERIDIAN_REFERENCE, E2EE_DEMO_MODEL } from '@/constants/attestation'
+import {
+  GATEWAY_REFERENCE,
+  MERIDIAN_REFERENCE,
+  E2EE_DEMO_MODEL,
+  ATTESTATION_BASE_URL,
+  ATTESTATION_REPORT_PATH,
+} from '@/constants/attestation'
 
 const { t } = useI18n()
 
@@ -432,16 +600,41 @@ function statusClass(status: HopStatus): string {
   }
 }
 
-// --- Reference values table ---
-const references = computed(() => [
+// --- Inline external links: URLs derived from the same reference constants so
+// they never drift, letting a reader click straight through to each source. ---
+const gatewayCommitUrl = `${(GATEWAY_REFERENCE.sourceRepo ?? '').replace(/\.git$/, '')}/commit/${GATEWAY_REFERENCE.sourceCommit ?? ''}`
+const dockerHubUrl = (name: string) => `https://hub.docker.com/r/markerdao/${name}`
+const shortSha = (digest: string): string => {
+  const at = digest.indexOf('@')
+  const h = at >= 0 ? digest.slice(at + 1) : digest
+  return h ? `${h.slice(0, 15)}…` : ''
+}
+/** Show enough of a long wire-ciphertext hex to read as "gibberish" without flooding the page. */
+function truncateHex(hex?: string): string {
+  if (!hex) return ''
+  const bytes = Math.floor(hex.length / 2)
+  if (hex.length <= 160) return `${hex}  (${bytes} bytes)`
+  return `${hex.slice(0, 128)} … ${hex.slice(-16)}   (${bytes} bytes total)`
+}
+const liveReportUrl = `${ATTESTATION_BASE_URL}${ATTESTATION_REPORT_PATH}`
+const ciWorkflowUrl = 'https://github.com/FiiLabs/sub2api/blob/main/.github/workflows/publish-tee-images.yml'
+
+// --- Reference values table (values link to their public source where one exists) ---
+interface RefRow {
+  label: string
+  value: string
+  href?: string
+}
+const references = computed<{ title: string; rows: RefRow[] }[]>(() => [
   {
     title: t('proof.reference.gateway'),
     rows: [
       { label: t('proof.reference.appId'), value: GATEWAY_REFERENCE.appId },
       { label: t('proof.reference.osImage'), value: `${GATEWAY_REFERENCE.osImage} — ${GATEWAY_REFERENCE.osImageHash}` },
       { label: t('proof.reference.composeHash'), value: GATEWAY_REFERENCE.composeHash },
-      { label: t('proof.reference.sourceCommit'), value: GATEWAY_REFERENCE.sourceCommit ?? '—' },
+      { label: t('proof.reference.sourceCommit'), value: GATEWAY_REFERENCE.sourceCommit ?? '—', href: gatewayCommitUrl },
       { label: t('proof.reference.signingAddress'), value: GATEWAY_REFERENCE.receiptSigningAddress ?? '—' },
+      { label: t('proof.reference.launcherImage'), value: shortSha(GATEWAY_REFERENCE.images?.[0]?.digest ?? ''), href: dockerHubUrl('git-launcher-rust') },
     ],
   },
   {
@@ -450,6 +643,8 @@ const references = computed(() => [
       { label: t('proof.reference.appId'), value: MERIDIAN_REFERENCE.appId },
       { label: t('proof.reference.osImage'), value: `${MERIDIAN_REFERENCE.osImage} — ${MERIDIAN_REFERENCE.osImageHash}` },
       { label: t('proof.reference.composeHash'), value: MERIDIAN_REFERENCE.composeHash },
+      { label: t('proof.reference.enclaveImage'), value: shortSha(MERIDIAN_REFERENCE.images?.[0]?.digest ?? ''), href: dockerHubUrl('meridian-enclave') },
+      { label: t('proof.reference.attestorImage'), value: 'sha256:7e6d51fe…', href: dockerHubUrl('meridian-attestor') },
     ],
   },
 ])
@@ -577,5 +772,9 @@ onMounted(async () => {
   } catch {
     // Non-fatal: fall back to defaults.
   }
+  // Auto-run the (free, no-token) verification on load so a first-time visitor
+  // immediately sees it verifying live (checking → verified) instead of a scary
+  // idle "not verified" state they'd have to know to click a button to leave.
+  loadReport()
 })
 </script>

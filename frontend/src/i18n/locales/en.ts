@@ -5,122 +5,165 @@ export default {
       backHome: 'Home'
     },
     hero: {
-      title: 'Follow your prompt — and verify every hop.',
+      title: 'Follow your prompt — and check every step yourself.',
       subtitle:
-        'This page shows exactly where your prompt travels and what we can prove at each step, without asking you to trust us. The scope is deliberately narrow and stated honestly: between your device and Anthropic, no intermediary — including the ApexOne operator — can read or retain your prompt. Anthropic itself sees plaintext (see the disclosure below).',
+        'This page shows exactly where the text you send to the AI (your prompt) travels, and what we can prove at each step — so you don’t have to take our word for it. We state the promise plainly: between your device and Anthropic, no middle step — including us, ApexOne — can read or keep your prompt. Only Anthropic itself sees it in the clear (see the honest note below).',
       scopeNote:
-        'Verification runs entirely in your browser: it fetches the report, checks the ACI binding locally, and verifies the Intel TDX quote against Intel collateral (via Phala PCCS) — with no trust in our servers. A step turns green only when its cryptographic checks pass.'
+        'Every check runs inside your own browser: it asks chip-maker Intel’s root of trust to confirm “this really is genuine hardware, running exactly the public, published code,” with no reliance on our servers. A step turns green only when all of its cryptographic checks pass.'
     },
     status: {
-      pending: 'Not verified',
+      pending: 'Pending',
       checking: 'Checking…',
-      pass: 'Verified',
+      pass: 'Passed',
       fail: 'FAILED',
-      disclosure: 'Disclosure — N/A'
+      disclosure: 'Honest note — N/A'
     },
     journey: {
-      title: 'Your prompt’s journey',
-      basisLabel: 'Basis',
+      title: 'The journey your prompt takes',
+      basisLabel: 'Evidence',
       hop1: {
-        node: 'Your device → Gateway (enclave A, TLS terminates in-CVM)',
+        node: 'Your device → ApexOne gateway (runs on secure hardware)',
         claim:
-          'TLS is terminated inside the attested CVM (by dstack-ingress, part of the measured compose); your plaintext travels only over the CVM-internal network and never leaves it. This is verifiable by auditing the measured compose via compose_hash. For a stronger, TLS-independent proof, the E2EE enhanced mode below lets your browser encrypt directly to the enclave’s attested key — so only the attested enclave can decrypt, and no intermediary (including ApexOne) ever sees plaintext.',
-        basis: 'compose_hash audit (TLS terminates in-CVM) + Intel TDX DCAP quote',
+          'Your connection to the gateway is encrypted, and it is decrypted only inside a hardware-protected secure computer (a confidential VM); your plaintext moves only inside that computer and never leaves it. You can confirm this by checking the fingerprint of the code it runs (compose_hash). Want an even stronger proof — one that doesn’t even assume the network encryption is trustworthy? Use the end-to-end encryption demo below: your browser encrypts directly to that secure computer’s own key — only it can open it, and no middle step (including ApexOne) ever sees plaintext.',
+        basis: 'Code-fingerprint check + Intel hardware proof (TDX)',
         basisE2ee:
-          'compose_hash audit + browser-level E2EE channel to the attested key (TLS-independent) + Intel TDX DCAP quote'
+          'Code-fingerprint check + browser-direct end-to-end encryption (independent of the network encryption) + Intel hardware proof (TDX)'
       },
       hop2: {
-        node: 'Gateway (enclave A)',
+        node: 'ApexOne gateway (secure hardware)',
         claim:
-          'Runs the exact audited source with no logging or retention in the request path, and issues a signed receipt tied to your request.',
-        basis: 'compose_hash → public source commit; ECDSA receipt'
+          'The gateway runs exactly the public, auditable code; it keeps no logs and retains nothing while handling your request, and it issues a verifiable signed receipt for this request.',
+        basis: 'Code fingerprint → public source version; signed receipt'
       },
       hop3: {
-        node: 'Gateway → Meridian (enclave B)',
+        node: 'ApexOne gateway → Meridian (a second secure computer)',
         claim:
-          'The internal hop stays inside a second attested confidential enclave — the Claude-subscription bridge.',
-        basis: 'Independent TDX quote + compose_hash'
+          'This internal step still stays inside a second hardware-protected secure computer — the one that bridges to the Claude subscription.',
+        basis: 'Independent Intel hardware proof + code fingerprint'
       },
       hop4: {
         node: 'Meridian → Anthropic',
         claim:
-          'This hop cannot be confidential: Anthropic decrypts and sees your prompt in plaintext under its own policies. We only attest that the request leaves from the attested enclave.',
-        basis: 'Honest disclosure — not a confidentiality claim'
+          'This step cannot be private: Anthropic decrypts and processes your prompt in the clear under its own policies. All we can prove is that the request truly left from the authenticated secure computer.',
+        basis: 'Honest note — not a confidentiality claim'
       }
     },
+    flow: {
+      device: 'Your device',
+      deviceSub: 'You type a prompt',
+      teeLabel: 'ApexOne · Intel TDX confidential VM (hardware-isolated, memory-encrypted)',
+      gateway: 'Gateway A',
+      gatewaySub: 'decryption happens here',
+      meridian: 'Meridian B',
+      meridianSub: 'bridges the Claude subscription',
+      anthropic: 'Anthropic',
+      anthropicSub: 'sees plaintext (its policy)',
+      arrEncrypted: 'encrypted',
+      arrInternal: 'internal',
+      arrPlaintext: 'plaintext',
+      legendConfidential: 'Protected: inside ApexOne’s secure computer, no middle step sees plaintext',
+      legendPlaintext: 'Plaintext: only the last step — handled by Anthropic under its privacy policy',
+      caption: 'In one line: your prompt stays encrypted the whole way; only the inside of ApexOne’s hardware-protected secure computer, and finally Anthropic, ever touch it — ApexOne, the network, and any middle party cannot read it.'
+    },
     disclosure: {
-      title: 'Honest disclosure: Anthropic sees your plaintext',
+      title: 'Honest note: Anthropic sees your plaintext',
       body:
-        'The Claude route bridges a Claude subscription, so Anthropic necessarily decrypts and processes your prompt in plaintext under its own policies. Our guarantee is only that no intermediary between your device and Anthropic — including ApexOne — can read or retain it. We never claim confidentiality from Anthropic, and we never claim your model was “not swapped.”',
+        'The Claude route connects to a Claude subscription, so Anthropic necessarily decrypts and processes your prompt in the clear under its own policies. Our guarantee is only this: between your device and Anthropic, no middle step — including ApexOne — can read or keep it. We never claim confidentiality from Anthropic, and we never claim your model was “not swapped.”',
       policyLink: 'Anthropic Privacy Policy'
     },
     verify: {
       checksTitle: 'Per-check results',
       running: {
         title: 'Verifying in your browser…',
-        note: 'Fetching the attestation report, checking the ACI binding, and verifying the Intel TDX quote against Intel collateral (the ~426 KB verifier loads once).'
+        note: 'Reading the hardware proof, checking the identity binding, and using Intel’s official data to confirm the hardware proof is genuine (the ~426 KB verifier loads once).'
       },
       pass: {
-        title: 'Hardware-rooted verification passed',
-        note: 'Genuine Intel TDX hardware, running the exact audited & measured code (compose_hash matches), attesting to this keyset and bound to your fresh nonce. hop 3 (Meridian enclave B) is verified separately below when its attestation endpoint is reachable. Honest limits: the gateway→Meridian hop crosses the network as plaintext (protected by TLS + a bearer token), and hop 4 — Anthropic — sees your plaintext by design.'
+        title: 'Hardware-level verification passed',
+        note: 'This is genuine Intel secure hardware, running exactly the audited, fingerprint-matching code, with the proof tied to your fresh one-time random number — showing it was just generated, not an old replayed one. Step 3 (Meridian) is checked separately below when its proof service is reachable. Honest limits: the gateway→Meridian step crosses the network as plaintext (protected by the encrypted connection and an access token), and step 4 — Anthropic — sees your plaintext by design.'
       },
       fail: {
         title: 'Verification FAILED',
-        note: 'One or more gating checks did not pass. Do not trust this report — see the per-check results below.'
+        note: 'One or more key checks did not pass. Do not trust this report — see the per-check results below.'
       },
       aciOnly: {
-        title: 'ACI binding verified — hardware quote incomplete',
-        note: 'The ACI identity binding passed, but the Intel TDX hardware quote could not be verified in your browser (e.g. the Phala PCCS collateral service was unreachable). Retry; until the quote verifies this is not a hardware-rooted proof.'
+        title: 'Identity binding passed — hardware proof incomplete',
+        note: 'The identity binding passed, but the hardware proof could not be verified in your browser (for example, the Intel verification-data service was temporarily unreachable). Retry; until the hardware proof passes, this is not yet a hardware-level proof.'
       }
     },
     live: {
-      title: 'Live attestation report',
+      title: 'Read the hardware proof live',
       desc:
-        'Fetch the gateway’s current attestation report, bound to a fresh random nonce. Its source provenance (repo / commit / image digest) and — once the TDX quote is verified — its hardware measurements can be compared against the published reference values below. Important: the report is trustworthy only once the TDX quote is cryptographically verified — this page performs that verification in your browser (no trust in our servers) — a self-reported value alone is not proof.',
-      fetch: 'Fetch & verify report',
-      fetching: 'Fetching & verifying…',
-      download: 'Download report.json',
-      nonce: 'Nonce',
+        'Ask the gateway for a fresh hardware-proof report, tied to a just-generated one-time random number (so nobody can fool you with an old report). Its source info (code repo, version, image fingerprints) and — once the hardware proof passes — its hardware measurements can be compared line-by-line with the reference values published below. Key point: the report is trustworthy only once the hardware proof is cryptographically verified — this page already did that for you in your browser; a self-reported value alone is not proof.',
+      fetch: 'Read & verify report',
+      fetching: 'Reading & verifying…',
+      download: 'Download report (report.json)',
+      nonce: 'One-time random number',
       error:
-        'Could not reach the attestation endpoint. It is served cross-origin by the TEE gateway and requires CORS to be enabled.'
+        'Could not reach the hardware-proof service. It is served cross-origin by the secure gateway and needs cross-origin access (CORS) enabled.',
+      endpointLabel: 'Report address',
+      collateralLabel: 'Intel official verification data',
+      explorerLabel: 'External verify tool',
+      refetch: 'Re-verify',
+      autoNote: '💡 Verification runs automatically in your browser when this page opens; a green check means it passed. You can re-run it anytime — with a fresh random number — using the button above.'
     },
     reference: {
-      title: 'Published reference values',
-      desc: 'From docs/attestation-verification.md. A third party compares the live quote against these.',
-      gateway: 'Gateway — enclave A (confidential path)',
-      meridian: 'Meridian seat — enclave B (non-confidential bridge)',
+      title: 'Published reference values (for advanced checking)',
+      desc: 'These are each step’s exact “fingerprints,” from the public doc docs/attestation-verification.md. Anyone can compare them line-by-line with the hardware proof read live — if the values match, the running code really is this public, untampered code.',
+      gateway: 'Gateway — secure computer A (confidential path)',
+      meridian: 'Meridian — secure computer B (non-confidential bridge)',
       appId: 'App ID',
       osImage: 'OS image',
-      composeHash: 'compose_hash',
-      sourceCommit: 'Source commit',
-      signingAddress: 'Receipt signing address'
+      composeHash: 'Deployment fingerprint (compose_hash)',
+      sourceCommit: 'Source version (commit)',
+      signingAddress: 'Receipt signing address',
+      launcherImage: 'Launcher image',
+      enclaveImage: 'Enclave image',
+      attestorImage: 'Attestor image',
+      ciNote: 'The images above are built and signed automatically by this repo’s GitHub Actions (with provenance, publicly verifiable):'
     },
     e2ee: {
-      title: 'Browser-level E2EE proof (hop-1)',
+      title: 'End-to-end encryption proof (step 1)',
       desc:
-        'The gateway advertises a dedicated encryption key inside its attested keyset (its private half is released by dstack-KMS only to the attested enclave). Because that key is covered by the quote-bound keyset digest, your browser can verify — with no trust in TLS — that anything encrypted to it can be decrypted only inside the attested enclave. This runs automatically; no data is sent.',
-      statusVerified: 'E2EE channel to the attested key — verified in your browser',
-      statusUnavailable: 'E2EE channel not available on this deployment',
-      statusIdle: 'Fetch the report above to verify the E2EE channel.',
+        'In its hardware-verified list of keys, the gateway publishes a dedicated encryption key (whose private half is released by the key-management service only to the secure computer that passed the hardware check). Because that key is covered by the hardware proof, your browser can confirm — without assuming the network encryption is trustworthy — that anything encrypted to it can be opened only inside that authenticated secure computer. This runs automatically; no data is sent.',
+      statusVerified: 'End-to-end encrypted channel (straight to the authenticated key) — verified in your browser',
+      statusUnavailable: 'This deployment does not offer an end-to-end encrypted channel',
+      statusIdle: 'Read the report above first to verify the end-to-end encrypted channel.',
       live: {
-        title: 'Run a live E2EE round-trip (optional)',
+        title: 'See it for yourself: intermediaries can’t read your prompt (optional live test)',
         desc:
-          'Encrypt a prompt in your browser to the enclave’s attested key, send it E2EE, and decrypt the E2EE response. A successful authenticated decrypt proves the enclave held the key and ran the channel live.',
+          'An optional live test. Click below and your browser encrypts the prompt to the gateway, then decrypts the E2EE response — while showing you exactly what each party saw, so you can see for yourself that intermediaries only ever get ciphertext.',
         disclosure:
-          'Honest disclosure: this demo prompt is decrypted inside the enclave and forwarded to Anthropic in plaintext (hop 4), and it consumes tokens. Do not paste secrets. Your API key stays in your browser and is sent only inside this request’s Authorization header.',
+          'Honest note: this demo prompt is decrypted inside the secure computer and then, by design, forwarded to Anthropic in the clear (step 4), and it uses a small amount of quota (tokens). Do not paste anything sensitive. Your API key stays in your browser and is sent only with this one request, to authorize it.',
+        claimTitle: 'What this demo proves',
+        claimBody:
+          'Your prompt is encrypted in your browser into ciphertext that only the hardware-attested secure computer above can open. ApexOne, the network, and any middle step only ever handle that ciphertext — they cannot read your content. Its being able to open it and reply (encrypted) is the proof. (Note: after decrypting, the secure computer forwards your prompt to Anthropic in the clear by design — see step 4.)',
+        seesTitle: 'What each party saw in this round-trip',
+        youLabel: 'You (in your browser)',
+        youSees: 'Plaintext: the prompt you typed and the decrypted reply',
+        middleLabel: 'Middle steps: ApexOne / network / the point where the encrypted connection is decrypted',
+        middleSees: 'Only the ciphertext below — your prompt cannot be recovered',
+        enclaveLabel: 'The authenticated secure computer',
+        enclaveSees: 'Can decrypt (and only it can) — which is why it replied correctly',
+        promptSentLabel: '① Your prompt (plaintext — only you and the secure computer see it)',
+        wireLabel: '② Ciphertext sent over the network (all ApexOne / the network sees)',
+        sealedToLabel: 'Encrypted to (the authenticated key)',
+        concludeTitle: 'Conclusion',
+        concludeBody:
+          'The reply decrypted and passed its integrity check ⟹ only the secure computer holding the hardware-attested private key could open what you sent. ApexOne, the network, and any middle step cannot — and this holds whether or not you trust the network encryption.',
+        stepsLabel: 'Technical step details',
         apiKeyLabel: 'API key',
         apiKeyPlaceholder: 'sk-… (used only for this request, kept in your browser)',
         modelLabel: 'Model',
         promptLabel: 'Prompt',
         run: 'Encrypt & round-trip',
         running: 'Encrypting & verifying…',
-        successTitle: 'The attested enclave decrypted your ciphertext',
+        successTitle: 'The authenticated secure computer opened your ciphertext',
         successNote:
-          'Your prompt was encrypted in your browser to the enclave’s attested key, round-tripped, and the E2EE response authenticated-decrypted. No intermediary (ApexOne, the network, the TLS terminator) ever saw your plaintext.',
+          'Your prompt was encrypted in your browser to the secure computer’s own key, made a round-trip, and the encrypted reply passed its integrity-checked decryption. No middle step (ApexOne, the network, the point where the encrypted connection is decrypted) ever saw your plaintext.',
         replyLabel: 'Decrypted reply',
-        failTitle: 'Live round-trip did not complete',
+        failTitle: 'This live test did not complete',
         failNote:
-          'This does not disprove the channel — it means the live request could not run (see the error). The verification-side proof above still holds.'
+          'This does not overturn the conclusion above — it just means this live request could not run (see the error). The automatic verification above still holds.'
       }
     }
   },

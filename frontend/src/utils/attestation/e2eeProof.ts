@@ -150,6 +150,14 @@ export interface LiveRoundtripResult {
   checks: E2eeCheck[]
   /** Honest human-readable error when the round-trip could not complete. */
   error?: string
+  /** The prompt as sent (echoed for the "who sees what" side-by-side). */
+  promptText?: string
+  /** The exact wire ciphertext of the prompt — what ANY intermediary sees. */
+  requestCiphertext?: string
+  /** The wire ciphertext of the reply — also unreadable to intermediaries. */
+  responseCiphertext?: string
+  /** The attested recipient key id the prompt was sealed to. */
+  sealedToKeyId?: string
 }
 
 /**
@@ -193,6 +201,15 @@ export async function runLiveE2eeRoundtrip(
   const ciphertext = eciesEncrypt(modelKeyHex, utf8ToBytes(params.prompt), reqAad)
   push('request_encrypted', true, `ciphertext ${ciphertext.length / 2} bytes, sealed to attested key`)
 
+  // Surfaced to the UI so a viewer can SEE the proof: the plaintext they typed,
+  // the wire ciphertext an intermediary is limited to, and the attested key it
+  // was sealed to. Present from here on, even if a later step fails.
+  const base = {
+    promptText: params.prompt,
+    requestCiphertext: ciphertext,
+    sealedToKeyId: e2eeKey.key_id ?? undefined,
+  }
+
   const headers: Record<string, string> = {
     Authorization: `Bearer ${params.apiKey.trim()}`,
     'X-E2EE-Version': E2EE_VERSION,
@@ -213,13 +230,13 @@ export async function runLiveE2eeRoundtrip(
     resp = await postE2eeChat(headers, body)
   } catch (e) {
     push('response_received', false, String(e))
-    return { ok: false, checks, error: `request failed (network/CORS): ${String(e)}` }
+    return { ok: false, checks, error: `request failed (network/CORS): ${String(e)}`, ...base }
   }
   if (!resp.ok) {
     push('response_received', false, `HTTP ${resp.status}`)
     const detail =
       (resp.body as { error?: { message?: string } } | undefined)?.error?.message ?? resp.rawText.slice(0, 200)
-    return { ok: false, checks, error: `gateway returned HTTP ${resp.status}: ${detail}` }
+    return { ok: false, checks, error: `gateway returned HTTP ${resp.status}: ${detail}`, ...base }
   }
   push('response_received', true, `HTTP ${resp.status}`)
 
@@ -231,7 +248,7 @@ export async function runLiveE2eeRoundtrip(
   const encryptedContent = parsed?.choices?.[0]?.message?.content
   if (typeof encryptedContent !== 'string' || encryptedContent.length === 0) {
     push('response_encrypted', false, 'no choices[0].message.content in response')
-    return { ok: false, checks, error: 'response had no encrypted content to decrypt' }
+    return { ok: false, checks, error: 'response had no encrypted content to decrypt', ...base }
   }
   push('response_encrypted', true, `id=${responseId} ciphertext ${encryptedContent.length / 2} bytes`)
 
@@ -249,9 +266,9 @@ export async function runLiveE2eeRoundtrip(
     const plaintext = eciesDecrypt(client.privateKey, encryptedContent, respAad)
     const replyText = new TextDecoder().decode(plaintext)
     push('response_decrypted', true, 'authenticated decrypt OK — enclave-exclusive key proven')
-    return { ok: true, replyText, checks }
+    return { ok: true, replyText, checks, ...base, responseCiphertext: encryptedContent }
   } catch (e) {
     push('response_decrypted', false, String(e))
-    return { ok: false, checks, error: `response decrypt failed: ${String(e)}` }
+    return { ok: false, checks, error: `response decrypt failed: ${String(e)}`, ...base, responseCiphertext: encryptedContent }
   }
 }

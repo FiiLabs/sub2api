@@ -5,120 +5,163 @@ export default {
       backHome: '首页'
     },
     hero: {
-      title: '跟着你的 prompt 走——每一跳都能验证。',
+      title: '跟着你的提问走——每一步都能亲自验证。',
       subtitle:
-        '本页如实展示你的 prompt 到底经过哪些节点、每一步我们能证明什么，无需你信任我们。范围刻意收窄并诚实声明：在你的设备与 Anthropic 之间，任何中间方（包括 ApexOne 运营方）都无法读取或留存你的 prompt。Anthropic 本身看得到明文（见下方披露）。',
+        '本页如实展示你发给 AI 的内容（prompt）一路经过哪些环节、每一步我们能证明什么，你无需凭信任。我们把承诺范围说得很清楚：在你的设备和 Anthropic 之间，任何中间环节（包括我们 ApexOne 自己）都读不到、也留不下你的内容。只有 Anthropic 本身会看到明文（见下方诚实说明）。',
       scopeNote:
-        '验证全程在你的浏览器内完成：拉取报告、本地校验 ACI 绑定、并用 Intel collateral（经 Phala PCCS）验证 TDX quote——不依赖我们的服务器。某一步只有在其密码学校验全部通过时才会变绿。'
+        '所有验证都在你自己的浏览器里完成：直接向芯片厂商 Intel 的信任根核对“这确实是真硬件、跑的确实是公开的那份代码”，全程不依赖我们的服务器。每一步只有在密码学校验全部通过时，才会显示为绿色。'
     },
     status: {
-      pending: '未验证',
+      pending: '待验证',
       checking: '验证中…',
-      pass: '已验证',
-      fail: '验证失败',
-      disclosure: '诚实披露·不适用'
+      pass: '已通过',
+      fail: '未通过',
+      disclosure: '诚实说明·不适用'
     },
     journey: {
-      title: '你的 prompt 的旅程',
-      basisLabel: '依据',
+      title: '你的提问经过的旅程',
+      basisLabel: '凭据',
       hop1: {
-        node: '你的设备 → 网关（enclave A，CVM 内终止 TLS）',
+        node: '你的设备 → ApexOne 网关（运行在机密硬件里）',
         claim:
-          'TLS 在被认证的 CVM 内部（由 dstack-ingress，属于被度量的 compose）终止；你的明文只在 CVM 内部网络流转、绝不出 CVM。这一点可通过 compose_hash 审计被度量的 compose 来确认。如需更强、与 TLS 无关的证明，下方的 E2EE 增强模式让你的浏览器直接加密到 enclave 的被认证密钥——只有被认证的 enclave 能解，任何中间方（包括 ApexOne）都看不到明文。',
-        basis: 'compose_hash 审计（TLS 在 CVM 内终止）+ Intel TDX DCAP quote',
+          '你和网关之间是加密连接，而解密只发生在一台受硬件保护的机密电脑（机密 VM）内部；你的明文只在这台机密电脑里面流转，绝不离开它。这一点可以通过核对它运行的代码指纹（compose_hash）来确认。想要更强、连“网络加密是否可信”都不用假设的证明？用下方的端到端加密演示：你的浏览器直接把内容加密给这台机密电脑专属的钥匙——只有它能解开，任何中间环节（包括 ApexOne）都看不到明文。',
+        basis: '代码指纹核对 + Intel 硬件出具的证明（TDX）',
         basisE2ee:
-          'compose_hash 审计 + 浏览器级 E2EE 通道到被认证密钥（与 TLS 无关）+ Intel TDX DCAP quote'
+          '代码指纹核对 + 浏览器直连的端到端加密（不依赖网络加密）+ Intel 硬件出具的证明（TDX）'
       },
       hop2: {
-        node: '网关（enclave A）',
+        node: 'ApexOne 网关（机密硬件）',
         claim:
-          '运行的是经审计的确切源码，请求处理路径无日志、无留存，并为你这次请求签发一张可验证的 receipt。',
-        basis: 'compose_hash → 公开源码 commit；ECDSA receipt'
+          '网关跑的是公开、可审计的确切代码，处理你的请求时不记日志、不留存，并为你这次请求签发一张可验证的签名回执。',
+        basis: '代码指纹 → 公开源码版本；带签名的回执'
       },
       hop3: {
-        node: '网关 → Meridian（enclave B）',
-        claim: '内部这一跳仍落在第二个被认证的机密 enclave 内——即 Claude 订阅桥接。',
-        basis: '独立 TDX quote + compose_hash'
+        node: 'ApexOne 网关 → Meridian（第二台机密硬件）',
+        claim: '内部这一步仍然落在第二台受硬件保护的机密电脑里——它负责把请求桥接到 Claude 订阅。',
+        basis: '独立的 Intel 硬件证明 + 代码指纹'
       },
       hop4: {
         node: 'Meridian → Anthropic',
         claim:
-          '这一跳无法机密：Anthropic 会按其自身政策解密并处理你的 prompt 明文。我们只能证明请求是从被认证的 enclave 发出的。',
-        basis: '诚实披露——并非机密性承诺'
+          '这一步无法保密：Anthropic 会按它自己的政策解密并处理你的明文。我们只能证明“请求确实是从受认证的机密电脑发出的”。',
+        basis: '诚实说明——这不是保密承诺'
       }
     },
+    flow: {
+      device: '你的设备',
+      deviceSub: '输入 prompt',
+      teeLabel: 'ApexOne · Intel TDX 机密 VM（硬件隔离、内存加密）',
+      gateway: '网关 A',
+      gatewaySub: '加密在此解开',
+      meridian: 'Meridian B',
+      meridianSub: '桥接 Claude 订阅',
+      anthropic: 'Anthropic',
+      anthropicSub: '看到明文（按其政策）',
+      arrEncrypted: '加密',
+      arrInternal: '内部',
+      arrPlaintext: '明文',
+      legendConfidential: '受保护：在 ApexOne 的机密电脑内部，任何中间环节都看不到明文',
+      legendPlaintext: '明文：只有最后一步，由 Anthropic 按其隐私政策处理',
+      caption: '一句话：你的提问全程加密，只有受硬件保护的 ApexOne 机密电脑内部、以及最终的 Anthropic 才接触得到它——ApexOne、网络、中间任何一方都读不到。'
+    },
     disclosure: {
-      title: '诚实披露：Anthropic 会看到你的明文',
+      title: '诚实说明：Anthropic 会看到你的明文',
       body:
-        'Claude 路由桥接的是 Claude 订阅，因此 Anthropic 必然会按其自身政策解密并处理你的 prompt 明文。我们的保证仅限于：你的设备与 Anthropic 之间的任何中间方（包括 ApexOne）都无法读取或留存它。我们从不声称对 Anthropic 保密，也从不声称你的模型“未被替换”。',
+        'Claude 这条线路对接的是 Claude 订阅，所以 Anthropic 必然会按它自己的政策解密并处理你的明文。我们的保证只针对一件事：在你的设备和 Anthropic 之间，任何中间环节（包括 ApexOne）都读不到、也留不下它。我们从不声称对 Anthropic 保密，也从不声称“你的模型没被偷换”。',
       policyLink: 'Anthropic 隐私政策'
     },
     verify: {
-      checksTitle: '逐项校验结果',
+      checksTitle: '逐项检查结果',
       running: {
-        title: '正在你的浏览器内验证…',
-        note: '拉取 attestation 报告、校验 ACI 绑定、并用 Intel collateral 验证 TDX quote（~426KB 验证器首次加载）。'
+        title: '正在你的浏览器里验证…',
+        note: '正在读取硬件证明、核对身份绑定，并用 Intel 的官方数据验证这份硬件证明是真的（首次会加载约 426KB 的验证程序）。'
       },
       pass: {
         title: '硬件级验证通过',
-        note: '真实 Intel TDX 硬件、运行的是经审计且被度量的确切代码（compose_hash 匹配）、对该 keyset 出具认证并绑定了你的新 nonce。hop 3（Meridian enclave B）在其 attestation 端点可达时于下方单独验证。诚实边界：网关→Meridian 这一跳跨网络传明文（由 TLS + bearer token 保护），hop 4——Anthropic——按设计看得到你的明文。'
+        note: '这是真正的 Intel 机密硬件，跑的是经审计、指纹匹配的确切代码，并把证明绑定到了你这次的一次性随机数上，说明它是刚生成的、不是回放的旧数据。第 3 步（Meridian）在其证明服务可达时于下方单独验证。诚实边界：网关→Meridian 这一步跨网络时是明文（靠加密连接和访问令牌保护），而第 4 步 Anthropic 按设计会看到你的明文。'
       },
       fail: {
-        title: '验证失败',
-        note: '一项或多项 gating 校验未通过。不要信任该报告——见下方逐项结果。'
+        title: '验证未通过',
+        note: '有一项或多项关键检查没通过。请不要信任这份报告——见下方逐项结果。'
       },
       aciOnly: {
-        title: 'ACI 绑定通过——硬件 quote 未完成',
-        note: 'ACI 身份绑定已通过，但 TDX 硬件 quote 未能在你的浏览器内验证（例如 Phala PCCS collateral 服务不可达）。请重试；quote 验证通过前，这不构成硬件级证明。'
+        title: '身份绑定通过——硬件证明未完成',
+        note: '身份绑定这步过了，但硬件证明没能在你的浏览器里验证成功（例如用于验证的 Intel 数据服务暂时不可达）。请重试；在硬件证明通过之前，这还不算硬件级证明。'
       }
     },
     live: {
-      title: '实时 attestation 报告',
+      title: '实时读取硬件证明',
       desc:
-        '拉取网关当前的 attestation 报告（绑定一个新生成的随机 nonce）。其来源溯源（repo / commit / 镜像 digest）以及——在 TDX quote 通过验证后——其硬件度量值，可与下方公布的参考值比对。重要提示：只有当 TDX quote 经过密码学验证后，报告才可信——本页已在你的浏览器内完成该验证（无需信任我们的服务器），自报数值本身不构成证明。',
-      fetch: '拉取并验证报告',
-      fetching: '拉取并验证中…',
-      download: '下载 report.json',
-      nonce: 'Nonce',
-      error: '无法访问 attestation 端点。它由 TEE 网关跨域提供，需要网关开启 CORS。'
+        '现在向网关索取一份最新的硬件证明报告，并绑定一个刚生成的一次性随机数（防止别人拿旧报告糊弄你）。报告里的来源信息（代码仓库、版本、镜像指纹）以及——在硬件证明通过后——它的硬件度量值，都可以和下方公布的参考值逐条对照。重点：只有当硬件证明经过密码学验证后，这份报告才可信——本页已经在你的浏览器里替你完成了这项验证，光看它自己报的数字不算证明。',
+      fetch: '读取并验证报告',
+      fetching: '读取并验证中…',
+      download: '下载报告（report.json）',
+      nonce: '一次性随机数',
+      error: '无法访问硬件证明服务。它由机密网关跨域提供，需要网关开启跨域访问（CORS）。',
+      endpointLabel: '报告地址',
+      collateralLabel: 'Intel 官方验证数据',
+      explorerLabel: '外部验证工具',
+      refetch: '重新验证',
+      autoNote: '💡 打开本页时会自动在你的浏览器里验证；出现绿色对勾就代表通过。你也可以随时点上方按钮、用一组新的随机数重新验证。'
     },
     reference: {
-      title: '公布的参考值',
-      desc: '来自 docs/attestation-verification.md。第三方据此比对实时 quote。',
-      gateway: '网关 — enclave A（机密路径）',
-      meridian: 'Meridian seat — enclave B（非机密桥接）',
-      appId: 'App ID',
-      osImage: 'OS 镜像',
-      composeHash: 'compose_hash',
-      sourceCommit: '源码 commit',
-      signingAddress: 'Receipt 签发地址'
+      title: '公布的参考值（供进阶核对）',
+      desc: '这些是各环节的“精确指纹”，来自公开文档 docs/attestation-verification.md。任何第三方都能用它们和实时读到的硬件证明逐条比对——数值一致，就说明跑的确实是这套公开、未被篡改的代码。',
+      gateway: '网关 — 机密电脑 A（保密线路）',
+      meridian: 'Meridian — 机密电脑 B（非保密桥接）',
+      appId: '应用标识 (App ID)',
+      osImage: '操作系统镜像',
+      composeHash: '部署内容指纹 (compose_hash)',
+      sourceCommit: '源码版本 (commit)',
+      signingAddress: '回执签名地址',
+      launcherImage: '启动器镜像',
+      enclaveImage: '机密程序镜像',
+      attestorImage: '证明服务镜像',
+      ciNote: '上述镜像由本仓库的 GitHub Actions 自动构建并签名（带来源证明，可公开核验）：'
     },
     e2ee: {
-      title: '浏览器级 E2EE 证明（hop-1）',
+      title: '端到端加密证明（第 1 步）',
       desc:
-        '网关在其被认证的 keyset 内公布了一把专用加密密钥（其私钥由 dstack-KMS 只释放给被认证的 enclave）。由于这把钥被 quote 绑定的 keyset digest 覆盖，你的浏览器无需信任 TLS 即可验证：任何加密到它的内容，只有在被认证的 enclave 内部才能解开。此项自动运行，不发送任何数据。',
-      statusVerified: 'E2EE 通道到被认证密钥——已在你的浏览器内验证',
-      statusUnavailable: '该部署不提供 E2EE 通道',
-      statusIdle: '先在上方拉取报告以验证 E2EE 通道。',
+        '网关在它那份受硬件证明的钥匙清单里，公开了一把专用加密公钥（对应的私钥由密钥管理服务只发放给通过认证的那台机密电脑）。由于这把公钥已被硬件证明覆盖，你的浏览器无需假设“网络加密可信”就能确认：任何加密给它的内容，只有在那台受认证的机密电脑内部才能解开。此项自动运行，不发送任何数据。',
+      statusVerified: '端到端加密通道（直达受认证钥匙）——已在你的浏览器里验证通过',
+      statusUnavailable: '该部署未提供端到端加密通道',
+      statusIdle: '先在上方读取报告，才能验证端到端加密通道。',
       live: {
-        title: '运行一次实时 E2EE 往返（可选）',
+        title: '亲眼看：中间方读不到你的 prompt（可选实测）',
         desc:
-          '在你的浏览器内把 prompt 加密到 enclave 的被认证密钥、以 E2EE 发送、再解密 E2EE 响应。认证解密成功即证明 enclave 持有该私钥并实时跑通了整条通道。',
+          '这是可选的实测。点下面的按钮，你的浏览器会把 prompt 加密后发给网关、再解开 E2EE 响应——并把“各方分别看到了什么”如实展示给你，让你亲眼确认中间方拿到的只是密文。',
         disclosure:
-          '诚实披露：该 demo prompt 会在 enclave 内被解密并明文转发给 Anthropic（hop 4），且会消耗 token。请勿粘贴敏感内容。你的 API key 只留在浏览器，仅随本次请求的 Authorization 头发送。',
+          '诚实说明：这段演示提问会在机密电脑里被解密，然后按设计明文转发给 Anthropic（第 4 步），并会消耗少量额度（token）。请不要粘贴敏感内容。你的 API key 只留在你的浏览器里，仅随这一次请求发送用于授权。',
+        claimTitle: '这个演示要证明什么',
+        claimBody:
+          '你的提问在你的浏览器里就被加密成一串密文，只有上方那台通过硬件证明的机密电脑能解开。ApexOne、网络、任何中间环节经手的都是这串密文——读不到你的内容。它能把密文解开并加密回信，就证明了这一点。（注：解密后，机密电脑会按设计把你的提问明文转发给 Anthropic——见第 4 步说明。）',
+        seesTitle: '这一次往返，各方分别看到了什么',
+        youLabel: '你（在你的浏览器里）',
+        youSees: '明文：你输入的提问，和解密后的回复',
+        middleLabel: '中间环节：ApexOne / 网络 / 加密连接的解密点',
+        middleSees: '只有下面这串密文——无法还原出你的提问',
+        enclaveLabel: '通过认证的机密电脑',
+        enclaveSees: '能解密（且只有它能）——这正是它能正确回信的原因',
+        promptSentLabel: '① 你的提问（明文——只有你和机密电脑看得到）',
+        wireLabel: '② 实际在网络上传输的密文（ApexOne / 网络看到的全部）',
+        sealedToLabel: '加密给（受认证的钥匙）',
+        concludeTitle: '结论',
+        concludeBody:
+          '回复能被成功解密并通过校验 ⟹ 只有持有那把受硬件证明私钥的机密电脑，才能解开你发送的内容。ApexOne、网络、任何中间环节都做不到——而且这跟你是否信任网络加密无关。',
+        stepsLabel: '技术步骤明细',
         apiKeyLabel: 'API key',
         apiKeyPlaceholder: 'sk-…（仅用于本次请求，保存在你的浏览器）',
         modelLabel: '模型',
-        promptLabel: 'Prompt',
-        run: '加密并往返',
+        promptLabel: '提问',
+        run: '加密并往返一次',
         running: '加密并验证中…',
-        successTitle: '被认证的 enclave 解开了你的密文',
+        successTitle: '受认证的机密电脑解开了你的密文',
         successNote:
-          '你的 prompt 在浏览器内被加密到 enclave 的被认证密钥、完成往返、且 E2EE 响应通过认证解密。任何中间方（ApexOne、网络、TLS 终止方）都没看到你的明文。',
+          '你的提问在浏览器里被加密给机密电脑的专属钥匙、完成了一次往返、且加密回复通过了校验解密。任何中间环节（ApexOne、网络、加密连接的解密点）都没看到你的明文。',
         replyLabel: '解密后的回复',
-        failTitle: '实时往返未能完成',
+        failTitle: '这次实测没能完成',
         failNote:
-          '这并不能推翻该通道——只是说明这次实时请求没能跑起来（见错误信息）。上方的验证侧证明依然成立。'
+          '这并不能推翻上面的结论——只是说明这次实时请求没跑起来（见错误信息）。上方那项自动的验证依然成立。'
       }
     }
   },
