@@ -8,9 +8,12 @@
           </span>
           <span class="truncate text-base font-semibold text-gray-950 dark:text-white">{{ siteName }}</span>
         </RouterLink>
-        <RouterLink to="/home" class="text-sm font-medium text-gray-500 hover:text-gray-800 dark:text-dark-300 dark:hover:text-white">
-          {{ t('proof.header.backHome') }}
-        </RouterLink>
+        <div class="flex flex-shrink-0 items-center gap-3">
+          <LocaleSwitcher />
+          <RouterLink to="/home" class="text-sm font-medium text-gray-500 hover:text-gray-800 dark:text-dark-300 dark:hover:text-white">
+            {{ t('proof.header.backHome') }}
+          </RouterLink>
+        </div>
       </div>
     </header>
 
@@ -256,6 +259,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
+import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import { getPublicSettings } from '@/api/auth'
 import { sanitizeUrl } from '@/utils/url'
 import { fetchAttestationReport, fetchMeridianQuote, type AttestationReport } from '@/api/attestation'

@@ -142,6 +142,7 @@ export default {
       features: 'Features',
       price: 'Price',
       trust: 'Trust',
+      proof: 'Verify',
       document: 'Document'
     },
     // User-focused value proposition

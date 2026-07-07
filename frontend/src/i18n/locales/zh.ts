@@ -140,6 +140,7 @@ export default {
       features: '特性',
       price: '价格',
       trust: '可信',
+      proof: '验证',
       document: '文档'
     },
     // 新增：面向用户的价值主张
