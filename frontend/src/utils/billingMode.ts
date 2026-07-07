@@ -29,6 +29,9 @@ export function isImageUsage(row: Pick<ImageBillingRow, 'image_count' | 'billing
 }
 
 export function getDisplayBillingMode(row: Pick<ImageBillingRow, 'billing_mode' | 'image_count'> | null | undefined): string | null | undefined {
+  // Historical image rows may lack billing_mode (recorded before the field existed);
+  // derive Image from image_count so they don't fall back to the Token default.
+  if (isImageUsage(row)) return BILLING_MODE_IMAGE
   return row?.billing_mode
 }
 

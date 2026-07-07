@@ -1213,6 +1213,9 @@ watch(openAIUsageRefreshKey, (nextKey, prevKey) => {
   if (!prevKey || nextKey === prevKey) return
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return
 
+  // Row data changed (WS push / list refresh): the cached usage is now stale,
+  // so drop the cache entry before reloading to force a fresh /usage fetch.
+  _usageCache.delete(props.account.id)
   requestAutoLoad()
 })
 
