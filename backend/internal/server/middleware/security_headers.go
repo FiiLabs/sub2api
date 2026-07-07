@@ -28,12 +28,17 @@ const (
 	AirwallexDemoStaticDomain = "https://static-demo.airwallex.com"
 	// AirwallexDemoCheckoutDomain 是 Airwallex 沙箱环境收银台元素和 iframe 域名。
 	AirwallexDemoCheckoutDomain = "https://checkout-demo.airwallex.com"
+	// WasmUnsafeEval 允许 WebAssembly 编译/实例化（仅 WASM，不放开 JS eval）。
+	// /proof 证明页用 @phala/dcap-qvl-web 的 WASM 在浏览器本地验证 TDX quote，
+	// 缺此值时 WebAssembly.instantiateStreaming 会被 CSP 拦截。
+	WasmUnsafeEval = "'wasm-unsafe-eval'"
 )
 
 var requiredCSPDirectiveValues = []struct {
 	directive string
 	value     string
 }{
+	{"script-src", WasmUnsafeEval},
 	{"script-src", CloudflareInsightsDomain},
 	{"script-src", StripeDomain},
 	{"frame-src", StripeDomain},
