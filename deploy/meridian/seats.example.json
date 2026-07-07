@@ -1,11 +1,24 @@
 {
   "meridian_host_port_base": 3456,
   "models": {
-    "claude-sonnet-4-6": "claude-sonnet-4-6",
-    "claude-opus-4-6": "claude-opus-4-6"
+    "claude-opus-4-8": "claude-opus-4-8",
+    "claude-sonnet-5": "claude-sonnet-5",
+    "claude-haiku-4-5": "claude-haiku-4-5",
+    "claude-fable-5": "claude-fable-5",
+    "claude-opus-4-7": "claude-opus-4-7",
+    "claude-opus-4-6": "claude-opus-4-6",
+    "claude-sonnet-4-6": "claude-sonnet-4-6"
   },
   "seats": [
-    { "name": "seat1", "creds_dir": "secrets/seat1", "proxy": "socks5://user:pass@ip1:1080" },
-    { "name": "seat2", "creds_dir": "secrets/seat2", "proxy": "socks5://user:pass@ip2:1080" }
+    {
+      "name": "seat1",
+      "creds_dir": "secrets/seat1",
+      "proxy": "socks5://user:pass@ip1:1080"
+    },
+    {
+      "name": "seat2",
+      "creds_dir": "secrets/seat2",
+      "proxy": "socks5://user:pass@ip2:1080"
+    }
   ]
 }

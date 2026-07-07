@@ -52,8 +52,13 @@
     "base_url": "https://<meridian-seat1-endpoint>",
     "path": "/v1/messages",
     "models": {
-      "claude-sonnet-4-6": "claude-sonnet-4-6",
-      "claude-opus-4-6": "claude-opus-4-6"
+      "claude-opus-4-8": "claude-opus-4-8",
+      "claude-sonnet-5": "claude-sonnet-5",
+      "claude-haiku-4-5": "claude-haiku-4-5",
+      "claude-fable-5": "claude-fable-5",
+      "claude-opus-4-7": "claude-opus-4-7",
+      "claude-opus-4-6": "claude-opus-4-6",
+      "claude-sonnet-4-6": "claude-sonnet-4-6"
     },
     "bearer_token": "<meridian-seat1-api-key>"
   },
@@ -63,6 +68,12 @@
     "base_url": "https://<meridian-seat2-endpoint>",
     "path": "/v1/messages",
     "models": {
+      "claude-opus-4-8": "claude-opus-4-8",
+      "claude-sonnet-5": "claude-sonnet-5",
+      "claude-haiku-4-5": "claude-haiku-4-5",
+      "claude-fable-5": "claude-fable-5",
+      "claude-opus-4-7": "claude-opus-4-7",
+      "claude-opus-4-6": "claude-opus-4-6",
       "claude-sonnet-4-6": "claude-sonnet-4-6"
     },
     "bearer_token": "<meridian-seat2-api-key>"

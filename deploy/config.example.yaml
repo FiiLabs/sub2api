@@ -1138,17 +1138,35 @@ consult:
   # ⚠️ Meridian(Claude 订阅)路由只用精确名或 claude-* 前缀，禁止用 "*" catch-all，
   #    否则会把非 Claude / 未知模型也吞进 Claude 路由。非 Claude 模型各配各的条目、互不影响。
   route_map:
-    # --- 单 seat：直接用 route_id 指向一个 Meridian 上游 ---
+    # --- 生产当前的 Claude 模型集（单 seat：route_id 直接指向一个 Meridian 上游）---
+    #     route_id 的 "<upstream>:<model>" 必须与网关 upstreams 的上游名 + 已注册 model 对齐。
+    claude-opus-4-8:
+      route_id: "meridian-seat1:claude-opus-4-8"
+      format: "anthropic"
+    claude-sonnet-5:
+      route_id: "meridian-seat1:claude-sonnet-5"
+      format: "anthropic"
+    claude-haiku-4-5:
+      route_id: "meridian-seat1:claude-haiku-4-5"
+      format: "anthropic"
+    claude-fable-5:
+      route_id: "meridian-seat1:claude-fable-5"
+      format: "anthropic"
+    claude-opus-4-7:
+      route_id: "meridian-seat1:claude-opus-4-7"
+      format: "anthropic"
     claude-opus-4-6:
       route_id: "meridian-seat1:claude-opus-4-6"
       format: "anthropic"
+    claude-sonnet-4-6:
+      route_id: "meridian-seat1:claude-sonnet-4-6"
+      format: "anthropic"
     # --- 多 seat：用 seats 列出多个网关上游名，控制面轮换选主 + 其余作有序 failover ---
     #     routeId 会构造为 "<seat>:<请求的 model>"；seats 与 route_id 二选一，同时设置时 seats 优先。
-    claude-sonnet-4-6:
-      seats:
-        - "meridian-seat1"
-        - "meridian-seat2"
-      format: "anthropic"
+    #     例：
+    #     claude-sonnet-5:
+    #       seats: ["meridian-seat1", "meridian-seat2"]
+    #       format: "anthropic"
     # --- 非 Claude 模型示例：走各自上游，与 Meridian 无关 ---
     # gpt-4o:
     #   route_id: "openai:gpt-4o"
