@@ -101,14 +101,19 @@ images, and that receipts are signed by that attested enclave.
 
 ## 3. Publish on Phala Trust Center
 
-List the production CVMs so anyone can fetch + DCAP-verify their attestation
-through Phala's infrastructure (currently `listed=false`):
+Both production CVMs are **already listed** on the public Trust Center
+(`listed=true`), so anyone can fetch + DCAP-verify their attestation through
+Phala's infrastructure. Verify (read-only):
 
 ```bash
-# Re-deploy (or update) with --listed to publish on the public Trust Center.
-phala deploy --cvm-id d65b6fbc8df7a1a52a55807a4f5bd2c7dc67b983 -c deploy/gateway/compose.enclave.yaml -e <sealed.env> --listed
-phala deploy --cvm-id bbbc8691946a8575accfa86b8b533ad288d00828 -c deploy/meridian/compose.seats.generated.yaml -e <sealed.env> --listed
+phala cvms get --cvm-id d65b6fbc8df7a1a52a55807a4f5bd2c7dc67b983 --json | jq '{listed, compose_hash}'  # gateway (enclave A)
+phala cvms get --cvm-id bbbc8691946a8575accfa86b8b533ad288d00828 --json | jq '{listed, compose_hash}'  # meridian (enclave B)
+#  -> listed: true; compose_hash matches §1 (746302d0… gateway / 4dee71a8… meridian)
 ```
+
+`listed` is Trust Center visibility metadata, independent of the on-chain
+`compose_hash`; toggle it later with `phala deploy --cvm-id <id> --listed`
+(or `--no-listed`) — no compose change, so the measured identity is unaffected.
 
 ---
 
