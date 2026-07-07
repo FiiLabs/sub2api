@@ -105,7 +105,7 @@
             <text x="356" y="116" text-anchor="middle" font-size="13" fill="white" font-weight="700"
               font-family="system-ui,sans-serif">TDX Secure Gateway</text>
             <text x="356" y="131" text-anchor="middle" font-size="9.5" fill="rgba(255,255,255,0.8)"
-              font-family="system-ui">Nginx + ApexOne</text>
+              font-family="system-ui">dstack-ingress + ApexOne</text>
             <!-- attestation badge -->
             <rect x="284" y="148" width="144" height="34" rx="8" fill="rgba(255,255,255,0.14)"
               stroke="rgba(255,255,255,0.35)" stroke-width="1" />
