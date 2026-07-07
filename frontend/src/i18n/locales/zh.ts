@@ -16,7 +16,6 @@ export default {
       checking: '验证中…',
       pass: '已验证',
       fail: '验证失败',
-      localSoon: '本地验证即将上线',
       disclosure: '诚实披露·不适用'
     },
     journey: {
@@ -76,7 +75,7 @@ export default {
     live: {
       title: '实时 attestation 报告',
       desc:
-        '拉取网关当前的 attestation 报告（绑定一个新生成的随机 nonce）。其来源溯源（repo / commit / 镜像 digest）以及——在 TDX quote 通过验证后——其硬件度量值，可与下方公布的参考值比对。重要提示：只有当 TDX quote 经过密码学验证后，报告才可信（浏览器本地验证即将上线）——自报数值本身不构成证明。',
+        '拉取网关当前的 attestation 报告（绑定一个新生成的随机 nonce）。其来源溯源（repo / commit / 镜像 digest）以及——在 TDX quote 通过验证后——其硬件度量值，可与下方公布的参考值比对。重要提示：只有当 TDX quote 经过密码学验证后，报告才可信——本页已在你的浏览器内完成该验证（无需信任我们的服务器），自报数值本身不构成证明。',
       fetch: '拉取并验证报告',
       fetching: '拉取并验证中…',
       download: '下载 report.json',

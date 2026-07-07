@@ -16,7 +16,6 @@ export default {
       checking: 'Checking…',
       pass: 'Verified',
       fail: 'FAILED',
-      localSoon: 'Local verify coming soon',
       disclosure: 'Disclosure — N/A'
     },
     journey: {
@@ -77,7 +76,7 @@ export default {
     live: {
       title: 'Live attestation report',
       desc:
-        'Fetch the gateway’s current attestation report, bound to a fresh random nonce. Its source provenance (repo / commit / image digest) and — once the TDX quote is verified — its hardware measurements can be compared against the published reference values below. Important: the report is trustworthy only once the TDX quote is cryptographically verified (browser-local verification coming soon) — a self-reported value alone is not proof.',
+        'Fetch the gateway’s current attestation report, bound to a fresh random nonce. Its source provenance (repo / commit / image digest) and — once the TDX quote is verified — its hardware measurements can be compared against the published reference values below. Important: the report is trustworthy only once the TDX quote is cryptographically verified — this page performs that verification in your browser (no trust in our servers) — a self-reported value alone is not proof.',
       fetch: 'Fetch & verify report',
       fetching: 'Fetching & verifying…',
       download: 'Download report.json',

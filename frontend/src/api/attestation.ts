@@ -4,8 +4,8 @@
  * gateway directly (see ATTESTATION_BASE_URL) and depends on gateway CORS.
  *
  * The report is self-reported until its TDX quote is cryptographically
- * verified. Browser-local DCAP + receipt verification is a separate module
- * (coming soon); this file only transports the raw report.
+ * verified. Browser-local DCAP + receipt verification lives in a separate
+ * module (see @/utils/attestation); this file only transports the raw report.
  */
 import axios from 'axios'
 import JSONBig from 'json-bigint'
