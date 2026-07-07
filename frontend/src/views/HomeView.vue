@@ -367,7 +367,7 @@ const outlineBtn =
 const heroStats = computed(() => [
   { value: '99.99%', label: t('home.landing.hero.stats.uptime') },
   { value: '100%', label: t('home.landing.hero.stats.attested') },
-  { value: 'Millions', label: t('home.landing.hero.stats.requests') },
+  { value: '0.5×', label: t('home.landing.hero.stats.discount') },
   { value: 'Verified', label: t('home.landing.hero.stats.realModel') }
 ])
 
@@ -456,7 +456,7 @@ const pricingPlans = computed(() => [
 
 // TRUST
 const trustStats = computed(() => [
-  { value: 'M+', label: t('home.landing.trust.stats.requests') },
+  { value: '0.5×', label: t('home.landing.trust.stats.discount') },
   { value: '99.99%', label: t('home.landing.trust.stats.availability') },
   { value: 'Global', label: t('home.landing.trust.stats.infrastructure') }
 ])

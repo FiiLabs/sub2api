@@ -292,7 +292,7 @@ export default {
         stats: {
           uptime: 'Uptime SLA',
           attested: 'TEE-attested routing',
-          requests: 'API requests',
+          discount: 'discount',
           realModel: 'Real-model guarantee, verified'
         }
       },
@@ -374,7 +374,7 @@ export default {
         eyebrow: '// Trusted at scale',
         title: 'Built for production.',
         stats: {
-          requests: 'API requests',
+          discount: 'discount',
           availability: 'Availability',
           infrastructure: 'Infrastructure'
         },

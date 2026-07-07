@@ -290,7 +290,7 @@ export default {
         stats: {
           uptime: '可用性 SLA',
           attested: 'TEE 认证路由',
-          requests: 'API 请求',
+          discount: '官方五折',
           realModel: '真实模型保证，可验证'
         }
       },
@@ -372,7 +372,7 @@ export default {
         eyebrow: '// 大规模可信赖',
         title: '为生产环境而生。',
         stats: {
-          requests: 'API 请求',
+          discount: '官方五折',
           availability: '可用性',
           infrastructure: '基础设施'
         },
