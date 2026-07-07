@@ -287,7 +287,7 @@ export default {
         badge: 'Verified-real models · TEE-attested privacy',
         title: 'Not the cheapest. The only AI gateway you can verify.',
         subtitle:
-          'Access the real Claude, GPT, and Gemini — full-precision, never quantized, never silently swapped — through a single API that runs inside an attested TEE. Cryptographically prove the model you paid for is the model you got, and that no one (not even us) can read your prompts — and pay a little less than going direct.',
+          'Access the real Claude, GPT, and Gemini — full-precision, never quantized, never silently swapped — through a single API that runs inside an attested TEE. Cryptographically prove the model you paid for is the model you got, and that no one (not even us) can read your prompts — and pay half of going direct.',
         viewDocs: 'View docs',
         stats: {
           uptime: 'Uptime SLA',
@@ -313,9 +313,9 @@ export default {
         eyebrow: '// ApexOne',
         title: 'The real model — at an honest price — for every developer.',
         subtitle:
-          'Cut-rate resellers sell access for a fraction of list — by quantizing models, silently routing to something smaller, or selling your prompts. ApexOne does the opposite: the genuine, full-precision model, privately routed through a TEE, verifiable end-to-end — and priced just below going direct, not suspiciously cheap.',
+          'Cut-rate resellers sell access for a fraction of list — by quantizing models, silently routing to something smaller, or selling your prompts. ApexOne is different: the genuine, full-precision model, privately routed through a TEE, verifiable end-to-end — at 50% of official list. Cheap because it runs on verified capacity, not because we cut corners.',
         cost: {
-          title: 'What does "a fraction of list price" actually cost you?',
+          title: 'Half of list price, done right.',
           desc: 'A side-by-side look at what cheap, direct, and verifiable routing really mean.',
           cutRate: {
             label: 'Cut-rate reseller',
@@ -327,9 +327,9 @@ export default {
           },
           apexone: {
             label: 'ApexOne',
-            desc: 'The real model, full precision, attested; prompts sealed in a TEE; auto-failover; full audit — and still below going direct.'
+            desc: 'The real model, full precision, attested; prompts sealed in a TEE; auto-failover; full audit — at half of going direct.'
           },
-          note: 'Per 1M tokens · illustrative list × ~0.95 pricing'
+          note: 'Per 1M tokens · illustrative list × 0.50 pricing'
         },
         uptime: {
           title: '99.99% uptime, automatic failover',
@@ -352,18 +352,18 @@ export default {
       },
       pricing: {
         eyebrow: '// Pricing',
-        title: 'An honest price. Fully provable.',
+        title: 'Half the price. Fully provable.',
         subtitle:
-          "We're not the cheapest — anything a fraction of list means someone's cutting corners on the model or your data. ApexOne is priced just below going direct, and we're the only gateway where real and private are things you can verify.",
+          "Cheap usually means corners cut — a quantized model or your data logged. ApexOne is 50% of official list and provably neither: the real model, sealed in a TEE, verifiable end-to-end.",
         personal: {
           name: 'ApexOne',
           tagline: 'Pay as you go',
-          priceLine: 'Honest per-million-token pricing, just below direct — for the real, attested model.',
-          desc: 'For developers who want the genuine model, verifiable privacy, transparent billing, and production routing without suspicious discount math.',
+          priceLine: 'Half of official list, per million tokens — for the real, attested model.',
+          desc: 'For developers who want the genuine model, verifiable privacy, and transparent billing — at half the price of going direct.',
           cta: 'Get Started →',
           features: {
             f1: 'The genuine, full-precision model — attested, never downgraded',
-            f2: 'Per-million-token billing, transparent — below going-direct',
+            f2: 'Per-million-token billing, transparent — 50% of official list',
             f3: 'TEE-sealed prompts + remote attestation',
             f4: 'Auto failover & 99.99% uptime',
             f5: 'OpenAI-compatible API'
@@ -390,7 +390,7 @@ export default {
       cta: {
         titleFirst: 'Build on AI you can prove.',
         titleSecond: 'Real models. Private routing. Both verifiable.',
-        description: "Focus on your product. We'll give you the genuine model — for less than direct — and the proof that it's private.",
+        description: "Focus on your product. We'll give you the genuine model — at half of going direct — and the proof that it's private.",
         primary: 'Get Started →',
         secondary: 'View docs →'
       }

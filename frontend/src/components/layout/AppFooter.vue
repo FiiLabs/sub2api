@@ -42,7 +42,7 @@
       </section>
 
       <span class="mb-2.5 mt-5 text-center text-sm text-gray-500 md:mt-7 md:text-base dark:text-dark-400">
-        © {{ currentYear }} PublicAI Foundation, Cayman Islands All Rights Reserved
+        © {{ currentYear }} ApexOne All Rights Reserved
       </span>
     </div>
   </footer>

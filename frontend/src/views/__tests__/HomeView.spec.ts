@@ -78,9 +78,9 @@ describe('HomeView ApexOne landing content', () => {
     expect(text).toContain('Verified-real models')
     expect(text).toContain('TEE-attested privacy')
     expect(text).toContain('ApexOne')
-    expect(text).toContain('An honest price. Fully provable.')
+    expect(text).toContain('Half the price. Fully provable.')
     expect(text).toContain('ApexOne — Pay as you go')
-    expect(text).toContain('just below direct')
+    expect(text).toContain('50% of official list')
 
     expect(text).not.toContain('Explore Team')
     expect(text).not.toContain('PublicAI Team')

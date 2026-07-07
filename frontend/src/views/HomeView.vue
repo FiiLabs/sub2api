@@ -425,7 +425,7 @@ const costComparisons = computed(() => [
   },
   {
     label: t('home.landing.personal.cost.apexone.label'),
-    value: '$9.50 / 1M',
+    value: '$5.00 / 1M',
     desc: t('home.landing.personal.cost.apexone.desc'),
     valueClass: 'text-primary-600 dark:text-primary-400'
   }
