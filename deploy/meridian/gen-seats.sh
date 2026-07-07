@@ -35,6 +35,11 @@ command -v jq >/dev/null || { echo "error: jq required"; exit 1; }
 
 # Meridian image (pin by digest -> measured into the CVM's compose_hash).
 IMAGE="docker.io/markerdao/meridian-enclave@sha256:79f828ba66c1dc96816000723c7232c9d1fa289b710d9bdcc559e67cb075cbb8"
+# Attestation sidecar image (built from ./attestor). ONE per CVM: all seats share
+# this CVM's single dstack identity, so one nonce-bound quote covers them all.
+# Pin by digest -> also measured into compose_hash. Public endpoint on :8091.
+ATTESTOR_IMAGE="docker.io/markerdao/meridian-attestor@sha256:7e6d51fe173a2762773a9a80a63ff5eee0303a060bc12551bc1fcb30f25056a1"
+ATTESTOR_PORT=8091
 
 PORT_BASE=$(jq -r '.meridian_host_port_base // 3456' "$SEATS")
 N=$(jq '.seats | length' "$SEATS")
@@ -88,6 +93,21 @@ for i in $(seq 0 $((N-1))); do
   } >> "$COMPOSE"
   VOLS="${VOLS}  meridian-${name}-claude:\n"
 done
+
+# ---- attestation sidecar (ONE per CVM; serves the whole CVM's quote) ----
+# Public hardware-verification surface: a fresh, nonce-bound TDX DCAP quote +
+# dstack event log over CORS at GET /attestation/quote?nonce=<hex>. Carries NO
+# secrets / NO prompt content, so no sealed env — keeps the measured compose clean.
+{
+  echo "  meridian-attestor:"
+  echo "    image: $ATTESTOR_IMAGE"
+  echo "    ports:"
+  echo "      - \"$ATTESTOR_PORT:$ATTESTOR_PORT\"                          # https://<app-id>-$ATTESTOR_PORT.<node>.phala.network/attestation/quote"
+  echo "    volumes:"
+  echo "      - /var/run/dstack.sock:/var/run/dstack.sock  # dstack 0.5.9 guest-agent (GetQuote)"
+  echo "    restart: unless-stopped"
+} >> "$COMPOSE"
+
 { echo "volumes:"; printf "%b" "$VOLS"; } >> "$COMPOSE"
 
 # ---- sub2api route_map (each model -> all seats, rotation+failover) ----
@@ -143,8 +163,9 @@ done
 } > "$REGISTER"
 chmod +x "$REGISTER"
 
-echo "Generated $N seat(s) on ONE CVM:"
+echo "Generated $N seat(s) on ONE CVM (+ 1 meridian-attestor on :$ATTESTOR_PORT):"
 echo "  $COMPOSE"
 echo "  $ROUTEMAP"
 echo "  $ENVTMPL"
 echo "  $REGISTER"
+echo "Attestation (public, no auth): https://<app-id>-$ATTESTOR_PORT.<node>.phala.network/attestation/quote?nonce=<hex>"

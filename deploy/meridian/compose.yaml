@@ -32,6 +32,22 @@ services:
       - "3456"
     # networks: [gateway-internal]  # keep reachable only from the gateway
 
+  # Attestation sidecar — the public hardware-verification surface (see
+  # ./attestor/server.mjs). Serves GET /attestation/quote?nonce=<hex> with a
+  # nonce-bound TDX DCAP quote + dstack event log over CORS. LOCAL DEV CAVEAT:
+  # there is no dstack guest-agent socket outside a CVM, so it starts fine and
+  # returns a clear 500 ("... socket does not exist") — you can still exercise the
+  # CORS/nonce-validation contract locally. A real quote only comes from a CVM
+  # (see compose.cvm.yaml, which mounts /var/run/dstack.sock).
+  meridian-attestor:
+    build: ./attestor
+    restart: unless-stopped
+    ports:
+      - "8091:8091"
+    # In a CVM this mounts the real guest-agent socket; omitted locally on purpose.
+    # volumes:
+    #   - /var/run/dstack.sock:/var/run/dstack.sock
+
 # Example second seat (uncomment + provide its own account + IP):
 #  meridian-seat2:
 #    build: .

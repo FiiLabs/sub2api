@@ -72,5 +72,26 @@ services:
       - meridian-claude:/root/.claude
     restart: unless-stopped
 
+  # Attestation sidecar (enclave B's PUBLIC hardware-verification surface).
+  # Serves a fresh, nonce-bound Intel TDX DCAP quote + dstack event log over CORS
+  # at GET /attestation/quote?nonce=<hex> so a browser can hardware-verify THIS
+  # CVM the same way it verifies the gateway. Meridian (:3456) has no attestation
+  # endpoint and dstack's public :8090 Info page exposes measurements but NO quote
+  # and NO CORS — hence this sidecar. It carries NO secrets and NO prompt/response
+  # content (only the public quote + measurement event log), so it needs no auth
+  # and no sealed env — keep it OUT of the sealed-env discipline entirely.
+  # Built from deploy/meridian/attestor/ and pushed to docker.io/markerdao. Pin by
+  # DIGEST so it is measured into this CVM's compose_hash (enclave B's identity).
+  meridian-attestor:
+    image: docker.io/markerdao/meridian-attestor@sha256:7e6d51fe173a2762773a9a80a63ff5eee0303a060bc12551bc1fcb30f25056a1
+    ports:
+      # Public endpoint: https://<app-id>-8091.<node>.phala.network/attestation/quote
+      - "8091:8091"
+    volumes:
+      # dstack 0.5.9 guest-agent socket — the sidecar calls GetQuote over it.
+      # (Same mount the gateway uses; a unix socket needs r/w, so NOT :ro.)
+      - /var/run/dstack.sock:/var/run/dstack.sock
+    restart: unless-stopped
+
 volumes:
   meridian-claude:

@@ -9,6 +9,9 @@ against, plus the step-by-step procedure.
 > - ✅ **Runs on genuine Intel TDX hardware** — the quote chains to Intel's roots.
 > - ✅ **Runs a production OS** (`is_dev=false`, no SSH) — confidentiality is enforced.
 > - ✅ **Runs the pinned, audited gateway source** (`repo_commit` below).
+> - ✅ **Browser-level E2EE to the attested key** (hop-1): the gateway advertises a
+>   dedicated encryption key in its attestation-bound keyset, so a browser can
+>   encrypt directly to the enclave (no trust in TLS/ingress). See §5.
 > - ⚠️ Residual (does NOT invalidate the above, but disclose it): the gateway
 >   software is a `0.1.0` developer preview (attestation `vendor=private-ai-gateway-dev`);
 >   the in-TEE Rust toolchain is bootstrapped via apt+rustup (a dev-grade trust
@@ -40,12 +43,20 @@ Fetch the live report and compare against these. Update this table whenever
 |---|---|
 | app_id | `bbbc8691946a8575accfa86b8b533ad288d00828` |
 | os image | `dstack-0.5.9` — hash `bd369a8c…` (same as gateway) |
-| compose_hash | `3bc8be005f4ad1e1005cc5a54f540cd069ffb262dc48b850c6ca086ae2da5796` |
-| measured compose | `deploy/meridian/compose.seats.generated.yaml` (generate via `gen-seats.sh`; contains only `${VAR}` refs + the image digest + ports — NO secrets) |
+| attestation endpoint | `https://<app-id>-8091.dstack-pha-prod5.phala.network/attestation/quote?nonce=<hex>` (nonce-bound TDX DCAP quote + dstack event log, CORS; served by the `meridian-attestor` sidecar) |
+| compose_hash | `4dee71a862c2e402d81982a5ab091dd5c2279c4286f2b5f933b5816c420c4eff` (includes the `meridian-attestor` sidecar; verified against the quote's RTMR3 `compose-hash` event) |
+| measured compose | `deploy/meridian/compose.seats.generated.yaml` (generate via `gen-seats.sh`; contains only `${VAR}` refs + the two image digests + ports — NO secrets) |
 | meridian image | `docker.io/markerdao/meridian-enclave@sha256:79f828ba66c1dc96816000723c7232c9d1fa289b710d9bdcc559e67cb075cbb8` |
+| attestor image | `docker.io/markerdao/meridian-attestor@sha256:7e6d51fe173a2762773a9a80a63ff5eee0303a060bc12551bc1fcb30f25056a1` (CI-built — SLSA provenance + keyless cosign; from `deploy/meridian/attestor/`) |
 
 > The Meridian route is **non-confidential** (Anthropic sees plaintext); its
 > attestation proves the bridge software + egress, not content confidentiality.
+>
+> The `meridian-attestor` sidecar (`deploy/meridian/attestor/`) binds the quote to
+> a caller nonce: `report_data = nonceBytes(32) || zeros(32)`, so a browser checks
+> `report_data[0..32] == nonce` for freshness. When it is added the CVM's
+> `compose_hash` changes — update the row above **and**
+> `frontend/src/constants/attestation.ts` (`MERIDIAN_REFERENCE.composeHash`).
 
 ---
 
@@ -66,7 +77,7 @@ curl -sS "$BASE/v1/attestation/report?nonce=$NONCE" > report.json
 jq -r '.attestation.source_provenance | {repo_url, repo_commit}' report.json
 #    -> repo_commit MUST equal 975ac50f...  (the audited gateway source)
 #    Compare the quote's OS measurement to os_image_hash bd369a8c... (dstack-0.5.9),
-#    and the app compose_hash to 746302d0...  (gateway) / 3bc8be00... (meridian).
+#    and the app compose_hash to 746302d0...  (gateway) / 4dee71a8... (meridian).
 
 # 4) Recompute compose_hash from the published compose (dstack canonicalizes the
 #    docker-compose into app-compose.json and hashes THAT — it is NOT a raw
@@ -128,3 +139,52 @@ so `deploy/meridian/Dockerfile` + `@rynfar/meridian@1.44.1` is what's inside.
 > apt versions, `SOURCE_DATE_EPOCH` + `rewrite-timestamp`) so verifiers rebuild
 > and match the digest without trusting the CI. meridian is impractical to
 > bit-reproduce (npm) — rely on SLSA provenance there.
+
+---
+
+## 5. E2EE hop-1 browser-level proof (Path A)
+
+hop-1 (your device → gateway) is verifiable two ways. The baseline is an
+**audit-level** proof: the TDX quote + `compose_hash` show the measured compose
+terminates TLS inside the CVM (`dstack-ingress`), so plaintext never leaves the
+enclave. A browser cannot cryptographically bind the live TLS connection from
+pure JS, so Path A adds a **TLS-independent, browser-level** proof.
+
+The gateway publishes a dedicated encryption key in its attested keyset —
+`workload_keyset.e2ee_public_keys[]`, algo `secp256k1-aes-256-gcm-hkdf-sha256`
+(`key_id dstack-kms-e2ee-v1`). Its private half is released by dstack-KMS only to
+the attested workload (`evidence.key_custody`). Because the key is inside
+`workload_keyset`, it is covered by `workload_keyset_digest`, which is folded into
+`report_data` and bound into the TDX quote — all already verified in §2. So a
+verifier who trusts the quote transitively trusts this key: **anything encrypted
+to it can be decrypted only inside the attested enclave.**
+
+### Scheme (client side, byte-faithful to `private-ai-gateway/src/aci/e2ee.rs`)
+ECIES: ephemeral secp256k1 ECDH → HKDF-SHA256 (info `aci.e2ee.v2.secp256k1`) →
+AES-256-GCM. Wire ciphertext (lowercase hex):
+`ephemeral_uncompressed_pubkey(65) || aes_gcm_nonce(12) || ciphertext_tag`. The
+request/response AAD strings match `src/aggregator/service/e2ee_crypto.rs`
+(`v2|req|…` / `v2|resp|…`). Opt-in via request headers `X-E2EE-Version: 2`,
+`X-Client-Pub-Key`, `X-Model-Pub-Key`, `X-E2EE-Nonce`, `X-E2EE-Timestamp`; the
+workload advertises support via `service_capabilities.supported_e2ee_versions`.
+
+### What the `/proof` page does
+- **Verification-side (always-on, free):** checks `supported_e2ee_versions` ∋ `2`,
+  the secp256k1 key is present + well-formed, and it is covered by the verified
+  `workload_keyset_digest`. No data is sent. (`e2ee.capability` / `key_present` /
+  `key_attested`; `key_custody` is shown informationally — full `signature_chain`
+  verification is a follow-up.)
+- **Live round-trip (opt-in):** the browser ECIES-encrypts a prompt to the
+  attested key, POSTs it E2EE to `/v1/chat/completions` (the gateway CORS-allows
+  `*`), and authenticated-decrypts the E2EE response. Success proves the enclave
+  held the key and ran the channel live. The demo prompt is decrypted inside the
+  enclave and forwarded to Anthropic in plaintext (hop 4) and consumes tokens —
+  this is disclosed in the UI.
+
+Client implementation: `frontend/src/utils/attestation/e2ee.ts` (ECIES + AAD),
+`e2eeProof.ts` (both proof levels). Verify it round-trips with a real key/model:
+
+```bash
+# In the browser: /proof → "Run a live E2EE round-trip" → paste an API key +
+# a valid model id → the response must authenticated-decrypt (green).
+```

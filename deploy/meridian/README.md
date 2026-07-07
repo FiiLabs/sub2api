@@ -43,6 +43,69 @@ PROXYLITE_SOCKS5: "socks5://<user>:<pass>@<host>:<port>"
 Unset = direct egress (enclave's own IP). Use static/long-acting IPs and keep one
 IP per seat stable across renewals (never high-frequency rotation).
 
+## Attestation sidecar (public hardware verification)
+
+`attestor/` is a tiny Node HTTP server (its own image
+`docker.io/markerdao/meridian-attestor`, run as the `meridian-attestor` service
+on **port 8091**) that exposes a **fresh, nonce-bound Intel TDX DCAP quote +
+dstack event log** over public HTTPS **with CORS**, so a browser can
+hardware-verify this Meridian CVM (enclave B) the same way it verifies the
+gateway (enclave A). It exists because Meridian itself (`:3456`) has no
+attestation endpoint and dstack's public `:8090` Info page exposes measurements
+but **no quote and no CORS**. It holds **no secrets** and carries **no
+prompt/response content** — only public verification material — so it needs no
+auth and no sealed env (one attestor per CVM covers all seats, since they share
+one dstack identity).
+
+**Endpoint (public, no auth):**
+
+```
+GET https://<app-id>-8091.dstack-pha-prod5.phala.network/attestation/quote?nonce=<hex, up to 32 bytes>
+```
+
+Response `200` (`Access-Control-Allow-Origin: *`, preflight `OPTIONS` handled):
+
+```json
+{
+  "quote": "<hex raw TDX DCAP quote>",
+  "event_log": "<JSON string of dstack events {imr,event_type,digest,event,event_payload}[]>",
+  "vm_config": "<optional string>"
+}
+```
+
+The quote's 64-byte `report_data` is `nonceBytes` (left-justified into a 32-byte
+field) `|| zeros(32)`; the browser checks `report_data[0..32]` equals the nonce
+it sent (freshness). Uses `@phala/dstack-sdk` `DstackClient(/var/run/dstack.sock)
+.getQuote(reportData)`, which sends the 64-byte `report_data` **raw** (no
+hashing) and returns `{ quote, event_log, vm_config }`.
+
+**Build, push, pin, redeploy:**
+
+```bash
+docker build -t docker.io/markerdao/meridian-attestor:latest deploy/meridian/attestor
+docker push docker.io/markerdao/meridian-attestor:latest
+docker inspect --format='{{index .RepoDigests 0}}' docker.io/markerdao/meridian-attestor:latest
+# -> paste that @sha256:... digest into compose.cvm.yaml AND gen-seats.sh
+#    (ATTESTOR_IMAGE), replacing REPLACE_AFTER_BUILD_AND_PUSH, then re-run
+#    ./gen-seats.sh and redeploy the CVM.
+```
+
+**Curl test (against a live CVM):**
+
+```bash
+NONCE=$(openssl rand -hex 16)
+curl -s "https://<app-id>-8091.dstack-pha-prod5.phala.network/attestation/quote?nonce=$NONCE" | jq 'keys'
+# -> ["event_log","quote","vm_config"]
+```
+
+> ⚠️ **compose_hash changes.** Adding this sidecar alters the Meridian CVM's
+> measured compose, so its `compose_hash` moves away from the current
+> `3bc8be00…5796`. After you rebuild/pin/redeploy, read the NEW `compose_hash`
+> from the quote's RTMR3 `compose-hash` event (or dstack app-compose tooling) and
+> update **both** `docs/attestation-verification.md` and
+> `frontend/src/constants/attestation.ts` (`MERIDIAN_REFERENCE.composeHash`) to
+> match, or in-browser verification of enclave B will fail the compose-hash check.
+
 ## Build & run (local)
 
 ```bash
