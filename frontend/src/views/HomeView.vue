@@ -34,10 +34,9 @@
           <router-link :to="ctaTarget" class="btn btn-primary px-6 py-3 text-fluid-base shadow-lg shadow-primary-500/30">
             {{ isAuthenticated ? t('home.goToDashboard') : t('home.getStarted') }}
           </router-link>
-          <a :href="docUrl || '#personal'" :target="docUrl ? '_blank' : undefined"
-            :rel="docUrl ? 'noopener noreferrer' : undefined" :class="outlineBtn">
-            {{ t('home.landing.hero.viewDocs') }}
-          </a>
+          <router-link to="/proof" :class="outlineBtn">
+            {{ t('home.landing.hero.verifyPrivacy') }}
+          </router-link>
         </div>
         <div class="mx-auto grid max-w-3xl grid-cols-2 gap-2 md:grid-cols-4">
           <div v-for="stat in heroStats" :key="stat.label" :class="cardClass" class="p-4 text-center">
@@ -80,7 +79,7 @@
             <text x="78" y="159.5" text-anchor="middle" font-size="9" class="chipt"
               font-family="monospace">Encrypted prompt</text>
             <text x="78" y="176" text-anchor="middle" font-size="8.5" class="label2"
-              font-family="monospace">↓ TLS / E2E ↓</text>
+              font-family="monospace">↓ TLS / E2EE ↓</text>
 
             <!-- flow: client -> gateway -->
             <line x1="144" y1="150" x2="226" y2="150" class="flow" stroke-width="1.3" stroke-dasharray="5,4"
@@ -136,31 +135,31 @@
 
             <!-- 3. Providers -->
             <rect x="596" y="52" width="116" height="40" rx="8" class="surf" stroke-width="1" />
-            <circle cx="612" cy="72" r="6.5" fill="#10a37f" />
-            <text x="623" y="69" font-size="10.5" font-weight="600" class="strong" font-family="system-ui">OpenAI</text>
-            <text x="623" y="80" font-size="9" class="label2" font-family="system-ui">GPT-5.x</text>
+            <circle cx="612" cy="72" r="6.5" fill="#7b61ff" />
+            <text x="623" y="69" font-size="10.5" font-weight="600" class="strong" font-family="system-ui">Claude</text>
+            <text x="623" y="80" font-size="9" class="label2" font-family="system-ui">live</text>
 
             <rect x="596" y="130" width="116" height="40" rx="8" class="surf" stroke-width="1" />
-            <circle cx="612" cy="150" r="6.5" fill="#7b61ff" />
-            <text x="623" y="147" font-size="10.5" font-weight="600" class="strong" font-family="system-ui">Claude</text>
-            <text x="623" y="158" font-size="9" class="label2" font-family="system-ui">Anthropic 4.x</text>
+            <circle cx="612" cy="150" r="6.5" fill="#10a37f" />
+            <text x="623" y="147" font-size="10.5" font-weight="600" class="strong" font-family="system-ui">GPT</text>
+            <text x="623" y="158" font-size="9" class="label2" font-family="system-ui">coming soon</text>
 
             <rect x="596" y="208" width="116" height="40" rx="8" class="surf" stroke-width="1" />
             <circle cx="612" cy="228" r="6.5" fill="#4285F4" />
             <text x="623" y="225" font-size="10.5" font-weight="600" class="strong" font-family="system-ui">Gemini</text>
-            <text x="623" y="236" font-size="9" class="label2" font-family="system-ui">Google</text>
+            <text x="623" y="236" font-size="9" class="label2" font-family="system-ui">coming soon</text>
 
             <!-- packets -->
             <circle r="4" fill="#7b61ff">
               <animateMotion dur="1.6s" repeatCount="indefinite" path="M144,150 L226,150" />
               <animate attributeName="opacity" values="0;0.9;0" dur="1.6s" repeatCount="indefinite" />
             </circle>
-            <circle r="3.5" fill="#10a37f">
+            <circle r="3.5" fill="#7b61ff">
               <animateMotion dur="1.2s" repeatCount="indefinite" begin="0.2s"
                 path="M484,118 C540,118 548,72 596,72" />
               <animate attributeName="opacity" values="0;0.9;0" dur="1.2s" repeatCount="indefinite" begin="0.2s" />
             </circle>
-            <circle r="3.5" fill="#7b61ff">
+            <circle r="3.5" fill="#10a37f">
               <animateMotion dur="1s" repeatCount="indefinite" begin="0.5s" path="M484,150 L596,150" />
               <animate attributeName="opacity" values="0;0.9;0" dur="1s" repeatCount="indefinite" begin="0.5s" />
             </circle>
@@ -325,10 +324,9 @@
             <router-link :to="ctaTarget" class="btn btn-primary px-6 py-3 text-fluid-base shadow-lg shadow-primary-500/30">
               {{ t('home.landing.cta.primary') }}
             </router-link>
-            <a :href="docUrl || '#pricing'" :target="docUrl ? '_blank' : undefined"
-              :rel="docUrl ? 'noopener noreferrer' : undefined" :class="outlineBtn">
+            <router-link to="/proof" :class="outlineBtn">
               {{ t('home.landing.cta.secondary') }}
-            </a>
+            </router-link>
           </div>
         </div>
       </section>
@@ -366,10 +364,10 @@ const outlineBtn =
 
 // HERO stats
 const heroStats = computed(() => [
-  { value: '99.99%', label: t('home.landing.hero.stats.uptime') },
+  { value: '50%', label: t('home.landing.hero.stats.discount') },
   { value: '100%', label: t('home.landing.hero.stats.attested') },
-  { value: '0.5×', label: t('home.landing.hero.stats.discount') },
-  { value: 'Verified', label: t('home.landing.hero.stats.realModel') }
+  { value: 'Claude', label: t('home.landing.hero.stats.claude') },
+  { value: '99.99%', label: t('home.landing.hero.stats.availability') }
 ])
 
 const routingAttestations = computed(() => [
@@ -378,8 +376,8 @@ const routingAttestations = computed(() => [
     desc: t('home.landing.routing.privacy.desc')
   },
   {
-    title: t('home.landing.routing.model.title'),
-    desc: t('home.landing.routing.model.desc')
+    title: t('home.landing.routing.gateway.title'),
+    desc: t('home.landing.routing.gateway.desc')
   }
 ])
 
@@ -414,19 +412,19 @@ const personalFeatures = computed(() => [
 const costComparisons = computed(() => [
   {
     label: t('home.landing.personal.cost.cutRate.label'),
-    value: '$1.00 / 1M',
+    value: t('home.landing.personal.cost.cutRate.value'),
     desc: t('home.landing.personal.cost.cutRate.desc'),
     valueClass: 'text-amber-600 dark:text-amber-400'
   },
   {
     label: t('home.landing.personal.cost.direct.label'),
-    value: '$10.00 / 1M',
+    value: t('home.landing.personal.cost.direct.value'),
     desc: t('home.landing.personal.cost.direct.desc'),
     valueClass: 'text-gray-500 dark:text-dark-300'
   },
   {
     label: t('home.landing.personal.cost.apexone.label'),
-    value: '$5.00 / 1M',
+    value: t('home.landing.personal.cost.apexone.value'),
     desc: t('home.landing.personal.cost.apexone.desc'),
     valueClass: 'text-primary-600 dark:text-primary-400'
   }
@@ -434,7 +432,12 @@ const costComparisons = computed(() => [
 
 const uptimeCells = Array.from({ length: 25 }, (_, i) => ({ warn: i === 11 }))
 
-const modelPills = ['GPT', 'Claude', 'Gemini', 'Full precision', 'Attested identity']
+const modelPills = computed(() => [
+  t('home.landing.personal.aggregation.tags.claude'),
+  t('home.landing.personal.aggregation.tags.gpt'),
+  t('home.landing.personal.aggregation.tags.gemini'),
+  t('home.landing.personal.aggregation.tags.compatible')
+])
 
 const privacyBadges = computed(() => [
   t('home.landing.personal.privacy.points.tdx'),
@@ -451,15 +454,15 @@ const pricingPlans = computed(() => [
     desc: t('home.landing.pricing.personal.desc'),
     cta: t('home.landing.pricing.personal.cta'),
     featured: true,
-    features: [1, 2, 3, 4, 5].map((i) => t(`home.landing.pricing.personal.features.f${i}`))
+    features: [1, 2, 3, 4, 5, 6].map((i) => t(`home.landing.pricing.personal.features.f${i}`))
   }
 ])
 
 // TRUST
 const trustStats = computed(() => [
-  { value: '0.5×', label: t('home.landing.trust.stats.discount') },
+  { value: '50%', label: t('home.landing.trust.stats.discount') },
   { value: '99.99%', label: t('home.landing.trust.stats.availability') },
-  { value: 'Global', label: t('home.landing.trust.stats.infrastructure') }
+  { value: 'TEE', label: t('home.landing.trust.stats.gateway') }
 ])
 
 const trustPills = computed(() => [
@@ -467,7 +470,7 @@ const trustPills = computed(() => [
   t('home.landing.trust.pills.noTraining'),
   t('home.landing.trust.pills.audit'),
   t('home.landing.trust.pills.tee'),
-  t('home.landing.trust.pills.verifiedReal'),
+  t('home.landing.trust.pills.claudeLive'),
   t('home.landing.trust.pills.compatible')
 ])
 
@@ -503,9 +506,6 @@ const vReveal: Directive<HTMLElement> = {
     revealObserver?.unobserve(el)
   }
 }
-
-// Remote documentation link (admin-configurable, falls back to in-page anchor)
-const docUrl = computed(() => appStore.cachedPublicSettings?.doc_url || appStore.docUrl || '')
 
 // Auth state
 const isAuthenticated = computed(() => authStore.isAuthenticated)

@@ -305,90 +305,100 @@ export default {
     },
     landing: {
       hero: {
-        badge: '真实模型可验证 · TEE 远程认证隐私',
-        title: '不是最便宜的。唯一可验证的 AI 网关。',
+        badge: 'Claude 已上线 · TEE 可验证私密路由',
+        title: '可亲自验证的 AI 网关，价格为官方 API 的五折。',
         subtitle:
-          '通过一个运行在已认证 TEE 内的统一 API，访问真实的 Claude ——全精度、不量化、不静默替换。我们提供加密证明，确保您所获即为您所购的模型，并保证您的提示词始终不被读取——即便我们也无法查看。',
-        label: '仍然比直接购买更便宜。',
-        viewDocs: '查看文档',
+          '通过一个兼容 OpenAI 的 API 使用 Claude，请求会先进入可远程认证的 Intel TDX 机密 VM。ApexOne 及中间基础设施读不到你的提示词；Claude 路线最终由 Anthropic 处理明文，遵循其自身政策。GPT 和 Gemini 即将上线。',
+        label: '官方 API 计费价格五折。',
+        verifyPrivacy: '验证隐私',
         stats: {
-          uptime: '可用性 SLA',
+          availability: '可用性目标',
           attested: 'TEE 认证路由',
-          discount: '官方五折',
-          realModel: '真实模型保证，可验证'
+          discount: '官方 API 计费价格',
+          claude: '已上线'
         }
       },
       routing: {
         eyebrow: '// 机密路由架构',
         caption:
-          '提示词全程端到端加密——明文只存在于已认证 TEE 内部，因此 ApexOne 运营方无法读取。每个响应也都由你请求的、经过认证的全精度模型提供：可验证，而不是凭信任。',
+          '你的提示词只会在已认证的 ApexOne TEE 内解密，随后交给 Anthropic 处理 Claude 请求。ApexOne 运营方、日志和中间基础设施都读不到它。证明范围覆盖网关、代码身份和隐私边界，不覆盖 Anthropic 模型权重。',
         privacy: {
-          title: '隐私认证',
-          desc: '明文只存在于已认证的 TEE 内部。'
+          title: '隐私边界',
+          desc: '明文不会进入 ApexOne 控制面、日志、运营方或中间基础设施。'
         },
-        model: {
-          title: '模型认证',
-          desc: '实际服务模型的身份和权重端到端认证；不降级、不克隆。'
+        gateway: {
+          title: '网关认证',
+          desc: '远程认证验证 Intel TDX 网关、被度量的代码和受认证的加密密钥。'
         }
       },
       personal: {
         eyebrow: '// ApexOne',
-        title: '真实模型，诚实价格，面向每位开发者。',
+        title: 'Claude 私密路由，官方 API 价格五折。',
         subtitle:
-          '一折价转售商之所以能卖得极低，常见代价是量化模型、静默路由到更小模型，或记录你的提示词。ApexOne 不一样：真实的全精度模型，通过 TEE 私密路由，端到端可验证——价格仅为官方直连的五折。便宜，是因为跑在可验证的算力上，而不是偷工减料。',
+          '便宜的 AI 接入不应该要求你盲目信任。ApexOne 以官方 API 计费价格的 50% 提供 Claude 路由，并在路由层提供可由浏览器验证的 TEE 隐私边界。证明范围很清楚：ApexOne 和中间基础设施读不到你的提示词；Anthropic 仍然是 Claude 的模型服务方。',
         cost: {
-          title: '官方直连五折，货真价实。',
-          desc: '对比极低价、官方直连和可验证路由分别真正提供了什么。',
+          title: '官方 API 计费价格五折，并且路由边界可验证。',
+          desc: '对比价格、隐私边界和证明范围。',
           cutRate: {
-            label: '一折价转售商',
-            desc: '是否量化？是否降级？提示词是否被记录？无法验证。'
+            label: '不透明网关',
+            value: '不清楚',
+            desc: '价格低，但路由、日志策略和隐私边界不清楚。'
           },
           direct: {
             label: '官方直连',
-            desc: '真实模型，但没有 TEE 隐私、故障切换或治理能力。'
+            value: '官方 API 价格',
+            desc: '官方服务方接入，但没有 ApexOne 的 TEE 隐私边界、故障切换或统一计费层。'
           },
           apexone: {
             label: 'ApexOne',
-            desc: '真实全精度模型，已认证；提示词封存在 TEE 内；自动故障切换；完整审计——价格为官方直连的五折。'
+            value: '官方 API 价格 50%',
+            desc: 'Claude 已上线，TEE 可认证路由，控制面只接触元数据，支持自动故障切换。'
           },
-          note: '每百万 Token · 示例价格按 list × 0.50'
+          note: '基于官方 API 计费价格。ApexOne 按该价格的 50% 计费。'
         },
         uptime: {
-          title: '99.99% 可用性，自动故障切换',
-          desc: '我们监控模型可用性，并在服务商故障时重新路由流量，同时不牺牲模型真实性。',
-          window: '近 90 天可用性'
+          title: '99.99% 可用性目标，自动故障切换',
+          desc: '我们监控路由可用性，并在路由不可用时切换流量。',
+          window: '可用性目标'
         },
         aggregation: {
-          title: '真实模型可验证',
-          desc: '每个请求都由你指定的模型提供服务——认证身份、全精度，永不静默降级。'
+          title: 'Claude 已上线，GPT 和 Gemini 随后上线',
+          desc: 'Claude 已通过 ApexOne 的可认证私密路由上线。GPT 和 Gemini 随后上线。',
+          tags: {
+            claude: 'Claude 已上线',
+            gpt: 'GPT 即将上线',
+            gemini: 'Gemini 即将上线',
+            compatible: '兼容 OpenAI'
+          }
         },
         privacy: {
-          title: 'TEE 封存提示词',
-          desc: '你的提示词和响应只会在 Intel TDX TEE 内解密。技术上我们无法读取，并且你可以通过远程认证验证这一点。',
+          title: 'TEE 封存路由',
+          desc: '你的提示词和响应只会在 Intel TDX 机密 VM 内解密，再交给 Claude 服务方。ApexOne 控制面和运营方无法读取，你也可以通过远程认证验证这条边界。',
           points: {
-            tdx: '仅在 Intel TDX 内解密',
-            noRead: 'ApexOne 运营方无法读取提示词',
-            attestation: '远程认证验证隐私边界'
+            tdx: '仅在 Intel TDX 内、交给服务方之前解密',
+            noRead: 'ApexOne 运营方和日志无法读取提示词',
+            attestation: '远程认证验证网关边界'
           }
         }
       },
       pricing: {
         eyebrow: '// 价格',
-        title: '官方五折，完全可证明。',
+        title: '官方 API 价格五折。私密路由，可验证。',
         subtitle:
-          '便宜往往意味着偷工减料——量化模型，或记录你的数据。ApexOne 是官方直连的五折，且可证明两者皆无：真实模型，封存在 TEE 内，端到端可验证。',
+          'ApexOne 以官方 API 计费价格的 50% 提供 Claude 接入，并将请求路由进已认证的 TEE 网关。五折是价格事实；可证明的是 ApexOne 路由的隐私边界。',
         personal: {
           name: 'ApexOne',
           tagline: '按量付费',
-          priceLine: '官方直连五折，按百万 Token 计价——对应真实且已认证的模型。',
-          desc: '面向需要真实模型、可验证隐私和透明计费的开发者——价格为官方直连的五折。',
+          priceLine: '按官方 API 计费价格的 50% 逐 token 计费。',
+          desc: '面向需要 Claude 接入、可验证私密路由和透明用量账单的开发者。',
           cta: '立即开始 →',
           features: {
-            f1: '真实全精度模型——已认证，永不降级',
-            f2: '按百万 Token 透明计费——官方直连五折',
-            f3: 'TEE 封存提示词 + 远程认证',
-            f4: '自动故障切换 & 99.99% 可用性',
-            f5: '兼容 OpenAI 的 API'
+            f1: 'Claude 路由已上线；GPT 和 Gemini 即将上线',
+            f2: '官方 API 计费价格五折',
+            f3: 'TEE 可认证网关 + 远程认证',
+            f4: '控制面只接触元数据；提示词不会进入 ApexOne 日志或运营方可读范围',
+            f5: '自动故障切换 & 99.99% 可用性目标',
+            f6: '兼容 OpenAI 的 API'
           }
         }
       },
@@ -396,31 +406,34 @@ export default {
         eyebrow: '// 大规模可信赖',
         title: '为生产环境而生。',
         stats: {
-          discount: '官方五折',
-          availability: '可用性',
-          infrastructure: '基础设施'
+          discount: '官方 API 计费价格',
+          availability: '可用性目标',
+          gateway: '网关可验证'
         },
         pills: {
           encrypted: '🔒 传输加密',
           noTraining: '🚫 不用你的数据训练',
-          audit: '📋 审计日志',
-          tee: '🛡 TEE 可验证',
-          verifiedReal: '✅ 真实模型可验证',
+          audit: '📋 仅元数据审计日志',
+          tee: '🛡 TEE 可验证网关',
+          claudeLive: '✅ Claude 已上线',
           compatible: '⚡ 兼容 OpenAI'
         }
       },
       cta: {
-        titleFirst: '基于可证明的 AI 构建。',
-        titleSecond: '真实模型。私密路由。两者都可验证。',
-        description: '专注你的产品。我们提供真实模型——价格为官方直连的五折——并提供它是私密的证明。',
+        titleFirst: '基于可验证的 AI 接入构建。',
+        titleSecond: 'Claude 已上线。私密路由。官方 API 价格五折。',
+        description:
+          '专注你的产品。ApexOne 以官方 API 计费价格的 50% 提供 Claude 接入，并证明在 Anthropic 接收请求前，ApexOne 这段路由是私密的。',
         primary: '立即开始 →',
-        secondary: '查看文档 →'
+        secondary: '验证隐私 →'
       }
     },
     footer: {
       contactUs: '联系我们',
       stayConnected: '保持联系',
-      allRightsReserved: '保留所有权利。'
+      allRightsReserved: '保留所有权利。',
+      trademarkNotice:
+        'Claude 是 Anthropic, PBC 的商标。ApexOne 是独立服务，与 Anthropic 无关联，也未获得其认可或背书。'
     }
   },
 

@@ -307,90 +307,100 @@ export default {
     },
     landing: {
       hero: {
-        badge: 'Verified-real models · TEE-attested privacy',
-        title: 'Not the cheapest. The only AI gateway you can verify.',
+        badge: 'Claude live · TEE-attested private routing',
+        title: 'The AI gateway you can actually verify, at half the official API price.',
         subtitle:
-          'The real Claude. Full precision, never quantized, never silently swapped. One API inside an attested TEE. Cryptographic proof that the model you paid for is the model you got, and that your prompts stay unread, even by us.',
-        label: 'Still costs less than going direct.',
-        viewDocs: 'View docs',
+          'Use Claude through one OpenAI-compatible API, routed inside an Intel TDX confidential VM you can verify by remote attestation. ApexOne and intermediate infrastructure cannot read your prompts; for Claude, Anthropic receives plaintext under its own policy. GPT and Gemini are coming soon.',
+        label: '50% of official API pricing.',
+        verifyPrivacy: 'Verify privacy',
         stats: {
-          uptime: 'Uptime SLA',
+          availability: 'availability target',
           attested: 'TEE-attested routing',
-          discount: 'discount',
-          realModel: 'Real-model guarantee, verified'
+          discount: 'of official API pricing',
+          claude: 'live today'
         }
       },
       routing: {
         eyebrow: '// Confidential routing architecture',
         caption:
-          'Prompts stay encrypted end-to-end — plaintext exists only inside the attested TEE, so ApexOne operators cannot read it. And every response is served by the attested, full-precision model you requested — verifiably, not on trust.',
+          'Your prompt is decrypted only inside the attested ApexOne TEE, then forwarded to Anthropic for Claude processing. ApexOne operators, logs, and middle infrastructure cannot read it. The proof covers the gateway, code identity, and privacy boundary, not Anthropic model weights.',
         privacy: {
-          title: 'Privacy attestation',
-          desc: 'Plaintext exists only inside the attested TEE.'
+          title: 'Privacy boundary',
+          desc: "Plaintext is kept out of ApexOne's control plane, logs, operators, and middle infrastructure."
         },
-        model: {
-          title: 'Model attestation',
-          desc: "The served model's identity and weights are attested end-to-end; no downgrade, no clone."
+        gateway: {
+          title: 'Gateway attestation',
+          desc: 'Remote attestation verifies the Intel TDX gateway, measured code, and attested encryption keys.'
         }
       },
       personal: {
         eyebrow: '// ApexOne',
-        title: 'The real model — at an honest price — for every developer.',
+        title: 'Private Claude routing, half the official API price.',
         subtitle:
-          'Cut-rate resellers sell access for a fraction of list — by quantizing models, silently routing to something smaller, or selling your prompts. ApexOne is different: the genuine, full-precision model, privately routed through a TEE, verifiable end-to-end — at 50% of official list. Cheap because it runs on verified capacity, not because we cut corners.',
+          'Cheap AI access should not require blind trust. ApexOne gives developers a Claude route at 50% of official API pricing, with a browser-verifiable TEE boundary around routing. The proof is precise: ApexOne and intermediate infrastructure cannot read your prompts; Anthropic remains the model provider for Claude.',
         cost: {
-          title: 'Half of list price, done right.',
-          desc: 'A side-by-side look at what cheap, direct, and verifiable routing really mean.',
+          title: 'Half of official API pricing, with a route you can verify.',
+          desc: 'A side-by-side look at price, privacy boundary, and proof scope.',
           cutRate: {
-            label: 'Cut-rate reseller',
-            desc: 'Quantized? Downgraded? Prompts logged? Unverifiable.'
+            label: 'Opaque gateway',
+            value: 'Unclear',
+            desc: 'Cheap, but the route, logging policy, and privacy boundary are unclear.'
           },
           direct: {
             label: 'Provider direct',
-            desc: 'Real model, but no TEE privacy, no failover, no governance.'
+            value: 'Official API price',
+            desc: 'Official provider access, but no ApexOne TEE privacy boundary, failover, or unified billing layer.'
           },
           apexone: {
             label: 'ApexOne',
-            desc: 'The real model, full precision, attested; prompts sealed in a TEE; auto-failover; full audit — at half of going direct.'
+            value: '50% official API price',
+            desc: 'Claude live, TEE-attested routing, metadata-only control plane, automatic failover.'
           },
-          note: 'Per 1M tokens · illustrative list × 0.50 pricing'
+          note: 'Based on official API billing price. ApexOne bills 50% of that price.'
         },
         uptime: {
-          title: '99.99% uptime, automatic failover',
-          desc: 'We monitor model availability and reroute traffic when a provider goes down, without trading away model authenticity.',
-          window: '90-day availability'
+          title: '99.99% availability target, automatic failover',
+          desc: 'We monitor route availability and can reroute traffic when a route is unavailable.',
+          window: 'availability target'
         },
         aggregation: {
-          title: 'Verified-real models',
-          desc: 'Every request is served by the model you asked for — attested identity, full precision. No silent downgrades, ever.'
+          title: 'Claude live, GPT and Gemini next',
+          desc: "Claude is live today through ApexOne's attested private route. GPT and Gemini are coming next.",
+          tags: {
+            claude: 'Claude live',
+            gpt: 'GPT coming soon',
+            gemini: 'Gemini coming soon',
+            compatible: 'OpenAI-compatible'
+          }
         },
         privacy: {
-          title: 'TEE-sealed prompts',
-          desc: 'Your prompts and responses are decrypted only inside an Intel TDX TEE. We technically cannot read them — and you can verify it by remote attestation.',
+          title: 'TEE-sealed routing',
+          desc: "Your prompts and responses are decrypted only inside an Intel TDX confidential VM before the Claude handoff. ApexOne's control plane and operators cannot read them, and you can verify the boundary by remote attestation.",
           points: {
-            tdx: 'Decrypted only inside Intel TDX',
-            noRead: 'ApexOne operators cannot read prompts',
-            attestation: 'Remote attestation verifies the privacy boundary'
+            tdx: 'Decrypted only inside Intel TDX before provider handoff',
+            noRead: 'ApexOne operators and logs cannot read prompts',
+            attestation: 'Remote attestation verifies the gateway boundary'
           }
         }
       },
       pricing: {
         eyebrow: '// Pricing',
-        title: 'Half the price. Fully provable.',
+        title: 'Half the official API price. Private route, provable.',
         subtitle:
-          "Cheap usually means corners cut — a quantized model or your data logged. ApexOne is 50% of official list and provably neither: the real model, sealed in a TEE, verifiable end-to-end.",
+          "ApexOne bills Claude access at 50% of official API pricing and routes requests through an attested TEE gateway. The discount is a pricing fact; the proof is the privacy boundary around ApexOne's route.",
         personal: {
           name: 'ApexOne',
           tagline: 'Pay as you go',
-          priceLine: 'Half of official list, per million tokens — for the real, attested model.',
-          desc: 'For developers who want the genuine model, verifiable privacy, and transparent billing — at half the price of going direct.',
+          priceLine: '50% of official API billing price, per token.',
+          desc: 'For developers who want Claude access, verifiable private routing, and transparent usage billing.',
           cta: 'Get Started →',
           features: {
-            f1: 'The genuine, full-precision model — attested, never downgraded',
-            f2: 'Per-million-token billing, transparent — 50% of official list',
-            f3: 'TEE-sealed prompts + remote attestation',
-            f4: 'Auto failover & 99.99% uptime',
-            f5: 'OpenAI-compatible API'
+            f1: 'Claude route live today; GPT and Gemini coming soon',
+            f2: '50% of official API billing price',
+            f3: 'TEE-attested gateway + remote attestation',
+            f4: "Metadata-only control plane; prompts stay out of ApexOne logs and operators' reach",
+            f5: 'Automatic failover & 99.99% availability target',
+            f6: 'OpenAI-compatible API'
           }
         }
       },
@@ -398,31 +408,34 @@ export default {
         eyebrow: '// Trusted at scale',
         title: 'Built for production.',
         stats: {
-          discount: 'discount',
-          availability: 'Availability',
-          infrastructure: 'Infrastructure'
+          discount: 'official API pricing',
+          availability: 'availability target',
+          gateway: 'verified gateway'
         },
         pills: {
           encrypted: '🔒 Encrypted in transit',
           noTraining: '🚫 No training on your data',
-          audit: '📋 Audit logs',
-          tee: '🛡 TEE-verified',
-          verifiedReal: '✅ Verified-real models',
+          audit: '📋 Metadata-only audit logs',
+          tee: '🛡 TEE-verified gateway',
+          claudeLive: '✅ Claude live',
           compatible: '⚡ OpenAI-compatible'
         }
       },
       cta: {
-        titleFirst: 'Build on AI you can prove.',
-        titleSecond: 'Real models. Private routing. Both verifiable.',
-        description: "Focus on your product. We'll give you the genuine model — at half of going direct — and the proof that it's private.",
+        titleFirst: 'Build on AI access you can verify.',
+        titleSecond: 'Claude live. Private routing. Half official API pricing.',
+        description:
+          "Focus on your product. ApexOne gives you Claude access at 50% of official API pricing, plus proof that ApexOne's route is private before Anthropic receives the request.",
         primary: 'Get Started →',
-        secondary: 'View docs →'
+        secondary: 'Verify privacy →'
       }
     },
     footer: {
       contactUs: 'Contact Us',
       stayConnected: 'Stay Connected',
-      allRightsReserved: 'All rights reserved.'
+      allRightsReserved: 'All rights reserved.',
+      trademarkNotice:
+        'Claude is a trademark of Anthropic, PBC. ApexOne is an independent service and is not affiliated with or endorsed by Anthropic.'
     }
   },
 

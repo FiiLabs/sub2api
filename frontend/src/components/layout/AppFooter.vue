@@ -41,9 +41,12 @@
         </address>
       </section>
 
-      <span class="mb-2.5 mt-5 text-center text-sm text-gray-500 md:mt-7 md:text-base dark:text-dark-400">
-        © {{ currentYear }} ApexOne All Rights Reserved
+      <span class="mt-5 text-center text-sm text-gray-500 md:mt-7 md:text-base dark:text-dark-400">
+        © {{ currentYear }} ApexOne. {{ t('home.footer.allRightsReserved') }}
       </span>
+      <p class="mb-2.5 mt-2 text-center text-xs text-gray-400 md:text-sm dark:text-dark-500">
+        {{ t('home.footer.trademarkNotice') }}
+      </p>
     </div>
   </footer>
 </template>
