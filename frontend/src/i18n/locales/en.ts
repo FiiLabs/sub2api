@@ -7,16 +7,16 @@ export default {
     hero: {
       title: 'Follow your prompt — and check every step yourself.',
       subtitle:
-        'This page shows exactly where the text you send to the AI (your prompt) travels, and what we can prove at each step — so you don’t have to take our word for it. We state the promise plainly: between your device and Anthropic, no middle step — including us, ApexOne — can read or keep your prompt. Only Anthropic itself sees it in the clear (see the honest note below).',
+        'This page shows where your prompt travels and what we can prove at each step. Between your device and Anthropic, no one — including us, ApexOne — can read it.',
       scopeNote:
-        'Every check runs inside your own browser: it asks chip-maker Intel’s root of trust to confirm “this really is genuine hardware, running exactly the public, published code,” with no reliance on our servers. A step turns green only when all of its cryptographic checks pass.'
+        'Every check runs in your browser against chip-maker Intel’s root of trust, not our servers. A step turns green only when all of its cryptographic checks pass.'
     },
     status: {
       pending: 'Pending',
       checking: 'Checking…',
       pass: 'Passed',
       fail: 'FAILED',
-      disclosure: 'Honest note — N/A'
+      disclosure: 'Provider-side'
     },
     journey: {
       title: 'The journey your prompt takes',
@@ -38,7 +38,7 @@ export default {
       hop3: {
         node: 'ApexOne gateway → Meridian (a second secure computer)',
         claim:
-          'This internal step still stays inside a second hardware-protected secure computer — the one that bridges to the Claude subscription.',
+          'This internal step still stays inside a second hardware-protected secure computer — the one that bridges to the upstream Claude service.',
         basis: 'Independent Intel hardware proof + code fingerprint'
       },
       hop4: {
@@ -55,7 +55,7 @@ export default {
       gateway: 'Gateway A',
       gatewaySub: 'decryption happens here',
       meridian: 'Meridian B',
-      meridianSub: 'bridges the Claude subscription',
+      meridianSub: 'bridges to the upstream Claude service',
       anthropic: 'Anthropic',
       anthropicSub: 'sees plaintext (its policy)',
       arrEncrypted: 'encrypted',
@@ -68,7 +68,7 @@ export default {
     disclosure: {
       title: 'Honest note: Anthropic sees your plaintext',
       body:
-        'The Claude route connects to a Claude subscription, so Anthropic necessarily decrypts and processes your prompt in the clear under its own policies. Our guarantee is only this: between your device and Anthropic, no middle step — including ApexOne — can read or keep it. We never claim confidentiality from Anthropic, and we never claim your model was “not swapped.”',
+        'The Claude route is ultimately served by Anthropic, so Anthropic necessarily decrypts and processes your prompt in the clear under its own policies. Our guarantee is only this: between your device and Anthropic, no middle step — including ApexOne — can read or keep it. We never claim confidentiality from Anthropic, and we never claim your model was “not swapped.”',
       policyLink: 'Anthropic Privacy Policy'
     },
     verify: {
@@ -98,6 +98,19 @@ export default {
         behind: 'behind',
         minutes: '{n}m',
         seconds: '{n}s'
+      },
+      lastVerified: 'Last verified: {time} UTC',
+      rerun: 'Re-run checks',
+      checkLabel: {
+        report_api_version: 'Report format version',
+        report_workload_id: 'Service identity',
+        report_workload_keyset_digest: 'Key-set integrity',
+        report_report_data: 'One-time nonce binding',
+        report_keyset_endorsement_signature: 'Key endorsement signature',
+        report_freshness: 'Report freshness',
+        quote_quote_genuine: 'Genuine Intel secure hardware',
+        quote_tcb_status: 'Hardware security patch level',
+        quote_report_data_binding: 'Hardware-to-report binding'
       }
     },
     live: {
@@ -143,7 +156,7 @@ export default {
         desc:
           'An optional live test. Click below and your browser encrypts the prompt to the gateway, then decrypts the E2EE response — while showing you exactly what each party saw, so you can see for yourself that intermediaries only ever get ciphertext.',
         disclosure:
-          'Honest note: this demo prompt is decrypted inside the secure computer and then, by design, forwarded to Anthropic in the clear (step 4), and it uses a small amount of quota (tokens). Do not paste anything sensitive. Your API key stays in your browser and is sent only with this one request, to authorize it.',
+          'Honest note: this demo prompt is decrypted inside the secure computer and then, by design, forwarded to Anthropic in the clear (step 4), and it uses a small amount of quota (tokens). Do not paste anything sensitive. Your API key stays in your browser and is sent only with this one request, to authorize it. Want to check for yourself? Open your browser’s developer tools and watch the Network tab — you’ll see only ciphertext leaves in the request body, and your API key is sent only with this one call.',
         claimTitle: 'What this demo proves',
         claimBody:
           'Your prompt is encrypted in your browser into ciphertext that only the hardware-attested secure computer above can open. ApexOne, the network, and any middle step only ever handle that ciphertext — they cannot read your content. Its being able to open it and reply (encrypted) is the proof. (Note: after decrypting, the secure computer forwards your prompt to Anthropic in the clear by design — see step 4.)',

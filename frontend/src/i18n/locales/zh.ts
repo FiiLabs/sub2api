@@ -7,16 +7,16 @@ export default {
     hero: {
       title: '跟着你的提问走——每一步都能亲自验证。',
       subtitle:
-        '本页如实展示你发给 AI 的内容（prompt）一路经过哪些环节、每一步我们能证明什么，你无需凭信任。我们把承诺范围说得很清楚：在你的设备和 Anthropic 之间，任何中间环节（包括我们 ApexOne 自己）都读不到、也留不下你的内容。只有 Anthropic 本身会看到明文（见下方诚实说明）。',
+        '本页展示你的提问一路经过哪些环节、每一步我们能证明什么。在你的设备和 Anthropic 之间，任何人——包括我们 ApexOne——都读不到它。',
       scopeNote:
-        '所有验证都在你自己的浏览器里完成：直接向芯片厂商 Intel 的信任根核对“这确实是真硬件、跑的确实是公开的那份代码”，全程不依赖我们的服务器。每一步只有在密码学校验全部通过时，才会显示为绿色。'
+        '每一项验证都在你自己的浏览器里、对着芯片厂商 Intel 的信任根完成，不经过我们的服务器。每一步只有在全部密码学校验通过时才会变绿。'
     },
     status: {
       pending: '待验证',
       checking: '验证中…',
       pass: '已通过',
       fail: '未通过',
-      disclosure: '诚实说明·不适用'
+      disclosure: '服务商侧'
     },
     journey: {
       title: '你的提问经过的旅程',
@@ -37,7 +37,7 @@ export default {
       },
       hop3: {
         node: 'ApexOne 网关 → Meridian（第二台机密硬件）',
-        claim: '内部这一步仍然落在第二台受硬件保护的机密电脑里——它负责把请求桥接到 Claude 订阅。',
+        claim: '内部这一步仍然落在第二台受硬件保护的机密电脑里——它负责把请求桥接到上游 Claude 服务。',
         basis: '独立的 Intel 硬件证明 + 代码指纹'
       },
       hop4: {
@@ -54,7 +54,7 @@ export default {
       gateway: '网关 A',
       gatewaySub: '加密在此解开',
       meridian: 'Meridian B',
-      meridianSub: '桥接 Claude 订阅',
+      meridianSub: '桥接上游 Claude 服务',
       anthropic: 'Anthropic',
       anthropicSub: '看到明文（按其政策）',
       arrEncrypted: '加密',
@@ -67,7 +67,7 @@ export default {
     disclosure: {
       title: '诚实说明：Anthropic 会看到你的明文',
       body:
-        'Claude 这条线路对接的是 Claude 订阅，所以 Anthropic 必然会按它自己的政策解密并处理你的明文。我们的保证只针对一件事：在你的设备和 Anthropic 之间，任何中间环节（包括 ApexOne）都读不到、也留不下它。我们从不声称对 Anthropic 保密，也从不声称“你的模型没被偷换”。',
+        'Claude 这条线路最终由 Anthropic 提供模型，所以 Anthropic 必然会按它自己的政策解密并处理你的明文。我们的保证只针对一件事：在你的设备和 Anthropic 之间，任何中间环节（包括 ApexOne）都读不到、也留不下它。我们从不声称对 Anthropic 保密，也从不声称“你的模型没被偷换”。',
       policyLink: 'Anthropic 隐私政策'
     },
     verify: {
@@ -97,6 +97,19 @@ export default {
         behind: '慢了',
         minutes: '{n} 分',
         seconds: '{n} 秒'
+      },
+      lastVerified: '最近验证于 {time} UTC',
+      rerun: '重新验证',
+      checkLabel: {
+        report_api_version: '报告格式版本',
+        report_workload_id: '服务身份标识',
+        report_workload_keyset_digest: '密钥清单完整性',
+        report_report_data: '一次性随机数绑定',
+        report_keyset_endorsement_signature: '密钥背书签名',
+        report_freshness: '报告新鲜度',
+        quote_quote_genuine: '真正的 Intel 机密硬件',
+        quote_tcb_status: '硬件安全补丁级别',
+        quote_report_data_binding: '硬件与报告的绑定'
       }
     },
     live: {
@@ -141,7 +154,7 @@ export default {
         desc:
           '这是可选的实测。点下面的按钮，你的浏览器会把 prompt 加密后发给网关、再解开 E2EE 响应——并把“各方分别看到了什么”如实展示给你，让你亲眼确认中间方拿到的只是密文。',
         disclosure:
-          '诚实说明：这段演示提问会在机密电脑里被解密，然后按设计明文转发给 Anthropic（第 4 步），并会消耗少量额度（token）。请不要粘贴敏感内容。你的 API key 只留在你的浏览器里，仅随这一次请求发送用于授权。',
+          '诚实说明：这段演示提问会在机密电脑里被解密，然后按设计明文转发给 Anthropic（第 4 步），并会消耗少量额度（token）。请不要粘贴敏感内容。你的 API key 只留在你的浏览器里，仅随这一次请求发送用于授权。想亲自核实？打开浏览器的开发者工具、切到 Network（网络）标签——你会看到请求里发出去的正文只有密文，而你的 API key 只随这一次调用发送。',
         claimTitle: '这个演示要证明什么',
         claimBody:
           '你的提问在你的浏览器里就被加密成一串密文，只有上方那台通过硬件证明的机密电脑能解开。ApexOne、网络、任何中间环节经手的都是这串密文——读不到你的内容。它能把密文解开并加密回信，就证明了这一点。（注：解密后，机密电脑会按设计把你的提问明文转发给 Anthropic——见第 4 步说明。）',

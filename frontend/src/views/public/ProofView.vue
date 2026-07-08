@@ -203,6 +203,14 @@
             <span v-if="busy" class="h-3.5 w-3.5 flex-shrink-0 animate-spin rounded-full border-b-2 border-current"></span>
             {{ bannerTitle }}
           </p>
+          <!-- On a real failure, name the failing check(s) in plain English up top so
+               the user knows exactly what broke, not just "FAILED". -->
+          <ul v-if="overallState === 'fail' && failingChecks.length" class="mt-2 space-y-1 font-medium">
+            <li v-for="c in failingChecks" :key="c.id" class="flex items-baseline gap-2">
+              <span aria-hidden="true">✗</span>
+              <span>{{ friendlyCheckName(c.id) }}</span>
+            </li>
+          </ul>
           <p class="mt-1 leading-6">{{ bannerNote }}</p>
           <!-- Device-clock offset: name the amount + direction and tell the user exactly
                how to fix it, making clear the TEE/our security is not at fault. -->
@@ -224,6 +232,12 @@
               </li>
             </ul>
           </template>
+          <!-- "Live" proof: show when this ran and let the user re-run against a fresh nonce. -->
+          <div v-if="verifiedAt && !busy" class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-current/10 pt-2 text-xs opacity-70">
+            <span>{{ t('proof.verify.lastVerified', { time: verifiedAtLabel }) }}</span>
+            <span aria-hidden="true">·</span>
+            <button type="button" class="font-semibold underline underline-offset-2 hover:opacity-100" @click="loadReport">{{ t('proof.verify.rerun') }}</button>
+          </div>
         </div>
 
         <pre v-if="report" class="mt-4 max-h-96 overflow-auto rounded-lg bg-gray-950 p-4 text-xs leading-5 text-gray-100">{{ reportJson }}</pre>
@@ -451,7 +465,7 @@ import {
   ATTESTATION_REPORT_PATH,
 } from '@/constants/attestation'
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 
 // --- Site chrome (logo / name), same pattern as LegalDocumentView ---
 const siteName = ref('ApexOne')
@@ -479,6 +493,14 @@ const apiKeyInput = ref('')
 const modelInput = ref(E2EE_DEMO_MODEL)
 const promptInput = ref('Reply with the exact text: E2EE-OK')
 const reportJson = computed(() => (report.value ? JSON.stringify(report.value, null, 2) : ''))
+// When the last full verification finished — shown as a "live" timestamp with a re-run.
+const verifiedAt = ref<Date | null>(null)
+const verifiedAtLabel = computed(() => {
+  if (!verifiedAt.value) return ''
+  const d = verifiedAt.value
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`
+})
 
 const busy = computed(() => fetching.value || quoteVerifying.value || meridianVerifying.value)
 
@@ -496,6 +518,18 @@ function checkMark(c: DisplayCheck): { sym: string; class: string } {
   // Non-gating checks are informational (e.g. raw MRTD has no published reference).
   if (c.gating === false) return { sym: 'ℹ', class: 'text-gray-400 dark:text-dark-500' }
   return { sym: '✗', class: 'text-red-600 dark:text-red-400' }
+}
+
+// The gating checks that actually failed — surfaced by plain-English name in the banner.
+const failingChecks = computed<DisplayCheck[]>(() =>
+  allChecks.value.filter((c) => !c.ok && c.gating !== false),
+)
+/** Plain-English label for a check id, falling back to a de-jargoned form of the id. */
+function friendlyCheckName(id: string): string {
+  // vue-i18n splits keys on '.', so the map is keyed with '.'→'_' (e.g. report_freshness).
+  const key = `proof.verify.checkLabel.${id.replace(/\./g, '_')}`
+  if (te(key)) return t(key)
+  return id.replace(/\./g, ' · ').replace(/_/g, ' ')
 }
 
 // --- Prompt journey hops (status driven by the real per-check results) ---
@@ -769,6 +803,9 @@ async function loadReport() {
   } finally {
     meridianVerifying.value = false
   }
+
+  // Whole chain (2a + 2b + Meridian) done — stamp the "last verified" time.
+  verifiedAt.value = new Date()
 }
 
 function downloadReport() {
