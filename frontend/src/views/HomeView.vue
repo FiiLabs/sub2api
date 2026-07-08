@@ -26,9 +26,10 @@
         <h1 class="mb-5 text-fluid-3xl font-bold leading-[1.1] tracking-tight text-gray-900 dark:text-white">
           {{ t('home.landing.hero.title') }}
         </h1>
-        <p class="mx-auto mb-8 max-w-[460px] text-fluid-base text-gray-500 dark:text-dark-300">
+        <p class="mx-auto mb-5 max-w-[460px] text-fluid-base text-gray-500 dark:text-dark-300">
           {{ t('home.landing.hero.subtitle') }}
         </p>
+        <p class="mx-auto mb-8 max-w-[460px] text-fluid-base font-semibold text-primary-600 dark:text-primary-400">{{ t('home.landing.hero.label') }}</p>
         <div class="mb-10 flex flex-col gap-2 md:flex-row md:justify-center">
           <router-link :to="ctaTarget" class="btn btn-primary px-6 py-3 text-fluid-base shadow-lg shadow-primary-500/30">
             {{ isAuthenticated ? t('home.goToDashboard') : t('home.getStarted') }}

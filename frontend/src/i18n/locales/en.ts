@@ -208,7 +208,7 @@ export default {
       price: 'Price',
       trust: 'Trust',
       proof: 'Verify',
-      document: 'Document'
+      document: 'Docs'
     },
     // User-focused value proposition
     heroSubtitle: 'One Key, All AI Models',
@@ -310,7 +310,8 @@ export default {
         badge: 'Verified-real models · TEE-attested privacy',
         title: 'Not the cheapest. The only AI gateway you can verify.',
         subtitle:
-          'Access the real Claude, GPT, and Gemini — full-precision, never quantized, never silently swapped — through a single API that runs inside an attested TEE. Cryptographically prove the model you paid for is the model you got, and that no one (not even us) can read your prompts — and pay half of going direct.',
+          'The real Claude. Full precision, never quantized, never silently swapped. One API inside an attested TEE. Cryptographic proof that the model you paid for is the model you got, and that your prompts stay unread, even by us.',
+        label: 'Still costs less than going direct.',
         viewDocs: 'View docs',
         stats: {
           uptime: 'Uptime SLA',
