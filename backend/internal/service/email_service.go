@@ -6,11 +6,13 @@ import (
 	"crypto/subtle"
 	"crypto/tls"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math/big"
 	"net"
 	"net/smtp"
+	"net/textproto"
 	"net/url"
 	"strconv"
 	"strings"
@@ -200,11 +202,56 @@ func (s *EmailService) SendEmailWithConfig(config *SMTPConfig, to, subject, body
 	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
 	auth := smtp.PlainAuth("", config.Username, config.Password, config.Host)
 
-	if config.UseTLS {
-		return s.sendMailTLS(addr, auth, config.From, to, []byte(msg), config.Host)
+	// Each attempt opens a fresh connection, so a transient failure (network blip,
+	// TLS reset, SES 4xx throttling) is retried cleanly rather than silently
+	// dropped by the fire-and-forget queue. Permanent 5xx replies are not retried.
+	send := func() error {
+		if config.UseTLS {
+			return s.sendMailTLS(addr, auth, config.From, to, []byte(msg), config.Host)
+		}
+		return s.sendMailPlain(addr, auth, config.From, to, []byte(msg), config.Host)
 	}
+	return sendWithRetry(send)
+}
 
-	return s.sendMailPlain(addr, auth, config.From, to, []byte(msg), config.Host)
+const smtpMaxSendAttempts = 3
+
+// smtpRetryBackoff returns the wait before the Nth (1-based) retry.
+func smtpRetryBackoff(attempt int) time.Duration {
+	return time.Duration(attempt) * 500 * time.Millisecond
+}
+
+// sendWithRetry retries a single-shot SMTP send on transient failures with a
+// short linear backoff. It stops immediately on a permanent (5xx) reply.
+func sendWithRetry(send func() error) error {
+	var err error
+	for attempt := 1; attempt <= smtpMaxSendAttempts; attempt++ {
+		if err = send(); err == nil {
+			return nil
+		}
+		if !isRetryableSMTPError(err) {
+			return err
+		}
+		if attempt < smtpMaxSendAttempts {
+			time.Sleep(smtpRetryBackoff(attempt))
+		}
+	}
+	return fmt.Errorf("smtp send failed after %d attempts: %w", smtpMaxSendAttempts, err)
+}
+
+// isRetryableSMTPError reports whether an SMTP send error is worth retrying.
+// Permanent server replies (5xx — auth rejected, recipient refused, message
+// rejected) are not; transient 4xx replies (421/450/451/452/454 throttling) and
+// network/TLS/IO errors (timeouts, resets, EOF) are.
+func isRetryableSMTPError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var protoErr *textproto.Error
+	if errors.As(err, &protoErr) {
+		return protoErr.Code < 500
+	}
+	return true
 }
 
 // sendMailPlain sends mail without TLS using a dialer with timeout.

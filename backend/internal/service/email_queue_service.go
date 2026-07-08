@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -84,13 +85,17 @@ func (s *EmailQueueService) processTask(workerID int, task EmailTask) {
 	switch task.TaskType {
 	case TaskTypeVerifyCode:
 		if err := s.emailService.SendVerifyCode(ctx, task.Email, task.SiteName, task.Locale); err != nil {
-			logger.LegacyPrintf("service.email_queue", "[EmailQueue] Worker %d failed to send verify code to %s: %v", workerID, task.Email, err)
+			// The send (incl. retries) failed and the task is dropped — the user was
+			// already told "code sent", so this is a silent loss worth alerting on.
+			slog.Error("email queue: verify code send failed after retries, task dropped",
+				"worker_id", workerID, "recipient_hash", notificationEmailHash(task.Email), "error", err)
 		} else {
 			logger.LegacyPrintf("service.email_queue", "[EmailQueue] Worker %d sent verify code to %s", workerID, task.Email)
 		}
 	case TaskTypePasswordReset:
 		if err := s.emailService.SendPasswordResetEmailWithCooldown(ctx, task.Email, task.SiteName, task.ResetURL, task.Locale); err != nil {
-			logger.LegacyPrintf("service.email_queue", "[EmailQueue] Worker %d failed to send password reset to %s: %v", workerID, task.Email, err)
+			slog.Error("email queue: password reset send failed after retries, task dropped",
+				"worker_id", workerID, "recipient_hash", notificationEmailHash(task.Email), "error", err)
 		} else {
 			logger.LegacyPrintf("service.email_queue", "[EmailQueue] Worker %d sent password reset to %s", workerID, task.Email)
 		}
