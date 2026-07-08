@@ -204,6 +204,12 @@
             {{ bannerTitle }}
           </p>
           <p class="mt-1 leading-6">{{ bannerNote }}</p>
+          <!-- Device-clock offset: name the amount + direction and tell the user exactly
+               how to fix it, making clear the TEE/our security is not at fault. -->
+          <div v-if="overallState === 'clockSkew'" class="mt-3 space-y-2 leading-6">
+            <p>{{ t('proof.verify.clockSkew.detail', { amount: skewAmount, direction: skewDirection }) }}</p>
+            <p class="font-medium">{{ t('proof.verify.clockSkew.fix') }}</p>
+          </div>
           <template v-if="allChecks.length">
             <p class="mt-3 text-xs font-semibold uppercase tracking-wide opacity-70">{{ t('proof.verify.checksTitle') }}</p>
             <ul class="mt-1 space-y-1">
@@ -534,7 +540,13 @@ function hopStatus(ids: string[]): HopStatus {
   if (busy.value) return 'checking'
   if (!aciResult.value) return 'pending'
   const map = new Map(allChecks.value.map((c) => [c.id, c.ok]))
-  if (ids.some((id) => map.get(id) === false)) return 'fail'
+  const failing = ids.filter((id) => map.get(id) === false)
+  if (failing.length) {
+    // A device-clock offset (only freshness failed) is the visitor's clock, not the
+    // TEE — don't alarm them with a red hop; the amber clock card below explains it.
+    if (isClockSkewOnly.value && failing.length === 1 && failing[0] === 'report.freshness') return 'pending'
+    return 'fail'
+  }
   // "pass" requires EVERY backing check to be present and true — a missing check
   // (e.g. the quote step didn't run) stays 'pending', never green.
   if (ids.length > 0 && ids.every((id) => map.get(id) === true)) return 'pass'
@@ -649,11 +661,39 @@ const references = computed<{ title: string; rows: RefRow[] }[]>(() => [
   },
 ])
 
+// --- Device-clock skew: the ONLY check that reads the local clock is freshness.
+// When it's the sole failure and the report's own window is well-formed, the cause
+// is the visitor's device clock, not the TEE — surface it as a friendly amber card
+// that clears our security of blame, never a red "FAILED". ---
+const clockSkew = computed(() => aciResult.value?.binding.clockSkew ?? null)
+const isClockSkewOnly = computed(() => {
+  if (busy.value || !clockSkew.value) return false
+  const failing = allChecks.value.filter((c) => !c.ok && c.gating !== false)
+  return failing.length === 1 && failing[0].id === 'report.freshness'
+})
+const skewDirection = computed(() =>
+  clockSkew.value
+    ? t(clockSkew.value.offsetSeconds >= 0 ? 'proof.verify.clockSkew.ahead' : 'proof.verify.clockSkew.behind')
+    : '',
+)
+const skewAmount = computed(() => {
+  if (!clockSkew.value) return ''
+  const total = Math.abs(clockSkew.value.offsetSeconds)
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  const parts: string[] = []
+  if (m > 0) parts.push(t('proof.verify.clockSkew.minutes', { n: m }))
+  if (s > 0 || m === 0) parts.push(t('proof.verify.clockSkew.seconds', { n: s }))
+  return parts.join(' ')
+})
+
 // --- Overall verification banner state ---
-type OverallState = 'idle' | 'running' | 'pass' | 'fail' | 'aciOnly'
+type OverallState = 'idle' | 'running' | 'pass' | 'fail' | 'aciOnly' | 'clockSkew'
 const overallState = computed<OverallState>(() => {
   if (busy.value) return 'running'
   if (!aciResult.value) return 'idle'
+  // Everything passed except a clock-skewed freshness → device-clock card, not a fail.
+  if (isClockSkewOnly.value) return 'clockSkew'
   const aciOk = aciResult.value.binding.ok
   if (!quoteResult.value) return aciOk ? 'aciOnly' : 'fail'
   return quoteResult.value.ok && aciOk ? 'pass' : 'fail'

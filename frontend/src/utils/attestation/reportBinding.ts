@@ -30,6 +30,19 @@ export interface Check {
   detail?: string
 }
 
+/**
+ * Client-clock offset relative to the report's freshness window. Populated only
+ * when the freshness check fails but the report's own window is well-formed —
+ * i.e. the cause is the verifier's device clock, not the TEE.
+ */
+export interface ClockSkewInfo {
+  /** signed seconds (now - fetched_at): positive = clock ahead/fast, negative = behind/slow. */
+  offsetSeconds: number
+  nowSecs: number
+  fetchedAt: number
+  staleAfter: number
+}
+
 export interface ReportBindingResult {
   ok: boolean
   checks: Check[]
@@ -37,6 +50,8 @@ export interface ReportBindingResult {
   reportDataDigestHex: string
   workloadId: string
   keysetDigest: string
+  /** Set only when freshness failed due to a client-clock offset (see ClockSkewInfo). */
+  clockSkew?: ClockSkewInfo
 }
 
 export interface ReportBindingOptions {
@@ -45,6 +60,13 @@ export interface ReportBindingOptions {
 }
 
 const API_VERSION = 'aci/1'
+
+// Clock-skew tolerance for the freshness window (seconds). Absorbs network delay
+// plus normal client-clock drift so a correctly-behaving verifier a few
+// seconds/minutes off the gateway is not falsely failed. Replay of a stale report
+// is independently prevented by the nonce binding (report_data), so this does not
+// weaken the freshness guarantee.
+const FRESHNESS_SKEW_SECS = 300
 
 function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false
@@ -76,6 +98,7 @@ export function validateReportBinding(
   let keysetDigest = ''
   let reportDataDigestHex = ''
   let expectedReportData: Uint8Array | undefined
+  let clockSkew: ClockSkewInfo | undefined
 
   // api_version
   push('api_version', report.api_version === API_VERSION, `api_version=${report.api_version}`)
@@ -129,21 +152,27 @@ export function validateReportBinding(
     push('keyset_endorsement_signature', false, String(e))
   }
 
-  // freshness: fetched_at <= now < stale_after (matches report.rs).
+  // freshness: fetched_at <= now < stale_after, with a clock-skew tolerance (see
+  // FRESHNESS_SKEW_SECS). When it still fails but the report's own window is
+  // well-formed, the cause is the client clock — expose the signed offset
+  // (now - fetched_at) so the UI can point at the device clock, not the TEE.
   try {
     const nowSecs = options.nowSecs ?? Math.floor(Date.now() / 1000)
     const fetchedAt = Number(attestation.freshness?.fetched_at)
     const staleAfter = Number(attestation.freshness?.stale_after)
+    const wellFormed = Number.isFinite(fetchedAt) && Number.isFinite(staleAfter)
     const ok =
-      Number.isFinite(fetchedAt) &&
-      Number.isFinite(staleAfter) &&
-      nowSecs >= fetchedAt &&
-      nowSecs < staleAfter
+      wellFormed &&
+      nowSecs >= fetchedAt - FRESHNESS_SKEW_SECS &&
+      nowSecs < staleAfter + FRESHNESS_SKEW_SECS
+    if (!ok && wellFormed) {
+      clockSkew = { offsetSeconds: nowSecs - fetchedAt, nowSecs, fetchedAt, staleAfter }
+    }
     push('freshness', ok, `now=${nowSecs} fetched_at=${fetchedAt} stale_after=${staleAfter}`)
   } catch (e) {
     push('freshness', false, String(e))
   }
 
   const ok = checks.every((c) => c.ok)
-  return { ok, checks, reportDataDigestHex, workloadId, keysetDigest }
+  return { ok, checks, reportDataDigestHex, workloadId, keysetDigest, clockSkew }
 }

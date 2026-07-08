@@ -110,6 +110,25 @@ describe('validateReportBinding', () => {
     expect(late.checks.find((c) => c.id === 'freshness')!.ok).toBe(false)
   })
 
+  it('tolerates a small clock skew below fetched_at (window [1000, …), ±300s)', () => {
+    // 200s before fetched_at is within tolerance → freshness still passes, no skew flag.
+    const res = validateReportBinding(report, vectors.nonce, { nowSecs: 800 })
+    expect(res.checks.find((c) => c.id === 'freshness')!.ok).toBe(true)
+    expect(res.clockSkew).toBeUndefined()
+  })
+
+  it('reports a clock skew (not a hard fail) when only freshness is out of tolerance', () => {
+    // 500s before fetched_at (=1000) exceeds the ±300s tolerance. Every other check
+    // still passes, so this is the visitor's device clock, not the TEE.
+    const res = validateReportBinding(report, vectors.nonce, { nowSecs: 500 })
+    expect(res.checks.find((c) => c.id === 'freshness')!.ok).toBe(false)
+    const failing = res.checks.filter((c) => !c.ok)
+    expect(failing.map((c) => c.id)).toEqual(['freshness'])
+    expect(res.clockSkew).toBeDefined()
+    expect(res.clockSkew!.offsetSeconds).toBe(-500) // now(500) - fetched_at(1000)
+    expect(res.clockSkew!.fetchedAt).toBe(1000)
+  })
+
   it('fails workload_keyset_digest if the keyset is tampered', () => {
     const bad = clone(report)
     bad.attestation!.workload_keyset!.keyset_epoch = { version: 2, not_after: 4102444800 } as never

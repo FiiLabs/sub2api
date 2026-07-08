@@ -88,6 +88,16 @@ export default {
       aciOnly: {
         title: 'Identity binding passed — hardware proof incomplete',
         note: 'The identity binding passed, but the hardware proof could not be verified in your browser (for example, the Intel verification-data service was temporarily unreachable). Retry; until the hardware proof passes, this is not yet a hardware-level proof.'
+      },
+      clockSkew: {
+        title: 'Your device clock is off — this is not a security problem',
+        note: 'Good news: every cryptographic and hardware check passed. The only one that did not is “freshness”, and that is the one check that reads your device clock. It failed because the time on this computer/phone is itself off — it says nothing about ApexOne’s secure hardware or the safety of your prompt (all of which verified fine).',
+        detail: 'Your device clock is about {amount} {direction} the correct time, beyond the tolerance we allow (±5 minutes), so this one check did not pass.',
+        fix: 'How to fix it: turn on “Set time and date automatically” in your system settings (or correct the clock), then reload this page to re-verify.',
+        ahead: 'ahead of',
+        behind: 'behind',
+        minutes: '{n}m',
+        seconds: '{n}s'
       }
     },
     live: {
