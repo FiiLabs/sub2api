@@ -32,3 +32,27 @@ export function formatOrderDateTime(dateStr: string): string {
   if (!dateStr) return '-'
   return new Date(dateStr).toLocaleString()
 }
+
+/**
+ * Format a monetary amount using the order's ISO currency code via Intl,
+ * falling back to a "CODE 12.34" prefix when the code is unknown to Intl.
+ * Currency defaults to CNY, matching the backend's DefaultPaymentCurrency
+ * for legacy orders that predate per-order currency.
+ */
+export function formatCurrencyAmount(amount: number, currency?: string | null, locale?: string): string {
+  const code = (currency || 'CNY').toUpperCase()
+  try {
+    return new Intl.NumberFormat(locale, { style: 'currency', currency: code }).format(amount)
+  } catch {
+    return `${code} ${amount.toFixed(2)}`
+  }
+}
+
+/**
+ * Currency the credited amount (`order.amount`) is denominated in:
+ * balance top-ups credit USD to the account; subscription/other orders use
+ * CNY-denominated plan pricing.
+ */
+export function creditedCurrency(orderType: string): string {
+  return orderType === 'balance' ? 'USD' : 'CNY'
+}

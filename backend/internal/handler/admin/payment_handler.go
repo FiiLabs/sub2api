@@ -115,24 +115,32 @@ func (h *PaymentHandler) RetryFulfillment(c *gin.Context) {
 	response.Success(c, gin.H{"message": "fulfillment retried"})
 }
 
-func sanitizeAdminPaymentOrdersForResponse(orders []*dbent.PaymentOrder) []*dbent.PaymentOrder {
-	if len(orders) == 0 {
-		return orders
-	}
-	out := make([]*dbent.PaymentOrder, 0, len(orders))
+// adminPaymentOrderResult enriches the raw ent row with the resolved payment
+// currency: the currency lives inside provider_snapshot, which is stripped
+// from admin responses, so it must be surfaced as a top-level field.
+type adminPaymentOrderResult struct {
+	*dbent.PaymentOrder
+	Currency string `json:"currency"`
+}
+
+func sanitizeAdminPaymentOrdersForResponse(orders []*dbent.PaymentOrder) []*adminPaymentOrderResult {
+	out := make([]*adminPaymentOrderResult, 0, len(orders))
 	for _, order := range orders {
-		out = append(out, sanitizeAdminPaymentOrderForResponse(order))
+		if item := sanitizeAdminPaymentOrderForResponse(order); item != nil {
+			out = append(out, item)
+		}
 	}
 	return out
 }
 
-func sanitizeAdminPaymentOrderForResponse(order *dbent.PaymentOrder) *dbent.PaymentOrder {
+func sanitizeAdminPaymentOrderForResponse(order *dbent.PaymentOrder) *adminPaymentOrderResult {
 	if order == nil {
 		return nil
 	}
+	currency := service.PaymentOrderCurrency(order)
 	cloned := *order
 	cloned.ProviderSnapshot = nil
-	return &cloned
+	return &adminPaymentOrderResult{PaymentOrder: &cloned, Currency: currency}
 }
 
 // AdminProcessRefundRequest is the request body for admin refund processing.

@@ -45,11 +45,11 @@
           </div>
           <div class="flex justify-between">
             <span class="text-gray-500 dark:text-gray-400">{{ t('payment.orders.amount') }}</span>
-            <span class="font-medium text-gray-900 dark:text-white">{{ paidOrder.order_type === 'balance' ? '$' : '¥' }}{{ paidOrder.amount.toFixed(2) }}</span>
+            <span class="font-medium text-gray-900 dark:text-white">{{ formatCurrencyAmount(paidOrder.amount, creditedCurrency(paidOrder.order_type), locale) }}</span>
           </div>
           <div class="flex justify-between">
             <span class="text-gray-500 dark:text-gray-400">{{ t('payment.orders.payAmount') }}</span>
-            <span class="font-medium text-gray-900 dark:text-white">¥{{ paidOrder.pay_amount.toFixed(2) }}</span>
+            <span class="font-medium text-gray-900 dark:text-white">{{ formatCurrencyAmount(paidOrder.pay_amount, paidOrder.currency, locale) }}</span>
           </div>
         </div>
       </div>
@@ -84,6 +84,7 @@ import type { PaymentOrder } from '@/types/payment'
 import QRCode from 'qrcode'
 import alipayIcon from '@/assets/icons/alipay.svg'
 import wxpayIcon from '@/assets/icons/wxpay.svg'
+import { formatCurrencyAmount, creditedCurrency } from '@/components/payment/orderUtils'
 
 const props = defineProps<{
   show: boolean
@@ -100,7 +101,7 @@ const emit = defineEmits<{
   success: []
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const paymentStore = usePaymentStore()
 const appStore = useAppStore()
 
