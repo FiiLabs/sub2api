@@ -137,7 +137,7 @@
             <rect x="596" y="52" width="116" height="40" rx="8" class="surf" stroke-width="1" />
             <circle cx="612" cy="72" r="6.5" fill="#7b61ff" />
             <text x="623" y="69" font-size="10.5" font-weight="600" class="strong" font-family="system-ui">Claude</text>
-            <text x="623" y="80" font-size="9" class="label2" font-family="system-ui">live</text>
+            <text x="623" y="80" font-size="9" class="label2" font-family="system-ui">Fable 5 live</text>
 
             <rect x="596" y="130" width="116" height="40" rx="8" class="surf" stroke-width="1" />
             <circle cx="612" cy="150" r="6.5" fill="#10a37f" />

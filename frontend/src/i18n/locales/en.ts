@@ -348,7 +348,7 @@ export default {
     },
     landing: {
       hero: {
-        badge: 'Claude live · TEE-attested private routing',
+        badge: 'Claude Fable 5 live · TEE-attested private routing',
         title: 'The AI gateway you can actually verify, at half the official API price.',
         subtitle:
           'Use Claude through one OpenAI-compatible API, routed inside an Intel TDX confidential VM you can verify by remote attestation. ApexOne and intermediate infrastructure cannot read your prompts; for Claude, Anthropic receives plaintext under its own policy. GPT and Gemini are coming soon.',
@@ -358,7 +358,7 @@ export default {
           availability: 'availability target',
           attested: 'TEE-attested routing',
           discount: 'of official API pricing',
-          claude: 'live today'
+          claude: 'Fable 5 live today'
         }
       },
       routing: {
@@ -395,7 +395,7 @@ export default {
           apexone: {
             label: 'ApexOne',
             value: '50% official API price',
-            desc: 'Claude live, TEE-attested routing, metadata-only control plane, automatic failover.'
+            desc: 'Claude Fable 5 live, TEE-attested routing, metadata-only control plane, automatic failover.'
           },
           note: 'Based on official API billing price. ApexOne bills 50% of that price.'
         },
@@ -405,10 +405,10 @@ export default {
           window: 'availability target'
         },
         aggregation: {
-          title: 'Claude live, GPT and Gemini next',
-          desc: "Claude is live today through ApexOne's attested private route. GPT and Gemini are coming next.",
+          title: 'Claude Fable 5 live, GPT and Gemini next',
+          desc: "Claude Fable 5 — Anthropic's most capable model — is live today through ApexOne's attested private route. GPT and Gemini are coming next.",
           tags: {
-            claude: 'Claude live',
+            claude: 'Claude Fable 5 live',
             gpt: 'GPT coming soon',
             gemini: 'Gemini coming soon',
             compatible: 'OpenAI-compatible'
@@ -436,7 +436,7 @@ export default {
           desc: 'For developers who want Claude access, verifiable private routing, and transparent usage billing.',
           cta: 'Get Started →',
           features: {
-            f1: 'Claude route live today; GPT and Gemini coming soon',
+            f1: 'Claude Fable 5 live today; GPT and Gemini coming soon',
             f2: '50% of official API billing price',
             f3: 'TEE-attested gateway + remote attestation',
             f4: "Metadata-only control plane; prompts stay out of ApexOne logs and operators' reach",
@@ -458,13 +458,13 @@ export default {
           noTraining: '🚫 No training on your data',
           audit: '📋 Metadata-only audit logs',
           tee: '🛡 TEE-verified gateway',
-          claudeLive: '✅ Claude live',
+          claudeLive: '✅ Claude Fable 5 live',
           compatible: '⚡ OpenAI-compatible'
         }
       },
       cta: {
         titleFirst: 'Build on AI access you can verify.',
-        titleSecond: 'Claude live. Private routing. Half official API pricing.',
+        titleSecond: 'Claude Fable 5 live. Private routing. Half official API pricing.',
         description:
           "Focus on your product. ApexOne gives you Claude access at 50% of official API pricing, plus proof that ApexOne's route is private before Anthropic receives the request.",
         primary: 'Get Started →',

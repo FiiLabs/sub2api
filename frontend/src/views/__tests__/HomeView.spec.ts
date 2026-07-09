@@ -75,10 +75,10 @@ describe('HomeView ApexOne landing content', () => {
     const text = wrapper.text()
 
     expect(text).toContain('The AI gateway you can actually verify, at half the official API price.')
-    expect(text).toContain('Claude live · TEE-attested private routing')
+    expect(text).toContain('Claude Fable 5 live · TEE-attested private routing')
     expect(text).toContain('Anthropic receives plaintext under its own policy')
     expect(text).toContain('50% of official API pricing')
-    expect(text).toContain('Claude live, GPT and Gemini next')
+    expect(text).toContain('Claude Fable 5 live, GPT and Gemini next')
     expect(text).toContain('GPT coming soon')
     expect(text).toContain('99.99% availability target')
     expect(text).toContain('TEE-verified gateway')

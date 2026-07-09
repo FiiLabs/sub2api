@@ -345,7 +345,7 @@ export default {
     },
     landing: {
       hero: {
-        badge: 'Claude 已上线 · TEE 可验证私密路由',
+        badge: 'Claude Fable 5 已上线 · TEE 可验证私密路由',
         title: '可亲自验证的 AI 网关，价格为官方 API 的五折。',
         subtitle:
           '通过一个兼容 OpenAI 的 API 使用 Claude，请求会先进入可远程认证的 Intel TDX 机密 VM。ApexOne 及中间基础设施读不到你的提示词；Claude 路线最终由 Anthropic 处理明文，遵循其自身政策。GPT 和 Gemini 即将上线。',
@@ -355,7 +355,7 @@ export default {
           availability: '可用性目标',
           attested: 'TEE 认证路由',
           discount: '官方 API 计费价格',
-          claude: '已上线'
+          claude: 'Fable 5 已上线'
         }
       },
       routing: {
@@ -392,7 +392,7 @@ export default {
           apexone: {
             label: 'ApexOne',
             value: '官方 API 价格 50%',
-            desc: 'Claude 已上线，TEE 可认证路由，控制面只接触元数据，支持自动故障切换。'
+            desc: 'Claude Fable 5 已上线，TEE 可认证路由，控制面只接触元数据，支持自动故障切换。'
           },
           note: '基于官方 API 计费价格。ApexOne 按该价格的 50% 计费。'
         },
@@ -402,10 +402,10 @@ export default {
           window: '可用性目标'
         },
         aggregation: {
-          title: 'Claude 已上线，GPT 和 Gemini 随后上线',
-          desc: 'Claude 已通过 ApexOne 的可认证私密路由上线。GPT 和 Gemini 随后上线。',
+          title: 'Claude Fable 5 已上线，GPT 和 Gemini 随后上线',
+          desc: 'Anthropic 最强模型 Claude Fable 5 已通过 ApexOne 的可认证私密路由上线。GPT 和 Gemini 随后上线。',
           tags: {
-            claude: 'Claude 已上线',
+            claude: 'Claude Fable 5 已上线',
             gpt: 'GPT 即将上线',
             gemini: 'Gemini 即将上线',
             compatible: '兼容 OpenAI'
@@ -433,7 +433,7 @@ export default {
           desc: '面向需要 Claude 接入、可验证私密路由和透明用量账单的开发者。',
           cta: '立即开始 →',
           features: {
-            f1: 'Claude 路由已上线；GPT 和 Gemini 即将上线',
+            f1: 'Claude Fable 5 已上线；GPT 和 Gemini 即将上线',
             f2: '官方 API 计费价格五折',
             f3: 'TEE 可认证网关 + 远程认证',
             f4: '控制面只接触元数据；提示词不会进入 ApexOne 日志或运营方可读范围',
@@ -455,13 +455,13 @@ export default {
           noTraining: '🚫 不用你的数据训练',
           audit: '📋 仅元数据审计日志',
           tee: '🛡 TEE 可验证网关',
-          claudeLive: '✅ Claude 已上线',
+          claudeLive: '✅ Claude Fable 5 已上线',
           compatible: '⚡ 兼容 OpenAI'
         }
       },
       cta: {
         titleFirst: '基于可验证的 AI 接入构建。',
-        titleSecond: 'Claude 已上线。私密路由。官方 API 价格五折。',
+        titleSecond: 'Claude Fable 5 已上线。私密路由。官方 API 价格五折。',
         description:
           '专注你的产品。ApexOne 以官方 API 计费价格的 50% 提供 Claude 接入，并证明在 Anthropic 接收请求前，ApexOne 这段路由是私密的。',
         primary: '立即开始 →',
