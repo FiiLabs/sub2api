@@ -320,14 +320,11 @@
           <div
             v-if="liveResult"
             class="mt-4 rounded-lg border px-4 py-3 text-sm"
-            :class="liveResult.ok
-              ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-200'
-              : 'border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200'"
+            :class="liveBoxClass"
           >
-            <p class="font-semibold">{{ liveResult.ok ? t('proof.e2ee.live.successTitle') : t('proof.e2ee.live.failTitle') }}</p>
-            <p class="mt-1 leading-6">{{ liveResult.ok ? t('proof.e2ee.live.successNote') : t('proof.e2ee.live.failNote') }}</p>
-
             <template v-if="liveResult.ok">
+              <p class="font-semibold">{{ t('proof.e2ee.live.successTitle') }}</p>
+              <p class="mt-1 leading-6">{{ t('proof.e2ee.live.successNote') }}</p>
               <!-- Who saw what -->
               <p class="mt-4 text-xs font-semibold uppercase tracking-wide opacity-70">{{ t('proof.e2ee.live.seesTitle') }}</p>
               <div class="mt-2 grid gap-2 sm:grid-cols-3">
@@ -369,7 +366,34 @@
               </div>
             </template>
 
-            <p v-if="!liveResult.ok && liveResult.error" class="mt-2 break-all font-mono text-xs opacity-80">{{ liveResult.error }}</p>
+            <template v-else>
+              <p class="font-semibold">{{ t(failTitleKey) }}</p>
+              <p v-if="showEncryptedPrefix" class="mt-1 leading-6">✅ {{ t('proof.e2ee.live.failure.encryptedPrefix') }}</p>
+              <p class="mt-1 leading-6">{{ t(failBodyKey) }}</p>
+
+              <div v-if="failAction" class="mt-3">
+                <RouterLink
+                  v-if="failAction.kind === 'route'"
+                  :to="failAction.to"
+                  class="inline-flex items-center gap-1 rounded-lg bg-primary-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-700"
+                >
+                  {{ t(failAction.labelKey) }} →
+                </RouterLink>
+                <button
+                  v-else
+                  type="button"
+                  :disabled="liveRunning"
+                  class="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  @click="runLive"
+                >
+                  <span v-if="liveRunning" class="h-4 w-4 animate-spin rounded-full border-b-2 border-white"></span>
+                  {{ t(failAction.labelKey) }}
+                </button>
+              </div>
+
+              <p v-if="liveResult.error" class="mt-2 break-all font-mono text-xs opacity-70">{{ liveResult.error }}</p>
+              <p v-if="showUnaffected" class="mt-2 text-xs opacity-70">{{ t('proof.e2ee.live.failure.unaffectedNote') }}</p>
+            </template>
 
             <!-- Raw per-step trace, collapsed by default (for the curious, not the newcomer) -->
             <details v-if="liveResult.checks.length" class="mt-3">
@@ -456,7 +480,9 @@ import {
   runLiveE2eeRoundtrip,
   type E2eeChannelResult,
   type LiveRoundtripResult,
+  type FailureCategory,
 } from '@/utils/attestation/e2eeProof'
+import { useAuthStore } from '@/stores/auth'
 import {
   GATEWAY_REFERENCE,
   MERIDIAN_REFERENCE,
@@ -492,6 +518,69 @@ const liveResult = ref<LiveRoundtripResult | null>(null)
 const apiKeyInput = ref('')
 const modelInput = ref(E2EE_DEMO_MODEL)
 const promptInput = ref('Reply with the exact text: E2EE-OK')
+
+// --- Live-test failure presentation (category → colour / copy / next-step) ---
+const authStore = useAuthStore()
+
+/** The next-step affordance for a failure: a deep-link, a retry, or nothing. */
+type FailAction =
+  | { kind: 'route'; labelKey: string; to: string }
+  | { kind: 'retry'; labelKey: string }
+  | null
+
+/**
+ * Pure: map a failure category + the viewer's auth state to a next step. A
+ * button only appears when there is a real destination — an unknown error just
+ * shows the raw detail, never a dead link.
+ */
+function resolveAction(category: FailureCategory, isAuthed: boolean): FailAction {
+  switch (category) {
+    case 'quota':
+      return isAuthed
+        ? { kind: 'route', labelKey: 'proof.e2ee.live.action.topup', to: '/purchase' }
+        : { kind: 'route', labelKey: 'proof.e2ee.live.action.registerTopup', to: '/login' }
+    case 'auth':
+      return isAuthed
+        ? { kind: 'route', labelKey: 'proof.e2ee.live.action.manageKeys', to: '/keys' }
+        : { kind: 'route', labelKey: 'proof.e2ee.live.action.login', to: '/login' }
+    case 'rate_limit':
+    case 'service':
+    case 'network':
+    case 'other':
+      return { kind: 'retry', labelKey: 'proof.e2ee.live.action.retry' }
+    case 'invalid_request':
+    case 'trust':
+      return null
+  }
+}
+
+const failCategory = computed<FailureCategory>(() => liveResult.value?.failure?.category ?? 'other')
+const failSeverity = computed(() => liveResult.value?.failure?.severity ?? 'operational')
+const failTitleKey = computed(() => `proof.e2ee.live.failure.${failCategory.value}.title`)
+const failBodyKey = computed(() => `proof.e2ee.live.failure.${failCategory.value}.body`)
+// Honest reframe: only claim "encrypted & delivered" when the gateway actually
+// replied (a status exists) — i.e. we sealed the prompt AND it reached them.
+const showEncryptedPrefix = computed(() => !liveResult.value?.ok && liveResult.value?.failure?.status != null)
+// Don't soften a genuine trust failure with the reassuring footnote.
+const showUnaffected = computed(
+  () => !!liveResult.value && !liveResult.value.ok && failSeverity.value !== 'trust',
+)
+const failAction = computed<FailAction>(() => resolveAction(failCategory.value, authStore.isAuthenticated))
+
+const liveBoxClass = computed(() => {
+  const r = liveResult.value
+  if (!r) return ''
+  if (r.ok)
+    return 'border-green-200 bg-green-50 text-green-800 dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-200'
+  switch (failSeverity.value) {
+    case 'trust':
+      return 'border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200'
+    case 'inconclusive':
+      return 'border-gray-200 bg-gray-50 text-gray-600 dark:border-dark-600 dark:bg-black/20 dark:text-dark-300'
+    default:
+      return 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200'
+  }
+})
 const reportJson = computed(() => (report.value ? JSON.stringify(report.value, null, 2) : ''))
 // When the last full verification finished — shown as a "live" timestamp with a re-run.
 const verifiedAt = ref<Date | null>(null)

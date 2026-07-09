@@ -184,9 +184,50 @@ export default {
         successNote:
           'Your prompt was encrypted in your browser to the secure computer’s own key, made a round-trip, and the encrypted reply passed its integrity-checked decryption. No middle step (ApexOne, the network, the point where the encrypted connection is decrypted) ever saw your plaintext.',
         replyLabel: 'Decrypted reply',
-        failTitle: 'This live test did not complete',
-        failNote:
-          'This does not overturn the conclusion above — it just means this live request could not run (see the error). The automatic verification above still holds.'
+        failure: {
+          encryptedPrefix:
+            'Your prompt was encrypted and delivered securely — that part passed. The request just couldn’t run:',
+          unaffectedNote: 'The automatic verification above is unaffected.',
+          quota: {
+            title: 'Test paused: your account needs credits',
+            body: 'Your account balance is empty, so this request couldn’t be billed and didn’t run.',
+          },
+          auth: {
+            title: 'Your API key wasn’t accepted',
+            body: 'The key you entered is invalid or expired. Double-check the key you pasted above, then try again.',
+          },
+          rate_limit: {
+            title: 'Rate limited',
+            body: 'Too many requests in a short window. Wait a moment and run it again.',
+          },
+          invalid_request: {
+            title: 'The request couldn’t be built',
+            body: 'Check the model id and that an API key is filled in above, then run it again.',
+          },
+          service: {
+            title: 'The gateway is temporarily unavailable',
+            body: 'The secure gateway returned a server-side error. This is usually transient — try again in a moment.',
+          },
+          network: {
+            title: 'Couldn’t reach the gateway',
+            body: 'The request never got a response (network or CORS). This proves nothing either way — check your connection and retry.',
+          },
+          trust: {
+            title: 'The encrypted reply failed its integrity check',
+            body: 'The gateway replied, but the response could not be authenticated-decrypted with your client key. This is a real anomaly worth attention — see the technical step details below.',
+          },
+          other: {
+            title: 'This live test didn’t complete',
+            body: 'The gateway returned an unexpected error. The raw detail is below; you can try running it again.',
+          },
+        },
+        action: {
+          topup: 'Add credits',
+          registerTopup: 'Sign in to add credits',
+          manageKeys: 'Manage API keys',
+          login: 'Sign in',
+          retry: 'Try again',
+        }
       }
     }
   },
@@ -337,7 +378,7 @@ export default {
         eyebrow: '// ApexOne',
         title: 'Private Claude routing, half the official API price.',
         subtitle:
-          'Cheap AI access should not require blind trust. ApexOne gives developers a Claude route at 50% of official API pricing, with a browser-verifiable TEE boundary around routing. The proof is precise: ApexOne and intermediate infrastructure cannot read your prompts; Anthropic remains the model provider for Claude.',
+          'Affordable AI shouldn\'t mean blind trust. ApexOne gives developers a Claude route at 50% of official API pricing, with a browser-verifiable TEE boundary around routing. The proof is precise: ApexOne and intermediate infrastructure cannot read your prompts; Anthropic remains the model provider for Claude.',
         cost: {
           title: 'Half of official API pricing, with a route you can verify.',
           desc: 'A side-by-side look at price, privacy boundary, and proof scope.',
@@ -435,7 +476,7 @@ export default {
       stayConnected: 'Stay Connected',
       allRightsReserved: 'All rights reserved.',
       trademarkNotice:
-        'Claude is a trademark of Anthropic, PBC. ApexOne is an independent service and is not affiliated with or endorsed by Anthropic.'
+        '*Claude is a trademark of Anthropic, PBC. ApexOne is an independent service and is not affiliated with or sponsored by Anthropic.'
     }
   },
 

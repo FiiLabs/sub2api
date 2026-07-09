@@ -40,6 +40,81 @@ import { E2EE_DEMO_MAX_TOKENS } from '@/constants/attestation'
 /** A verification step; `gating: false` marks an informational (non-blocking) row. */
 export type E2eeCheck = Check & { gating?: boolean }
 
+/**
+ * Coarse "what went wrong" bucket for a failed live round-trip. Keyed off the
+ * HTTP status (the only signal the upstream meridian gateway reliably preserves;
+ * it exposes no machine `code` and collapses `error.type` to `upstream_error` on
+ * /v1/chat/completions), plus a message hint for the ambiguous 403. Every UI
+ * next-step (top-up / check-key / retry / fix-input) maps from one of these.
+ */
+export type FailureCategory =
+  | 'quota' // 402/403 balance — needs credits
+  | 'auth' // 401 — bad/expired API key
+  | 'rate_limit' // 429 — too many requests
+  | 'invalid_request' // 400 or a pre-request input problem
+  | 'service' // 5xx or an E2EE-capability gap on the deployment
+  | 'network' // no response at all (network/CORS) — proves nothing
+  | 'trust' // reached the enclave (2xx) but the E2EE contract broke
+  | 'other' // any status we don't specifically map
+
+/**
+ * Semantic severity → the UI maps this to colour: `trust`→red (the only genuine
+ * trust failure), `operational`→amber (encryption was fine, the request just
+ * couldn't run), `inconclusive`→grey (we never got a verdict either way).
+ */
+export type FailureSeverity = 'trust' | 'operational' | 'inconclusive'
+
+const SEVERITY_BY_CATEGORY: Record<FailureCategory, FailureSeverity> = {
+  quota: 'operational',
+  auth: 'operational',
+  rate_limit: 'operational',
+  invalid_request: 'operational',
+  service: 'operational',
+  other: 'operational',
+  network: 'inconclusive',
+  trust: 'trust',
+}
+
+export interface LiveFailure {
+  category: FailureCategory
+  severity: FailureSeverity
+  /** The upstream HTTP status, present only when the gateway actually replied. */
+  status?: number
+  /** The raw gateway message, for the demoted detail line / collapsed trace. */
+  rawDetail?: string
+}
+
+/** Balance/arrears wording that lets us treat an (ambiguous) 403 as a quota case. */
+const BALANCE_HINT = /insufficient|balance|arrears|余额|欠费|额度不足/i
+
+/**
+ * Pure: map a non-2xx gateway HTTP status (+ its message) to a failure category.
+ * 402 and 403-with-balance-wording both mean "needs credits"; a bare 403 stays
+ * `other` so we never mislabel an unrelated forbidden as a billing problem.
+ */
+export function classifyHttpFailure(status: number, message = ''): FailureCategory {
+  if (status === 401) return 'auth'
+  if (status === 402) return 'quota'
+  if (status === 403) return BALANCE_HINT.test(message) ? 'quota' : 'other'
+  if (status === 429) return 'rate_limit'
+  if (status === 400) return 'invalid_request'
+  if (status >= 500 && status <= 599) return 'service'
+  return 'other'
+}
+
+/** Pure: build a LiveFailure with the severity implied by its category. */
+export function mkFailure(
+  category: FailureCategory,
+  opts?: { status?: number; rawDetail?: string },
+): LiveFailure {
+  return {
+    category,
+    severity: SEVERITY_BY_CATEGORY[category],
+    status: opts?.status,
+    rawDetail: opts?.rawDetail,
+  }
+}
+
 export interface E2eeChannelResult {
   /** True iff the gating checks (capability + key present + key attested) pass. */
   ok: boolean
@@ -150,6 +225,8 @@ export interface LiveRoundtripResult {
   checks: E2eeCheck[]
   /** Honest human-readable error when the round-trip could not complete. */
   error?: string
+  /** Structured classification of the failure, driving the UI's next-step hint. */
+  failure?: LiveFailure
   /** The prompt as sent (echoed for the "who sees what" side-by-side). */
   promptText?: string
   /** The exact wire ciphertext of the prompt — what ANY intermediary sees. */
@@ -175,21 +252,41 @@ export async function runLiveE2eeRoundtrip(
 
   const e2eeKey = selectE2eeKey(report)
   if (!e2eeKey) {
-    return { ok: false, checks, error: `no ${E2EE_ALGO} key advertised on this deployment` }
+    return {
+      ok: false,
+      checks,
+      error: `no ${E2EE_ALGO} key advertised on this deployment`,
+      failure: mkFailure('service'),
+    }
   }
   const model = params.model.trim()
   if (!model || aadComponentAmbiguous(model)) {
-    return { ok: false, checks, error: 'invalid model id (empty or contains | CR LF)' }
+    return {
+      ok: false,
+      checks,
+      error: 'invalid model id (empty or contains | CR LF)',
+      failure: mkFailure('invalid_request'),
+    }
   }
   if (!params.apiKey.trim()) {
-    return { ok: false, checks, error: 'an API key is required to run the live inference round-trip' }
+    return {
+      ok: false,
+      checks,
+      error: 'an API key is required to run the live inference round-trip',
+      failure: mkFailure('invalid_request'),
+    }
   }
 
   let modelKeyHex: string
   try {
     modelKeyHex = normalizeSecp256k1PublicKeyHex(e2eeKey.public_key)
   } catch (e) {
-    return { ok: false, checks, error: `attested E2EE key is malformed: ${String(e)}` }
+    return {
+      ok: false,
+      checks,
+      error: `attested E2EE key is malformed: ${String(e)}`,
+      failure: mkFailure('service'),
+    }
   }
 
   const client = generateClientKeypair()
@@ -230,13 +327,25 @@ export async function runLiveE2eeRoundtrip(
     resp = await postE2eeChat(headers, body)
   } catch (e) {
     push('response_received', false, String(e))
-    return { ok: false, checks, error: `request failed (network/CORS): ${String(e)}`, ...base }
+    return {
+      ok: false,
+      checks,
+      error: `request failed (network/CORS): ${String(e)}`,
+      failure: mkFailure('network'),
+      ...base,
+    }
   }
   if (!resp.ok) {
     push('response_received', false, `HTTP ${resp.status}`)
     const detail =
       (resp.body as { error?: { message?: string } } | undefined)?.error?.message ?? resp.rawText.slice(0, 200)
-    return { ok: false, checks, error: `gateway returned HTTP ${resp.status}: ${detail}`, ...base }
+    return {
+      ok: false,
+      checks,
+      error: `gateway returned HTTP ${resp.status}: ${detail}`,
+      failure: mkFailure(classifyHttpFailure(resp.status, detail), { status: resp.status, rawDetail: detail }),
+      ...base,
+    }
   }
   push('response_received', true, `HTTP ${resp.status}`)
 
@@ -248,7 +357,13 @@ export async function runLiveE2eeRoundtrip(
   const encryptedContent = parsed?.choices?.[0]?.message?.content
   if (typeof encryptedContent !== 'string' || encryptedContent.length === 0) {
     push('response_encrypted', false, 'no choices[0].message.content in response')
-    return { ok: false, checks, error: 'response had no encrypted content to decrypt', ...base }
+    return {
+      ok: false,
+      checks,
+      error: 'response had no encrypted content to decrypt',
+      failure: mkFailure('trust'),
+      ...base,
+    }
   }
   push('response_encrypted', true, `id=${responseId} ciphertext ${encryptedContent.length / 2} bytes`)
 
@@ -269,6 +384,13 @@ export async function runLiveE2eeRoundtrip(
     return { ok: true, replyText, checks, ...base, responseCiphertext: encryptedContent }
   } catch (e) {
     push('response_decrypted', false, String(e))
-    return { ok: false, checks, error: `response decrypt failed: ${String(e)}`, ...base, responseCiphertext: encryptedContent }
+    return {
+      ok: false,
+      checks,
+      error: `response decrypt failed: ${String(e)}`,
+      failure: mkFailure('trust'),
+      ...base,
+      responseCiphertext: encryptedContent,
+    }
   }
 }

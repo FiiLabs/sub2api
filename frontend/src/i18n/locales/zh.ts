@@ -182,9 +182,49 @@ export default {
         successNote:
           '你的提问在浏览器里被加密给机密电脑的专属钥匙、完成了一次往返、且加密回复通过了校验解密。任何中间环节（ApexOne、网络、加密连接的解密点）都没看到你的明文。',
         replyLabel: '解密后的回复',
-        failTitle: '这次实测没能完成',
-        failNote:
-          '这并不能推翻上面的结论——只是说明这次实时请求没跑起来（见错误信息）。上方那项自动的验证依然成立。'
+        failure: {
+          encryptedPrefix: '你的 prompt 已加密并安全送达——这一步通过了。只是这次请求没能跑起来：',
+          unaffectedNote: '上方那项自动的验证不受此影响。',
+          quota: {
+            title: '测试暂停：账户需要充值',
+            body: '账户余额为空，这次请求无法计费、没有执行。',
+          },
+          auth: {
+            title: 'API key 未通过认证',
+            body: '你填入的 key 无效或已过期。请核对上面粘贴的 key 后重试。',
+          },
+          rate_limit: {
+            title: '触发限流',
+            body: '短时间内请求过多。稍等片刻再跑一次。',
+          },
+          invalid_request: {
+            title: '请求没能构造出来',
+            body: '请检查上面的模型 id、并确认已填入 API key，然后重试。',
+          },
+          service: {
+            title: '网关暂时不可用',
+            body: '机密网关返回了服务端错误。这通常是临时的——稍后再试一次。',
+          },
+          network: {
+            title: '没能连上网关',
+            body: '请求根本没拿到响应（网络或 CORS）。这两头都证明不了什么——检查网络后重试。',
+          },
+          trust: {
+            title: '加密回复未通过完整性校验',
+            body: '网关有回复，但这段响应无法用你的客户端钥匙完成认证解密。这是一个值得关注的真实异常——见下方技术步骤明细。',
+          },
+          other: {
+            title: '这次实测没能完成',
+            body: '网关返回了未预期的错误。原始信息见下方,你可以再跑一次。',
+          },
+        },
+        action: {
+          topup: '充值',
+          registerTopup: '登录后充值',
+          manageKeys: '管理 API Key',
+          login: '登录',
+          retry: '重试',
+        }
       }
     }
   },
@@ -335,7 +375,7 @@ export default {
         eyebrow: '// ApexOne',
         title: 'Claude 私密路由，官方 API 价格五折。',
         subtitle:
-          '便宜的 AI 接入不应该要求你盲目信任。ApexOne 以官方 API 计费价格的 50% 提供 Claude 路由，并在路由层提供可由浏览器验证的 TEE 隐私边界。证明范围很清楚：ApexOne 和中间基础设施读不到你的提示词；Anthropic 仍然是 Claude 的模型服务方。',
+          '实惠的 AI 不该以盲目信任为代价。ApexOne 以官方 API 计费价格的 50% 提供 Claude 路由，并在路由层提供可由浏览器验证的 TEE 隐私边界。证明范围很清楚：ApexOne 和中间基础设施读不到你的提示词；Anthropic 仍然是 Claude 的模型服务方。',
         cost: {
           title: '官方 API 计费价格五折，并且路由边界可验证。',
           desc: '对比价格、隐私边界和证明范围。',
@@ -433,7 +473,7 @@ export default {
       stayConnected: '保持联系',
       allRightsReserved: '保留所有权利。',
       trademarkNotice:
-        'Claude 是 Anthropic, PBC 的商标。ApexOne 是独立服务，与 Anthropic 无关联，也未获得其认可或背书。'
+        '*Claude 是 Anthropic, PBC 的商标。ApexOne 是独立服务，与 Anthropic 无关联，也未获其赞助。'
     }
   },
 
