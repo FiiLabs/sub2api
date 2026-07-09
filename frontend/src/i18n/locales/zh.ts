@@ -345,135 +345,125 @@ export default {
     },
     landing: {
       hero: {
-        badge: 'Claude Fable 5 已上线 · TEE 可验证私密路由',
-        title: '可亲自验证的 AI 网关，价格为官方 API 的五折。',
+        badge: 'Claude Fable 5 今日上线',
+        title: '隐私不靠承诺，靠验证。TEE 加密路由',
         subtitle:
-          '通过一个兼容 OpenAI 的 API 使用 Claude，请求会先进入可远程认证的 Intel TDX 机密 VM。ApexOne 及中间基础设施读不到你的提示词；Claude 路线最终由 Anthropic 处理明文，遵循其自身政策。GPT 和 Gemini 即将上线。',
-        label: '官方 API 计费价格五折。',
+          '通过 TEE 加密网关调用 Claude 等前沿模型——数据全程私密，每次调用可验证，价格仅为官方 API 的一半。',
         verifyPrivacy: '验证隐私',
         stats: {
-          availability: '可用性目标',
-          attested: 'TEE 认证路由',
-          discount: '官方 API 计费价格',
-          claude: 'Fable 5 已上线'
+          discount: '官方 API 价格的一半',
+          attested: 'TEE 隐私保护',
+          claude: '今日上线',
+          hermes: '客户端支持'
         }
       },
       routing: {
         eyebrow: '// 机密路由架构',
-        caption:
-          '你的提示词只会在已认证的 ApexOne TEE 内解密，随后交给 Anthropic 处理 Claude 请求。ApexOne 运营方、日志和中间基础设施都读不到它。证明范围覆盖网关、代码身份和隐私边界，不覆盖 Anthropic 模型权重。',
-        privacy: {
-          title: '隐私边界',
-          desc: '明文不会进入 ApexOne 控制面、日志、运营方或中间基础设施。'
-        },
-        gateway: {
-          title: '网关认证',
-          desc: '远程认证验证 Intel TDX 网关、被度量的代码和受认证的加密密钥。'
-        }
+        title: '我们不卖你的数据——因为我们根本拿不到。',
+        subtitle:
+          '不同于不透明网关，ApexOne 的每一次请求都经过可验证的 TEE 路由，明文从不经过我们的手。',
+        caption: '明文只在已认证的 TEE 内解密——ApexOne 运营方、日志和基础设施都读不到。'
       },
       personal: {
         eyebrow: '// ApexOne',
-        title: 'Claude 私密路由，官方 API 价格五折。',
-        subtitle:
-          '实惠的 AI 不该以盲目信任为代价。ApexOne 以官方 API 计费价格的 50% 提供 Claude 路由，并在路由层提供可由浏览器验证的 TEE 隐私边界。证明范围很清楚：ApexOne 和中间基础设施读不到你的提示词；Anthropic 仍然是 Claude 的模型服务方。',
-        cost: {
-          title: '官方 API 计费价格五折，并且路由边界可验证。',
-          desc: '对比价格、隐私边界和证明范围。',
-          cutRate: {
-            label: '不透明网关',
-            value: '不清楚',
-            desc: '价格低，但路由、日志策略和隐私边界不清楚。'
+        title: '价格砍半，窥探为零。',
+        subtitle: '价格、隐私、可靠性，一张表看明白。',
+        compare: {
+          note: '基于官方 API 计费价格，ApexOne 按其 50% 计费。',
+          cols: {
+            opaque: '不透明网关',
+            official: '官方 API',
+            apexone: 'ApexOne'
           },
-          direct: {
-            label: '官方直连',
-            value: '官方 API 价格',
-            desc: '官方服务方接入，但没有 ApexOne 的 TEE 隐私边界、故障切换或统一计费层。'
-          },
-          apexone: {
-            label: 'ApexOne',
-            value: '官方 API 价格 50%',
-            desc: 'Claude Fable 5 已上线，TEE 可认证路由，控制面只接触元数据，支持自动故障切换。'
-          },
-          note: '基于官方 API 计费价格。ApexOne 按该价格的 50% 计费。'
+          rows: {
+            price: {
+              label: '价格',
+              opaque: '便宜，但说不清为什么',
+              official: '官方原价',
+              apexone: '官方价格五折'
+            },
+            attestation: {
+              label: '可验证隐私（远程认证）',
+              opaque: '❌',
+              official: '❌',
+              apexone: '✅'
+            },
+            dataAccess: {
+              label: '运营方能否读取 / 转卖你的数据',
+              opaque: '⚠️ 能',
+              official: '按服务方政策',
+              apexone: '❌ 拿不到——TEE 密封'
+            },
+            fable: {
+              label: 'Claude Fable 5',
+              opaque: '不明确',
+              official: '✅',
+              apexone: '✅ 今日可用'
+            },
+            failover: {
+              label: '自动故障切换',
+              opaque: '❌',
+              official: '❌',
+              apexone: '✅'
+            }
+          }
         },
         uptime: {
-          title: '99.99% 可用性目标，自动故障切换',
-          desc: '我们监控路由可用性，并在路由不可用时切换流量。',
-          window: '可用性目标'
-        },
-        aggregation: {
-          title: 'Claude Fable 5 已上线，GPT 和 Gemini 随后上线',
-          desc: 'Anthropic 最强模型 Claude Fable 5 已通过 ApexOne 的可认证私密路由上线。GPT 和 Gemini 随后上线。',
-          tags: {
-            claude: 'Claude Fable 5 已上线',
-            gpt: 'GPT 即将上线',
-            gemini: 'Gemini 即将上线',
-            compatible: '兼容 OpenAI'
+          title: '不间断路由',
+          desc: '多路由架构，路由一旦劣化立即切换流量。',
+          window: '可用性设计目标',
+          points: {
+            failover: '路由劣化时自动切换',
+            monitoring: '实时路由健康监测'
           }
         },
         privacy: {
-          title: 'TEE 封存路由',
-          desc: '你的提示词和响应只会在 Intel TDX 机密 VM 内解密，再交给 Claude 服务方。ApexOne 控制面和运营方无法读取，你也可以通过远程认证验证这条边界。',
+          title: 'TEE 密封路由',
+          desc: '提示词只在 Intel TDX 机密虚拟机内解密——这条边界你可以在浏览器里亲自验证。',
           points: {
             tdx: '仅在 Intel TDX 内、交给服务方之前解密',
-            noRead: 'ApexOne 运营方和日志无法读取提示词',
-            attestation: '远程认证验证网关边界'
+            noRead: 'ApexOne 运营方和日志读不到提示词',
+            attestation: '远程认证可验证网关边界'
           }
         }
       },
       pricing: {
         eyebrow: '// 价格',
-        title: '官方 API 价格五折。私密路由，可验证。',
-        subtitle:
-          'ApexOne 以官方 API 计费价格的 50% 提供 Claude 接入，并将请求路由进已认证的 TEE 网关。五折是价格事实；可证明的是 ApexOne 路由的隐私边界。',
+        title: '按量付费，官方价格一半。',
+        subtitle: '按 token 计费，价格为官方 API 的 50%——没有订阅，没有最低消费。',
         personal: {
           name: 'ApexOne',
           tagline: '按量付费',
           priceLine: '按官方 API 计费价格的 50% 逐 token 计费。',
-          desc: '面向需要 Claude 接入、可验证私密路由和透明用量账单的开发者。',
+          desc: '面向需要 Claude 接入、可验证私密路由和透明账单的开发者。',
           cta: '立即开始 →',
           features: {
-            f1: 'Claude Fable 5 已上线；GPT 和 Gemini 即将上线',
+            f1: 'Claude Fable 5 今日可用；GPT 和 Gemini 即将上线',
             f2: '官方 API 计费价格五折',
-            f3: 'TEE 可认证网关 + 远程认证',
-            f4: '控制面只接触元数据；提示词不会进入 ApexOne 日志或运营方可读范围',
-            f5: '自动故障切换 & 99.99% 可用性目标',
-            f6: '兼容 OpenAI 的 API'
+            f3: 'TEE 认证网关 + 远程认证',
+            f4: '控制面只接触元数据——提示词从不落日志',
+            f5: '自动故障切换 & 实时路由监测',
+            f6: '兼容 OpenAI API——Hermes 等客户端开箱即用'
           }
         }
       },
-      trust: {
-        eyebrow: '// 大规模可信赖',
-        title: '为生产环境而生。',
-        stats: {
-          discount: '官方 API 计费价格',
-          availability: '可用性目标',
-          gateway: '网关可验证'
-        },
+      cta: {
+        title: '用得起，也信得过的 AI。',
+        description: 'Claude Fable 5，官方半价，TEE 全程密封。',
+        primary: '立即开始 →',
+        secondary: '验证隐私 →',
         pills: {
-          encrypted: '🔒 传输加密',
           noTraining: '🚫 不用你的数据训练',
           audit: '📋 仅元数据审计日志',
-          tee: '🛡 TEE 可验证网关',
-          claudeLive: '✅ Claude Fable 5 已上线',
-          compatible: '⚡ 兼容 OpenAI'
+          encrypted: '🔒 传输全程加密'
         }
-      },
-      cta: {
-        titleFirst: '基于可验证的 AI 接入构建。',
-        titleSecond: 'Claude Fable 5 已上线。私密路由。官方 API 价格五折。',
-        description:
-          '专注你的产品。ApexOne 以官方 API 计费价格的 50% 提供 Claude 接入，并证明在 Anthropic 接收请求前，ApexOne 这段路由是私密的。',
-        primary: '立即开始 →',
-        secondary: '验证隐私 →'
       }
     },
     footer: {
       contactUs: '联系我们',
       stayConnected: '保持联系',
       allRightsReserved: '保留所有权利。',
-      trademarkNotice:
-        '*Claude 是 Anthropic, PBC 的商标。ApexOne 是独立服务，与 Anthropic 无关联，也未获其赞助。'
+      trademarkNotice: '*Claude 是 Anthropic, PBC 的商标。ApexOne 是独立服务，与 Anthropic 无关联。'
     }
   },
 

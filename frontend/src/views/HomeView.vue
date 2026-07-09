@@ -26,10 +26,9 @@
         <h1 class="mb-5 text-fluid-3xl font-bold leading-[1.1] tracking-tight text-gray-900 dark:text-white">
           {{ t('home.landing.hero.title') }}
         </h1>
-        <p class="mx-auto mb-5 max-w-[460px] text-fluid-base text-gray-500 dark:text-dark-300">
+        <p class="mx-auto mb-8 max-w-[460px] text-fluid-base text-gray-500 dark:text-dark-300">
           {{ t('home.landing.hero.subtitle') }}
         </p>
-        <p class="mx-auto mb-8 max-w-[460px] text-fluid-base font-semibold text-primary-600 dark:text-primary-400">{{ t('home.landing.hero.label') }}</p>
         <div class="mb-10 flex flex-col gap-2 md:flex-row md:justify-center">
           <router-link :to="ctaTarget" class="btn btn-primary px-6 py-3 text-fluid-base shadow-lg shadow-primary-500/30">
             {{ isAuthenticated ? t('home.goToDashboard') : t('home.getStarted') }}
@@ -49,8 +48,10 @@
       <!-- ROUTING: TEE architecture -->
       <div id="architecture" class="mx-auto mt-14 max-w-5xl">
         <div v-reveal :class="cardClass" class="reveal-item overflow-hidden p-6 md:p-8">
-          <div class="mb-3 text-center">
+          <div class="mb-6 text-center">
             <span :class="eyebrowClass">{{ t('home.landing.routing.eyebrow') }}</span>
+            <h2 :class="headingClass" class="mt-2">{{ t('home.landing.routing.title') }}</h2>
+            <p :class="subClass" class="mx-auto mt-2 max-w-2xl">{{ t('home.landing.routing.subtitle') }}</p>
           </div>
           <svg id="routing-svg" viewBox="0 0 720 300" xmlns="http://www.w3.org/2000/svg"
             class="block h-auto w-full">
@@ -172,13 +173,6 @@
           <p class="mt-3 text-center text-fluid-2xs text-gray-400 dark:text-dark-500">
             {{ t('home.landing.routing.caption') }}
           </p>
-          <div class="mt-5 grid gap-3 md:grid-cols-2">
-            <div v-for="attestation in routingAttestations" :key="attestation.title"
-              class="rounded-lg border border-primary-500/20 bg-primary-500/5 p-4 dark:bg-primary-500/10">
-              <h3 class="text-fluid-sm font-semibold text-gray-900 dark:text-white">{{ attestation.title }}</h3>
-              <p class="mt-1 text-fluid-xs text-gray-500 dark:text-dark-400">{{ attestation.desc }}</p>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -190,54 +184,78 @@
           <p :class="subClass" class="mb-6 mt-2 max-w-3xl">{{ t('home.landing.personal.subtitle') }}</p>
         </div>
 
-        <div class="grid gap-4 md:grid-cols-2">
-          <div v-for="(feature, index) in personalFeatures" :key="feature.visual" v-reveal :class="cardClass"
-            class="reveal-item p-5" :style="{ transitionDelay: `${index * 70}ms` }">
-            <div class="mb-3 text-xl">{{ feature.icon }}</div>
-            <h3 class="mb-1 text-fluid-base font-semibold text-gray-900 dark:text-white">{{ feature.title }}</h3>
-            <p class="text-fluid-sm text-gray-500 dark:text-dark-400">{{ feature.desc }}</p>
+        <!-- comparison table -->
+        <div v-reveal :class="cardClass" class="reveal-item overflow-x-auto p-5">
+          <table class="w-full min-w-[560px] border-collapse text-left">
+            <thead>
+              <tr class="border-b border-gray-200 dark:border-dark-700">
+                <th class="py-3 pr-4"></th>
+                <th class="px-4 py-3 text-fluid-sm font-semibold text-gray-500 dark:text-dark-300">
+                  {{ t('home.landing.personal.compare.cols.opaque') }}
+                </th>
+                <th class="px-4 py-3 text-fluid-sm font-semibold text-gray-500 dark:text-dark-300">
+                  {{ t('home.landing.personal.compare.cols.official') }}
+                </th>
+                <th
+                  class="rounded-t-lg bg-primary-500/10 px-4 py-3 text-fluid-sm font-bold text-primary-600 dark:bg-primary-500/15 dark:text-primary-400">
+                  {{ t('home.landing.personal.compare.cols.apexone') }}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in compareRows" :key="row.label"
+                class="border-b border-gray-100 last:border-0 dark:border-dark-800">
+                <td class="py-3 pr-4 text-fluid-xs font-semibold text-gray-900 dark:text-white">{{ row.label }}</td>
+                <td class="px-4 py-3 text-fluid-xs text-gray-500 dark:text-dark-400">{{ row.opaque }}</td>
+                <td class="px-4 py-3 text-fluid-xs text-gray-500 dark:text-dark-400">{{ row.official }}</td>
+                <td
+                  class="bg-primary-500/10 px-4 py-3 text-fluid-xs font-semibold text-primary-700 dark:bg-primary-500/15 dark:text-primary-300">
+                  {{ row.apexone }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="mt-2 text-right text-fluid-2xs text-gray-400 dark:text-dark-500">
+            {{ t('home.landing.personal.compare.note') }}
+          </div>
+        </div>
 
-            <!-- pricing comparison -->
-            <div v-if="feature.visual === 'cost'" class="mt-3.5 rounded-lg bg-gray-50 p-3 dark:bg-dark-900/50">
-              <div v-for="item in costComparisons" :key="item.label"
-                class="mb-2 rounded-lg border border-gray-200 bg-white p-3 last:mb-0 dark:border-dark-700 dark:bg-dark-800/70">
-                <div class="flex items-center justify-between gap-3">
-                  <span class="text-fluid-xs font-semibold text-gray-900 dark:text-white">{{ item.label }}</span>
-                  <span class="shrink-0 text-fluid-xs font-bold" :class="item.valueClass">{{ item.value }}</span>
-                </div>
-                <p class="mt-1 text-fluid-2xs text-gray-500 dark:text-dark-400">{{ item.desc }}</p>
-              </div>
-              <div class="mt-1.5 text-right text-fluid-2xs text-gray-400 dark:text-dark-500">
-                {{ t('home.landing.personal.cost.note') }}
-              </div>
-            </div>
-
-            <!-- uptime grid -->
-            <div v-else-if="feature.visual === 'uptime'">
-              <div class="mt-3 flex items-stretch gap-[2px] sm:gap-[3px]">
-                <div v-for="(cell, i) in uptimeCells" :key="i" class="h-5 min-w-0 flex-1 rounded-[2px] sm:rounded-[3px]"
-                  :class="cell.warn ? 'bg-amber-400' : 'bg-primary-500 opacity-85'"></div>
-              </div>
-              <div class="mt-2.5 text-fluid-xl font-bold text-primary-600 dark:text-primary-400">99.99%</div>
-              <div class="text-fluid-2xs text-gray-400 dark:text-dark-500">
-                {{ t('home.landing.personal.uptime.window') }}
-              </div>
-            </div>
-
-            <!-- model pills -->
-            <div v-else-if="feature.visual === 'models'" class="mt-3 flex flex-wrap gap-1.5">
-              <span v-for="model in modelPills" :key="model" :class="pillClass">{{ model }}</span>
-            </div>
-
-            <!-- privacy attestation -->
-            <div v-else-if="feature.visual === 'privacy'" class="mt-3 space-y-1.5">
-              <div v-for="point in privacyBadges" :key="point"
-                class="flex items-start gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-fluid-xs text-gray-700 dark:border-dark-700 dark:bg-dark-900/50 dark:text-dark-200">
+        <!-- privacy + uptime -->
+        <div class="mt-4 grid gap-4 md:grid-cols-2">
+          <div v-reveal :class="cardClass" class="reveal-item p-5">
+            <div class="mb-3 text-xl">🛡</div>
+            <h3 class="mb-1 text-fluid-base font-semibold text-gray-900 dark:text-white">
+              {{ t('home.landing.personal.privacy.title') }}
+            </h3>
+            <p class="text-fluid-sm text-gray-500 dark:text-dark-400">{{ t('home.landing.personal.privacy.desc') }}</p>
+            <div class="mt-3 space-y-1.5">
+              <div v-for="point in privacyPoints" :key="point" :class="checkItemClass">
                 <span class="mt-px font-bold text-primary-600 dark:text-primary-400">✓</span>
                 <span>{{ point }}</span>
               </div>
             </div>
+          </div>
 
+          <div v-reveal :class="cardClass" class="reveal-item p-5" style="transition-delay: 70ms">
+            <div class="mb-3 text-xl">⚡</div>
+            <h3 class="mb-1 text-fluid-base font-semibold text-gray-900 dark:text-white">
+              {{ t('home.landing.personal.uptime.title') }}
+            </h3>
+            <p class="text-fluid-sm text-gray-500 dark:text-dark-400">{{ t('home.landing.personal.uptime.desc') }}</p>
+            <div class="mt-3 flex items-stretch gap-[2px] sm:gap-[3px]">
+              <div v-for="(cell, i) in uptimeCells" :key="i" class="h-5 min-w-0 flex-1 rounded-[2px] sm:rounded-[3px]"
+                :class="cell.warn ? 'bg-amber-400' : 'bg-primary-500 opacity-85'"></div>
+            </div>
+            <div class="mt-2.5 text-fluid-xl font-bold text-primary-600 dark:text-primary-400">99.99%</div>
+            <div class="text-fluid-2xs text-gray-400 dark:text-dark-500">
+              {{ t('home.landing.personal.uptime.window') }}
+            </div>
+            <div class="mt-3 space-y-1.5">
+              <div v-for="point in uptimePoints" :key="point" :class="checkItemClass">
+                <span class="mt-px font-bold text-primary-600 dark:text-primary-400">✓</span>
+                <span>{{ point }}</span>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -287,35 +305,12 @@
         </div>
       </section>
 
-      <!-- TRUST -->
-      <section id="trust" class="mx-auto mt-14 max-w-5xl text-center">
-        <div v-reveal class="reveal-item">
-          <span :class="eyebrowClass">{{ t('home.landing.trust.eyebrow') }}</span>
-          <h2 :class="headingClass" class="mt-1.5">{{ t('home.landing.trust.title') }}</h2>
-        </div>
-
-        <div class="my-6 grid grid-cols-3 gap-2">
-          <div v-for="(stat, index) in trustStats" :key="stat.label" v-reveal :class="cardClass"
-            class="reveal-item p-4" :style="{ transitionDelay: `${index * 70}ms` }">
-            <div class="text-fluid-xl font-bold text-primary-600 dark:text-primary-400">{{ stat.value }}</div>
-            <div class="mt-0.5 text-fluid-2xs text-gray-500 dark:text-dark-400">{{ stat.label }}</div>
-          </div>
-        </div>
-
-        <div v-reveal class="reveal-item flex flex-wrap justify-center gap-2">
-          <span v-for="badge in trustPills" :key="badge"
-            class="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white/80 px-3 py-1.5 text-fluid-xs text-gray-500 dark:border-dark-700 dark:bg-dark-800/60 dark:text-dark-300">
-            {{ badge }}
-          </span>
-        </div>
-      </section>
-
       <!-- CTA -->
       <section class="mx-auto mt-14 max-w-5xl">
         <div v-reveal
           class="reveal-item rounded-xl border border-primary-500/30 bg-primary-500/10 px-6 py-14 text-center dark:bg-primary-500/15">
           <h2 class="mb-2 text-fluid-2xl font-bold tracking-tight text-gray-900 dark:text-white">
-            {{ t('home.landing.cta.titleFirst') }}<br />{{ t('home.landing.cta.titleSecond') }}
+            {{ t('home.landing.cta.title') }}
           </h2>
           <p class="mb-7 text-fluid-sm text-gray-500 dark:text-dark-400">
             {{ t('home.landing.cta.description') }}
@@ -327,6 +322,12 @@
             <router-link to="/proof" :class="outlineBtn">
               {{ t('home.landing.cta.secondary') }}
             </router-link>
+          </div>
+          <div class="mt-7 flex flex-wrap justify-center gap-2">
+            <span v-for="pill in ctaPills" :key="pill"
+              class="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white/80 px-3 py-1.5 text-fluid-xs text-gray-500 dark:border-dark-700 dark:bg-dark-800/60 dark:text-dark-300">
+              {{ pill }}
+            </span>
           </div>
         </div>
       </section>
@@ -357,8 +358,8 @@ const eyebrowClass =
   'font-mono text-fluid-2xs font-semibold uppercase tracking-[0.1em] text-primary-600 dark:text-primary-400'
 const headingClass = 'text-fluid-2xl font-bold tracking-tight text-gray-900 dark:text-white'
 const subClass = 'text-fluid-sm text-gray-500 dark:text-dark-400'
-const pillClass =
-  'rounded-full border border-gray-200 bg-gray-100 px-2.5 py-1 text-fluid-xs text-gray-500 dark:border-dark-600 dark:bg-dark-700/50 dark:text-dark-300'
+const checkItemClass =
+  'flex items-start gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-fluid-xs text-gray-700 dark:border-dark-700 dark:bg-dark-900/50 dark:text-dark-200'
 const outlineBtn =
   'inline-flex items-center justify-center rounded-lg border border-gray-300 px-6 py-3 text-fluid-base font-medium text-gray-700 transition-colors hover:border-primary-500 dark:border-dark-600 dark:text-dark-200'
 
@@ -366,83 +367,33 @@ const outlineBtn =
 const heroStats = computed(() => [
   { value: '50%', label: t('home.landing.hero.stats.discount') },
   { value: '100%', label: t('home.landing.hero.stats.attested') },
-  { value: 'Claude', label: t('home.landing.hero.stats.claude') },
-  { value: '99.99%', label: t('home.landing.hero.stats.availability') }
+  { value: 'Fable 5', label: t('home.landing.hero.stats.claude') },
+  { value: 'Hermes', label: t('home.landing.hero.stats.hermes') }
 ])
 
-const routingAttestations = computed(() => [
-  {
-    title: t('home.landing.routing.privacy.title'),
-    desc: t('home.landing.routing.privacy.desc')
-  },
-  {
-    title: t('home.landing.routing.gateway.title'),
-    desc: t('home.landing.routing.gateway.desc')
-  }
-])
+// APEXONE comparison table
+const compareRowKeys = ['price', 'attestation', 'dataAccess', 'fable', 'failover'] as const
 
-// PERSONAL feature cards
-const personalFeatures = computed(() => [
-  {
-    icon: '🔍',
-    title: t('home.landing.personal.cost.title'),
-    desc: t('home.landing.personal.cost.desc'),
-    visual: 'cost'
-  },
-  {
-    icon: '✅',
-    title: t('home.landing.personal.aggregation.title'),
-    desc: t('home.landing.personal.aggregation.desc'),
-    visual: 'models'
-  },
-  {
-    icon: '🛡',
-    title: t('home.landing.personal.privacy.title'),
-    desc: t('home.landing.personal.privacy.desc'),
-    visual: 'privacy'
-  },
-  {
-    icon: '⚡',
-    title: t('home.landing.personal.uptime.title'),
-    desc: t('home.landing.personal.uptime.desc'),
-    visual: 'uptime'
-  }
-])
-
-const costComparisons = computed(() => [
-  {
-    label: t('home.landing.personal.cost.cutRate.label'),
-    value: t('home.landing.personal.cost.cutRate.value'),
-    desc: t('home.landing.personal.cost.cutRate.desc'),
-    valueClass: 'text-amber-600 dark:text-amber-400'
-  },
-  {
-    label: t('home.landing.personal.cost.direct.label'),
-    value: t('home.landing.personal.cost.direct.value'),
-    desc: t('home.landing.personal.cost.direct.desc'),
-    valueClass: 'text-gray-500 dark:text-dark-300'
-  },
-  {
-    label: t('home.landing.personal.cost.apexone.label'),
-    value: t('home.landing.personal.cost.apexone.value'),
-    desc: t('home.landing.personal.cost.apexone.desc'),
-    valueClass: 'text-primary-600 dark:text-primary-400'
-  }
-])
+const compareRows = computed(() =>
+  compareRowKeys.map((key) => ({
+    label: t(`home.landing.personal.compare.rows.${key}.label`),
+    opaque: t(`home.landing.personal.compare.rows.${key}.opaque`),
+    official: t(`home.landing.personal.compare.rows.${key}.official`),
+    apexone: t(`home.landing.personal.compare.rows.${key}.apexone`)
+  }))
+)
 
 const uptimeCells = Array.from({ length: 25 }, (_, i) => ({ warn: i === 11 }))
 
-const modelPills = computed(() => [
-  t('home.landing.personal.aggregation.tags.claude'),
-  t('home.landing.personal.aggregation.tags.gpt'),
-  t('home.landing.personal.aggregation.tags.gemini'),
-  t('home.landing.personal.aggregation.tags.compatible')
-])
-
-const privacyBadges = computed(() => [
+const privacyPoints = computed(() => [
   t('home.landing.personal.privacy.points.tdx'),
   t('home.landing.personal.privacy.points.noRead'),
   t('home.landing.personal.privacy.points.attestation')
+])
+
+const uptimePoints = computed(() => [
+  t('home.landing.personal.uptime.points.failover'),
+  t('home.landing.personal.uptime.points.monitoring')
 ])
 
 // PRICING plans
@@ -458,20 +409,11 @@ const pricingPlans = computed(() => [
   }
 ])
 
-// TRUST
-const trustStats = computed(() => [
-  { value: '50%', label: t('home.landing.trust.stats.discount') },
-  { value: '99.99%', label: t('home.landing.trust.stats.availability') },
-  { value: 'TEE', label: t('home.landing.trust.stats.gateway') }
-])
-
-const trustPills = computed(() => [
-  t('home.landing.trust.pills.encrypted'),
-  t('home.landing.trust.pills.noTraining'),
-  t('home.landing.trust.pills.audit'),
-  t('home.landing.trust.pills.tee'),
-  t('home.landing.trust.pills.claudeLive'),
-  t('home.landing.trust.pills.compatible')
+// CTA pills
+const ctaPills = computed(() => [
+  t('home.landing.cta.pills.noTraining'),
+  t('home.landing.cta.pills.audit'),
+  t('home.landing.cta.pills.encrypted')
 ])
 
 // Scroll reveal — hysteresis avoids the enter/exit flicker when an element sits

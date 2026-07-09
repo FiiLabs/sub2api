@@ -348,75 +348,82 @@ export default {
     },
     landing: {
       hero: {
-        badge: 'Claude Fable 5 live · TEE-attested private routing',
-        title: 'The AI gateway you can actually verify, at half the official API price.',
+        badge: 'Claude Fable 5 Live Today',
+        title: 'Data privacy you can verify. Powered by TEE',
         subtitle:
-          'Use Claude through one OpenAI-compatible API, routed inside an Intel TDX confidential VM you can verify by remote attestation. ApexOne and intermediate infrastructure cannot read your prompts; for Claude, Anthropic receives plaintext under its own policy. GPT and Gemini are coming soon.',
-        label: '50% of official API pricing.',
-        verifyPrivacy: 'Verify privacy',
+          'Access frontier models like Claude through a TEE-protected gateway — your data stays private, every call is verifiable, all at 0.5x official API price.',
+        verifyPrivacy: 'Verify Privacy',
         stats: {
-          availability: 'availability target',
-          attested: 'TEE-attested routing',
-          discount: 'of official API pricing',
-          claude: 'Fable 5 live today'
+          discount: 'Of Official API Price',
+          attested: 'TEE Privacy Protection',
+          claude: 'Live Today',
+          hermes: 'Client Support'
         }
       },
       routing: {
-        eyebrow: '// Confidential routing architecture',
+        eyebrow: '// Confidential Routing Architecture',
+        title: "We can't sell your data. We can't even read it.",
+        subtitle:
+          'Unlike opaque gateways, ApexOne routes every request through a verifiable TEE — plaintext never touches our hands.',
         caption:
-          'Your prompt is decrypted only inside the attested ApexOne TEE, then forwarded to Anthropic for Claude processing. ApexOne operators, logs, and middle infrastructure cannot read it. The proof covers the gateway, code identity, and privacy boundary, not Anthropic model weights.',
-        privacy: {
-          title: 'Privacy boundary',
-          desc: "Plaintext is kept out of ApexOne's control plane, logs, operators, and middle infrastructure."
-        },
-        gateway: {
-          title: 'Gateway attestation',
-          desc: 'Remote attestation verifies the Intel TDX gateway, measured code, and attested encryption keys.'
-        }
+          'Decrypted only inside the attested TEE — never readable by ApexOne operators, logs, or infrastructure.'
       },
       personal: {
         eyebrow: '// ApexOne',
-        title: 'Private Claude routing, half the official API price.',
-        subtitle:
-          'Affordable AI shouldn\'t mean blind trust. ApexOne gives developers a Claude route at 50% of official API pricing, with a browser-verifiable TEE boundary around routing. The proof is precise: ApexOne and intermediate infrastructure cannot read your prompts; Anthropic remains the model provider for Claude.',
-        cost: {
-          title: 'Half of official API pricing, with a route you can verify.',
-          desc: 'A side-by-side look at price, privacy boundary, and proof scope.',
-          cutRate: {
-            label: 'Opaque gateway',
-            value: 'Unclear',
-            desc: 'Cheap, but the route, logging policy, and privacy boundary are unclear.'
+        title: 'Half the Price. None of the Snooping.',
+        subtitle: 'One gateway for price, privacy, and reliability — compare for yourself.',
+        compare: {
+          note: 'Based on official API billing price. ApexOne bills 50% of that price.',
+          cols: {
+            opaque: 'Opaque Gateway',
+            official: 'Official API',
+            apexone: 'ApexOne'
           },
-          direct: {
-            label: 'Provider direct',
-            value: 'Official API price',
-            desc: 'Official provider access, but no ApexOne TEE privacy boundary, failover, or unified billing layer.'
-          },
-          apexone: {
-            label: 'ApexOne',
-            value: '50% official API price',
-            desc: 'Claude Fable 5 live, TEE-attested routing, metadata-only control plane, automatic failover.'
-          },
-          note: 'Based on official API billing price. ApexOne bills 50% of that price.'
+          rows: {
+            price: {
+              label: 'Price',
+              opaque: 'Cheap, unclear how',
+              official: '1x Official Price',
+              apexone: '0.5x Official Price'
+            },
+            attestation: {
+              label: 'Verifiable Privacy (Remote Attestation)',
+              opaque: '❌',
+              official: '❌',
+              apexone: '✅'
+            },
+            dataAccess: {
+              label: 'Operator Can Read / Resell Your Data',
+              opaque: '⚠️ Yes',
+              official: 'Provider Policy',
+              apexone: "❌ Can't — TEE-Sealed"
+            },
+            fable: {
+              label: 'Claude Fable 5',
+              opaque: 'Unclear',
+              official: '✅',
+              apexone: '✅ Live Today'
+            },
+            failover: {
+              label: 'Automatic Failover',
+              opaque: '❌',
+              official: '❌',
+              apexone: '✅'
+            }
+          }
         },
         uptime: {
-          title: '99.99% availability target, automatic failover',
-          desc: 'We monitor route availability and can reroute traffic when a route is unavailable.',
-          window: 'availability target'
-        },
-        aggregation: {
-          title: 'Claude Fable 5 live, GPT and Gemini next',
-          desc: "Claude Fable 5 — Anthropic's most capable model — is live today through ApexOne's attested private route. GPT and Gemini are coming next.",
-          tags: {
-            claude: 'Claude Fable 5 live',
-            gpt: 'GPT coming soon',
-            gemini: 'Gemini coming soon',
-            compatible: 'OpenAI-compatible'
+          title: 'Always-On Routing',
+          desc: 'Multi-route architecture that reroutes traffic the moment a route degrades.',
+          window: 'Availability Design Target',
+          points: {
+            failover: 'Automatic failover when a route degrades',
+            monitoring: 'Real-time route health monitoring'
           }
         },
         privacy: {
-          title: 'TEE-sealed routing',
-          desc: "Your prompts and responses are decrypted only inside an Intel TDX confidential VM before the Claude handoff. ApexOne's control plane and operators cannot read them, and you can verify the boundary by remote attestation.",
+          title: 'TEE-Sealed Routing',
+          desc: 'Prompts are decrypted only inside an Intel TDX confidential VM — a boundary you can verify from your browser.',
           points: {
             tdx: 'Decrypted only inside Intel TDX before provider handoff',
             noRead: 'ApexOne operators and logs cannot read prompts',
@@ -426,49 +433,34 @@ export default {
       },
       pricing: {
         eyebrow: '// Pricing',
-        title: 'Half the official API price. Private route, provable.',
-        subtitle:
-          "ApexOne bills Claude access at 50% of official API pricing and routes requests through an attested TEE gateway. The discount is a pricing fact; the proof is the privacy boundary around ApexOne's route.",
+        title: 'Pay as you go, at half the official price.',
+        subtitle: 'Billed per token at 50% of official API pricing — no subscriptions, no minimums.',
         personal: {
           name: 'ApexOne',
-          tagline: 'Pay as you go',
+          tagline: 'Pay As You Go',
           priceLine: '50% of official API billing price, per token.',
-          desc: 'For developers who want Claude access, verifiable private routing, and transparent usage billing.',
+          desc: 'For developers who want Claude access with verifiable private routing and transparent billing.',
           cta: 'Get Started →',
           features: {
-            f1: 'Claude Fable 5 live today; GPT and Gemini coming soon',
-            f2: '50% of official API billing price',
-            f3: 'TEE-attested gateway + remote attestation',
-            f4: "Metadata-only control plane; prompts stay out of ApexOne logs and operators' reach",
-            f5: 'Automatic failover & 99.99% availability target',
-            f6: 'OpenAI-compatible API'
+            f1: 'Claude Fable 5 Live Today; GPT and Gemini Coming Soon',
+            f2: '50% of Official API Billing Price',
+            f3: 'TEE-Attested Gateway + Remote Attestation',
+            f4: 'Metadata-Only Control Plane — Prompts Never Logged',
+            f5: 'Automatic Failover & Real-Time Route Monitoring',
+            f6: 'OpenAI-Compatible API — Works with Hermes and Other Clients'
           }
         }
       },
-      trust: {
-        eyebrow: '// Trusted at scale',
-        title: 'Built for production.',
-        stats: {
-          discount: 'official API pricing',
-          availability: 'availability target',
-          gateway: 'verified gateway'
-        },
-        pills: {
-          encrypted: '🔒 Encrypted in transit',
-          noTraining: '🚫 No training on your data',
-          audit: '📋 Metadata-only audit logs',
-          tee: '🛡 TEE-verified gateway',
-          claudeLive: '✅ Claude Fable 5 live',
-          compatible: '⚡ OpenAI-compatible'
-        }
-      },
       cta: {
-        titleFirst: 'Build on AI access you can verify.',
-        titleSecond: 'Claude Fable 5 live. Private routing. Half official API pricing.',
-        description:
-          "Focus on your product. ApexOne gives you Claude access at 50% of official API pricing, plus proof that ApexOne's route is private before Anthropic receives the request.",
+        title: 'Build on AI You Can Verify.',
+        description: 'Claude Fable 5, half the official price, sealed inside a TEE.',
         primary: 'Get Started →',
-        secondary: 'Verify privacy →'
+        secondary: 'Verify Privacy →',
+        pills: {
+          noTraining: '🚫 No Training on Your Data',
+          audit: '📋 Metadata-Only Audit Logs',
+          encrypted: '🔒 Encrypted in Transit'
+        }
       }
     },
     footer: {
@@ -476,7 +468,7 @@ export default {
       stayConnected: 'Stay Connected',
       allRightsReserved: 'All rights reserved.',
       trademarkNotice:
-        '*Claude is a trademark of Anthropic, PBC. ApexOne is an independent service and is not affiliated with or sponsored by Anthropic.'
+        '*Claude is a trademark of Anthropic, PBC. ApexOne is an independent service and is not affiliated with Anthropic.'
     }
   },
 

@@ -70,31 +70,54 @@ describe('HomeView ApexOne landing content', () => {
     vi.unstubAllGlobals()
   })
 
-  it('renders ApexOne as a single private Claude route without overclaiming model proof', () => {
+  it('renders the verifiable-privacy landing without overclaiming model proof or uptime', () => {
     const wrapper = mountHomeView()
     const text = wrapper.text()
 
-    expect(text).toContain('The AI gateway you can actually verify, at half the official API price.')
-    expect(text).toContain('Claude Fable 5 live · TEE-attested private routing')
-    expect(text).toContain('Anthropic receives plaintext under its own policy')
-    expect(text).toContain('50% of official API pricing')
-    expect(text).toContain('Claude Fable 5 live, GPT and Gemini next')
-    expect(text).toContain('GPT coming soon')
-    expect(text).toContain('99.99% availability target')
-    expect(text).toContain('TEE-verified gateway')
-    expect(text).toContain('Metadata-only audit logs')
-    expect(text).toContain('ApexOne')
-    expect(text).toContain('ApexOne — Pay as you go')
+    // Hero
+    expect(text).toContain('Data privacy you can verify. Powered by TEE')
+    expect(text).toContain('Claude Fable 5 Live Today')
+    expect(text).toContain('0.5x official API price')
+    expect(text).toContain('TEE Privacy Protection')
+    expect(text).toContain('Hermes')
+    expect(text).toContain('Client Support')
+
+    // Architecture core claim
+    expect(text).toContain("We can't sell your data. We can't even read it.")
+    expect(text).toContain('plaintext never touches our hands')
+
+    // Comparison table
+    expect(text).toContain('Half the Price. None of the Snooping.')
+    expect(text).toContain('Opaque Gateway')
+    expect(text).toContain('Official API')
+    expect(text).toContain('Operator Can Read / Resell Your Data')
+    expect(text).toContain("Can't — TEE-Sealed")
+    expect(text).toContain('Provider Policy')
+
+    // Conservative availability wording
+    expect(text).toContain('Availability Design Target')
+    expect(text).toContain('Automatic failover')
+
+    // Pricing & CTA
+    expect(text).toContain('ApexOne — Pay As You Go')
+    expect(text).toContain('GPT and Gemini Coming Soon')
+    expect(text).toContain('Build on AI You Can Verify.')
+    expect(text).toContain('No Training on Your Data')
+    expect(text).toContain('Metadata-Only Audit Logs')
     expect(text).toContain('Claude is a trademark of Anthropic, PBC.')
 
+    // Overclaim guards
     expect(text).not.toContain('Verified-real models')
     expect(text).not.toContain('Real-model guarantee')
     expect(text).not.toContain('90-day availability')
     expect(text).not.toContain('Uptime SLA')
-    expect(text).not.toContain('GPT-5.x')
+    expect(text).not.toContain('99.99% Uptime')
+    expect(text).not.toContain('availability target')
+    expect(text).not.toContain('GPT-5')
     expect(text).not.toContain('Anthropic 4.x')
     expect(text).not.toContain('never silently swapped')
     expect(text).not.toContain('full-precision')
+    expect(text).not.toContain('or sponsored by')
     expect(text).not.toContain('Explore Team')
     expect(text).not.toContain('PublicAI Team')
     expect(text).not.toContain('From 10% of list price')
