@@ -5,7 +5,7 @@
     <div class="flex flex-col items-center justify-between gap-2 sm:flex-row">
       <!-- 版权 -->
       <span class="text-xs text-gray-500 dark:text-dark-400">
-        © {{ currentYear }} PublicAI Foundation · All rights reserved
+        © {{ currentYear }} ApexOne · All rights reserved
       </span>
 
       <!-- 联系方式 + 社区 -->
