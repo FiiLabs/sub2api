@@ -34,7 +34,7 @@ command -v jq >/dev/null || { echo "error: jq required"; exit 1; }
 [ -f "$SEATS" ] || { echo "error: manifest not found: $SEATS"; exit 1; }
 
 # Meridian image (pin by digest -> measured into the CVM's compose_hash).
-IMAGE="docker.io/markerdao/meridian-enclave@sha256:9d0bdeed86187726c00afcf407430c592be83286e70eb3fc2e6ff7ae6326fc6a"
+IMAGE="docker.io/markerdao/meridian-enclave@sha256:cbabc10ffba8c029940048069196d98cfaee98e4b9eeab2386adec77b575053a"
 # Attestation sidecar image (built from ./attestor). ONE per CVM: all seats share
 # this CVM's single dstack identity, so one nonce-bound quote covers them all.
 # Pin by digest -> also measured into compose_hash. Public endpoint on :8091.
