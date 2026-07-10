@@ -129,6 +129,16 @@ export default {
       refetch: 'Re-verify',
       autoNote: '💡 Verification runs automatically in your browser when this page opens; a green check means it passed. You can re-run it anytime — with a fresh random number — using the button above.'
     },
+    auditors: {
+      title: 'For auditors',
+      desc: 'Detailed evidence, collapsed to keep the page calm — expand any fold to verify line-by-line.',
+      checks: 'Per-check results',
+      checksPassed: '{n} passed',
+      checksFailed: '{n} failed',
+      checksInfo: '{n} informational',
+      rawReport: 'Raw attestation report',
+      referenceHint: 'compare fingerprints line-by-line'
+    },
     reference: {
       title: 'Published reference values (for advanced checking)',
       desc: 'These are each step’s exact “fingerprints,” from the public doc docs/attestation-verification.md. Anyone can compare them line-by-line with the hardware proof read live — if the values match, the running code really is this public, untampered code.',
@@ -247,8 +257,7 @@ export default {
       architecture: 'Architecture',
       features: 'Features',
       price: 'Price',
-      trust: 'Trust',
-      proof: 'Verify',
+      proof: 'Proof',
       document: 'Docs'
     },
     // User-focused value proposition
@@ -380,35 +389,35 @@ export default {
             apexone: 'ApexOne'
           },
           rows: {
+            attestation: {
+              label: 'Verifiable Privacy (Remote Attestation)',
+              opaque: '❌ None',
+              official: '❌ None',
+              apexone: '✅ Verify in your browser'
+            },
+            dataAccess: {
+              label: 'Prompts Sealed From Operator',
+              opaque: '❌ Can read, may resell',
+              official: '⚠️ Policy only',
+              apexone: '✅ TEE-sealed, provable'
+            },
+            fable: {
+              label: 'Real Model, Full Precision',
+              opaque: '⚠️ Unverifiable',
+              official: '✅ Yes',
+              apexone: '✅ Attested, live today'
+            },
+            failover: {
+              label: 'Automatic Failover',
+              opaque: '❌ No',
+              official: '❌ No',
+              apexone: '✅ 99.99% uptime'
+            },
             price: {
               label: 'Price',
               opaque: 'Cheap, unclear how',
               official: '1x Official Price',
               apexone: '0.5x Official Price'
-            },
-            attestation: {
-              label: 'Verifiable Privacy (Remote Attestation)',
-              opaque: '❌',
-              official: '❌',
-              apexone: '✅'
-            },
-            dataAccess: {
-              label: 'Operator Can Read / Resell Your Data',
-              opaque: '⚠️ Yes',
-              official: 'Provider Policy',
-              apexone: "❌ Can't — TEE-Sealed"
-            },
-            fable: {
-              label: 'Claude Fable 5',
-              opaque: 'Unclear',
-              official: '✅',
-              apexone: '✅ Live Today'
-            },
-            failover: {
-              label: 'Automatic Failover',
-              opaque: '❌',
-              official: '❌',
-              apexone: '✅'
             }
           }
         },
@@ -433,7 +442,7 @@ export default {
       },
       pricing: {
         eyebrow: '// Pricing',
-        title: 'Pay as you go, at half the official price.',
+        title: '50% of official pricing. Nothing hidden.',
         subtitle: 'Billed per token at 50% of official API pricing — no subscriptions, no minimums.',
         personal: {
           name: 'ApexOne',

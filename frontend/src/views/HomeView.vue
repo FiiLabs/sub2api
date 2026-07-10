@@ -372,7 +372,7 @@ const heroStats = computed(() => [
 ])
 
 // APEXONE comparison table
-const compareRowKeys = ['price', 'attestation', 'dataAccess', 'fable', 'failover'] as const
+const compareRowKeys = ['attestation', 'dataAccess', 'fable', 'failover', 'price'] as const
 
 const compareRows = computed(() =>
   compareRowKeys.map((key) => ({

@@ -1,21 +1,6 @@
 <template>
-  <div class="min-h-screen bg-gray-50 text-gray-900 dark:bg-dark-950 dark:text-white">
-    <header class="border-b border-gray-200 bg-white/95 dark:border-dark-800 dark:bg-dark-900/95">
-      <div class="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
-        <RouterLink to="/home" class="flex min-w-0 items-center gap-3">
-          <span class="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-dark-800 dark:ring-dark-700">
-            <img :src="siteLogo || '/logo.png'" alt="Logo" class="h-full w-full object-contain" />
-          </span>
-          <span class="truncate text-base font-semibold text-gray-950 dark:text-white">{{ siteName }}</span>
-        </RouterLink>
-        <div class="flex flex-shrink-0 items-center gap-3">
-          <LocaleSwitcher />
-          <RouterLink to="/home" class="text-sm font-medium text-gray-500 hover:text-gray-800 dark:text-dark-300 dark:hover:text-white">
-            {{ t('proof.header.backHome') }}
-          </RouterLink>
-        </div>
-      </div>
-    </header>
+  <div class="min-h-screen bg-gray-50 pt-16 text-gray-900 dark:bg-dark-950 dark:text-white md:pt-[72px]">
+    <Header />
 
     <main class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:py-10">
       <!-- Hero / scope -->
@@ -105,27 +90,46 @@
           </div>
         </div>
 
-        <ol class="relative space-y-4 border-l-2 border-dashed border-gray-200 pl-6 dark:border-dark-700">
-          <li v-for="(hop, i) in hops" :key="hop.key" class="relative">
-            <span
-              class="absolute -left-[31px] flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ring-4 ring-gray-50 dark:ring-dark-950"
-              :class="hop.confidential
-                ? 'bg-primary-600 text-white'
-                : 'bg-amber-500 text-white'"
-            >{{ i + 1 }}</span>
-            <div class="rounded-lg border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-900">
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <p class="font-mono text-sm font-semibold text-gray-900 dark:text-white">{{ hop.node }}</p>
-                <span
-                  class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium"
-                  :class="statusClass(hop.status)"
-                >{{ t('proof.status.' + hop.status) }}</span>
-              </div>
-              <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-dark-300">{{ hop.claim }}</p>
+        <!-- Accordion: the status badge stays visible on the collapsed header row so
+             progress is readable at a glance; claim + basis collapse to cut text. -->
+        <div class="space-y-3">
+          <div
+            v-for="(hop, i) in hops"
+            :key="hop.key"
+            class="overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-900"
+          >
+            <button
+              type="button"
+              class="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-gray-50 dark:hover:bg-dark-800/60"
+              :aria-expanded="isHopOpen(hop)"
+              @click="toggleHop(hop.key)"
+            >
+              <span
+                class="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                :class="hop.confidential ? 'bg-primary-600' : 'bg-amber-500'"
+              >{{ i + 1 }}</span>
+              <span class="min-w-0 flex-1 truncate font-mono text-sm font-semibold text-gray-900 dark:text-white">{{ hop.node }}</span>
+              <span
+                class="inline-flex flex-shrink-0 items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium"
+                :class="statusClass(hop.status)"
+              >{{ t('proof.status.' + hop.status) }}</span>
+              <svg
+                class="h-4 w-4 flex-shrink-0 text-gray-400 transition-transform dark:text-dark-500"
+                :class="{ 'rotate-90': isHopOpen(hop) }"
+                fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+            <div
+              v-show="isHopOpen(hop)"
+              class="border-t border-gray-100 px-4 py-3 pl-[52px] dark:border-dark-800"
+            >
+              <p class="text-sm leading-6 text-gray-600 dark:text-dark-300">{{ hop.claim }}</p>
               <p class="mt-2 text-xs text-gray-400 dark:text-dark-500">{{ t('proof.journey.basisLabel') }}: {{ hop.basis }}</p>
             </div>
-          </li>
-        </ol>
+          </div>
+        </div>
       </section>
 
       <!-- Honest disclosure: Anthropic sees plaintext -->
@@ -218,20 +222,8 @@
             <p>{{ t('proof.verify.clockSkew.detail', { amount: skewAmount, direction: skewDirection }) }}</p>
             <p class="font-medium">{{ t('proof.verify.clockSkew.fix') }}</p>
           </div>
-          <template v-if="allChecks.length">
-            <p class="mt-3 text-xs font-semibold uppercase tracking-wide opacity-70">{{ t('proof.verify.checksTitle') }}</p>
-            <ul class="mt-1 space-y-1">
-              <li
-                v-for="c in allChecks"
-                :key="c.id"
-                class="flex flex-wrap items-baseline gap-x-2 font-mono text-xs"
-              >
-                <span :class="checkMark(c).class">{{ checkMark(c).sym }}</span>
-                <span class="text-gray-700 dark:text-dark-200">{{ c.id }}</span>
-                <span v-if="c.detail" class="break-all text-gray-400 dark:text-dark-500">— {{ c.detail }}</span>
-              </li>
-            </ul>
-          </template>
+          <!-- Full per-check list lives in the collapsed "For auditors" section below;
+               the banner keeps only the headline + named failing checks. -->
           <!-- "Live" proof: show when this ran and let the user re-run against a fresh nonce. -->
           <div v-if="verifiedAt && !busy" class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-current/10 pt-2 text-xs opacity-70">
             <span>{{ t('proof.verify.lastVerified', { time: verifiedAtLabel }) }}</span>
@@ -240,7 +232,6 @@
           </div>
         </div>
 
-        <pre v-if="report" class="mt-4 max-h-96 overflow-auto rounded-lg bg-gray-950 p-4 text-xs leading-5 text-gray-100">{{ reportJson }}</pre>
       </section>
 
       <!-- Path A — hop-1 browser-level E2EE proof -->
@@ -414,46 +405,99 @@
         </div>
       </section>
 
-      <!-- Published reference values -->
+      <!-- For auditors — detailed evidence, collapsed by default to keep the page calm.
+           The headline verification result stays visible in the banner above; these
+           folds hold the exhaustive per-check list, the raw report, and the reference
+           fingerprints for anyone who wants to verify line-by-line. -->
       <section class="mb-10">
-        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('proof.reference.title') }}</h2>
-        <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-dark-300">{{ t('proof.reference.desc') }}</p>
-        <div class="mt-4 space-y-6">
-          <div v-for="ref in references" :key="ref.title">
-            <h3 class="mb-2 text-sm font-semibold text-gray-800 dark:text-dark-100">{{ ref.title }}</h3>
-            <div class="overflow-x-auto rounded-lg border border-gray-200 dark:border-dark-700">
-              <table class="w-full border-collapse text-left text-xs">
-                <tbody>
-                  <tr v-for="row in ref.rows" :key="row.label" class="border-b border-gray-100 last:border-0 dark:border-dark-800">
-                    <th class="whitespace-nowrap bg-gray-50 px-3 py-2 font-medium text-gray-600 dark:bg-dark-800/60 dark:text-dark-300">{{ row.label }}</th>
-                    <td class="break-all px-3 py-2 font-mono text-gray-800 dark:text-dark-100">
-                      <a
-                        v-if="row.href"
-                        :href="row.href"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="inline-flex items-center gap-1 text-primary-600 underline decoration-primary-300/40 underline-offset-4 transition hover:text-primary-700 hover:decoration-primary-500 dark:text-primary-300"
-                      >
-                        {{ row.value }}
-                        <Icon name="externalLink" size="xs" class="flex-shrink-0 opacity-60" />
-                      </a>
-                      <span v-else>{{ row.value }}</span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('proof.auditors.title') }}</h2>
+        <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-dark-300">{{ t('proof.auditors.desc') }}</p>
+
+        <div class="mt-4 space-y-3">
+          <!-- ① Per-check results -->
+          <details v-if="allChecks.length" class="overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-900">
+            <summary class="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-gray-900 dark:text-white">
+              {{ t('proof.auditors.checks') }}
+              <span class="ml-1 text-xs font-normal text-gray-400 dark:text-dark-500">{{ checksSummary }}</span>
+            </summary>
+            <div class="border-t border-gray-100 px-4 py-3 dark:border-dark-800">
+              <ul class="space-y-1">
+                <li
+                  v-for="c in allChecks"
+                  :key="c.id"
+                  class="flex flex-wrap items-baseline gap-x-2 font-mono text-xs"
+                >
+                  <span :class="checkMark(c).class">{{ checkMark(c).sym }}</span>
+                  <span class="text-gray-700 dark:text-dark-200">{{ c.id }}</span>
+                  <span v-if="c.detail" class="break-all text-gray-400 dark:text-dark-500">— {{ c.detail }}</span>
+                </li>
+              </ul>
             </div>
-          </div>
+          </details>
+
+          <!-- ② Raw attestation report (JSON) -->
+          <details v-if="report" class="overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-900">
+            <summary class="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-gray-900 dark:text-white">
+              {{ t('proof.auditors.rawReport') }}
+              <span class="ml-1 font-mono text-xs font-normal text-gray-400 dark:text-dark-500">report.json</span>
+            </summary>
+            <div class="border-t border-gray-100 px-4 py-3 dark:border-dark-800">
+              <button
+                type="button"
+                class="mb-3 inline-flex items-center rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-50 dark:border-dark-600 dark:text-dark-200 dark:hover:bg-dark-800"
+                @click="downloadReport"
+              >{{ t('proof.live.download') }}</button>
+              <pre class="max-h-96 overflow-auto rounded-lg bg-gray-950 p-4 text-xs leading-5 text-gray-100">{{ reportJson }}</pre>
+            </div>
+          </details>
+
+          <!-- ③ Published reference values -->
+          <details class="overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-900">
+            <summary class="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-gray-900 dark:text-white">
+              {{ t('proof.reference.title') }}
+              <span class="ml-1 text-xs font-normal text-gray-400 dark:text-dark-500">{{ t('proof.auditors.referenceHint') }}</span>
+            </summary>
+            <div class="border-t border-gray-100 px-4 py-3 dark:border-dark-800">
+              <p class="mb-4 text-sm leading-6 text-gray-600 dark:text-dark-300">{{ t('proof.reference.desc') }}</p>
+              <div class="space-y-6">
+                <div v-for="ref in references" :key="ref.title">
+                  <h3 class="mb-2 text-sm font-semibold text-gray-800 dark:text-dark-100">{{ ref.title }}</h3>
+                  <div class="overflow-x-auto rounded-lg border border-gray-200 dark:border-dark-700">
+                    <table class="w-full border-collapse text-left text-xs">
+                      <tbody>
+                        <tr v-for="row in ref.rows" :key="row.label" class="border-b border-gray-100 last:border-0 dark:border-dark-800">
+                          <th class="whitespace-nowrap bg-gray-50 px-3 py-2 font-medium text-gray-600 dark:bg-dark-800/60 dark:text-dark-300">{{ row.label }}</th>
+                          <td class="break-all px-3 py-2 font-mono text-gray-800 dark:text-dark-100">
+                            <a
+                              v-if="row.href"
+                              :href="row.href"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              class="inline-flex items-center gap-1 text-primary-600 underline decoration-primary-300/40 underline-offset-4 transition hover:text-primary-700 hover:decoration-primary-500 dark:text-primary-300"
+                            >
+                              {{ row.value }}
+                              <Icon name="externalLink" size="xs" class="flex-shrink-0 opacity-60" />
+                            </a>
+                            <span v-else>{{ row.value }}</span>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+              <p class="mt-4 text-xs leading-5 text-gray-500 dark:text-dark-400">
+                {{ t('proof.reference.ciNote') }}
+                <a
+                  :href="ciWorkflowUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-primary-600 underline decoration-primary-300/40 underline-offset-4 hover:text-primary-700 hover:decoration-primary-500 dark:text-primary-300"
+                >publish-tee-images.yml</a>
+              </p>
+            </div>
+          </details>
         </div>
-        <p class="mt-4 text-xs leading-5 text-gray-500 dark:text-dark-400">
-          {{ t('proof.reference.ciNote') }}
-          <a
-            :href="ciWorkflowUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="text-primary-600 underline decoration-primary-300/40 underline-offset-4 hover:text-primary-700 hover:decoration-primary-500 dark:text-primary-300"
-          >publish-tee-images.yml</a>
-        </p>
       </section>
 
     </main>
@@ -464,9 +508,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
-import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
-import { getPublicSettings } from '@/api/auth'
-import { sanitizeUrl } from '@/utils/url'
+import Header from '@/components/layout/Header.vue'
 import { fetchAttestationReport, fetchMeridianQuote, type AttestationReport } from '@/api/attestation'
 import { verifyAci, type VerifyAciResult, type Check } from '@/utils/attestation'
 import {
@@ -492,10 +534,6 @@ import {
 } from '@/constants/attestation'
 
 const { t, te } = useI18n()
-
-// --- Site chrome (logo / name), same pattern as LegalDocumentView ---
-const siteName = ref('ApexOne')
-const siteLogo = ref('')
 
 // --- Verification state ---
 const fetching = ref(false) // fetching the report + running ACI binding (2a)
@@ -613,6 +651,18 @@ function checkMark(c: DisplayCheck): { sym: string; class: string } {
 const failingChecks = computed<DisplayCheck[]>(() =>
   allChecks.value.filter((c) => !c.ok && c.gating !== false),
 )
+
+// Summary line for the collapsed "Per-check results" fold, e.g. "30 passed · 2 informational".
+const checksSummary = computed(() => {
+  const checks = allChecks.value
+  const passed = checks.filter((c) => c.ok).length
+  const failed = checks.filter((c) => !c.ok && c.gating !== false).length
+  const info = checks.filter((c) => !c.ok && c.gating === false).length
+  const parts = [t('proof.auditors.checksPassed', { n: passed })]
+  if (failed) parts.push(t('proof.auditors.checksFailed', { n: failed }))
+  if (info) parts.push(t('proof.auditors.checksInfo', { n: info }))
+  return parts.join(' · ')
+})
 /** Plain-English label for a check id, falling back to a de-jargoned form of the id. */
 function friendlyCheckName(id: string): string {
   // vue-i18n splits keys on '.', so the map is keyed with '.'→'_' (e.g. report_freshness).
@@ -721,6 +771,17 @@ const hops = computed<Hop[]>(() => [
     status: 'disclosure',
   },
 ])
+
+// Accordion open-state: hop1 open by default; a hop that fails verification always
+// renders expanded (its failure must be visible), regardless of manual toggling.
+const openHops = ref<Record<string, boolean>>({ hop1: true })
+function toggleHop(key: string) {
+  openHops.value[key] = !openHops.value[key]
+}
+function isHopOpen(hop: Hop): boolean {
+  if (hop.status === 'fail') return true
+  return !!openHops.value[hop.key]
+}
 
 function statusClass(status: HopStatus): string {
   switch (status) {
@@ -930,14 +991,7 @@ async function runLive() {
   }
 }
 
-onMounted(async () => {
-  try {
-    const settings = await getPublicSettings()
-    siteName.value = settings?.site_name || 'ApexOne'
-    siteLogo.value = sanitizeUrl(settings?.site_logo || '', { allowRelative: true, allowDataUrl: true })
-  } catch {
-    // Non-fatal: fall back to defaults.
-  }
+onMounted(() => {
   // Auto-run the (free, no-token) verification on load so a first-time visitor
   // immediately sees it verifying live (checking → verified) instead of a scary
   // idle "not verified" state they'd have to know to click a button to leave.

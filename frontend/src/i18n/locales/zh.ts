@@ -127,6 +127,16 @@ export default {
       refetch: '重新验证',
       autoNote: '💡 打开本页时会自动在你的浏览器里验证；出现绿色对勾就代表通过。你也可以随时点上方按钮、用一组新的随机数重新验证。'
     },
+    auditors: {
+      title: '给审计者',
+      desc: '详细证据默认折叠，保持页面清爽——展开任一项即可逐行核对。',
+      checks: '逐项检查结果',
+      checksPassed: '{n} 项通过',
+      checksFailed: '{n} 项失败',
+      checksInfo: '{n} 项提示',
+      rawReport: '原始认证报告',
+      referenceHint: '逐行比对指纹'
+    },
     reference: {
       title: '公布的参考值（供进阶核对）',
       desc: '这些是各环节的“精确指纹”，来自公开文档 docs/attestation-verification.md。任何第三方都能用它们和实时读到的硬件证明逐条比对——数值一致，就说明跑的确实是这套公开、未被篡改的代码。',
@@ -244,8 +254,7 @@ export default {
       architecture: '架构',
       features: '特性',
       price: '价格',
-      trust: '可信',
-      proof: '验证',
+      proof: '证明',
       document: '文档'
     },
     // 新增：面向用户的价值主张
@@ -376,35 +385,35 @@ export default {
             apexone: 'ApexOne'
           },
           rows: {
+            attestation: {
+              label: '可验证隐私（远程认证）',
+              opaque: '❌ 无',
+              official: '❌ 无',
+              apexone: '✅ 浏览器中自证'
+            },
+            dataAccess: {
+              label: '提示词对运营方密封',
+              opaque: '❌ 可读取，可能转卖',
+              official: '⚠️ 仅靠政策承诺',
+              apexone: '✅ TEE 密封，可证明'
+            },
+            fable: {
+              label: '真实模型，完整精度',
+              opaque: '⚠️ 无法验证',
+              official: '✅ 是',
+              apexone: '✅ 已认证，今日可用'
+            },
+            failover: {
+              label: '自动故障切换',
+              opaque: '❌ 无',
+              official: '❌ 无',
+              apexone: '✅ 99.99% 可用性'
+            },
             price: {
               label: '价格',
               opaque: '便宜，但说不清为什么',
               official: '官方原价',
               apexone: '官方价格五折'
-            },
-            attestation: {
-              label: '可验证隐私（远程认证）',
-              opaque: '❌',
-              official: '❌',
-              apexone: '✅'
-            },
-            dataAccess: {
-              label: '运营方能否读取 / 转卖你的数据',
-              opaque: '⚠️ 能',
-              official: '按服务方政策',
-              apexone: '❌ 拿不到——TEE 密封'
-            },
-            fable: {
-              label: 'Claude Fable 5',
-              opaque: '不明确',
-              official: '✅',
-              apexone: '✅ 今日可用'
-            },
-            failover: {
-              label: '自动故障切换',
-              opaque: '❌',
-              official: '❌',
-              apexone: '✅'
             }
           }
         },
@@ -429,7 +438,7 @@ export default {
       },
       pricing: {
         eyebrow: '// 价格',
-        title: '按量付费，官方价格一半。',
+        title: '官方价格一半，透明公开。',
         subtitle: '按 token 计费，价格为官方 API 的 50%——没有订阅，没有最低消费。',
         personal: {
           name: 'ApexOne',

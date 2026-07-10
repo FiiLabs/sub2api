@@ -679,10 +679,16 @@ const routes: RouteRecordRaw[] = [
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes,
-  scrollBehavior(_to, _from, savedPosition) {
+  scrollBehavior(to, _from, savedPosition) {
     // Scroll to saved position when using browser back/forward
     if (savedPosition) {
       return savedPosition
+    }
+    // Cross-page nav anchor (e.g. Header on /proof → /home#pricing): scroll to the
+    // target section, offset for the fixed header. Must live here — returning to top
+    // below would otherwise override any scroll done in the component's onMounted.
+    if (to.hash) {
+      return { el: to.hash, top: 80, behavior: 'smooth' }
     }
     // Scroll to top for new routes
     return { top: 0 }
