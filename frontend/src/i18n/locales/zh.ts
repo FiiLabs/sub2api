@@ -36,12 +36,12 @@ export default {
         basis: '代码指纹 → 公开源码版本；带签名的回执'
       },
       hop3: {
-        node: 'ApexOne 网关 → Meridian（第二台机密硬件）',
+        node: 'ApexOne 网关 → Bridge（第二台机密硬件）',
         claim: '内部这一步仍然落在第二台受硬件保护的机密电脑里——它负责把请求桥接到上游 Claude 服务。',
         basis: '独立的 Intel 硬件证明 + 代码指纹'
       },
       hop4: {
-        node: 'Meridian → Anthropic',
+        node: 'Bridge → Anthropic',
         claim:
           '这一步无法保密：Anthropic 会按它自己的政策解密并处理你的明文。我们只能证明“请求确实是从受认证的机密电脑发出的”。',
         basis: '诚实说明——这不是保密承诺'
@@ -51,9 +51,9 @@ export default {
       device: '你的设备',
       deviceSub: '输入 prompt',
       teeLabel: 'ApexOne · Intel TDX 机密 VM（硬件隔离、内存加密）',
-      gateway: '网关 A',
+      gateway: 'ApexOne TEE',
       gatewaySub: '加密在此解开',
-      meridian: 'Meridian B',
+      meridian: 'Bridge TEE',
       meridianSub: '桥接上游 Claude 服务',
       anthropic: 'Anthropic',
       anthropicSub: '看到明文（按其政策）',
@@ -78,7 +78,7 @@ export default {
       },
       pass: {
         title: '硬件级验证通过',
-        note: '这是真正的 Intel 机密硬件，跑的是经审计、指纹匹配的确切代码，并把证明绑定到了你这次的一次性随机数上，说明它是刚生成的、不是回放的旧数据。第 3 步（Meridian）在其证明服务可达时于下方单独验证。诚实边界：网关→Meridian 这一步跨网络时是明文（靠加密连接和访问令牌保护），而第 4 步 Anthropic 按设计会看到你的明文。'
+        note: '这是真正的 Intel 机密硬件，跑的是经审计、指纹匹配的确切代码，并把证明绑定到了你这次的一次性随机数上，说明它是刚生成的、不是回放的旧数据。第 3 步（Bridge）在其证明服务可达时于下方单独验证。诚实边界：网关→Bridge 这一步跨网络时是明文（靠加密连接和访问令牌保护），而第 4 步 Anthropic 按设计会看到你的明文。'
       },
       fail: {
         title: '验证未通过',
@@ -141,7 +141,7 @@ export default {
       title: '公布的参考值（供进阶核对）',
       desc: '这些是各环节的“精确指纹”，来自公开文档 docs/attestation-verification.md。任何第三方都能用它们和实时读到的硬件证明逐条比对——数值一致，就说明跑的确实是这套公开、未被篡改的代码。',
       gateway: '网关 — 机密电脑 A（保密线路）',
-      meridian: 'Meridian — 机密电脑 B（非保密桥接）',
+      meridian: 'Bridge — 机密电脑 B（桥接上游服务）',
       appId: '应用标识 (App ID)',
       osImage: '操作系统镜像',
       composeHash: '部署内容指纹 (compose_hash)',

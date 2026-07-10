@@ -36,13 +36,13 @@ export default {
         basis: 'Code fingerprint → public source version; signed receipt'
       },
       hop3: {
-        node: 'ApexOne gateway → Meridian (a second secure computer)',
+        node: 'ApexOne gateway → Bridge (a second secure computer)',
         claim:
           'This internal step still stays inside a second hardware-protected secure computer — the one that bridges to the upstream Claude service.',
         basis: 'Independent Intel hardware proof + code fingerprint'
       },
       hop4: {
-        node: 'Meridian → Anthropic',
+        node: 'Bridge → Anthropic',
         claim:
           'This step cannot be private: Anthropic decrypts and processes your prompt in the clear under its own policies. All we can prove is that the request truly left from the authenticated secure computer.',
         basis: 'Honest note — not a confidentiality claim'
@@ -52,9 +52,9 @@ export default {
       device: 'Your device',
       deviceSub: 'You type a prompt',
       teeLabel: 'ApexOne · Intel TDX confidential VM (hardware-isolated, memory-encrypted)',
-      gateway: 'Gateway A',
+      gateway: 'ApexOne TEE',
       gatewaySub: 'decryption happens here',
-      meridian: 'Meridian B',
+      meridian: 'Bridge TEE',
       meridianSub: 'bridges to the upstream Claude service',
       anthropic: 'Anthropic',
       anthropicSub: 'sees plaintext (its policy)',
@@ -79,7 +79,7 @@ export default {
       },
       pass: {
         title: 'Hardware-level verification passed',
-        note: 'This is genuine Intel secure hardware, running exactly the audited, fingerprint-matching code, with the proof tied to your fresh one-time random number — showing it was just generated, not an old replayed one. Step 3 (Meridian) is checked separately below when its proof service is reachable. Honest limits: the gateway→Meridian step crosses the network as plaintext (protected by the encrypted connection and an access token), and step 4 — Anthropic — sees your plaintext by design.'
+        note: 'This is genuine Intel secure hardware, running exactly the audited, fingerprint-matching code, with the proof tied to your fresh one-time random number — showing it was just generated, not an old replayed one. Step 3 (Bridge) is checked separately below when its proof service is reachable. Honest limits: the gateway→Bridge step crosses the network as plaintext (protected by the encrypted connection and an access token), and step 4 — Anthropic — sees your plaintext by design.'
       },
       fail: {
         title: 'Verification FAILED',
@@ -143,7 +143,7 @@ export default {
       title: 'Published reference values (for advanced checking)',
       desc: 'These are each step’s exact “fingerprints,” from the public doc docs/attestation-verification.md. Anyone can compare them line-by-line with the hardware proof read live — if the values match, the running code really is this public, untampered code.',
       gateway: 'Gateway — secure computer A (confidential path)',
-      meridian: 'Meridian — secure computer B (non-confidential bridge)',
+      meridian: 'Bridge — secure computer B (bridges to the upstream service)',
       appId: 'App ID',
       osImage: 'OS image',
       composeHash: 'Deployment fingerprint (compose_hash)',

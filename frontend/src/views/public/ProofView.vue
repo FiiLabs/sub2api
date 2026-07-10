@@ -636,7 +636,7 @@ type DisplayCheck = Check & { gating?: boolean }
 const allChecks = computed<DisplayCheck[]>(() => [
   ...(aciResult.value?.checks ?? []),
   ...(quoteResult.value?.checks ?? []).map((c) => ({ ...c, id: `quote.${c.id}` })),
-  ...(meridianResult.value?.checks ?? []).map((c) => ({ ...c, id: `meridian.${c.id}` })),
+  ...(meridianResult.value?.checks ?? []).map((c) => ({ ...c, id: `bridge.${c.id}` })),
   ...(e2eeResult.value?.checks ?? []).map((c) => ({ ...c, id: `e2ee.${c.id}` })),
 ])
 
@@ -697,16 +697,16 @@ const HOP2_CHECKS = [
   'report.freshness',
   'quote.report_data_binding',
 ]
-// hop3: Meridian enclave B — genuine TDX + nonce freshness + measured bridge code.
+// hop3: Bridge enclave B — genuine TDX + nonce freshness + measured bridge code.
 const HOP3_CHECKS = [
-  'meridian.quote_genuine',
-  'meridian.tcb_status',
-  'meridian.nonce_binding',
-  'meridian.measurement_rtmr3_replay',
-  'meridian.measurement_app_id',
-  'meridian.measurement_compose_hash_eventlog',
-  'meridian.measurement_compose_hash_mrconfigid',
-  'meridian.measurement_os_image_hash',
+  'bridge.quote_genuine',
+  'bridge.tcb_status',
+  'bridge.nonce_binding',
+  'bridge.measurement_rtmr3_replay',
+  'bridge.measurement_app_id',
+  'bridge.measurement_compose_hash_eventlog',
+  'bridge.measurement_compose_hash_mrconfigid',
+  'bridge.measurement_os_image_hash',
 ]
 
 function hopStatus(ids: string[]): HopStatus {
