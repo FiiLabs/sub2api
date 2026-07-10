@@ -426,8 +426,13 @@ const showOAuthLogin = computed(
     googleOAuthEnabled.value
 )
 
+// checkbox 模式仅作静态告知（注册即视为同意），不阻断注册；
+// 只有 modal 模式才是强制门禁，需用户显式同意后方可提交。
 const agreementGateActive = computed(
-  () => loginAgreementEnabled.value && !agreementAccepted.value
+  () =>
+    loginAgreementEnabled.value &&
+    loginAgreementMode.value !== 'checkbox' &&
+    !agreementAccepted.value
 )
 
 const registrationActionDisabled = computed(

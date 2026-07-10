@@ -830,6 +830,23 @@ export default {
     invitationCodeValidating: 'Validating invitation code...',
     invitationCodeInvalidCannotRegister: 'Invalid invitation code. Please check and try again',
     oauthOrContinue: 'or continue with others',
+    agreement: {
+      consentLeadIn: 'By signing up, you agree to the',
+      firstSeparator: ' ',
+      separator: ', ',
+      lastSeparator: ' and ',
+      consentSuffix: '.',
+      bannerTitle: 'Please accept the latest terms before continuing.',
+      bannerDescription: 'Sign-in and quick login stay disabled until you accept.',
+      reviewTerms: 'Review terms',
+      updated: 'Terms updated',
+      updateNotice:
+        'Our terms of service were updated on {date}. Please review and accept the terms below before continuing.',
+      recently: 'recently',
+      relatedDocuments: 'Related documents',
+      decline: 'Decline',
+      agreeAndContinue: 'Agree and continue',
+    },
     linuxdo: {
       signIn: 'Continue with Linux.do',
       orContinue: 'or continue with email',
