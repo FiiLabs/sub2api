@@ -44,9 +44,9 @@ Fetch the live report and compare against these. Update this table whenever
 | app_id | `bbbc8691946a8575accfa86b8b533ad288d00828` |
 | os image | `dstack-0.5.9` — hash `bd369a8c…` (same as gateway) |
 | attestation endpoint | `https://<app-id>-8091.dstack-pha-prod5.phala.network/attestation/quote?nonce=<hex>` (nonce-bound TDX DCAP quote + dstack event log, CORS; served by the `meridian-attestor` sidecar) |
-| compose_hash | `5a2e3a5a5e55e731da1d538f1b90a4b0b0597da242bf77642ea42e49b0e2e0b2` (includes the `meridian-attestor` sidecar; verified against the quote's RTMR3 `compose-hash` event) |
+| compose_hash | `7cce6f610d5ea2bc6bd8ebcb1336fbebf61a9b15d1cab8f42757485e05f10f72` (includes the `meridian-attestor` sidecar; verified against the quote's RTMR3 `compose-hash` event) |
 | measured compose | `deploy/meridian/compose.seats.generated.yaml` (generate via `gen-seats.sh`; contains only `${VAR}` refs + the two image digests + ports — NO secrets) |
-| meridian image | `docker.io/markerdao/meridian-enclave@sha256:cbabc10ffba8c029940048069196d98cfaee98e4b9eeab2386adec77b575053a` |
+| meridian image | `docker.io/markerdao/meridian-enclave@sha256:c2b74047cbc6f42a0dab7d3aa34f9296fb8aa60f7d202f14b4a2faccfb29bfda` |
 | attestor image | `docker.io/markerdao/meridian-attestor@sha256:7e6d51fe173a2762773a9a80a63ff5eee0303a060bc12551bc1fcb30f25056a1` (CI-built — SLSA provenance + keyless cosign; from `deploy/meridian/attestor/`) |
 
 > The Meridian route is **non-confidential** (Anthropic sees plaintext); its
@@ -77,7 +77,7 @@ curl -sS "$BASE/v1/attestation/report?nonce=$NONCE" > report.json
 jq -r '.attestation.source_provenance | {repo_url, repo_commit}' report.json
 #    -> repo_commit MUST equal 975ac50f...  (the audited gateway source)
 #    Compare the quote's OS measurement to os_image_hash bd369a8c... (dstack-0.5.9),
-#    and the app compose_hash to 746302d0...  (gateway) / 4dee71a8... (meridian).
+#    and the app compose_hash to 746302d0...  (gateway) / 7cce6f61... (meridian).
 
 # 4) Recompute compose_hash from the published compose (dstack canonicalizes the
 #    docker-compose into app-compose.json and hashes THAT — it is NOT a raw
@@ -108,7 +108,7 @@ Phala's infrastructure. Verify (read-only):
 ```bash
 phala cvms get --cvm-id d65b6fbc8df7a1a52a55807a4f5bd2c7dc67b983 --json | jq '{listed, compose_hash}'  # gateway (enclave A)
 phala cvms get --cvm-id bbbc8691946a8575accfa86b8b533ad288d00828 --json | jq '{listed, compose_hash}'  # meridian (enclave B)
-#  -> listed: true; compose_hash matches §1 (746302d0… gateway / 4dee71a8… meridian)
+#  -> listed: true; compose_hash matches §1 (746302d0… gateway / 7cce6f61… meridian)
 ```
 
 `listed` is Trust Center visibility metadata, independent of the on-chain
@@ -123,7 +123,7 @@ phala cvms get --cvm-id bbbc8691946a8575accfa86b8b533ad288d00828 --json | jq '{l
 |---|---|
 | **gateway (private-ai-gateway)** | ✅ Already covered: built **in-TEE by git-launcher** from `repo_commit` 975ac50f. The commit IS the provenance — no image to reproduce. |
 | **git-launcher-rust** | Built from `deploy/gateway/launcher/Dockerfile` (= `dstacktee/git-launcher@4437dce` + build-essential). Needs SLSA provenance and/or a reproducible build. |
-| **meridian-enclave** | Built from `deploy/meridian/` (`node:22-slim` + `@rynfar/meridian@1.44.1` + gost). npm makes bit-reproduction hard → use **SLSA provenance** (CI build + cosign keyless signing). |
+| **meridian-enclave** | Built from `deploy/meridian/` (`node:22-slim` + upstream `@rynfar/meridian@1.45.1` + the `@rynfar/meridian-plugin-hermes-scrub` plugin built from a pinned commit + gost). npm makes bit-reproduction hard → use **SLSA provenance** (CI build + cosign keyless signing). |
 
 The two `markerdao/*` images are built + signed by the GitHub Actions workflow
 `.github/workflows/publish-tee-images.yml` (SLSA provenance + SBOM + cosign
@@ -133,7 +133,7 @@ keyless). Verify with:
 cosign verify-attestation --type slsaprovenance \
   --certificate-identity-regexp 'https://github.com/FiiLabs/sub2api/.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  docker.io/markerdao/meridian-enclave@sha256:aaef99...
+  docker.io/markerdao/meridian-enclave@sha256:c2b74047cbc6f42a0dab7d3aa34f9296fb8aa60f7d202f14b4a2faccfb29bfda
 ```
 
 This proves the digest was built by our CI from a specific commit of this repo —
