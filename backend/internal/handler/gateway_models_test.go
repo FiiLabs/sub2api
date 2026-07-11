@@ -29,6 +29,8 @@ type gatewayModelItemForTest struct {
 	Object    string `json:"object"`
 	Created   int64  `json:"created"`
 	OwnedBy   string `json:"owned_by"`
+	Type      string `json:"type"`
+	Display   string `json:"display_name"`
 	CreatedAt string `json:"created_at"`
 }
 
@@ -49,6 +51,55 @@ func newGatewayModelsHandlerForTest(repo service.AccountRepository) *GatewayHand
 			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		),
+	}
+}
+
+func TestGatewayModels_PublicRequestReturnsMiniMaxOpenAICompatibleModels(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	h := newGatewayModelsHandlerForTest(&gatewayModelsAccountRepoStub{})
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+
+	h.Models(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var got gatewayModelsResponseForTest
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, "list", got.Object)
+	require.Equal(t, []string{
+		"MiniMax-M3",
+		"MiniMax-M2.7",
+		"MiniMax-M2.7-highspeed",
+		"MiniMax-M2.5",
+		"MiniMax-M2.5-highspeed",
+		"MiniMax-M2.1",
+		"MiniMax-M2.1-highspeed",
+		"MiniMax-M2",
+		"MiniMax Hailuo 2.3",
+		"MiniMax Hailuo 2.3 Fast",
+		"MiniMax Hailuo 02",
+		"Speech-2.8-HD",
+		"Speech-2.8-Turbo",
+		"Speech-2.6-HD",
+		"Speech-2.6-Turbo",
+		"Speech-02-HD",
+		"Speech-02-Turbo",
+		"image-01",
+		"image-01-live",
+		"music-2.6",
+		"music-cover",
+	}, modelIDsForTest(got.Data))
+	for _, model := range got.Data {
+		require.Equal(t, "model", model.Object)
+		require.Equal(t, "minimax", model.OwnedBy)
+		require.NotZero(t, model.Created)
+		require.Empty(t, model.Type)
+		require.Empty(t, model.Display)
+		require.Empty(t, model.CreatedAt)
 	}
 }
 

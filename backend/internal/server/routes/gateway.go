@@ -2,6 +2,7 @@ package routes
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
@@ -32,6 +33,8 @@ func RegisterGatewayRoutes(
 	requireGroupGoogle := middleware.RequireGroupAssignment(settingService, middleware.GoogleErrorWriter)
 
 	// API网关（Claude API兼容）
+	optionalAPIKeyAuth := optionalAPIKeyAuthMiddleware(apiKeyAuth)
+	r.GET("/v1", writePublicV1Unauthorized)
 	gateway := r.Group("/v1")
 	gateway.Use(bodyLimit)
 	gateway.Use(clientRequestID)
@@ -63,7 +66,6 @@ func RegisterGatewayRoutes(
 			}
 			h.Gateway.CountTokens(c)
 		})
-		gateway.GET("/models", h.Gateway.Models)
 		gateway.GET("/usage", h.Gateway.Usage)
 		// OpenAI Responses API: auto-route based on group platform
 		gateway.POST("/responses", func(c *gin.Context) {
@@ -129,6 +131,7 @@ func RegisterGatewayRoutes(
 			h.OpenAIGateway.Images(c)
 		})
 	}
+	r.GET("/v1/models", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, optionalAPIKeyAuth, requireGroupAnthropic, h.Gateway.Models)
 
 	// Gemini 原生 API 兼容层（Gemini SDK/CLI 直连）
 	gemini := r.Group("/v1beta")
@@ -244,6 +247,39 @@ func RegisterGatewayRoutes(
 		antigravityV1Beta.POST("/models/*modelAction", h.Gateway.GeminiV1BetaModels)
 	}
 
+}
+
+func writePublicV1Unauthorized(c *gin.Context) {
+	c.JSON(http.StatusUnauthorized, gin.H{
+		"error": gin.H{
+			"message": "Permission denied. Please provide a valid API key.",
+			"type":    "invalid_request_error",
+			"param":   nil,
+			"code":    "unauthorized",
+		},
+	})
+}
+
+func optionalAPIKeyAuthMiddleware(apiKeyAuth middleware.APIKeyAuthMiddleware) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if hasAPIKeyCredential(c) {
+			gin.HandlerFunc(apiKeyAuth)(c)
+			return
+		}
+		c.Next()
+	}
+}
+
+func hasAPIKeyCredential(c *gin.Context) bool {
+	authHeader := strings.TrimSpace(c.GetHeader("Authorization"))
+	if authHeader != "" {
+		parts := strings.SplitN(authHeader, " ", 2)
+		if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") && strings.TrimSpace(parts[1]) != "" {
+			return true
+		}
+	}
+	return strings.TrimSpace(c.GetHeader("x-api-key")) != "" ||
+		strings.TrimSpace(c.GetHeader("x-goog-api-key")) != ""
 }
 
 // getGroupPlatform extracts the group platform from the API Key stored in context.

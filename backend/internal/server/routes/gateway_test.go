@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -40,6 +41,58 @@ func newGatewayRoutesTestRouter() *gin.Engine {
 	)
 
 	return router
+}
+
+func TestGatewayRoutesModelsIsPublicWithoutAPIKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+
+	RegisterGatewayRoutes(
+		router,
+		&handler.Handlers{
+			Gateway: &handler.GatewayHandler{},
+		},
+		servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
+			c.AbortWithStatus(http.StatusUnauthorized)
+		}),
+		nil,
+		nil,
+		nil,
+		nil,
+		&config.Config{},
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), `"id":"MiniMax-M3"`)
+	require.Contains(t, w.Body.String(), `"id":"MiniMax-M2"`)
+	require.Contains(t, w.Body.String(), `"owned_by":"minimax"`)
+}
+
+func TestGatewayRoutesV1ReturnsUnauthorizedErrorWithoutAPIKey(t *testing.T) {
+	router := newGatewayRoutesTestRouter()
+
+	req := httptest.NewRequest(http.MethodGet, "/v1", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
+	require.Equal(t, map[string]any{
+		"error": map[string]any{
+			"message": "Permission denied. Please provide a valid API key.",
+			"type":    "invalid_request_error",
+			"param":   nil,
+			"code":    "unauthorized",
+		},
+	}, got)
 }
 
 func TestGatewayRoutesOpenAIResponsesCompactPathIsRegistered(t *testing.T) {

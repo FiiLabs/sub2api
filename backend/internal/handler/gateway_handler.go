@@ -36,6 +36,37 @@ const gatewayCompatibilityMetricsLogInterval = 1024
 
 var gatewayCompatibilityMetricsLogCounter atomic.Uint64
 
+type publicModel struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	OwnedBy string `json:"owned_by"`
+}
+
+var publicMiniMaxModels = []publicModel{
+	{ID: "MiniMax-M3", Object: "model", Created: 1764547200, OwnedBy: "minimax"},
+	{ID: "MiniMax-M2.7", Object: "model", Created: 1764547200, OwnedBy: "minimax"},
+	{ID: "MiniMax-M2.7-highspeed", Object: "model", Created: 1764547200, OwnedBy: "minimax"},
+	{ID: "MiniMax-M2.5", Object: "model", Created: 1764547200, OwnedBy: "minimax"},
+	{ID: "MiniMax-M2.5-highspeed", Object: "model", Created: 1764547200, OwnedBy: "minimax"},
+	{ID: "MiniMax-M2.1", Object: "model", Created: 1764547200, OwnedBy: "minimax"},
+	{ID: "MiniMax-M2.1-highspeed", Object: "model", Created: 1764547200, OwnedBy: "minimax"},
+	{ID: "MiniMax-M2", Object: "model", Created: 1764547200, OwnedBy: "minimax"},
+	{ID: "MiniMax Hailuo 2.3", Object: "model", Created: 1764547200, OwnedBy: "minimax"},
+	{ID: "MiniMax Hailuo 2.3 Fast", Object: "model", Created: 1764547200, OwnedBy: "minimax"},
+	{ID: "MiniMax Hailuo 02", Object: "model", Created: 1764547200, OwnedBy: "minimax"},
+	{ID: "Speech-2.8-HD", Object: "model", Created: 1764547200, OwnedBy: "minimax"},
+	{ID: "Speech-2.8-Turbo", Object: "model", Created: 1764547200, OwnedBy: "minimax"},
+	{ID: "Speech-2.6-HD", Object: "model", Created: 1764547200, OwnedBy: "minimax"},
+	{ID: "Speech-2.6-Turbo", Object: "model", Created: 1764547200, OwnedBy: "minimax"},
+	{ID: "Speech-02-HD", Object: "model", Created: 1764547200, OwnedBy: "minimax"},
+	{ID: "Speech-02-Turbo", Object: "model", Created: 1764547200, OwnedBy: "minimax"},
+	{ID: "image-01", Object: "model", Created: 1764547200, OwnedBy: "minimax"},
+	{ID: "image-01-live", Object: "model", Created: 1764547200, OwnedBy: "minimax"},
+	{ID: "music-2.6", Object: "model", Created: 1764547200, OwnedBy: "minimax"},
+	{ID: "music-cover", Object: "model", Created: 1764547200, OwnedBy: "minimax"},
+}
+
 // GatewayHandler handles API gateway requests
 type GatewayHandler struct {
 	gatewayService            *service.GatewayService
@@ -973,6 +1004,13 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 // Falls back to default models if no whitelist is configured
 func (h *GatewayHandler) Models(c *gin.Context) {
 	apiKey, _ := middleware2.GetAPIKeyFromContext(c)
+	if apiKey == nil {
+		c.JSON(http.StatusOK, gin.H{
+			"object": "list",
+			"data":   publicMiniMaxModels,
+		})
+		return
+	}
 
 	var groupID *int64
 	var platform string
