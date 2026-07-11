@@ -11,6 +11,18 @@ export default {
       scopeNote:
         'Every check runs in your browser against chip-maker Intel’s root of trust, not our servers. A step turns green only when all of its cryptographic checks pass.'
     },
+    openSource: {
+      title: 'Don’t trust us — read the code',
+      body: 'This isn’t a black box. Every part of the path above is open source and pinned to an exact version, so anyone can audit the code line-by-line and rebuild it to confirm it matches the fingerprints proven on this page.',
+      gatewayLabel: 'Gateway source',
+      gatewaySub: 'Secure computer A — the confidential gateway',
+      bridgeLabel: 'Bridge source',
+      bridgeSub: 'Secure computer B — the Claude subscription bridge',
+      platformLabel: 'This site & build pipeline',
+      platformSub: 'The frontend you’re reading, deploy recipes, and CI',
+      viewSource: 'View source →',
+      pinnedAt: 'pinned @ {commit}'
+    },
     status: {
       pending: 'Pending',
       checking: 'Checking…',

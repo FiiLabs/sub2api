@@ -500,6 +500,44 @@
         </div>
       </section>
 
+      <!-- Open source — audit the exact code yourself. Placed last as the closing
+           call to action, but kept prominent and NOT folded (unlike the auditor
+           reference table above). Cards are data-driven from the reference
+           constants so links never drift; the bridge card appears once its
+           source is published (post-redeploy). -->
+      <section class="mb-10">
+        <div class="rounded-xl border border-primary-200 bg-primary-50/50 p-5 dark:border-primary-500/30 dark:bg-primary-500/5 sm:p-6">
+          <div class="flex items-start gap-3">
+            <span class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-primary-100 text-primary-700 dark:bg-primary-500/15 dark:text-primary-300">
+              <Icon name="code" size="sm" />
+            </span>
+            <div class="min-w-0">
+              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('proof.openSource.title') }}</h2>
+              <p class="mt-1.5 text-sm leading-6 text-gray-600 dark:text-dark-300">{{ t('proof.openSource.body') }}</p>
+            </div>
+          </div>
+
+          <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <a
+              v-for="card in sourceCards"
+              :key="card.key"
+              :href="card.href"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="group flex flex-col rounded-lg border border-gray-200 bg-white p-4 transition hover:border-primary-400 hover:shadow-sm dark:border-dark-700 dark:bg-dark-900 dark:hover:border-primary-500/50"
+            >
+              <span class="flex items-center justify-between gap-2">
+                <span class="text-sm font-semibold text-gray-900 dark:text-white">{{ card.label }}</span>
+                <Icon name="externalLink" size="xs" class="flex-shrink-0 text-gray-400 transition group-hover:text-primary-600 dark:group-hover:text-primary-300" />
+              </span>
+              <span class="mt-1 flex-1 text-xs leading-5 text-gray-500 dark:text-dark-400">{{ card.sub }}</span>
+              <span v-if="card.commit" class="mt-2 inline-block w-fit rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] text-gray-500 dark:bg-dark-800 dark:text-dark-400">{{ t('proof.openSource.pinnedAt', { commit: card.commit }) }}</span>
+              <span class="mt-2 text-xs font-medium text-primary-600 dark:text-primary-300">{{ t('proof.openSource.viewSource') }}</span>
+            </a>
+          </div>
+        </div>
+      </section>
+
     </main>
   </div>
 </template>
@@ -815,6 +853,52 @@ function truncateHex(hex?: string): string {
 const liveReportUrl = `${ATTESTATION_BASE_URL}${ATTESTATION_REPORT_PATH}`
 const ciWorkflowUrl = 'https://github.com/FiiLabs/sub2api/blob/main/.github/workflows/publish-tee-images.yml'
 
+// --- Open-source source links (prominent "read the code" cards). Derived from
+// the same reference constants as the auditor table so a repo/commit is defined
+// in exactly one place. The bridge is source-anchored only once its fork commit
+// is published in MERIDIAN_REFERENCE (post-redeploy); until then its card is
+// simply omitted rather than pointing at code that isn't the deployed image. ---
+const platformRepoUrl = 'https://github.com/FiiLabs/sub2api'
+const bridgeRepoBase = (MERIDIAN_REFERENCE.sourceRepo ?? '').replace(/\.git$/, '')
+const bridgeCommitUrl =
+  bridgeRepoBase && MERIDIAN_REFERENCE.sourceCommit
+    ? `${bridgeRepoBase}/commit/${MERIDIAN_REFERENCE.sourceCommit}`
+    : ''
+interface SourceCard {
+  key: string
+  label: string
+  sub: string
+  href: string
+  commit?: string
+}
+const sourceCards = computed<SourceCard[]>(() => {
+  const cards: SourceCard[] = [
+    {
+      key: 'gateway',
+      label: t('proof.openSource.gatewayLabel'),
+      sub: t('proof.openSource.gatewaySub'),
+      href: gatewayCommitUrl,
+      commit: GATEWAY_REFERENCE.sourceCommit?.slice(0, 10),
+    },
+  ]
+  if (bridgeCommitUrl) {
+    cards.push({
+      key: 'bridge',
+      label: t('proof.openSource.bridgeLabel'),
+      sub: t('proof.openSource.bridgeSub'),
+      href: bridgeCommitUrl,
+      commit: MERIDIAN_REFERENCE.sourceCommit?.slice(0, 10),
+    })
+  }
+  cards.push({
+    key: 'platform',
+    label: t('proof.openSource.platformLabel'),
+    sub: t('proof.openSource.platformSub'),
+    href: platformRepoUrl,
+  })
+  return cards
+})
+
 // --- Reference values table (values link to their public source where one exists) ---
 interface RefRow {
   label: string
@@ -839,6 +923,9 @@ const references = computed<{ title: string; rows: RefRow[] }[]>(() => [
       { label: t('proof.reference.appId'), value: MERIDIAN_REFERENCE.appId },
       { label: t('proof.reference.osImage'), value: `${MERIDIAN_REFERENCE.osImage} — ${MERIDIAN_REFERENCE.osImageHash}` },
       { label: t('proof.reference.composeHash'), value: MERIDIAN_REFERENCE.composeHash },
+      ...(MERIDIAN_REFERENCE.sourceCommit
+        ? [{ label: t('proof.reference.sourceCommit'), value: MERIDIAN_REFERENCE.sourceCommit, href: bridgeCommitUrl }]
+        : []),
       { label: t('proof.reference.enclaveImage'), value: shortSha(MERIDIAN_REFERENCE.images?.[0]?.digest ?? ''), href: dockerHubUrl('meridian-enclave') },
       { label: t('proof.reference.attestorImage'), value: 'sha256:7e6d51fe…', href: dockerHubUrl('meridian-attestor') },
     ],

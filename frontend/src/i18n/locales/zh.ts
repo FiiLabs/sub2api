@@ -11,6 +11,18 @@ export default {
       scopeNote:
         '每一项验证都在你自己的浏览器里、对着芯片厂商 Intel 的信任根完成，不经过我们的服务器。每一步只有在全部密码学校验通过时才会变绿。'
     },
+    openSource: {
+      title: '别信我们，去看代码',
+      body: '这不是一个黑盒。上面这条链路的每一个环节都是开源的，并锁定到确切版本——任何人都能逐行审计源码、亲手重新构建，验证它与本页证明的指纹完全一致。',
+      gatewayLabel: '网关源码',
+      gatewaySub: '安全计算机 A —— 机密网关',
+      bridgeLabel: '桥接源码',
+      bridgeSub: '安全计算机 B —— Claude 订阅桥接',
+      platformLabel: '本站与构建流水线',
+      platformSub: '你正在看的前端、部署脚本与 CI',
+      viewSource: '查看源码 →',
+      pinnedAt: '锁定 @ {commit}'
+    },
     status: {
       pending: '待验证',
       checking: '验证中…',
