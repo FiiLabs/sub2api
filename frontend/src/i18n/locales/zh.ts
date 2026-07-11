@@ -21,7 +21,7 @@ export default {
       platformLabel: '本站与构建流水线',
       platformSub: '你正在看的前端、部署脚本与 CI',
       viewSource: '查看源码 →',
-      pinnedAt: '锁定 @ {commit}'
+      pinnedAt: "锁定 {'@'} {commit}"
     },
     status: {
       pending: '待验证',

@@ -21,7 +21,7 @@ export default {
       platformLabel: 'This site & build pipeline',
       platformSub: 'The frontend you’re reading, deploy recipes, and CI',
       viewSource: 'View source →',
-      pinnedAt: 'pinned @ {commit}'
+      pinnedAt: "pinned {'@'} {commit}"
     },
     status: {
       pending: 'Pending',
