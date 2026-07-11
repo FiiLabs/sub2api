@@ -44,7 +44,7 @@ Fetch the live report and compare against these. Update this table whenever
 | app_id | `bbbc8691946a8575accfa86b8b533ad288d00828` |
 | os image | `dstack-0.5.9` — hash `bd369a8c…` (same as gateway) |
 | attestation endpoint | `https://<app-id>-8091.dstack-pha-prod5.phala.network/attestation/quote?nonce=<hex>` (nonce-bound TDX DCAP quote + dstack event log, CORS; served by the `meridian-attestor` sidecar) |
-| compose_hash | `7cce6f610d5ea2bc6bd8ebcb1336fbebf61a9b15d1cab8f42757485e05f10f72` (includes the `meridian-attestor` sidecar; verified against the quote's RTMR3 `compose-hash` event) |
+| compose_hash | `20c9fee08a1a196a4e980793e6f3585fbb768acada139e11488ff18aaeaee0ad` (30-seat CVM incl. the `meridian-attestor` sidecar; verified against the quote's RTMR3 `compose-hash` event) |
 | measured compose | `deploy/meridian/compose.seats.generated.yaml` (generate via `gen-seats.sh`; contains only `${VAR}` refs + the two image digests + ports — NO secrets) |
 | meridian image | `docker.io/markerdao/meridian-enclave@sha256:c2b74047cbc6f42a0dab7d3aa34f9296fb8aa60f7d202f14b4a2faccfb29bfda` |
 | attestor image | `docker.io/markerdao/meridian-attestor@sha256:7e6d51fe173a2762773a9a80a63ff5eee0303a060bc12551bc1fcb30f25056a1` (CI-built — SLSA provenance + keyless cosign; from `deploy/meridian/attestor/`) |

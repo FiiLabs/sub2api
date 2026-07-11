@@ -68,7 +68,7 @@ export const MERIDIAN_REFERENCE: EnclaveReference = {
   appId: 'bbbc8691946a8575accfa86b8b533ad288d00828',
   osImage: OS_IMAGE,
   osImageHash: 'bd369a8c2f9edb2b52dad48ac8e0b32dde5f1337c423a506b48d07403a7d8033',
-  composeHash: '7cce6f610d5ea2bc6bd8ebcb1336fbebf61a9b15d1cab8f42757485e05f10f72',
+  composeHash: '20c9fee08a1a196a4e980793e6f3585fbb768acada139e11488ff18aaeaee0ad',
   images: [
     {
       name: 'meridian-enclave',
