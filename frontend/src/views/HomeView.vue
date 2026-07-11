@@ -206,11 +206,21 @@
               <tr v-for="row in compareRows" :key="row.label"
                 class="border-b border-gray-100 last:border-0 dark:border-dark-800">
                 <td class="py-3 pr-4 text-fluid-xs font-semibold text-gray-900 dark:text-white">{{ row.label }}</td>
-                <td class="px-4 py-3 text-fluid-xs text-gray-500 dark:text-dark-400">{{ row.opaque }}</td>
-                <td class="px-4 py-3 text-fluid-xs text-gray-500 dark:text-dark-400">{{ row.official }}</td>
+                <td class="px-4 py-3 text-fluid-xs text-gray-500 dark:text-dark-400">
+                  <span class="inline-flex items-center gap-1.5">
+                    <StatusIcon v-if="row.opaque.icon" :type="row.opaque.icon" />{{ row.opaque.text }}
+                  </span>
+                </td>
+                <td class="px-4 py-3 text-fluid-xs text-gray-500 dark:text-dark-400">
+                  <span class="inline-flex items-center gap-1.5">
+                    <StatusIcon v-if="row.official.icon" :type="row.official.icon" />{{ row.official.text }}
+                  </span>
+                </td>
                 <td
                   class="bg-primary-500/10 px-4 py-3 text-fluid-xs font-semibold text-primary-700 dark:bg-primary-500/15 dark:text-primary-300">
-                  {{ row.apexone }}
+                  <span class="inline-flex items-center gap-1.5">
+                    <StatusIcon v-if="row.apexone.icon" :type="row.apexone.icon" />{{ row.apexone.text }}
+                  </span>
                 </td>
               </tr>
             </tbody>
@@ -345,6 +355,7 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore, useAuthStore } from '@/stores'
 import AppFooter from '@/components/layout/AppFooter.vue'
 import Header from '@/components/layout/Header.vue'
+import StatusIcon from '@/components/icons/StatusIcon.vue'
 
 const { t } = useI18n()
 
@@ -374,12 +385,33 @@ const heroStats = computed(() => [
 // APEXONE comparison table
 const compareRowKeys = ['attestation', 'dataAccess', 'fable', 'failover', 'price'] as const
 
+// 比较表单元格文案以 emoji 前缀表达状态（✅/❌/⚠️），这里把前缀拆出来
+// 换成 StatusIcon 组件渲染，i18n 文案保持不变，无 emoji 的单元格（如价格）原样显示。
+type StatusIconType = 'check' | 'cross' | 'warn'
+
+const iconByEmoji: Record<string, StatusIconType> = {
+  '✅': 'check',
+  '❌': 'cross',
+  '⚠️': 'warn',
+  '⚠': 'warn'
+}
+
+function parseCell(value: string): { icon: StatusIconType | null; text: string } {
+  const trimmed = value.trimStart()
+  for (const [emoji, icon] of Object.entries(iconByEmoji)) {
+    if (trimmed.startsWith(emoji)) {
+      return { icon, text: trimmed.slice(emoji.length).trimStart() }
+    }
+  }
+  return { icon: null, text: value }
+}
+
 const compareRows = computed(() =>
   compareRowKeys.map((key) => ({
     label: t(`home.landing.personal.compare.rows.${key}.label`),
-    opaque: t(`home.landing.personal.compare.rows.${key}.opaque`),
-    official: t(`home.landing.personal.compare.rows.${key}.official`),
-    apexone: t(`home.landing.personal.compare.rows.${key}.apexone`)
+    opaque: parseCell(t(`home.landing.personal.compare.rows.${key}.opaque`)),
+    official: parseCell(t(`home.landing.personal.compare.rows.${key}.official`)),
+    apexone: parseCell(t(`home.landing.personal.compare.rows.${key}.apexone`))
   }))
 )
 
