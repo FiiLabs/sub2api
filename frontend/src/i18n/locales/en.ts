@@ -1485,6 +1485,18 @@ export default {
     copyLink: 'Copy Link',
     codeCopied: 'Affiliate code copied',
     linkCopied: 'Invite link copied',
+    share: {
+      title: 'Sharing Suggestions',
+      description: 'Choose a message that fits your audience, then copy and share it directly.',
+      change: 'Show another',
+      copy: 'Copy Message and Link',
+      copied: 'Message and link copied',
+      messages: {
+        fable: 'Claude Fable 5 is now available.\nStart using it through ApexOne.\n{inviteLink}',
+        price: 'Access Claude Fable 5 through ApexOne at half the official API price.\n{inviteLink}',
+        privacy: 'ApexOne now supports Claude Fable 5.\nRequests travel through a verifiable TEE-protected privacy route.\n{inviteLink}'
+      }
+    },
     loadFailed: 'Failed to load affiliate data',
     transferFailed: 'Failed to transfer affiliate quota',
     stats: {

@@ -1483,6 +1483,18 @@ export default {
     copyLink: '复制链接',
     codeCopied: '邀请码已复制',
     linkCopied: '邀请链接已复制',
+    share: {
+      title: '推荐语参考',
+      description: '选择一条适合你的推荐语，复制后可直接分享。',
+      change: '换一条',
+      copy: '复制推荐语和链接',
+      copied: '推荐语和链接已复制',
+      messages: {
+        fable: 'Claude Fable 5 现已支持。\n通过 ApexOne 即可开始调用。\n{inviteLink}',
+        price: 'Claude Fable 5 API，ApexOne 按官方 API 价格五折计费。\n{inviteLink}',
+        privacy: 'ApexOne 现已支持 Claude Fable 5。\n请求经可验证的 TEE 隐私路由处理，相关证据可以自己查。\n{inviteLink}'
+      }
+    },
     loadFailed: '加载邀请返利数据失败',
     transferFailed: '转入余额失败',
     stats: {

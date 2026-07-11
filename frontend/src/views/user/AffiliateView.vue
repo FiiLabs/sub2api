@@ -72,6 +72,41 @@
             </div>
           </div>
 
+          <div class="mt-5 overflow-hidden rounded-lg border border-primary-200 bg-primary-50/70 shadow-sm dark:border-primary-900/50 dark:bg-primary-900/15">
+            <div class="flex flex-col gap-3 border-b border-primary-200/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-primary-900/50">
+              <div class="flex min-w-0 items-start gap-3">
+                <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-600 text-white shadow-sm dark:bg-primary-500">
+                  <Icon name="copy" size="sm" />
+                </span>
+                <div class="min-w-0">
+                  <p class="text-sm font-semibold text-primary-950 dark:text-primary-100">{{ t('affiliate.share.title') }}</p>
+                  <p class="mt-0.5 text-sm text-primary-800/80 dark:text-primary-200/80">{{ t('affiliate.share.description') }}</p>
+                </div>
+              </div>
+              <button
+                data-testid="affiliate-next-share-message"
+                class="btn btn-secondary btn-sm shrink-0"
+                @click="showNextShareMessage"
+              >
+                <Icon name="refresh" size="sm" />
+                <span>{{ t('affiliate.share.change') }}</span>
+              </button>
+            </div>
+            <div class="px-4 py-4">
+              <p class="border-l-2 border-primary-400 pl-3 whitespace-pre-line text-sm leading-6 text-gray-800 dark:border-primary-500 dark:text-gray-100">
+                <span data-testid="affiliate-share-message">{{ shareMessage }}</span>
+              </p>
+              <button
+                data-testid="affiliate-copy-share-message"
+                class="btn btn-primary btn-sm mt-4 w-full sm:w-auto"
+                @click="copyShareMessage"
+              >
+                <Icon name="copy" size="sm" />
+                <span>{{ t('affiliate.share.copy') }}</span>
+              </button>
+            </div>
+          </div>
+
           <div class="mt-5 rounded-xl border border-primary-200 bg-primary-50 p-4 dark:border-primary-900/40 dark:bg-primary-900/20">
             <p class="text-sm font-medium text-primary-800 dark:text-primary-200">{{ t('affiliate.tips.title') }}</p>
             <ul class="mt-2 space-y-1 text-sm text-primary-700 dark:text-primary-300">
@@ -161,10 +196,18 @@ const loading = ref(true)
 const transferring = ref(false)
 const detail = ref<UserAffiliateDetail | null>(null)
 
+const shareMessageKeys = ['fable', 'price', 'privacy'] as const
+const activeShareMessageIndex = ref(Math.floor(Math.random() * shareMessageKeys.length))
+
 const inviteLink = computed(() => {
   if (!detail.value) return ''
   if (typeof window === 'undefined') return `/register?aff=${encodeURIComponent(detail.value.aff_code)}`
   return `${window.location.origin}/register?aff=${encodeURIComponent(detail.value.aff_code)}`
+})
+
+const shareMessage = computed(() => {
+  const key = shareMessageKeys[activeShareMessageIndex.value]
+  return t(`affiliate.share.messages.${key}`, { inviteLink: inviteLink.value })
 })
 
 // Rebate rate is a percentage in the range [0, 100]; backend already clamps it.
@@ -202,6 +245,15 @@ async function copyCode(): Promise<void> {
 async function copyInviteLink(): Promise<void> {
   if (!inviteLink.value) return
   await copyToClipboard(inviteLink.value, t('affiliate.linkCopied'))
+}
+
+function showNextShareMessage(): void {
+  activeShareMessageIndex.value = (activeShareMessageIndex.value + 1) % shareMessageKeys.length
+}
+
+async function copyShareMessage(): Promise<void> {
+  if (!inviteLink.value) return
+  await copyToClipboard(shareMessage.value, t('affiliate.share.copied'))
 }
 
 async function transferQuota(): Promise<void> {
