@@ -44,9 +44,10 @@ Fetch the live report and compare against these. Update this table whenever
 | app_id | `bbbc8691946a8575accfa86b8b533ad288d00828` |
 | os image | `dstack-0.5.9` — hash `bd369a8c…` (same as gateway) |
 | attestation endpoint | `https://<app-id>-8091.dstack-pha-prod5.phala.network/attestation/quote?nonce=<hex>` (nonce-bound TDX DCAP quote + dstack event log, CORS; served by the `meridian-attestor` sidecar) |
-| compose_hash | `20c9fee08a1a196a4e980793e6f3585fbb768acada139e11488ff18aaeaee0ad` (30-seat CVM incl. the `meridian-attestor` sidecar; verified against the quote's RTMR3 `compose-hash` event) |
+| compose_hash | `26477f34d4dbc1e2de3aebca9c8e704763648629b0904f6098ef7de880ccd35b` (30-seat CVM incl. the `meridian-attestor` sidecar; verified against the quote's RTMR3 `compose-hash` event) |
 | measured compose | `deploy/meridian/compose.seats.generated.yaml` (generate via `gen-seats.sh`; contains only `${VAR}` refs + the two image digests + ports — NO secrets) |
-| meridian image | `docker.io/markerdao/meridian-enclave@sha256:c2b74047cbc6f42a0dab7d3aa34f9296fb8aa60f7d202f14b4a2faccfb29bfda` |
+| meridian image | `docker.io/markerdao/meridian-enclave@sha256:e51d0fd5e51daa846af194977ab2836bf892dfe365fb57977c38514b876d08b8` |
+| meridian source | `FiiLabs/meridian@403e0099` (branch `fix-on-1453`, based on upstream 1.45.3; fixes the multi-turn flatten leak) — built from source by CI into the enclave image above |
 | attestor image | `docker.io/markerdao/meridian-attestor@sha256:7e6d51fe173a2762773a9a80a63ff5eee0303a060bc12551bc1fcb30f25056a1` (CI-built — SLSA provenance + keyless cosign; from `deploy/meridian/attestor/`) |
 
 > The Meridian route is **non-confidential** (Anthropic sees plaintext); its
@@ -123,7 +124,7 @@ phala cvms get --cvm-id bbbc8691946a8575accfa86b8b533ad288d00828 --json | jq '{l
 |---|---|
 | **gateway (private-ai-gateway)** | ✅ Already covered: built **in-TEE by git-launcher** from `repo_commit` 975ac50f. The commit IS the provenance — no image to reproduce. |
 | **git-launcher-rust** | Built from `deploy/gateway/launcher/Dockerfile` (= `dstacktee/git-launcher@4437dce` + build-essential). Needs SLSA provenance and/or a reproducible build. |
-| **meridian-enclave** | Built from `deploy/meridian/` (`node:22-slim` + upstream `@rynfar/meridian@1.45.1` + the `@rynfar/meridian-plugin-hermes-scrub` plugin built from a pinned commit + gost). npm makes bit-reproduction hard → use **SLSA provenance** (CI build + cosign keyless signing). |
+| **meridian-enclave** | Built from `deploy/meridian/` (`node:22-slim` + the `FiiLabs/meridian@403e0099` fork built from source [branch `fix-on-1453`, based on upstream 1.45.3, fixes the multi-turn flatten leak] + the `@rynfar/meridian-plugin-hermes-scrub` plugin built from a pinned commit + gost). bun/npm make bit-reproduction hard → use **SLSA provenance** (CI build + cosign keyless signing). |
 
 The two `markerdao/*` images are built + signed by the GitHub Actions workflow
 `.github/workflows/publish-tee-images.yml` (SLSA provenance + SBOM + cosign
@@ -133,7 +134,7 @@ keyless). Verify with:
 cosign verify-attestation --type slsaprovenance \
   --certificate-identity-regexp 'https://github.com/FiiLabs/sub2api/.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  docker.io/markerdao/meridian-enclave@sha256:c2b74047cbc6f42a0dab7d3aa34f9296fb8aa60f7d202f14b4a2faccfb29bfda
+  docker.io/markerdao/meridian-enclave@sha256:e51d0fd5e51daa846af194977ab2836bf892dfe365fb57977c38514b876d08b8
 ```
 
 This proves the digest was built by our CI from a specific commit of this repo —
