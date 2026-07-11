@@ -32,7 +32,7 @@ services:
   meridian-seat1:
     # Built from deploy/meridian/ and pushed to docker.io/markerdao. Pin by DIGEST
     # so it is measured into this CVM's compose_hash (enclave B's attested identity).
-    image: docker.io/markerdao/meridian-enclave@sha256:c2b74047cbc6f42a0dab7d3aa34f9296fb8aa60f7d202f14b4a2faccfb29bfda
+    image: docker.io/markerdao/meridian-enclave@sha256:e51d0fd5e51daa846af194977ab2836bf892dfe365fb57977c38514b876d08b8
     ports:
       # Exposed so Phala's ingress gives it a public HTTPS endpoint the gateway can reach.
       - "3456:3456"
