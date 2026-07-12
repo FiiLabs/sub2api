@@ -5,12 +5,13 @@
 # (non-resume) request with multi-turn history, stock Meridian flattens the
 # conversation into a single `Human: …\n\nAssistant: …` transcript and hands it
 # to the single-turn Claude Code SDK, which then CONTINUES the transcript on its
-# own — fabricating fake `Human:` turns, replying on the user's behalf, and
-# leaking the raw prompt labels into the reply. The fork makes both the hot path
-# (makePrompt) and the retry path (buildFreshPrompt) always emit a STREAM of
-# discrete structured messages instead, so the model sees real turn boundaries.
-# Based on upstream meridian-v1.45.3 (cherry-picked cleanly). See FiiLabs/meridian
-# branch fix-on-1453.
+# own — fabricating fake turns, replying on the user's behalf, and leaking the
+# raw `[Assistant: …]` prompt labels into the reply. The fork rebuilds the fresh
+# (non-resume) history as a STREAM of discrete structured user messages, and
+# collapses prior turns into ONE inert, read-only "record" block followed by the
+# genuine latest user turn — so the model reads history as reference, not as a
+# transcript to continue. Based on upstream meridian-v1.45.3. See FiiLabs/meridian
+# branch fix-on-1453 (403e009 discrete-stream fix, a76735e reference-block fix).
 #
 # Why hermes-scrub is still baked in: the openai-adapter Hermes "Extra Usage"
 # problem was NEVER merged into Meridian core — the maintainer keeps
@@ -44,7 +45,7 @@ RUN git clone "$PLUGIN_REPO" /src \
 # binds the exact bytes; the commit is the source provenance.
 FROM node:22-slim AS meridianbuild
 ARG MERIDIAN_REPO=https://github.com/FiiLabs/meridian
-ARG MERIDIAN_COMMIT=403e0099512f0718d45722ff69089c9702f08a32
+ARG MERIDIAN_COMMIT=a76735e206b719e5641a78010c379ba4f9126345
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates \
  && rm -rf /var/lib/apt/lists/*
