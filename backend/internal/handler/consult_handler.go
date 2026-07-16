@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"hash/fnv"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -60,6 +61,30 @@ type ConsultHandler struct {
 func (h *ConsultHandler) nextSeatIndex(key string) uint64 {
 	v, _ := h.seatRR.LoadOrStore(key, new(atomic.Uint64))
 	return v.(*atomic.Uint64).Add(1) - 1
+}
+
+// seatStart picks the starting (primary) seat index for a request.
+//
+// When an API-key hash is present it is affinity-hashed, so the SAME key
+// deterministically sticks to the SAME primary seat on every turn of a
+// conversation. This is the point: meridian's resume cache is per-seat, so a key
+// that keeps landing on one seat hits that cache and takes the RESUME path, which
+// preserves real turn structure. Round-robin-per-model instead spread a
+// conversation's turns across seats, so the receiving seat never had the session,
+// forcing the FRESH path — which flattens history and can make the model continue
+// the transcript / emit harness scaffolding into replies (the [Assistant:] /
+// <system-reminder> leak). Affinity keeps the fresh path rarely taken.
+//
+// Falls back to per-model round-robin when no key hash is available. Failover is
+// unaffected: orderSeats still returns the full seat list, just rotated so the
+// affine seat is first.
+func (h *ConsultHandler) seatStart(apiKeyHash, model string) uint64 {
+	if apiKeyHash != "" {
+		f := fnv.New64a()
+		_, _ = f.Write([]byte(apiKeyHash))
+		return f.Sum64()
+	}
+	return h.nextSeatIndex(model)
 }
 
 // orderSeats returns seats rotated so seats[start % len] is first, preserving
@@ -238,7 +263,7 @@ func (h *ConsultHandler) Pre(c *gin.Context) {
 	// 6. Build candidate(s): multi-seat round-robin + failover, or single route.
 	var candidates []gin.H
 	if len(route.Seats) > 0 {
-		for _, seat := range orderSeats(route.Seats, h.nextSeatIndex(req.Model)) {
+		for _, seat := range orderSeats(route.Seats, h.seatStart(req.APIKeyHash, req.Model)) {
 			cand := gin.H{"routeId": seat + ":" + req.Model, "format": route.Format}
 			if route.Engine != "" {
 				cand["engine"] = route.Engine

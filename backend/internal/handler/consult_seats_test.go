@@ -23,7 +23,10 @@ func TestOrderSeats_Empty(t *testing.T) {
 	assert.Nil(t, orderSeats(nil, 0))
 }
 
-func TestConsultPre_MultiSeatReturnsRotatedCandidates(t *testing.T) {
+// A key sticks to ONE primary seat across turns (affinity), so meridian's
+// per-seat resume cache hits and the leak-prone fresh path is rarely taken.
+// The full seat list is still returned for failover, just rotated.
+func TestConsultPre_MultiSeatIsKeyAffine(t *testing.T) {
 	cfg := makeConsultConfig(map[string]config.ConsultRoute{
 		"claude-sonnet-4-6": {
 			Seats:  []string{"meridian-seat1", "meridian-seat2"},
@@ -38,14 +41,45 @@ func TestConsultPre_MultiSeatReturnsRotatedCandidates(t *testing.T) {
 	)
 
 	first := preCandidates(t, h, "h", "claude-sonnet-4-6")
-	require.Len(t, first, 2)
-	assert.Equal(t, "meridian-seat1:claude-sonnet-4-6", first[0]["routeId"])
-	assert.Equal(t, "meridian-seat2:claude-sonnet-4-6", first[1]["routeId"])
+	require.Len(t, first, 2, "all seats returned for failover")
 	assert.Equal(t, "anthropic", first[0]["format"])
+	primary := first[0]["routeId"]
+	// Failover list contains both seats regardless of which is primary.
+	ids := map[string]bool{first[0]["routeId"].(string): true, first[1]["routeId"].(string): true}
+	assert.True(t, ids["meridian-seat1:claude-sonnet-4-6"] && ids["meridian-seat2:claude-sonnet-4-6"])
 
-	second := preCandidates(t, h, "h", "claude-sonnet-4-6")
-	assert.Equal(t, "meridian-seat2:claude-sonnet-4-6", second[0]["routeId"], "should rotate primary")
+	// Same key, repeated calls → SAME primary every time (no rotation).
+	for i := 0; i < 5; i++ {
+		again := preCandidates(t, h, "h", "claude-sonnet-4-6")
+		require.Len(t, again, 2)
+		assert.Equal(t, primary, again[0]["routeId"], "same key must stay on the same primary seat")
+	}
 }
+
+// Different keys spread across the available seats (affinity is not "everyone on
+// seat1"): both seats appear as primary for some key.
+func TestConsultPre_MultiSeatSpreadsAcrossKeys(t *testing.T) {
+	seats := []string{"meridian-seat1", "meridian-seat2"}
+	cfg := makeConsultConfig(map[string]config.ConsultRoute{
+		"claude-sonnet-4-6": {Seats: seats, Format: "anthropic"},
+	})
+	byHash := map[string]*service.APIKey{}
+	for i := 0; i < 24; i++ {
+		byHash[keyN(i)] = &service.APIKey{ID: 1, UserID: 1, Status: "active",
+			User: &service.User{ID: 1, Status: "active", Balance: 100}}
+	}
+	h := newTestConsultHandler(&fakeAPIKeys{byHash: byHash}, nil, &fakePricing{}, cfg)
+
+	primaries := map[string]bool{}
+	for i := 0; i < 24; i++ {
+		cands := preCandidates(t, h, keyN(i), "claude-sonnet-4-6")
+		require.Len(t, cands, 2)
+		primaries[cands[0]["routeId"].(string)] = true
+	}
+	assert.Len(t, primaries, 2, "keys should map to both seats as primary, not all to one")
+}
+
+func keyN(i int) string { return "key-" + string(rune('a'+i%26)) + string(rune('0'+i/26)) }
 
 // preCandidates fires /consult/pre and returns the candidates array.
 func preCandidates(t *testing.T, h *ConsultHandler, hash, model string) []map[string]any {
