@@ -68,14 +68,14 @@ export const MERIDIAN_REFERENCE: EnclaveReference = {
   appId: 'bbbc8691946a8575accfa86b8b533ad288d00828',
   osImage: OS_IMAGE,
   osImageHash: 'bd369a8c2f9edb2b52dad48ac8e0b32dde5f1337c423a506b48d07403a7d8033',
-  composeHash: '759be8f5ee7f23018eb83066bbd4aa147199ae6c0dcc566ad8e04a781c869b24',
+  composeHash: 'c3d0383ea74ce91994cdec4c954904fd451cdc9e46e2a50d087302940dc0ab76',
   sourceRepo: 'https://github.com/FiiLabs/meridian.git',
   sourceCommit: 'a76735e206b719e5641a78010c379ba4f9126345',
   images: [
     {
       name: 'meridian-enclave',
       digest:
-        'docker.io/markerdao/meridian-enclave@sha256:b549d9e83f48e73c2d4b7fa0e72fda53a5dda82d3a92bdd73f5cd4309f0ba937',
+        'docker.io/markerdao/meridian-enclave@sha256:a83a2b8d562160a4246da5552e74114d6368adca4eee4b3f32e8626076174c33',
     },
   ],
   confidential: false,

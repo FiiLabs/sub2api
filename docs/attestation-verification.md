@@ -44,9 +44,9 @@ Fetch the live report and compare against these. Update this table whenever
 | app_id | `bbbc8691946a8575accfa86b8b533ad288d00828` |
 | os image | `dstack-0.5.9` — hash `bd369a8c…` (same as gateway) |
 | attestation endpoint | `https://<app-id>-8091.dstack-pha-prod5.phala.network/attestation/quote?nonce=<hex>` (nonce-bound TDX DCAP quote + dstack event log, CORS; served by the `meridian-attestor` sidecar) |
-| compose_hash | `759be8f5ee7f23018eb83066bbd4aa147199ae6c0dcc566ad8e04a781c869b24` (30-seat CVM incl. the `meridian-attestor` sidecar; verified against the quote's RTMR3 `compose-hash` event) |
+| compose_hash | `c3d0383ea74ce91994cdec4c954904fd451cdc9e46e2a50d087302940dc0ab76` (30-seat CVM incl. the `meridian-attestor` sidecar; verified against the quote's RTMR3 `compose-hash` event) |
 | measured compose | `deploy/meridian/compose.seats.generated.yaml` (generate via `gen-seats.sh`; contains only `${VAR}` refs + the two image digests + ports — NO secrets) |
-| meridian image | `docker.io/markerdao/meridian-enclave@sha256:b549d9e83f48e73c2d4b7fa0e72fda53a5dda82d3a92bdd73f5cd4309f0ba937` |
+| meridian image | `docker.io/markerdao/meridian-enclave@sha256:a83a2b8d562160a4246da5552e74114d6368adca4eee4b3f32e8626076174c33` |
 | meridian source | `FiiLabs/meridian@403e0099` (branch `fix-on-1453`, based on upstream 1.45.3; fixes the multi-turn flatten leak) — built from source by CI into the enclave image above |
 | attestor image | `docker.io/markerdao/meridian-attestor@sha256:7e6d51fe173a2762773a9a80a63ff5eee0303a060bc12551bc1fcb30f25056a1` (CI-built — SLSA provenance + keyless cosign; from `deploy/meridian/attestor/`) |
 
@@ -78,7 +78,7 @@ curl -sS "$BASE/v1/attestation/report?nonce=$NONCE" > report.json
 jq -r '.attestation.source_provenance | {repo_url, repo_commit}' report.json
 #    -> repo_commit MUST equal 975ac50f...  (the audited gateway source)
 #    Compare the quote's OS measurement to os_image_hash bd369a8c... (dstack-0.5.9),
-#    and the app compose_hash to 746302d0...  (gateway) / 759be8f5... (meridian).
+#    and the app compose_hash to 746302d0...  (gateway) / c3d0383ea74ce91994cdec4c954904fd451cdc9e46e2a50d087302940dc0ab76... (meridian).
 
 # 4) Recompute compose_hash from the published compose (dstack canonicalizes the
 #    docker-compose into app-compose.json and hashes THAT — it is NOT a raw
@@ -109,7 +109,7 @@ Phala's infrastructure. Verify (read-only):
 ```bash
 phala cvms get --cvm-id d65b6fbc8df7a1a52a55807a4f5bd2c7dc67b983 --json | jq '{listed, compose_hash}'  # gateway (enclave A)
 phala cvms get --cvm-id bbbc8691946a8575accfa86b8b533ad288d00828 --json | jq '{listed, compose_hash}'  # meridian (enclave B)
-#  -> listed: true; compose_hash matches §1 (746302d0… gateway / 759be8f5… meridian)
+#  -> listed: true; compose_hash matches §1 (746302d0… gateway / c3d0383ea74ce91994cdec4c954904fd451cdc9e46e2a50d087302940dc0ab76… meridian)
 ```
 
 `listed` is Trust Center visibility metadata, independent of the on-chain
@@ -134,7 +134,7 @@ keyless). Verify with:
 cosign verify-attestation --type slsaprovenance \
   --certificate-identity-regexp 'https://github.com/FiiLabs/sub2api/.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  docker.io/markerdao/meridian-enclave@sha256:b549d9e83f48e73c2d4b7fa0e72fda53a5dda82d3a92bdd73f5cd4309f0ba937
+  docker.io/markerdao/meridian-enclave@sha256:a83a2b8d562160a4246da5552e74114d6368adca4eee4b3f32e8626076174c33
 ```
 
 This proves the digest was built by our CI from a specific commit of this repo —
