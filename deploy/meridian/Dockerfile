@@ -13,7 +13,7 @@
 # scaffolding (<system-reminder>/[Assistant:]/role labels) as a safety net.
 # Based on upstream meridian-v1.49.1 (gains upstream resume-robustness so the
 # fresh path is rarely taken). See FiiLabs/meridian branch fix-on-1491
-# (8a21b8b: reference-block fresh-path + output scrub, rebased onto 1.49.1).
+# (1344fb8: reference-block fresh-path + output scrub, rebased onto 1.49.1).
 
 # Build Meridian itself from our fork. dist/ is NOT committed to the fork, so we
 # build it here with the repo's own toolchain (bun build + tsc via `bun run
@@ -23,7 +23,7 @@
 # binds the exact bytes; the commit is the source provenance.
 FROM node:22-slim AS meridianbuild
 ARG MERIDIAN_REPO=https://github.com/FiiLabs/meridian
-ARG MERIDIAN_COMMIT=8a21b8bb49b1bd2b1957db5b547254c6c17e1427
+ARG MERIDIAN_COMMIT=1344fb8ccec1ca0a2e248a318fdc2bc445a08151
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates \
  && rm -rf /var/lib/apt/lists/*
