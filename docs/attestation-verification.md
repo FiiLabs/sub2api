@@ -44,10 +44,10 @@ Fetch the live report and compare against these. Update this table whenever
 | app_id | `bbbc8691946a8575accfa86b8b533ad288d00828` |
 | os image | `dstack-0.5.9` — hash `bd369a8c…` (same as gateway) |
 | attestation endpoint | `https://<app-id>-8091.dstack-pha-prod5.phala.network/attestation/quote?nonce=<hex>` (nonce-bound TDX DCAP quote + dstack event log, CORS; served by the `meridian-attestor` sidecar) |
-| compose_hash | `c3d0383ea74ce91994cdec4c954904fd451cdc9e46e2a50d087302940dc0ab76` (30-seat CVM incl. the `meridian-attestor` sidecar; verified against the quote's RTMR3 `compose-hash` event) |
+| compose_hash | `9558ca4259bcb8411a959724cae0a093fa937b745b7ef9bb5516d8dcfd615ec1` (30-seat CVM incl. the `meridian-attestor` sidecar; verified against the quote's RTMR3 `compose-hash` event) |
 | measured compose | `deploy/meridian/compose.seats.generated.yaml` (generate via `gen-seats.sh`; contains only `${VAR}` refs + the two image digests + ports — NO secrets) |
-| meridian image | `docker.io/markerdao/meridian-enclave@sha256:a83a2b8d562160a4246da5552e74114d6368adca4eee4b3f32e8626076174c33` |
-| meridian source | `FiiLabs/meridian@403e0099` (branch `fix-on-1453`, based on upstream 1.45.3; fixes the multi-turn flatten leak) — built from source by CI into the enclave image above |
+| meridian image | `docker.io/markerdao/meridian-enclave@sha256:d55fc92e1f6d1f03feb18ef42b54e4eed71a2599e0059ac8ba969098630b8349` |
+| meridian source | `FiiLabs/meridian@1344fb8` (branch `fix-on-1491`, based on upstream meridian-v1.49.1; frames fresh-path history as an inert reference block + scrubs leaked scaffolding to fix the multi-turn flatten leak) — built from source by CI into the enclave image above |
 | attestor image | `docker.io/markerdao/meridian-attestor@sha256:7e6d51fe173a2762773a9a80a63ff5eee0303a060bc12551bc1fcb30f25056a1` (CI-built — SLSA provenance + keyless cosign; from `deploy/meridian/attestor/`) |
 
 > The Meridian route is **non-confidential** (Anthropic sees plaintext); its
@@ -78,7 +78,7 @@ curl -sS "$BASE/v1/attestation/report?nonce=$NONCE" > report.json
 jq -r '.attestation.source_provenance | {repo_url, repo_commit}' report.json
 #    -> repo_commit MUST equal 975ac50f...  (the audited gateway source)
 #    Compare the quote's OS measurement to os_image_hash bd369a8c... (dstack-0.5.9),
-#    and the app compose_hash to 746302d0...  (gateway) / c3d0383ea74ce91994cdec4c954904fd451cdc9e46e2a50d087302940dc0ab76... (meridian).
+#    and the app compose_hash to 746302d0...  (gateway) / 9558ca4259bcb8411a959724cae0a093fa937b745b7ef9bb5516d8dcfd615ec1... (meridian).
 
 # 4) Recompute compose_hash from the published compose (dstack canonicalizes the
 #    docker-compose into app-compose.json and hashes THAT — it is NOT a raw
@@ -109,7 +109,7 @@ Phala's infrastructure. Verify (read-only):
 ```bash
 phala cvms get --cvm-id d65b6fbc8df7a1a52a55807a4f5bd2c7dc67b983 --json | jq '{listed, compose_hash}'  # gateway (enclave A)
 phala cvms get --cvm-id bbbc8691946a8575accfa86b8b533ad288d00828 --json | jq '{listed, compose_hash}'  # meridian (enclave B)
-#  -> listed: true; compose_hash matches §1 (746302d0… gateway / c3d0383ea74ce91994cdec4c954904fd451cdc9e46e2a50d087302940dc0ab76… meridian)
+#  -> listed: true; compose_hash matches §1 (746302d0… gateway / 9558ca4259bcb8411a959724cae0a093fa937b745b7ef9bb5516d8dcfd615ec1… meridian)
 ```
 
 `listed` is Trust Center visibility metadata, independent of the on-chain
@@ -124,21 +124,25 @@ phala cvms get --cvm-id bbbc8691946a8575accfa86b8b533ad288d00828 --json | jq '{l
 |---|---|
 | **gateway (private-ai-gateway)** | ✅ Already covered: built **in-TEE by git-launcher** from `repo_commit` 975ac50f. The commit IS the provenance — no image to reproduce. |
 | **git-launcher-rust** | Built from `deploy/gateway/launcher/Dockerfile` (= `dstacktee/git-launcher@4437dce` + build-essential). Needs SLSA provenance and/or a reproducible build. |
-| **meridian-enclave** | Built from `deploy/meridian/` (`node:22-slim` + the `FiiLabs/meridian@403e0099` fork built from source [branch `fix-on-1453`, based on upstream 1.45.3, fixes the multi-turn flatten leak] + the `@rynfar/meridian-plugin-hermes-scrub` plugin built from a pinned commit + gost). bun/npm make bit-reproduction hard → use **SLSA provenance** (CI build + cosign keyless signing). |
+| **meridian-enclave** | Built from `deploy/meridian/` (`node:22-slim` + the `FiiLabs/meridian@1344fb8` fork built from source [branch `fix-on-1491`, based on upstream meridian-v1.49.1, fixes the multi-turn flatten leak via an inert reference block + response-side scaffolding scrub] + gost). bun/npm make bit-reproduction hard → use **SLSA provenance** (CI build + cosign keyless signing). |
 
 The two `markerdao/*` images are built + signed by the GitHub Actions workflow
 `.github/workflows/publish-tee-images.yml` (SLSA provenance + SBOM + cosign
-keyless). Verify with:
+keyless). The provenance/SBOM + cosign signature are attached to the multi-arch
+**image index** (`sha256:4c3db66bc1ae550f3eea61b8a41717baf1978fba89a460cbbf76dcbaee9c3cba`),
+whose `linux/amd64` child manifest (`sha256:2b0d04e4…`, the digest pinned in the
+compose above) is what dstack actually runs. Verify the signed index with:
 
 ```bash
 cosign verify-attestation --type slsaprovenance \
   --certificate-identity-regexp 'https://github.com/FiiLabs/sub2api/.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  docker.io/markerdao/meridian-enclave@sha256:a83a2b8d562160a4246da5552e74114d6368adca4eee4b3f32e8626076174c33
+  docker.io/markerdao/meridian-enclave@sha256:4c3db66bc1ae550f3eea61b8a41717baf1978fba89a460cbbf76dcbaee9c3cba
 ```
 
-This proves the digest was built by our CI from a specific commit of this repo —
-so `deploy/meridian/Dockerfile` + `@rynfar/meridian@1.44.1` is what's inside.
+This proves the index (and its pinned amd64 child) was built by our CI from a
+specific commit of this repo — so `deploy/meridian/Dockerfile` +
+`FiiLabs/meridian@1344fb8` (upstream meridian-v1.49.1) is what's inside.
 
 > Optional stronger step (bit-reproducible): `git-launcher-rust` is a trivial
 > Dockerfile and can be made bit-for-bit reproducible (pin base by digest, pin
