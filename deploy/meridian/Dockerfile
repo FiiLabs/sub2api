@@ -9,8 +9,11 @@
 # (non-resume) history as a STREAM of discrete structured user messages, and
 # collapses prior turns into ONE inert, read-only "record" block followed by the
 # genuine latest user turn — so the model reads history as reference, not as a
-# transcript to continue. Based on upstream meridian-v1.45.3. See FiiLabs/meridian
-# branch fix-on-1453 (403e009 discrete-stream fix, a76735e reference-block fix).
+# transcript to continue. A response-side scrub also strips any leaked leading
+# scaffolding (<system-reminder>/[Assistant:]/role labels) as a safety net.
+# Based on upstream meridian-v1.49.1 (gains upstream resume-robustness so the
+# fresh path is rarely taken). See FiiLabs/meridian branch fix-on-1491
+# (8a21b8b: reference-block fresh-path + output scrub, rebased onto 1.49.1).
 
 # Build Meridian itself from our fork. dist/ is NOT committed to the fork, so we
 # build it here with the repo's own toolchain (bun build + tsc via `bun run
@@ -20,7 +23,7 @@
 # binds the exact bytes; the commit is the source provenance.
 FROM node:22-slim AS meridianbuild
 ARG MERIDIAN_REPO=https://github.com/FiiLabs/meridian
-ARG MERIDIAN_COMMIT=a76735e206b719e5641a78010c379ba4f9126345
+ARG MERIDIAN_COMMIT=8a21b8bb49b1bd2b1957db5b547254c6c17e1427
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates \
  && rm -rf /var/lib/apt/lists/*
