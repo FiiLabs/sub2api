@@ -84,7 +84,12 @@ for i in $(seq 0 $((N-1))); do
     echo "      MERIDIAN_MAX_CONCURRENT: \"\${MERIDIAN_${UP}_MAX_CONCURRENT:-3}\"           # cap concurrent Claude sessions/seat"
     echo "      NODE_OPTIONS: \"\${MERIDIAN_${UP}_NODE_OPTIONS:---max-old-space-size=1024}\"   # per-session V8 heap cap (MB)"
     echo "      MERIDIAN_API_KEY: \${MERIDIAN_${UP}_API_KEY:?set MERIDIAN_${UP}_API_KEY (bearer for gateway upstream) via sealed env}"
-    echo "      PROXYLITE_SOCKS5: \${MERIDIAN_${UP}_PROXY:-}          # this seat's own static egress IP"
+    echo "      # OPTIONAL admin token — gates the privileged POST /admin/credentials +"
+    echo "      # /admin/proxy hot-swap surface. FAILS CLOSED: unset = admin surface disabled."
+    echo "      # Keep SEPARATE from MERIDIAN_API_KEY. Set/rotate via 'phala envs update'"
+    echo "      # (sealed-env value, compose_hash unchanged)."
+    echo "      MERIDIAN_ADMIN_TOKEN: \${MERIDIAN_${UP}_ADMIN_TOKEN:-}"
+    echo "      PROXYLITE_SOCKS5: \${MERIDIAN_${UP}_PROXY:-}          # INITIAL egress upstream (first boot); hot-swap via /admin/proxy, persisted to the volume"
     echo "      # CREDENTIALS/CLAUDE_JSON are OPTIONAL so a RESERVED (not-yet-activated) slot"
     echo "      # boots idle (loggedIn:false, unregistered on the gateway, harmless ~60MB). Since"
     echo "      # these are sealed-env VALUES (not measured text), ACTIVATING a slot = filling them"
@@ -136,6 +141,9 @@ done
   for i in $(seq 0 $((N-1))); do
     name=$(jq -r ".seats[$i].name" "$SEATS"); UP=$(upper "$name")
     echo "MERIDIAN_${UP}_API_KEY=mrdn-<unique random hex per seat>"
+    echo "# admin token for hot-swap endpoints (credentials + proxy). SEPARATE secret; leave"
+    echo "# blank to keep the admin surface disabled. Rotate via 'phala envs update' anytime."
+    echo "MERIDIAN_${UP}_ADMIN_TOKEN=mrdn-admin-<unique random hex per seat>"
     echo "MERIDIAN_${UP}_PROXY=$(jq -r ".seats[$i].proxy // \"socks5://<user>:<pass>@<seat static ip>:<port>\"" "$SEATS")"
     echo "MERIDIAN_${UP}_CREDENTIALS=<contents of secrets/$name/.credentials.json>"
     echo "MERIDIAN_${UP}_CLAUDE_JSON=<contents of secrets/$name/.claude.json>"

@@ -42,15 +42,17 @@ if [ -n "${CLAUDE_JSON:-}" ]; then
 fi
 
 # Optional anti-ban egress: ProxyLite is a SOCKS5 proxy, but Meridian /
-# Claude Code SDK honor HTTP proxy env (HTTPS_PROXY) only. When PROXYLITE_SOCKS5
-# is set (socks5://user:pass@host:port), run a local gost SOCKS5->HTTP shim and
-# point Meridian at it. Unset = direct egress (enclave's own IP).
-if [ -n "$PROXYLITE_SOCKS5" ]; then
-  echo "[entrypoint] starting gost SOCKS5->HTTP shim on 127.0.0.1:8118"
-  gost -L "http://127.0.0.1:8118" -F "$PROXYLITE_SOCKS5" &
-  export HTTP_PROXY="http://127.0.0.1:8118"
-  export HTTPS_PROXY="http://127.0.0.1:8118"
-  export NO_PROXY="127.0.0.1,localhost"
-fi
+# Claude Code SDK honor HTTP proxy env (HTTPS_PROXY) only. Meridian now OWNS the
+# local gost SOCKS5->HTTP shim (src/proxy/egressProxy.ts) so the ProxyLite
+# account can be hot-swapped — or removed (direct egress) — via the authed
+# POST /admin/proxy endpoint WITHOUT restarting this container. The runtime
+# choice is persisted to ~/.claude/egress-proxy.json (persistent volume) so it
+# survives restarts and beats the PROXYLITE_SOCKS5 seed below.
+#
+# entrypoint no longer launches gost or exports HTTP(S)_PROXY — Meridian sets
+# them at startup. PROXYLITE_SOCKS5 (from sealed env) is just the INITIAL
+# upstream Meridian reads on first boot (before any operator hot-swap). gost
+# must be on PATH (it is).
+export PROXYLITE_SOCKS5="${PROXYLITE_SOCKS5:-}"
 
 exec meridian

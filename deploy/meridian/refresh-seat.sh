@@ -2,6 +2,13 @@
 # Re-inject one seat's OAuth credentials after a re-login. Use when check-seats.sh
 # reports TOKEN_EXPIRED for a seat.
 #
+# PREFER ./update-seat.sh <seat> creds — it pushes the same credentials LIVE via
+# Meridian's authed /admin/credentials endpoint with NO restart and NO downtime.
+# Use THIS script when you also want the sealed env updated (so a future cold
+# boot of the CVM starts from the new creds), or when the seat's admin surface
+# is not enabled (MERIDIAN_<SEAT>_ADMIN_TOKEN unset). Best practice: run
+# update-seat.sh first (instant, no blip), then this one to persist to env.
+#
 #   1) claude login                       # log in as THAT seat's subscription account
 #   2) cp ~/.claude/.credentials.json deploy/meridian/secrets/<seat>/.credentials.json
 #      jq '{oauthAccount}' ~/.claude.json > deploy/meridian/secrets/<seat>/.claude.json
