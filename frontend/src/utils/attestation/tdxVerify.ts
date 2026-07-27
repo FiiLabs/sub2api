@@ -1,47 +1,53 @@
 /**
- * Item 2b — browser-side Intel TDX DCAP hardware-quote verification.
+ * Browser-side Intel TDX DCAP hardware-quote verification for the /proof page
+ * (single-enclave architecture: one sub2api CVM on Phala dstack).
  *
  * This is the hardware root of trust that lets the /proof page mark steps
- * "verified". It wraps `@phala/dcap-qvl-web` (the SAME audited `dcap-qvl` Rust
- * core the gateway uses server-side, compiled to wasm) — crypto is NOT
- * reimplemented here. Collateral (Intel PCK chain / TCB / QE identity) is
- * fetched from Phala PCCS directly in the browser.
+ * "verified". It wraps `@phala/dcap-qvl-web` (the audited `dcap-qvl` Rust core
+ * compiled to wasm) — crypto is NOT reimplemented here. Collateral (Intel PCK
+ * chain / TCB / QE identity) is fetched from Phala PCCS directly in the
+ * browser.
  *
- * The verification policy mirrors private-ai-gateway @975ac50
- * `src/aci/verifier/dcap.rs` + `dstack.rs`:
+ * Verification chain (verifyEnclaveQuote):
  *   1. `js_verify` proves the quote is genuine TDX hardware and reports its TCB
- *      posture (this is the audited signature-chain + collateral check).
- *   2. report_data binding: the quote's 64-byte report_data must carry the ACI
- *      digest (`reportDataDigestHex`, from item 2a) in bytes [0..32] and zeros
- *      in [32..64] — this ties the ACI keyset to genuine hardware.
+ *      posture (audited signature-chain + collateral check).
+ *   2. nonce binding: the quote's 64-byte report_data must be
+ *      `nonce(left-justified into [0..32]) || zeros(32)` — the nonce this
+ *      verifier generated, proving the quote is fresh, not replayed.
  *   3. measurement policy: the dstack event log is replayed into RTMR3 and
- *      compared to the quote's rt_mr3 (proving the log is authentic); each
- *      imr==3 event's digest is recomputed with dstack's algorithm (binding
- *      each event payload into RTMR3); then compose-hash / os-image-hash /
- *      app-id events are checked against the published reference. compose_hash
- *      is additionally cross-checked against the `mr_config_id` register, which
- *      dstack sets to `01 || compose_hash || 0*`.
+ *      compared to the quote's rt_mr3 (proving the log is authentic); then
+ *      compose-hash / os-image-hash / app-id events are checked against the
+ *      published reference. compose_hash is additionally cross-checked against
+ *      the `mr_config_id` register, which dstack sets to `01 || compose_hash || 0*`.
  *
  * Honesty note: the raw MRTD / RTMR0-2 boot registers have NO published
- * reference value (the published `osImageHash` is dstack's OS-image-hash event,
- * not the firmware MRTD), so they are exposed raw and reported as
- * `unverified` rather than faked green — OS-image identity is instead verified
- * transitively via the anchored `os-image-hash` event.
- *
- * This module is standalone; wiring into ProofView / index.ts is done by the
- * caller. It imports `reportDataDigestHex` only as a value (hex string).
+ * reference value (the published `osImageHash` is dstack's os-image-hash event,
+ * not the firmware MRTD), so they are exposed raw and reported as `unverified`
+ * rather than faked green — OS-image identity is instead verified transitively
+ * via the anchored `os-image-hash` event.
  */
 import { sha384 } from '@noble/hashes/sha2.js'
-import type { AttestationReport } from '@/api/attestation'
-import { GATEWAY_REFERENCE, MERIDIAN_REFERENCE, type EnclaveReference } from '@/constants/attestation'
-import { bytesToHex, decodeHex } from './jcs'
-import type { Check } from './reportBinding'
+import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js'
+import type { EnclaveReference } from '@/constants/attestation'
+
+/** One granular verification step, rendered as a row in the auditors list. */
+export interface Check {
+  id: string
+  ok: boolean
+  detail?: string
+}
 
 /** Default Phala PCCS endpoint (verified CORS-clean for browser fetches). */
 export const PHALA_PCCS_URL = 'https://pccs.phala.network'
 
 /** TCB statuses accepted as a clean hardware pass by default. */
 export const DEFAULT_ACCEPTABLE_TCB_STATUSES = ['UpToDate'] as const
+
+/** Decode hex (with optional `0x` prefix) to bytes. */
+export function decodeHex(value: string): Uint8Array {
+  const stripped = value.startsWith('0x') || value.startsWith('0X') ? value.slice(2) : value
+  return hexToBytes(stripped)
+}
 
 // --- wasm module typing (from @phala/dcap-qvl-web 0.3.3 .d.ts) ---------------
 
@@ -192,37 +198,6 @@ export async function verifyTdxQuote(
   }
 }
 
-// --- report_data binding -----------------------------------------------------
-
-/** Expected quote report_data for an ACI digest: `digest(32) || zeros(32)`, hex. */
-export function expectedAciReportDataHex(reportDataDigestHex: string): string {
-  const digest = normHex(reportDataDigestHex)
-  if (digest.length !== 64) {
-    throw new Error(`reportDataDigestHex must be 32 bytes (64 hex chars), got ${digest.length}`)
-  }
-  return digest + '00'.repeat(32)
-}
-
-/**
- * Check a 64-byte quote report_data binds the ACI digest: bytes [0..32] equal
- * the digest and bytes [32..64] are zero (mirrors `expected_dcap_report_data`).
- */
-export function checkReportDataBinding(
-  quoteReportDataHex: string,
-  reportDataDigestHex: string,
-): { ok: boolean; detail: string } {
-  const actual = normHex(quoteReportDataHex)
-  if (actual.length !== 128) {
-    return { ok: false, detail: `quote report_data must be 64 bytes, got ${actual.length / 2}` }
-  }
-  const expected = expectedAciReportDataHex(reportDataDigestHex)
-  const ok = actual === expected
-  return {
-    ok,
-    detail: ok ? `report_data[0..32]=${normHex(reportDataDigestHex)}, [32..64]=0` : `expected=${expected} actual=${actual}`,
-  }
-}
-
 // --- dstack event log --------------------------------------------------------
 
 interface DstackEvent {
@@ -244,7 +219,7 @@ function parseEventLog(evidence: unknown): DstackEvent[] {
 /**
  * dstack RTMR event digest:
  *   sha384( u32le(event_type) || ":" || utf8(event) || ":" || event_payload )
- * (confirmed empirically against a live gateway quote's compose-hash event).
+ * (confirmed empirically against live dstack quotes).
  */
 export function dstackEventDigestHex(event: DstackEvent): string {
   const typeLe = new Uint8Array(4)
@@ -285,11 +260,20 @@ function concatBytes(...arrays: Uint8Array[]): Uint8Array {
   return out
 }
 
-// --- report-bound verification -----------------------------------------------
+// --- enclave quote verification ------------------------------------------------
+// The attestor sidecar (deploy/attestor) exposes a nonce-bound raw TDX quote +
+// dstack event log. Verification = genuine hardware + nonce freshness +
+// measurements against the published reference.
 
-export interface VerifyQuoteBoundOptions extends VerifyTdxQuoteOptions {
-  /** Expected enclave reference. Auto-selected by app-id if omitted. */
-  reference?: EnclaveReference
+export interface EnclaveQuoteInput {
+  quote: string
+  event_log: unknown
+  vm_config?: unknown
+}
+
+export interface VerifyEnclaveQuoteOptions extends VerifyTdxQuoteOptions {
+  /** Published reference to compare measurements against (required). */
+  reference: EnclaveReference
   /** TCB statuses treated as a clean pass. Defaults to ["UpToDate"]. */
   acceptableTcbStatuses?: readonly string[]
 }
@@ -310,11 +294,10 @@ export interface QuoteBindingMeasurements {
   composeHashFromEventLog?: string
   osImageHashFromEventLog?: string
   appIdFromEventLog?: string
-  referenceName?: string
   reference?: EnclaveReference
 }
 
-export interface VerifyQuoteBoundResult {
+export interface VerifyEnclaveQuoteResult {
   /** True iff every gating check passed (non-gating/informational excluded). */
   ok: boolean
   checks: (Check & { gating?: boolean })[]
@@ -322,204 +305,7 @@ export interface VerifyQuoteBoundResult {
 }
 
 /**
- * Verify that the DCAP quote embedded in an attestation report is genuine TDX
- * hardware AND binds the given ACI report_data digest AND matches the published
- * measurement reference. Returns granular per-check results for the UI.
- */
-export async function verifyQuoteBoundToReport(
-  report: AttestationReport,
-  reportDataDigestHex: string,
-  opts: VerifyQuoteBoundOptions = {},
-): Promise<VerifyQuoteBoundResult> {
-  const checks: (Check & { gating?: boolean })[] = []
-  const measurements: QuoteBindingMeasurements = {}
-  const push = (id: string, ok: boolean, detail?: string, gating = true) =>
-    checks.push({ id, ok, detail, gating })
-
-  const evidence = report.attestation?.evidence
-  const quoteHex = evidence?.quote
-  if (!quoteHex || typeof quoteHex !== 'string') {
-    push('quote_present', false, 'report.attestation.evidence.quote is missing')
-    return { ok: false, checks, measurements }
-  }
-
-  // 1. Genuine-hardware + TCB.
-  let quote: VerifyTdxQuoteResult
-  try {
-    quote = await verifyTdxQuote(quoteHex, opts)
-  } catch (e) {
-    push('quote_genuine', false, `js_verify failed: ${String(e)}`)
-    return { ok: false, checks, measurements }
-  }
-  push('quote_genuine', quote.verified, `TDX quote signature chain verified against Intel collateral`)
-
-  const acceptable = opts.acceptableTcbStatuses ?? DEFAULT_ACCEPTABLE_TCB_STATUSES
-  const tcbOk = acceptable.includes(quote.tcbStatus)
-  measurements.tcbStatus = quote.tcbStatus
-  measurements.advisoryIds = quote.advisoryIds
-  push(
-    'tcb_status',
-    tcbOk,
-    `status=${quote.tcbStatus}${quote.advisoryIds.length ? ` advisories=${quote.advisoryIds.join(',')}` : ''}`,
-  )
-
-  const reg = quote.report
-  measurements.reportDataHex = reg.reportDataHex
-  measurements.mrTd = reg.mrTdHex
-  measurements.mrConfigId = reg.mrConfigIdHex
-  measurements.rtMr0 = reg.rtMr0Hex
-  measurements.rtMr1 = reg.rtMr1Hex
-  measurements.rtMr2 = reg.rtMr2Hex
-  measurements.rtMr3 = reg.rtMr3Hex
-
-  // 2. tee_type consistency.
-  const verifiedTeeType = reg.kind === 'SgxEnclave' ? 'sgx' : 'tdx'
-  push(
-    'tee_type',
-    report.attestation?.tee_type === verifiedTeeType,
-    `reported=${report.attestation?.tee_type} verified=${verifiedTeeType}`,
-  )
-
-  // 3. evidence.quote_report_data (if present) must match the verified quote.
-  const evidenceReportData =
-    typeof evidence?.quote_report_data === 'string' ? normHex(evidence.quote_report_data) : undefined
-  if (evidenceReportData !== undefined) {
-    push(
-      'quote_report_data_evidence',
-      evidenceReportData === reg.reportDataHex,
-      `evidence=${evidenceReportData}`,
-    )
-  }
-
-  // 4. report_data binding (critical): quote report_data == digest||zeros.
-  try {
-    const b = checkReportDataBinding(reg.reportDataHex, reportDataDigestHex)
-    push('report_data_binding', b.ok, b.detail)
-  } catch (e) {
-    push('report_data_binding', false, String(e))
-  }
-
-  // --- measurement policy --------------------------------------------------
-  // Parse + authenticate the dstack event log, then bind named events.
-  let events: DstackEvent[] = []
-  let eventLogOk = false
-  try {
-    events = parseEventLog(evidence)
-    // Replay RTMR3 and compare to the quote register: proves the log is authentic.
-    if (reg.kind === 'SgxEnclave') {
-      push('measurement_rtmr3_replay', false, 'SGX enclave has no RTMR3')
-    } else {
-      const replayed = replayRtmrHex(events, 3)
-      eventLogOk = replayed === reg.rtMr3Hex
-      push('measurement_rtmr3_replay', eventLogOk, `replayed=${replayed} quote=${reg.rtMr3Hex}`)
-    }
-    // Bind each imr==3 event payload into RTMR3 by recomputing its digest.
-    const imr3 = events.filter((e) => e.imr === 3)
-    const mismatched = imr3.filter((e) => dstackEventDigestHex(e) !== normHex(e.digest))
-    push(
-      'measurement_event_digest_binding',
-      mismatched.length === 0,
-      mismatched.length === 0
-        ? `${imr3.length} RTMR3 events bound`
-        : `unbound events: ${mismatched.map((e) => e.event).join(',')}`,
-    )
-  } catch (e) {
-    push('measurement_rtmr3_replay', false, `event_log parse failed: ${String(e)}`)
-    push('measurement_event_digest_binding', false, String(e))
-  }
-
-  const eventPayload = (name: string): string | undefined => {
-    const ev = events.find((e) => e.imr === 3 && e.event === name)
-    return ev ? normHex(ev.event_payload) : undefined
-  }
-  measurements.composeHashFromEventLog = eventPayload('compose-hash')
-  measurements.osImageHashFromEventLog = eventPayload('os-image-hash')
-  measurements.appIdFromEventLog = eventPayload('app-id')
-
-  // compose_hash also lives in mr_config_id: `01 || compose_hash || 0*`.
-  if (reg.mrConfigIdHex && reg.mrConfigIdHex.length >= 66) {
-    measurements.composeHashFromConfigId = reg.mrConfigIdHex.slice(2, 66)
-  }
-
-  // Reference selection: explicit, else auto-detect by app-id.
-  const reference = opts.reference ?? selectReference(measurements.appIdFromEventLog)
-  measurements.reference = reference
-  measurements.referenceName = reference
-    ? reference === GATEWAY_REFERENCE
-      ? 'gateway'
-      : reference === MERIDIAN_REFERENCE
-        ? 'meridian'
-        : 'custom'
-    : undefined
-
-  if (!reference) {
-    push('measurement_reference_known', false, `no reference matches app-id=${measurements.appIdFromEventLog}`)
-  } else {
-    // app-id
-    push(
-      'measurement_app_id',
-      measurements.appIdFromEventLog === reference.appId.toLowerCase(),
-      `event=${measurements.appIdFromEventLog} ref=${reference.appId}`,
-    )
-    // compose_hash via event log
-    push(
-      'measurement_compose_hash_eventlog',
-      measurements.composeHashFromEventLog === reference.composeHash.toLowerCase(),
-      `event=${measurements.composeHashFromEventLog} ref=${reference.composeHash}`,
-    )
-    // compose_hash via mr_config_id register (independent hardware binding)
-    push(
-      'measurement_compose_hash_mrconfigid',
-      measurements.composeHashFromConfigId === reference.composeHash.toLowerCase(),
-      `mr_config_id[1..33]=${measurements.composeHashFromConfigId} ref=${reference.composeHash}`,
-    )
-    // os_image_hash via event log
-    push(
-      'measurement_os_image_hash',
-      measurements.osImageHashFromEventLog === reference.osImageHash.toLowerCase(),
-      `event=${measurements.osImageHashFromEventLog} ref=${reference.osImageHash}`,
-    )
-  }
-
-  // Raw firmware/boot registers: no published reference exists (osImageHash is
-  // the dstack os-image-hash event, not the firmware MRTD). Expose raw and mark
-  // explicitly unverified rather than fake a comparison — OS-image identity is
-  // covered by measurement_os_image_hash above.
-  push(
-    'measurement_mrtd_reference',
-    false,
-    `no published reference for raw MRTD/RTMR0-2; mr_td=${reg.mrTdHex}. ` +
-      `OS-image identity is instead anchored via measurement_os_image_hash.`,
-    false, // non-gating: informational, does not fail the overall gate
-  )
-
-  const ok = checks.filter((c) => c.gating !== false).every((c) => c.ok)
-  return { ok, checks, measurements }
-}
-
-function selectReference(appIdHex: string | undefined): EnclaveReference | undefined {
-  if (!appIdHex) return undefined
-  if (appIdHex === GATEWAY_REFERENCE.appId.toLowerCase()) return GATEWAY_REFERENCE
-  if (appIdHex === MERIDIAN_REFERENCE.appId.toLowerCase()) return MERIDIAN_REFERENCE
-  return undefined
-}
-
-// --- Meridian (enclave B) quote verification (hop-3) -------------------------
-// Meridian is the @rynfar/meridian bridge, NOT private-ai-gateway: it has no ACI
-// keyset/receipt. Its sidecar (deploy/meridian/attestor) exposes a nonce-bound
-// raw TDX quote + dstack event log. So hop-3 verifies genuine hardware + nonce
-// freshness + measurements (against MERIDIAN_REFERENCE) — the same measurement
-// policy as the gateway, with the ACI report_data digest binding replaced by a
-// direct nonce binding.
-
-export interface MeridianQuoteInput {
-  quote: string
-  event_log: unknown
-  vm_config?: unknown
-}
-
-/**
- * Freshness binding for a Meridian quote: the quote's 64-byte report_data must be
+ * Freshness binding: the quote's 64-byte report_data must be
  * `nonce(left-justified into [0..32]) || zeros(32)` — i.e. it starts with exactly
  * the nonce the caller sent and is zero elsewhere. Mirrors the sidecar's binding.
  */
@@ -544,23 +330,22 @@ export function checkNonceBinding(
 }
 
 /**
- * Verify a Meridian enclave-B attestation (nonce-bound TDX quote + dstack event
+ * Verify the sub2api CVM's attestation (nonce-bound TDX quote + dstack event
  * log): genuine TDX hardware + TCB + nonce freshness + measurements against the
- * published Meridian reference. Returns the same granular result shape as the
- * gateway's quote verification.
+ * published reference. Returns granular per-check results for the UI.
  */
-export async function verifyMeridianQuote(
-  input: MeridianQuoteInput,
+export async function verifyEnclaveQuote(
+  input: EnclaveQuoteInput,
   nonceHex: string,
-  opts: VerifyQuoteBoundOptions = {},
-): Promise<VerifyQuoteBoundResult> {
+  opts: VerifyEnclaveQuoteOptions,
+): Promise<VerifyEnclaveQuoteResult> {
   const checks: (Check & { gating?: boolean })[] = []
   const measurements: QuoteBindingMeasurements = {}
   const push = (id: string, ok: boolean, detail?: string, gating = true) =>
     checks.push({ id, ok, detail, gating })
 
   if (!input.quote || typeof input.quote !== 'string') {
-    push('quote_present', false, 'no quote in Meridian attestation response')
+    push('quote_present', false, 'no quote in attestor response')
     return { ok: false, checks, measurements }
   }
 
@@ -593,23 +378,23 @@ export async function verifyMeridianQuote(
   measurements.rtMr2 = reg.rtMr2Hex
   measurements.rtMr3 = reg.rtMr3Hex
 
-  // 2. Nonce freshness (replaces the ACI report_data digest binding).
+  // 2. Nonce freshness.
   const nb = checkNonceBinding(reg.reportDataHex, nonceHex)
   push('nonce_binding', nb.ok, nb.detail)
 
-  // 3. Measurement policy — same as the gateway, against MERIDIAN_REFERENCE.
+  // 3. Measurement policy.
   let events: DstackEvent[] = []
   try {
     events = parseEventLog(input)
     if (reg.kind === 'SgxEnclave') {
       push('measurement_rtmr3_replay', false, 'SGX enclave has no RTMR3')
     } else {
-      // The dstack `getQuote` event_log carries EMPTY `digest` fields (unlike the
-      // gateway's ACI report), so recompute each imr==3 event's digest from its
-      // (event_type, event, event_payload) — the same algorithm dstack extends,
-      // confirmed byte-exact on the gateway — fold those into RTMR3, and match the
-      // quote's rt_mr3. This binds every event payload (compose-hash, os-image-hash,
-      // app-id, …) directly to the attested hardware register.
+      // The dstack `getQuote` event_log carries EMPTY `digest` fields, so
+      // recompute each imr==3 event's digest from its (event_type, event,
+      // event_payload) — the same algorithm dstack extends — fold those into
+      // RTMR3, and match the quote's rt_mr3. This binds every event payload
+      // (compose-hash, os-image-hash, app-id, …) directly to the attested
+      // hardware register.
       const imr3 = events.filter((e) => e.imr === 3)
       const withDigests = events.map((e) =>
         e.imr === 3 ? { ...e, digest: dstackEventDigestHex(e) } : e,
@@ -632,13 +417,13 @@ export async function verifyMeridianQuote(
   measurements.composeHashFromEventLog = eventPayload('compose-hash')
   measurements.osImageHashFromEventLog = eventPayload('os-image-hash')
   measurements.appIdFromEventLog = eventPayload('app-id')
+  // compose_hash also lives in mr_config_id: `01 || compose_hash || 0*`.
   if (reg.mrConfigIdHex && reg.mrConfigIdHex.length >= 66) {
     measurements.composeHashFromConfigId = reg.mrConfigIdHex.slice(2, 66)
   }
 
-  const reference = opts.reference ?? selectReference(measurements.appIdFromEventLog) ?? MERIDIAN_REFERENCE
+  const reference = opts.reference
   measurements.reference = reference
-  measurements.referenceName = 'meridian'
   push(
     'measurement_app_id',
     measurements.appIdFromEventLog === reference.appId.toLowerCase(),
@@ -659,12 +444,16 @@ export async function verifyMeridianQuote(
     measurements.osImageHashFromEventLog === reference.osImageHash.toLowerCase(),
     `event=${measurements.osImageHashFromEventLog} ref=${reference.osImageHash}`,
   )
+  // Raw firmware/boot registers: no published reference exists (osImageHash is
+  // the dstack os-image-hash event, not the firmware MRTD). Expose raw and mark
+  // explicitly unverified rather than fake a comparison — OS-image identity is
+  // covered by measurement_os_image_hash above.
   push(
     'measurement_mrtd_reference',
     false,
     `no published reference for raw MRTD/RTMR0-2; mr_td=${reg.mrTdHex}. ` +
       `OS-image identity is instead anchored via measurement_os_image_hash.`,
-    false,
+    false, // non-gating: informational, does not fail the overall gate
   )
 
   const ok = checks.filter((c) => c.gating !== false).every((c) => c.ok)

@@ -1,0 +1,28 @@
+{
+  "$comment": "Authoritative attestation reference for the production sub2api CVM. Fetched at runtime by the /proof page (see frontend/src/utils/attestation/reference.ts). Every change to this file is public git history — that is part of the trust story. All-zero values are placeholders until the first proof-solo deploy (P0-7): composeHash is read back from the CVM's RTMR3 via the attestor, osImageHash from the first live quote, image digests from the publish-tee-images CI run.",
+  "version": 1,
+  "updatedAt": "2026-07-27",
+  "enclave": {
+    "appId": "aee564d9e3e1188f47413de2eaad17a8844276db",
+    "osImage": "dstack-0.5.9",
+    "osImageHash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "composeHash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "sourceRepo": "https://github.com/FiiLabs/sub2api.git",
+    "sourceCommit": "0000000000000000000000000000000000000000",
+    "images": [
+      {
+        "name": "sub2api",
+        "digest": "docker.io/markerdao/sub2api@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      {
+        "name": "sub2api-attestor",
+        "digest": "docker.io/markerdao/sub2api-attestor@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    ],
+    "confidential": false
+  },
+  "attestor": {
+    "baseUrl": "https://aee564d9e3e1188f47413de2eaad17a8844276db-8091.dstack-pha-prod9.phala.network",
+    "quotePath": "/attestation/quote"
+  }
+}
