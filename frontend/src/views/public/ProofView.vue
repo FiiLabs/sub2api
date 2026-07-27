@@ -232,7 +232,11 @@ const result = ref<VerifyEnclaveQuoteResult | null>(null)
 const nonceHex = ref('')
 const rawResponse = ref<EnclaveQuoteInput | null>(null)
 
-const attestorUrl = `${ATTESTOR_BASE_URL}${ATTESTATION_QUOTE_PATH}`
+// Runtime-published attestor URL (reference.json) wins; baked-in is fallback,
+// so moving to a new CVM only needs a reference.json edit, not a rebuild.
+const attestorUrl = computed(
+  () => `${loaded.value?.attestorBaseUrl ?? ATTESTOR_BASE_URL}${ATTESTATION_QUOTE_PATH}`,
+)
 const reference = computed<EnclaveReference | undefined>(() => loaded.value?.reference)
 
 function randomNonceHex(): string {
@@ -249,7 +253,7 @@ async function run(): Promise<void> {
   try {
     loaded.value = await loadReference()
     nonceHex.value = randomNonceHex()
-    const res = await fetch(`${attestorUrl}?nonce=${nonceHex.value}`, { cache: 'no-store' })
+    const res = await fetch(`${attestorUrl.value}?nonce=${nonceHex.value}`, { cache: 'no-store' })
     if (!res.ok) {
       throw new Error(`${t('proof.errors.fetchFailed')} (HTTP ${res.status})`)
     }
@@ -326,7 +330,7 @@ function downloadEvidence(): void {
       JSON.stringify(
         {
           fetchedAt: new Date().toISOString(),
-          attestorUrl,
+          attestorUrl: attestorUrl.value,
           nonce: nonceHex.value,
           referenceSource: loaded.value?.source,
           reference: loaded.value?.reference,

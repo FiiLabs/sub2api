@@ -20,11 +20,19 @@ export interface LoadedReference {
   source: 'repo' | 'baked-in'
   /** The URL fetched when source === 'repo'. */
   url?: string
+  /**
+   * Attestor base URL published alongside the reference. Published at runtime
+   * so moving the service to a new CVM (new app-id / node) only needs a
+   * reference.json edit, not an image rebuild. Absent -> caller falls back to
+   * the baked-in ATTESTOR_BASE_URL.
+   */
+  attestorBaseUrl?: string
 }
 
 interface ReferenceJson {
   version: number
   enclave: EnclaveReference
+  attestor?: { baseUrl?: string; quotePath?: string }
 }
 
 function isValidReference(v: unknown): v is EnclaveReference {
@@ -46,7 +54,12 @@ export async function loadReference(fetchImpl: typeof fetch = fetch): Promise<Lo
     if (res.ok) {
       const body = (await res.json()) as ReferenceJson
       if (body?.version === 1 && isValidReference(body.enclave)) {
-        return { reference: body.enclave, source: 'repo', url: REFERENCE_JSON_URL }
+        const rawBase = body.attestor?.baseUrl
+        const attestorBaseUrl =
+          typeof rawBase === 'string' && /^https:\/\/[^\s]+$/.test(rawBase)
+            ? rawBase.replace(/\/+$/, '')
+            : undefined
+        return { reference: body.enclave, source: 'repo', url: REFERENCE_JSON_URL, attestorBaseUrl }
       }
     }
   } catch {
