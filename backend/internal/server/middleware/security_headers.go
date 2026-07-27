@@ -34,6 +34,10 @@ var requiredCSPDirectiveValues = []struct {
 	directive string
 	value     string
 }{
+	// The /proof page verifies Intel TDX quotes in-browser via a WebAssembly
+	// build of dcap-qvl; browsers gate WebAssembly compilation behind
+	// 'wasm-unsafe-eval' (JS eval stays blocked).
+	{"script-src", "'wasm-unsafe-eval'"},
 	{"script-src", CloudflareInsightsDomain},
 	{"script-src", StripeDomain},
 	{"frame-src", StripeDomain},
