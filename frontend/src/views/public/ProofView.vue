@@ -243,6 +243,12 @@
           <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('proof.e2ee.live.title') }}</h3>
           <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-dark-300">{{ t('proof.e2ee.live.desc') }}</p>
 
+          <!-- State the proof up front so the point is clear even before running -->
+          <div class="mt-3 rounded-lg border border-primary-200 bg-primary-50 px-4 py-3 dark:border-primary-500/30 dark:bg-primary-500/10">
+            <p class="text-xs font-semibold text-primary-700 dark:text-primary-300">🎯 {{ t('proof.e2ee.live.claimTitle') }}</p>
+            <p class="mt-1 text-xs leading-5 text-primary-800/90 dark:text-primary-200/90">{{ t('proof.e2ee.live.claimBody') }}</p>
+          </div>
+
           <div class="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
             <Icon name="shield" size="sm" class="mt-0.5 flex-shrink-0" />
             <span>{{ t('proof.e2ee.live.disclosure') }}</span>
@@ -300,11 +306,17 @@
                 <div>
                   <p class="text-xs font-medium opacity-80">{{ t('proof.e2ee.live.wireLabel') }}</p>
                   <pre class="mt-1 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded bg-white/60 p-2 font-mono text-[11px] leading-4 text-gray-500 dark:bg-black/20 dark:text-dark-400">{{ truncateHex(e2eeResult.wireHex) }}</pre>
+                  <p v-if="e2eeResult.sealedToKeyId" class="mt-1 break-all font-mono text-[11px] text-gray-400 dark:text-dark-500">{{ t('proof.e2ee.live.sealedToLabel') }}: {{ e2eeResult.sealedToKeyId }}</p>
                 </div>
                 <div>
                   <p class="text-xs font-medium opacity-80">{{ t('proof.e2ee.live.replyLabel') }}</p>
                   <pre class="mt-1 overflow-auto whitespace-pre-wrap rounded bg-white/60 p-2 font-mono text-xs text-gray-800 dark:bg-black/20 dark:text-gray-100">{{ e2eeResult.replyText }}</pre>
                 </div>
+              </div>
+              <!-- Conclusion — the takeaway in one sentence -->
+              <div class="mt-3 rounded-lg border border-green-300 bg-green-100/70 p-3 dark:border-green-500/40 dark:bg-green-500/10">
+                <p class="text-xs font-semibold">✅ {{ t('proof.e2ee.live.concludeTitle') }}</p>
+                <p class="mt-1 text-xs leading-5">{{ t('proof.e2ee.live.concludeBody') }}</p>
               </div>
             </template>
             <template v-else>
@@ -312,6 +324,18 @@
               <p class="mt-1 leading-6">{{ t('proof.e2ee.live.failNote') }}</p>
               <p v-if="e2eeResult.error" class="mt-2 break-all font-mono text-xs opacity-70">{{ e2eeResult.error }}</p>
             </template>
+
+            <!-- Raw per-step trace, collapsed by default (for the curious, not the newcomer) -->
+            <details v-if="e2eeResult.checks.length" class="mt-3">
+              <summary class="cursor-pointer text-xs font-semibold uppercase tracking-wide opacity-60">{{ t('proof.e2ee.live.stepsLabel') }}</summary>
+              <ul class="mt-1 space-y-1">
+                <li v-for="c in e2eeResult.checks" :key="c.id" class="flex flex-wrap items-baseline gap-x-2 font-mono text-xs">
+                  <span :class="c.ok ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'">{{ c.ok ? '✓' : '✗' }}</span>
+                  <span class="text-gray-700 dark:text-dark-200">{{ c.id }}</span>
+                  <span v-if="c.detail" class="break-all text-gray-400 dark:text-dark-500">— {{ c.detail }}</span>
+                </li>
+              </ul>
+            </details>
           </div>
         </div>
       </section>
@@ -461,6 +485,7 @@ import {
   eciesEncrypt,
   generateClientKeypair,
   hexToBytes,
+  sha256Hex,
 } from '@/utils/attestation/e2ee'
 import {
   PHALA_PCCS_URL,
@@ -736,7 +761,9 @@ interface E2eeResult {
   promptText?: string
   wireHex?: string
   replyText?: string
+  sealedToKeyId?: string
   error?: string
+  checks: Check[]
 }
 const e2eeResult = ref<E2eeResult | null>(null)
 const e2eeAttested = computed(
@@ -752,28 +779,38 @@ async function runE2ee(): Promise<void> {
   e2eeRunning.value = true
   e2eeResult.value = null
   const promptText = e2eeMsg.value
+  const checks: Check[] = []
+  const step = (id: string, ok: boolean, detail?: string) => checks.push({ id, ok, detail })
   try {
     const kp = generateClientKeypair()
     const wire = eciesEncrypt(pub, new TextEncoder().encode(promptText), AAD_REQ)
+    const sealedToKeyId = sha256Hex(hexToBytes(pub))
+    step('encrypt_to_attested_key', true, `${wire.length} bytes, sealed to sha256(pubkey)=${sealedToKeyId}`)
     const base = loaded.value?.attestorBaseUrl ?? ATTESTOR_BASE_URL
     const res = await fetch(`${base}/e2ee/echo`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ payload: bytesToHex(wire), reply_pubkey: kp.pubHex }),
     })
+    step('post_echo', res.ok, `HTTP ${res.status}`)
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`)
     const body = (await res.json()) as { payload: string }
     const reply = eciesDecrypt(kp.priv, hexToBytes(body.payload), AAD_RESP)
+    step('authenticated_decrypt', true, `${reply.length} bytes, AES-256-GCM tag verified`)
     const parsed = JSON.parse(new TextDecoder().decode(reply)) as { echo: string }
-    if (parsed.echo !== promptText) throw new Error('echo mismatch: enclave returned different content')
+    const match = parsed.echo === promptText
+    step('echo_match', match)
+    if (!match) throw new Error('echo mismatch: enclave returned different content')
     e2eeResult.value = {
       ok: true,
       promptText,
       wireHex: bytesToHex(wire),
       replyText: JSON.stringify(parsed, null, 2),
+      sealedToKeyId,
+      checks,
     }
   } catch (e) {
-    e2eeResult.value = { ok: false, error: e instanceof Error ? e.message : String(e) }
+    e2eeResult.value = { ok: false, error: e instanceof Error ? e.message : String(e), checks }
   } finally {
     e2eeRunning.value = false
   }

@@ -38,7 +38,7 @@ export default {
       hop1: {
         node: 'Your device → ApexOne gateway (running in confidential hardware)',
         claim:
-          'Your request reaches a hardware-protected confidential computer (a confidential VM) over an encrypted connection; the code it runs is confirmed by checking its code fingerprint (compose_hash) — measured and signed by Intel hardware, impossible to fake.',
+          'Your request reaches a hardware-protected confidential computer (a confidential VM) over an encrypted connection; the code it runs is confirmed by checking its code fingerprint (compose_hash) — measured and signed by Intel hardware, impossible to fake. Want more tangible evidence? Use the end-to-end encryption demo below: your browser encrypts content directly to this computer’s dedicated key — only it can decrypt, and no middlebox sees plaintext.',
         basis: 'Code-fingerprint check + Intel hardware attestation (TDX)'
       },
       hop2: {
@@ -118,7 +118,7 @@ export default {
       fetching: 'Fetching & verifying…',
       download: 'Download evidence (evidence.json)',
       nonce: 'One-time nonce',
-      error: 'Could not reach the attestation service.',
+      error: 'Could not reach the attestation service. It is served cross-origin by the confidential computer and requires CORS to be enabled.',
       endpointLabel: 'Attestation endpoint',
       collateralLabel: 'Intel verification collateral',
       explorerLabel: 'External verifier',
@@ -161,7 +161,13 @@ export default {
       live: {
         title: 'See for yourself: only the enclave can decrypt (optional live test)',
         desc: 'Click below and your browser encrypts a message to the hardware-attested key and sends it to the confidential computer, which decrypts it inside and echoes it back encrypted. No API key, no cost, nothing stored.',
-        disclosure: 'Honest disclosure: this test proves key possession — only this confidential computer can open content encrypted to it. Regular API calls travel over TLS and do not add this end-to-end layer.',
+        disclosure: 'Honest disclosure: this test proves key possession — only this confidential computer can open content encrypted to it; the demo message is echoed inside the enclave and never forwarded to upstream models. Regular API calls travel over TLS and do not add this end-to-end layer. Want to check for yourself? Open your browser devtools, Network tab — the request body you send contains only ciphertext.',
+        claimTitle: 'What this demo proves',
+        claimBody: 'Your message is encrypted into ciphertext right in your browser, and only the hardware-attested confidential computer above can open it. The network and every middlebox handle only that ciphertext — your content is unreadable to them. That it can decrypt and encrypt a reply proves exactly this.',
+        sealedToLabel: 'Encrypted to (hardware-attested key, sha256)',
+        concludeTitle: 'Conclusion',
+        concludeBody: 'The receipt decrypts and authenticates ⟹ only the confidential computer holding the hardware-attested private key could open what you sent. The network and any middlebox cannot — and this holds regardless of whether you trust TLS.',
+        stepsLabel: 'Technical step trace',
         promptLabel: 'Message to encrypt',
         run: 'Encrypt & round-trip once',
         running: 'Encrypting & verifying…',
