@@ -1,19 +1,22 @@
-# Build + publish the two markerdao TEE helper images with SLSA provenance and
-# keyless cosign signatures, so a verifier can prove each pinned digest was built
-# by THIS repo's CI from a specific commit (digest <-> source binding). See
-# docs/attestation-verification.md §4.
+# Build + publish the two images the sub2api Phala CVM runs, with SLSA
+# provenance and keyless cosign signatures, so a verifier can prove each pinned
+# digest was built by THIS repo's CI from a specific commit (digest <-> source
+# binding). See docs/attestation-verification.md §4.
 #
-# The gateway itself is NOT built here — it is built in-TEE by git-launcher from
-# the pinned commit, so the commit is its provenance.
+#   sub2api          - the whole service (Go backend + embedded frontend),
+#                      built from the repo-root Dockerfile
+#   sub2api-attestor - the attestation sidecar (deploy/attestor/), serves the
+#                      nonce-bound TDX quote the /proof page verifies
 #
 # Required repo secrets:
 #   DOCKERHUB_USERNAME  - a Docker Hub user with push access to docker.io/markerdao
 #   DOCKERHUB_TOKEN     - that user's access token
 # Keyless cosign signing uses GitHub OIDC (no long-lived keys) — needs id-token: write.
 #
-# After a run, copy the printed digest into the compose files
-# (deploy/gateway/compose.enclave.yaml, deploy/meridian/compose.seats.generated.yaml
-# via gen-seats.sh IMAGE) and re-verify the deployment's compose_hash.
+# After a run: the printed digest is the multi-arch INDEX (what cosign signs).
+# Pin the linux/amd64 CHILD manifest into deploy/phala/docker-compose.yml
+# (get it with `docker buildx imagetools inspect <image>@<index-digest>`),
+# then update docs/attestation-verification.md and deploy/phala/reference.json.
 
 name: publish-tee-images
 
@@ -21,7 +24,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Image tag to publish (e.g. v2, 1.44.1)"
+        description: "Image tag to publish (e.g. proof-v1)"
         required: true
         default: "manual"
 
@@ -35,25 +38,21 @@ jobs:
     strategy:
       matrix:
         include:
-          - name: meridian-enclave
-            image: docker.io/markerdao/meridian-enclave
-            context: deploy/meridian
-            prebuild: deploy/meridian/fetch-gost.sh   # fetch gost into the build context
-          - name: git-launcher-rust
-            image: docker.io/markerdao/git-launcher-rust
-            context: deploy/gateway/launcher
-            prebuild: ""
-          - name: meridian-attestor
-            image: docker.io/markerdao/meridian-attestor
-            context: deploy/meridian/attestor
-            prebuild: ""
+          - name: sub2api
+            image: docker.io/markerdao/sub2api
+            context: .
+            build-args: |
+              VERSION=${{ inputs.tag }}
+              COMMIT=${{ github.sha }}
+              GOPROXY=https://proxy.golang.org,direct
+              GOSUMDB=sum.golang.org
+          - name: sub2api-attestor
+            image: docker.io/markerdao/sub2api-attestor
+            context: deploy/attestor
+            build-args: ""
     name: build-${{ matrix.name }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Prebuild step (fetch build-context assets)
-        if: matrix.prebuild != ''
-        run: bash "${{ matrix.prebuild }}"
 
       - uses: docker/setup-buildx-action@v3
 
@@ -73,6 +72,7 @@ jobs:
           context: ${{ matrix.context }}
           push: true
           tags: ${{ matrix.image }}:${{ inputs.tag }}
+          build-args: ${{ matrix.build-args }}
           provenance: mode=max
           sbom: true
 
@@ -88,15 +88,16 @@ jobs:
 
       - name: Print pinned reference
         run: |
-          echo "::notice::${{ matrix.image }}@${{ steps.build.outputs.digest }}"
-          echo "Pin this digest in the compose and update docs/attestation-verification.md."
+          echo "::notice::${{ matrix.image }}@${{ steps.build.outputs.digest }} (INDEX digest — cosign target)"
+          echo "Pin the linux/amd64 child manifest in deploy/phala/docker-compose.yml:"
+          docker buildx imagetools inspect "${{ matrix.image }}@${{ steps.build.outputs.digest }}" | sed -n '1,20p'
 
 # Verify (any third party):
 #   cosign verify-attestation --type slsaprovenance \
 #     --certificate-identity-regexp 'https://github.com/FiiLabs/sub2api/.*' \
 #     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-#     docker.io/markerdao/meridian-enclave@sha256:<digest>
+#     docker.io/markerdao/sub2api@sha256:<index-digest>
 #   cosign verify \
 #     --certificate-identity-regexp 'https://github.com/FiiLabs/sub2api/.*' \
 #     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-#     docker.io/markerdao/meridian-enclave@sha256:<digest>
+#     docker.io/markerdao/sub2api@sha256:<index-digest>
