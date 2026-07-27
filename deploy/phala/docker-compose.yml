@@ -20,9 +20,10 @@
 
 services:
   sub2api:
-    # PIN(P0-7): built from THIS repo by .github/workflows/publish-tee-images.yml
-    # (cosign keyless + SLSA provenance). Replace after the first CI run.
-    image: docker.io/markerdao/sub2api@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    # Built from THIS repo by .github/workflows/publish-tee-images.yml (cosign
+    # keyless + SLSA provenance, tag proof-v1). amd64 child of INDEX
+    # sha256:ecf3e4e8938af604aa5ca208dabdee3205399c2f85b7c1b348e47d4741d00ae1.
+    image: docker.io/markerdao/sub2api@sha256:e014f7d48341d2d9bd9aa03bee841b8abbfcd4bafb9f9a10553c85ff29605f10
     container_name: sub2api
     restart: unless-stopped
     ulimits:
@@ -120,8 +121,9 @@ services:
   # THIS CVM. Carries no secrets and no request/response content.
   # Public endpoint: https://<app-id>-8091.<node>.phala.network/attestation/quote
   attestor:
-    # PIN(P0-7): built from deploy/attestor/ by publish-tee-images.yml.
-    image: docker.io/markerdao/sub2api-attestor@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    # Built from deploy/attestor/ by publish-tee-images.yml (tag proof-v1).
+    # amd64 child of INDEX sha256:befccbfa8edff63983ecff2528a089534a66ffe4c97a3a3355efbe182ea2fb0c.
+    image: docker.io/markerdao/sub2api-attestor@sha256:dac943620baf815cb2df3b1e541da602ff3141bb251093abeaac518ca9dfdaad
     container_name: sub2api-attestor
     restart: unless-stopped
     ports:
