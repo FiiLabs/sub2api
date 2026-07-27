@@ -26,7 +26,7 @@
  * rather than faked green — OS-image identity is instead verified transitively
  * via the anchored `os-image-hash` event.
  */
-import { sha384 } from '@noble/hashes/sha2.js'
+import { sha256, sha384 } from '@noble/hashes/sha2.js'
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js'
 import type { EnclaveReference } from '@/constants/attestation'
 
@@ -269,6 +269,10 @@ export interface EnclaveQuoteInput {
   quote: string
   event_log: unknown
   vm_config?: unknown
+  /** Enclave-held E2EE public key (hex, 65B uncompressed secp256k1); its
+   * sha256 is bound into report_data[32..64] when present. */
+  e2ee_public_key?: string
+  e2ee_algo?: string
 }
 
 export interface VerifyEnclaveQuoteOptions extends VerifyTdxQuoteOptions {
@@ -312,6 +316,7 @@ export interface VerifyEnclaveQuoteResult {
 export function checkNonceBinding(
   quoteReportDataHex: string,
   nonceHex: string,
+  expectedTailHex?: string,
 ): { ok: boolean; detail: string } {
   const rd = normHex(quoteReportDataHex)
   const nonce = normHex(nonceHex)
@@ -321,11 +326,14 @@ export function checkNonceBinding(
   if (nonce.length === 0 || nonce.length > 64) {
     return { ok: false, detail: `nonce must be 1..32 bytes, got ${nonce.length / 2}` }
   }
-  const expected = (nonce + '0'.repeat(128)).slice(0, 128)
+  const tail = expectedTailHex ? normHex(expectedTailHex) : '0'.repeat(64)
+  const expected = (nonce + '0'.repeat(64)).slice(0, 64) + tail
   const ok = rd === expected
   return {
     ok,
-    detail: ok ? `report_data[0..32]=nonce, [32..64]=0` : `expected=${expected} actual=${rd}`,
+    detail: ok
+      ? `report_data[0..32]=nonce, [32..64]=${expectedTailHex ? 'sha256(e2ee pubkey)' : '0'}`
+      : `expected=${expected} actual=${rd}`,
   }
 }
 
@@ -378,9 +386,23 @@ export async function verifyEnclaveQuote(
   measurements.rtMr2 = reg.rtMr2Hex
   measurements.rtMr3 = reg.rtMr3Hex
 
-  // 2. Nonce freshness.
-  const nb = checkNonceBinding(reg.reportDataHex, nonceHex)
+  // 2. Nonce freshness (+ E2EE key binding when the attestor advertises one:
+  // report_data[32..64] must be sha256 of the advertised public key, tying
+  // the enclave-held encryption key to this hardware quote).
+  const pubHex =
+    typeof input.e2ee_public_key === 'string' && /^[0-9a-f]{130}$/i.test(input.e2ee_public_key)
+      ? input.e2ee_public_key.toLowerCase()
+      : undefined
+  const pubHashHex = pubHex ? bytesToHex(sha256(hexToBytes(pubHex))) : undefined
+  const nb = checkNonceBinding(reg.reportDataHex, nonceHex, pubHashHex)
   push('nonce_binding', nb.ok, nb.detail)
+  if (pubHex) {
+    push(
+      'e2ee_key_binding',
+      reg.reportDataHex.slice(64) === pubHashHex,
+      `sha256(pubkey)=${pubHashHex} report_data[32..64]=${reg.reportDataHex.slice(64)}`,
+    )
+  }
 
   // 3. Measurement policy.
   let events: DstackEvent[] = []

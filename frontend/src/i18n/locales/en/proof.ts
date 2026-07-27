@@ -36,19 +36,19 @@ export default {
       title: 'The journey your request takes',
       basisLabel: 'Basis',
       hop1: {
-        node: 'Your device → publicai-gateway (running in confidential hardware)',
+        node: 'Your device → ApexOne gateway (running in confidential hardware)',
         claim:
           'Your request reaches a hardware-protected confidential computer (a confidential VM) over an encrypted connection; the code it runs is confirmed by checking its code fingerprint (compose_hash) — measured and signed by Intel hardware, impossible to fake.',
         basis: 'Code-fingerprint check + Intel hardware attestation (TDX)'
       },
       hop2: {
-        node: 'publicai-gateway (confidential hardware)',
+        node: 'ApexOne gateway (confidential hardware)',
         claim:
           'The confidential computer runs exactly the public, auditable code. The proof is fresh: your browser generates a one-time random number and the hardware binds it into the attestation — a replayed old report cannot fool you.',
         basis: 'One-time nonce binding + code fingerprint → public source version'
       },
       hop3: {
-        node: 'publicai-gateway → upstream model providers',
+        node: 'ApexOne → upstream model providers',
         claim:
           'This step cannot be confidential: upstream providers (e.g. Anthropic, OpenAI) decrypt and process your plaintext under their own policies. We can only prove the request really came from the attested confidential computer.',
         basis: 'Honest disclosure — not a confidentiality promise'
@@ -57,8 +57,8 @@ export default {
     flow: {
       device: 'Your device',
       deviceSub: 'sends a request',
-      teeLabel: 'publicai-gateway · Intel TDX confidential VM (hardware-isolated, memory-encrypted)',
-      service: 'sub2api TEE',
+      teeLabel: 'ApexOne · Intel TDX confidential VM (hardware-isolated, memory-encrypted)',
+      service: 'ApexOne TEE',
       serviceSub: 'request handled here',
       attestor: 'Attestor',
       attestorSub: 'issues live hardware proof',
@@ -143,7 +143,7 @@ export default {
     reference: {
       title: 'Published reference values (for deeper checking)',
       desc: 'These are the exact fingerprints of the confidential computer, from the public repository’s deploy/phala/reference.json and docs/attestation-verification.md. Any third party can compare them against the live attestation — matching values mean it really runs this public, untampered code.',
-      enclave: 'publicai-gateway — confidential computer (single enclave)',
+      enclave: 'ApexOne — confidential computer (single enclave)',
       appId: 'App ID',
       osImage: 'OS image',
       composeHash: 'Deployment fingerprint (compose_hash)',
@@ -151,6 +151,35 @@ export default {
       serviceImage: 'Service image',
       attestorImage: 'Attestor image',
       ciNote: 'The images above are built and signed by this repository’s GitHub Actions (with verifiable provenance):'
+    },
+    e2ee: {
+      title: 'End-to-end encryption proof',
+      desc: 'The confidential computer publishes a dedicated encryption public key inside its hardware attestation (the private key is derived by the dstack key service inside the enclave and never leaves it). The hash of that key is bound into the TDX quote above — so "only it can decrypt" is vouched for by Intel hardware, not by our word.',
+      statusVerified: 'Encryption key covered by the hardware attestation — verified in your browser',
+      statusUnavailable: 'This deployment does not publish an E2EE key',
+      statusIdle: 'Complete the hardware verification above first.',
+      live: {
+        title: 'See for yourself: only the enclave can decrypt (optional live test)',
+        desc: 'Click below and your browser encrypts a message to the hardware-attested key and sends it to the confidential computer, which decrypts it inside and echoes it back encrypted. No API key, no cost, nothing stored.',
+        disclosure: 'Honest disclosure: this test proves key possession — only this confidential computer can open content encrypted to it. Regular API calls travel over TLS and do not add this end-to-end layer.',
+        promptLabel: 'Message to encrypt',
+        run: 'Encrypt & round-trip once',
+        running: 'Encrypting & verifying…',
+        successTitle: 'The confidential computer decrypted your ciphertext',
+        successNote: 'The message was encrypted in your browser and only the enclave could open it; the encrypted receipt it returned also passed authenticated decryption with your local key. Every middlebox saw only ciphertext.',
+        promptSentLabel: '① Your message (plaintext — visible only to you and the enclave)',
+        wireLabel: '② The actual bytes sent (all that the network and any middlebox see)',
+        replyLabel: '③ Decrypted receipt (produced inside the enclave, returned encrypted)',
+        failTitle: 'The live test could not complete',
+        failNote: 'The request or decryption failed — raw error below; try again.',
+        seesTitle: 'Who saw what in this round-trip',
+        youLabel: 'You (in your browser)',
+        youSees: 'The plaintext message and the decrypted receipt',
+        middleLabel: 'Network / any middlebox',
+        middleSees: 'Only ciphertext — the content cannot be recovered',
+        enclaveLabel: 'The hardware-attested confidential computer',
+        enclaveSees: 'Can decrypt (and only it can) — which is why the echo works'
+      }
     }
   }
 }

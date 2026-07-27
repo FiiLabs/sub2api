@@ -35,19 +35,19 @@ export default {
       title: '你的请求经过的旅程',
       basisLabel: '凭据',
       hop1: {
-        node: '你的设备 → publicai-gateway(运行在机密硬件里)',
+        node: '你的设备 → ApexOne 网关(运行在机密硬件里)',
         claim:
           '你的请求经加密连接送达一台受硬件保护的机密电脑(机密 VM);它跑的代码可以通过核对代码指纹(compose_hash)确认——指纹由 Intel 硬件度量并签名,伪造不了。',
         basis: '代码指纹核对 + Intel 硬件出具的证明(TDX)'
       },
       hop2: {
-        node: 'publicai-gateway(机密硬件)',
+        node: 'ApexOne 网关(机密硬件)',
         claim:
           '这台机密电脑跑的是公开、可审计的确切代码。证明是"现在"出具的:你的浏览器生成一个一次性随机数,硬件把它绑进证明里——拿旧报告糊弄不了你。',
         basis: '一次性随机数绑定 + 代码指纹 → 公开源码版本'
       },
       hop3: {
-        node: 'publicai-gateway → 上游模型服务商',
+        node: 'ApexOne → 上游模型服务商',
         claim:
           '这一步无法保密:上游服务商(如 Anthropic、OpenAI)会按它们自己的政策解密并处理你的明文。我们只能证明"请求确实是从受认证的机密电脑发出的"。',
         basis: '诚实说明——这不是保密承诺'
@@ -56,8 +56,8 @@ export default {
     flow: {
       device: '你的设备',
       deviceSub: '发起请求',
-      teeLabel: 'publicai-gateway · Intel TDX 机密 VM(硬件隔离、内存加密)',
-      service: 'sub2api TEE',
+      teeLabel: 'ApexOne · Intel TDX 机密 VM(硬件隔离、内存加密)',
+      service: 'ApexOne TEE',
       serviceSub: '请求在此处理',
       attestor: '证明服务',
       attestorSub: '出具实时硬件证明',
@@ -142,7 +142,7 @@ export default {
     reference: {
       title: '公布的参考值(供进阶核对)',
       desc: '这些是这台机密电脑的"精确指纹",来自公开仓库的 deploy/phala/reference.json 与 docs/attestation-verification.md。任何第三方都能用它们和实时读到的硬件证明逐条比对——数值一致,就说明跑的确实是这套公开、未被篡改的代码。',
-      enclave: 'publicai-gateway — 机密电脑(单 enclave)',
+      enclave: 'ApexOne — 机密电脑(单 enclave)',
       appId: '应用标识 (App ID)',
       osImage: '操作系统镜像',
       composeHash: '部署内容指纹 (compose_hash)',
@@ -150,6 +150,35 @@ export default {
       serviceImage: '服务镜像',
       attestorImage: '证明服务镜像',
       ciNote: '上述镜像由本仓库的 GitHub Actions 自动构建并签名(带来源证明,可公开核验):'
+    },
+    e2ee: {
+      title: '端到端加密证明',
+      desc: '机密电脑在硬件证明里公开了一把专属加密公钥(私钥由 dstack 密钥服务只在 enclave 内部派生,永不离开)。这把公钥的哈希被绑进了上方 TDX quote 的 report_data——所以"只有它能解密"这件事,是 Intel 硬件背书的,不是我们口头说的。',
+      statusVerified: '加密公钥已被硬件证明覆盖——已在你的浏览器里验证通过',
+      statusUnavailable: '该部署未提供端到端加密公钥',
+      statusIdle: '先在上方完成硬件证明,才能验证加密公钥。',
+      live: {
+        title: '亲眼看:只有机密电脑能解开你的密文(可选实测)',
+        desc: '点下面的按钮,你的浏览器会把一条消息加密给上方经硬件证明的公钥并发给机密电脑;它在内部解密后,再加密回射给你。全程不需要 API key、不产生费用、内容不落盘。',
+        disclosure: '诚实说明:这个实测证明的是"钥匙归属"——只有这台机密电脑能解开加密给它的内容。日常 API 调用走 TLS 加密连接,并未叠加这层端到端加密。',
+        promptLabel: '要加密的消息',
+        run: '加密并往返一次',
+        running: '加密并验证中…',
+        successTitle: '机密电脑解开了你的密文',
+        successNote: '消息在你的浏览器里加密,只有 enclave 内部能解开;返回的加密回执也通过了你本地钥匙的认证解密。任何中间环节看到的都只是密文。',
+        promptSentLabel: '① 你的消息(明文——只有你和机密电脑看得到)',
+        wireLabel: '② 实际发出的密文(网络与任何中间环节看到的全部)',
+        replyLabel: '③ 解密后的回执(enclave 内部生成并加密回来)',
+        failTitle: '这次实测没能完成',
+        failNote: '请求或解密没成功——原始错误见下方,可以再试一次。',
+        seesTitle: '这一次往返,各方分别看到了什么',
+        youLabel: '你(在你的浏览器里)',
+        youSees: '明文消息,和解密后的回执',
+        middleLabel: '网络 / 任何中间环节',
+        middleSees: '只有密文——无法还原出内容',
+        enclaveLabel: '经硬件证明的机密电脑',
+        enclaveSees: '能解密(且只有它能)——这正是它能正确回射的原因'
+      }
     }
   }
 }

@@ -11,8 +11,9 @@
     "start": "node server.mjs"
   },
   "dependencies": {
-    "@phala/dstack-sdk": "0.5.8",
-    "@noble/hashes": "1.7.1",
-    "@noble/curves": "1.8.1"
+    "@noble/ciphers": "1.2.1",
+    "@noble/curves": "1.8.2",
+    "@noble/hashes": "1.7.2",
+    "@phala/dstack-sdk": "0.5.8"
   }
 }

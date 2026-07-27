@@ -222,6 +222,100 @@
         </div>
       </section>
 
+      <!-- E2EE key-possession proof -->
+      <section class="mb-10">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('proof.e2ee.title') }}</h2>
+        <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-dark-300">{{ t('proof.e2ee.desc') }}</p>
+
+        <div
+          v-if="phase === 'done'"
+          class="mt-4 flex items-start gap-2 rounded-lg border px-4 py-3 text-sm"
+          :class="e2eeAttested
+            ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-200'
+            : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200'"
+        >
+          <Icon name="shield" size="sm" class="mt-0.5 flex-shrink-0" />
+          <span>{{ e2eeAttested ? t('proof.e2ee.statusVerified') : t('proof.e2ee.statusUnavailable') }}</span>
+        </div>
+        <p v-else class="mt-4 text-sm text-gray-400 dark:text-dark-500">{{ t('proof.e2ee.statusIdle') }}</p>
+
+        <div v-if="e2eeAttested" class="mt-5 rounded-lg border border-gray-200 bg-white p-5 dark:border-dark-700 dark:bg-dark-900">
+          <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('proof.e2ee.live.title') }}</h3>
+          <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-dark-300">{{ t('proof.e2ee.live.desc') }}</p>
+
+          <div class="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+            <Icon name="shield" size="sm" class="mt-0.5 flex-shrink-0" />
+            <span>{{ t('proof.e2ee.live.disclosure') }}</span>
+          </div>
+
+          <label class="mt-3 flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-dark-300">
+            {{ t('proof.e2ee.live.promptLabel') }}
+            <textarea
+              v-model="e2eeMsg"
+              rows="2"
+              class="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 dark:border-dark-600 dark:bg-dark-800 dark:text-white"
+            ></textarea>
+          </label>
+
+          <button
+            type="button"
+            :disabled="e2eeRunning || !e2eeMsg.trim()"
+            class="mt-4 inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-60"
+            @click="runE2ee"
+          >
+            <span v-if="e2eeRunning" class="h-4 w-4 animate-spin rounded-full border-b-2 border-white"></span>
+            {{ e2eeRunning ? t('proof.e2ee.live.running') : t('proof.e2ee.live.run') }}
+          </button>
+
+          <div
+            v-if="e2eeResult"
+            class="mt-4 rounded-lg border px-4 py-3 text-sm"
+            :class="e2eeResult.ok
+              ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-200'
+              : 'border-red-200 bg-red-50 text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200'"
+          >
+            <template v-if="e2eeResult.ok">
+              <p class="font-semibold">{{ t('proof.e2ee.live.successTitle') }}</p>
+              <p class="mt-1 leading-6">{{ t('proof.e2ee.live.successNote') }}</p>
+              <p class="mt-4 text-xs font-semibold uppercase tracking-wide opacity-70">{{ t('proof.e2ee.live.seesTitle') }}</p>
+              <div class="mt-2 grid gap-2 sm:grid-cols-3">
+                <div class="rounded-lg border border-green-300/60 bg-white/60 p-3 dark:border-green-500/30 dark:bg-black/20">
+                  <p class="text-xs font-semibold">👁 {{ t('proof.e2ee.live.youLabel') }}</p>
+                  <p class="mt-1 text-xs leading-5 opacity-80">{{ t('proof.e2ee.live.youSees') }}</p>
+                </div>
+                <div class="rounded-lg border border-gray-300 bg-white/60 p-3 dark:border-dark-600 dark:bg-black/20">
+                  <p class="text-xs font-semibold">🚫 {{ t('proof.e2ee.live.middleLabel') }}</p>
+                  <p class="mt-1 text-xs leading-5 opacity-80">{{ t('proof.e2ee.live.middleSees') }}</p>
+                </div>
+                <div class="rounded-lg border border-green-300/60 bg-white/60 p-3 dark:border-green-500/30 dark:bg-black/20">
+                  <p class="text-xs font-semibold">🔓 {{ t('proof.e2ee.live.enclaveLabel') }}</p>
+                  <p class="mt-1 text-xs leading-5 opacity-80">{{ t('proof.e2ee.live.enclaveSees') }}</p>
+                </div>
+              </div>
+              <div class="mt-3 space-y-2.5">
+                <div>
+                  <p class="text-xs font-medium opacity-80">{{ t('proof.e2ee.live.promptSentLabel') }}</p>
+                  <pre class="mt-1 overflow-auto whitespace-pre-wrap rounded bg-white/60 p-2 font-mono text-xs text-gray-800 dark:bg-black/20 dark:text-gray-100">{{ e2eeResult.promptText }}</pre>
+                </div>
+                <div>
+                  <p class="text-xs font-medium opacity-80">{{ t('proof.e2ee.live.wireLabel') }}</p>
+                  <pre class="mt-1 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded bg-white/60 p-2 font-mono text-[11px] leading-4 text-gray-500 dark:bg-black/20 dark:text-dark-400">{{ truncateHex(e2eeResult.wireHex) }}</pre>
+                </div>
+                <div>
+                  <p class="text-xs font-medium opacity-80">{{ t('proof.e2ee.live.replyLabel') }}</p>
+                  <pre class="mt-1 overflow-auto whitespace-pre-wrap rounded bg-white/60 p-2 font-mono text-xs text-gray-800 dark:bg-black/20 dark:text-gray-100">{{ e2eeResult.replyText }}</pre>
+                </div>
+              </div>
+            </template>
+            <template v-else>
+              <p class="font-semibold">{{ t('proof.e2ee.live.failTitle') }}</p>
+              <p class="mt-1 leading-6">{{ t('proof.e2ee.live.failNote') }}</p>
+              <p v-if="e2eeResult.error" class="mt-2 break-all font-mono text-xs opacity-70">{{ e2eeResult.error }}</p>
+            </template>
+          </div>
+        </div>
+      </section>
+
       <!-- For auditors -->
       <section class="mb-10">
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('proof.auditors.title') }}</h2>
@@ -359,6 +453,15 @@ import {
   type EnclaveReference,
 } from '@/constants/attestation'
 import { loadReference, type LoadedReference } from '@/utils/attestation/reference'
+import {
+  AAD_REQ,
+  AAD_RESP,
+  bytesToHex,
+  eciesDecrypt,
+  eciesEncrypt,
+  generateClientKeypair,
+  hexToBytes,
+} from '@/utils/attestation/e2ee'
 import {
   PHALA_PCCS_URL,
   verifyEnclaveQuote,
@@ -624,6 +727,61 @@ const sourceCards = computed(() => {
     },
   ]
 })
+
+// --- E2EE key-possession proof ---
+const e2eeMsg = ref('Hello from my browser — only the enclave can read this.')
+const e2eeRunning = ref(false)
+interface E2eeResult {
+  ok: boolean
+  promptText?: string
+  wireHex?: string
+  replyText?: string
+  error?: string
+}
+const e2eeResult = ref<E2eeResult | null>(null)
+const e2eeAttested = computed(
+  () =>
+    phase.value === 'done' &&
+    !!rawResponse.value?.e2ee_public_key &&
+    checkOk('e2ee_key_binding') === true,
+)
+
+async function runE2ee(): Promise<void> {
+  const pub = rawResponse.value?.e2ee_public_key
+  if (!pub) return
+  e2eeRunning.value = true
+  e2eeResult.value = null
+  const promptText = e2eeMsg.value
+  try {
+    const kp = generateClientKeypair()
+    const wire = eciesEncrypt(pub, new TextEncoder().encode(promptText), AAD_REQ)
+    const base = loaded.value?.attestorBaseUrl ?? ATTESTOR_BASE_URL
+    const res = await fetch(`${base}/e2ee/echo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ payload: bytesToHex(wire), reply_pubkey: kp.pubHex }),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`)
+    const body = (await res.json()) as { payload: string }
+    const reply = eciesDecrypt(kp.priv, hexToBytes(body.payload), AAD_RESP)
+    const parsed = JSON.parse(new TextDecoder().decode(reply)) as { echo: string }
+    if (parsed.echo !== promptText) throw new Error('echo mismatch: enclave returned different content')
+    e2eeResult.value = {
+      ok: true,
+      promptText,
+      wireHex: bytesToHex(wire),
+      replyText: JSON.stringify(parsed, null, 2),
+    }
+  } catch (e) {
+    e2eeResult.value = { ok: false, error: e instanceof Error ? e.message : String(e) }
+  } finally {
+    e2eeRunning.value = false
+  }
+}
+
+function truncateHex(h?: string): string {
+  return h && h.length > 600 ? `${h.slice(0, 600)}…(${h.length / 2} bytes)` : (h ?? '')
+}
 
 // --- evidence download ---
 const rawResponseJson = computed(() =>
