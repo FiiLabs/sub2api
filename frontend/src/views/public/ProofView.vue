@@ -9,10 +9,13 @@
           </span>
           <span class="truncate text-base font-semibold text-gray-950 dark:text-white">/proof</span>
         </span>
-        <RouterLink
-          to="/home"
-          class="inline-flex flex-shrink-0 items-center rounded-lg border border-gray-300 px-3.5 py-1.5 text-sm font-medium text-gray-700 transition hover:bg-gray-100 dark:border-dark-600 dark:text-dark-200 dark:hover:bg-dark-800"
-        >{{ t('proof.header.backHome') }}</RouterLink>
+        <span class="flex flex-shrink-0 items-center gap-2">
+          <LocaleSwitcher />
+          <RouterLink
+            to="/home"
+            class="inline-flex items-center rounded-lg border border-gray-300 px-3.5 py-1.5 text-sm font-medium text-gray-700 transition hover:bg-gray-100 dark:border-dark-600 dark:text-dark-200 dark:hover:bg-dark-800"
+          >{{ t('proof.header.backHome') }}</RouterLink>
+        </span>
       </div>
     </header>
 
@@ -365,6 +368,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
+import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import {
   ATTESTATION_QUOTE_PATH,
   ATTESTOR_BASE_URL,

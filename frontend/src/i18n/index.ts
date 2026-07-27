@@ -27,7 +27,9 @@ function getDefaultLocale(): LocaleCode {
     return 'zh'
   }
 
-  return DEFAULT_LOCALE
+  // This deployment is zh-first: default to Chinese when the user has no
+  // saved preference (missing-key fallback stays English via fallbackLocale).
+  return 'zh'
 }
 
 export const i18n = createI18n({
