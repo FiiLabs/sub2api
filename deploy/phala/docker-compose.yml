@@ -34,6 +34,10 @@ services:
       - "${BIND_HOST:-0.0.0.0}:${SERVER_PORT:-8080}:8080"
     volumes:
       - sub2api_data:/app/data
+      # dstack guest-agent socket — the E2EE inference path derives its
+      # enclave key (GetKey e2ee/v1) over it, same key as the attestor binds
+      # into the quote. (A unix socket needs r/w, so NOT :ro.)
+      - /var/run/dstack.sock:/var/run/dstack.sock
     environment:
       - AUTO_SETUP=true
       - SERVER_HOST=0.0.0.0

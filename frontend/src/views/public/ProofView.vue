@@ -254,6 +254,26 @@
             <span>{{ t('proof.e2ee.live.disclosure') }}</span>
           </div>
 
+          <div class="mt-4 grid gap-3 sm:grid-cols-2">
+            <label class="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-dark-300">
+              {{ t('proof.e2ee.live.apiKeyLabel') }}
+              <input
+                v-model="apiKeyInput"
+                type="password"
+                autocomplete="off"
+                :placeholder="t('proof.e2ee.live.apiKeyPlaceholder')"
+                class="rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm text-gray-900 dark:border-dark-600 dark:bg-dark-800 dark:text-white"
+              />
+            </label>
+            <label class="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-dark-300">
+              {{ t('proof.e2ee.live.modelLabel') }}
+              <input
+                v-model="modelInput"
+                type="text"
+                class="rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm text-gray-900 dark:border-dark-600 dark:bg-dark-800 dark:text-white"
+              />
+            </label>
+          </div>
           <label class="mt-3 flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-dark-300">
             {{ t('proof.e2ee.live.promptLabel') }}
             <textarea
@@ -265,7 +285,7 @@
 
           <button
             type="button"
-            :disabled="e2eeRunning || !e2eeMsg.trim()"
+            :disabled="e2eeRunning || !e2eeMsg.trim() || !apiKeyInput.trim()"
             class="mt-4 inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-60"
             @click="runE2ee"
           >
@@ -320,9 +340,11 @@
               </div>
             </template>
             <template v-else>
-              <p class="font-semibold">{{ t('proof.e2ee.live.failTitle') }}</p>
-              <p class="mt-1 leading-6">{{ t('proof.e2ee.live.failNote') }}</p>
+              <p class="font-semibold">{{ t(e2eeResult.failKind ? `proof.e2ee.live.failure.${e2eeResult.failKind}.title` : 'proof.e2ee.live.failTitle') }}</p>
+              <p v-if="e2eeResult.failKind && e2eeResult.failKind !== 'network'" class="mt-1 leading-6">✅ {{ t('proof.e2ee.live.encryptedPrefix') }}</p>
+              <p class="mt-1 leading-6">{{ t(e2eeResult.failKind ? `proof.e2ee.live.failure.${e2eeResult.failKind}.body` : 'proof.e2ee.live.failNote') }}</p>
               <p v-if="e2eeResult.error" class="mt-2 break-all font-mono text-xs opacity-70">{{ e2eeResult.error }}</p>
+              <p class="mt-2 text-xs opacity-70">{{ t('proof.e2ee.live.unaffectedNote') }}</p>
             </template>
 
             <!-- Raw per-step trace, collapsed by default (for the curious, not the newcomer) -->
@@ -755,6 +777,8 @@ const sourceCards = computed(() => {
 
 // --- E2EE key-possession proof ---
 const e2eeMsg = ref('Hello from my browser — only the enclave can read this.')
+const apiKeyInput = ref('')
+const modelInput = ref('claude-sonnet-5')
 const e2eeRunning = ref(false)
 interface E2eeResult {
   ok: boolean
@@ -763,6 +787,8 @@ interface E2eeResult {
   replyText?: string
   sealedToKeyId?: string
   error?: string
+  /** i18n failure branch key (quota/auth/rate_limit/…) for classified errors. */
+  failKind?: string
   checks: Check[]
 }
 const e2eeResult = ref<E2eeResult | null>(null)
@@ -781,31 +807,75 @@ async function runE2ee(): Promise<void> {
   const promptText = e2eeMsg.value
   const checks: Check[] = []
   const step = (id: string, ok: boolean, detail?: string) => checks.push({ id, ok, detail })
+  // Classify an HTTP status into an i18n failure branch (drives the next step
+  // the user should take — mirrors the original page's classifyHttpFailure).
+  const classify = (status: number): string => {
+    if (status === 401) return 'auth'
+    if (status === 402) return 'quota'
+    if (status === 429) return 'rate_limit'
+    if (status === 400 || status === 404 || status === 422) return 'invalid_request'
+    if (status >= 500) return 'service'
+    return 'invalid_request'
+  }
   try {
     const kp = generateClientKeypair()
-    const wire = eciesEncrypt(pub, new TextEncoder().encode(promptText), AAD_REQ)
+    // The REAL inference request, encrypted in-browser to the attested key.
+    const inner = JSON.stringify({
+      model: modelInput.value.trim(),
+      messages: [{ role: 'user', content: promptText }],
+      max_tokens: 64,
+      stream: false,
+    })
+    const wire = eciesEncrypt(pub, new TextEncoder().encode(inner), AAD_REQ)
     const sealedToKeyId = sha256Hex(hexToBytes(pub))
     step('encrypt_to_attested_key', true, `${wire.length} bytes, sealed to sha256(pubkey)=${sealedToKeyId}`)
-    const base = loaded.value?.attestorBaseUrl ?? ATTESTOR_BASE_URL
-    const res = await fetch(`${base}/e2ee/echo`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ payload: bytesToHex(wire), reply_pubkey: kp.pubHex }),
-    })
-    step('post_echo', res.ok, `HTTP ${res.status}`)
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`)
+    let res: Response
+    try {
+      res = await fetch('/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKeyInput.value.trim()}`,
+          'X-E2EE-Version': '1',
+          'X-Client-Pub-Key': kp.pubHex,
+        },
+        body: JSON.stringify({ payload: bytesToHex(wire) }),
+      })
+    } catch (e) {
+      step('post_inference', false, String(e))
+      e2eeResult.value = { ok: false, failKind: 'network', error: String(e), checks }
+      return
+    }
+    step('post_inference', res.ok, `HTTP ${res.status}`)
+    if (!res.ok) {
+      e2eeResult.value = {
+        ok: false,
+        failKind: classify(res.status),
+        error: `HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`,
+        checks,
+      }
+      return
+    }
     const body = (await res.json()) as { payload: string }
-    const reply = eciesDecrypt(kp.priv, hexToBytes(body.payload), AAD_RESP)
-    step('authenticated_decrypt', true, `${reply.length} bytes, AES-256-GCM tag verified`)
-    const parsed = JSON.parse(new TextDecoder().decode(reply)) as { echo: string }
-    const match = parsed.echo === promptText
-    step('echo_match', match)
-    if (!match) throw new Error('echo mismatch: enclave returned different content')
+    let replyText: string
+    try {
+      const reply = eciesDecrypt(kp.priv, hexToBytes(body.payload), AAD_RESP)
+      step('authenticated_decrypt', true, `${reply.length} bytes, AES-256-GCM tag verified`)
+      const parsed = JSON.parse(new TextDecoder().decode(reply)) as {
+        choices?: { message?: { content?: string } }[]
+      }
+      replyText = parsed.choices?.[0]?.message?.content ?? JSON.stringify(parsed, null, 2)
+      step('reply_present', !!replyText)
+    } catch (e) {
+      step('authenticated_decrypt', false, String(e))
+      e2eeResult.value = { ok: false, failKind: 'trust', error: String(e), checks }
+      return
+    }
     e2eeResult.value = {
       ok: true,
       promptText,
       wireHex: bytesToHex(wire),
-      replyText: JSON.stringify(parsed, null, 2),
+      replyText,
       sealedToKeyId,
       checks,
     }
