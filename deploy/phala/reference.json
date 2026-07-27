@@ -1,22 +1,22 @@
 {
-  "$comment": "Authoritative attestation reference for the production publicai-gateway CVM (sub2api single-enclave architecture). Fetched at runtime by the /proof page (see frontend/src/utils/attestation/reference.ts). Every change to this file is public git history — that is part of the trust story. composeHash was read back from the CVM's RTMR3 via the attestor on 2026-07-27 and independently derives from deploy/phala/docker-compose.yml; image digests are the linux/amd64 children of the cosign-signed proof-v4 indexes built from sourceCommit by publish-tee-images (run 30248824643).",
+  "$comment": "Authoritative attestation reference for the production publicai-gateway CVM (sub2api single-enclave architecture). Fetched at runtime by the /proof page (see frontend/src/utils/attestation/reference.ts). Every change to this file is public git history — that is part of the trust story. composeHash was read back from the CVM's RTMR3 via the attestor on 2026-07-27 and independently derives from deploy/phala/docker-compose.yml; image digests are the linux/amd64 children of the cosign-signed proof-v5 indexes built from sourceCommit by publish-tee-images (run 30250186039).",
   "version": 1,
   "updatedAt": "2026-07-27",
   "enclave": {
     "appId": "9467ce766ed63423e86a19d2f36cc9a9926daf27",
     "osImage": "dstack-0.5.9",
     "osImageHash": "bd369a8c2f9edb2b52dad48ac8e0b32dde5f1337c423a506b48d07403a7d8033",
-    "composeHash": "eaffe294aa96a85af3e123b0a47a2d0818a8035e9009f00adc2f175b9ea173da",
+    "composeHash": "a7722c39167f2990ce5d7d11ca583bca11fc9a7a4613b40d8449cdc5d5b2b206",
     "sourceRepo": "https://github.com/FiiLabs/sub2api.git",
-    "sourceCommit": "01595a6dba21c09619791a8e155e282b32c9775a",
+    "sourceCommit": "84ac42440dc4eab02d5fb1f60bfe1581dbc695fb",
     "images": [
       {
         "name": "sub2api",
-        "digest": "docker.io/markerdao/sub2api@sha256:a3143950cd09a7bd3ed645e9a82d6595f427c20b2fd537f1f4c97f6c75ffdd8a"
+        "digest": "docker.io/markerdao/sub2api@sha256:bbc2a5358d8e7e4ac99683f6b062fdbe997d660a9645eeeb843f71a553dabc15"
       },
       {
         "name": "sub2api-attestor",
-        "digest": "docker.io/markerdao/sub2api-attestor@sha256:65303229d007318bbe271a2fd5c1a15dbd93bb249ef61082dfaca66ed023bfe8"
+        "digest": "docker.io/markerdao/sub2api-attestor@sha256:20393503de90bc968c1e94896fd90a4b9d945b6c01c0c3358da05cc94752b361"
       }
     ],
     "confidential": false
