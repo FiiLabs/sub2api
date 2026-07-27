@@ -34,30 +34,36 @@ export interface EnclaveReference {
   confidential: boolean
 }
 
-/** Placeholder for values that are only known after a deploy (see P0-7 docs). */
-const UNSET = '0000000000000000000000000000000000000000000000000000000000000000'
-
 /**
- * Baked-in fallback reference for the production sub2api CVM
- * (node dstack-pha-prod9). Kept in sync with deploy/phala/reference.json —
- * that file wins when reachable.
+ * Baked-in fallback reference for the production publicai-gateway CVM
+ * (node dstack-pha-prod5). Kept in sync with deploy/phala/reference.json —
+ * that file wins when reachable, and is updated first after each deploy (a
+ * baked value here may lag one generation behind by design).
  */
 export const SUB2API_REFERENCE: EnclaveReference = {
-  appId: 'aee564d9e3e1188f47413de2eaad17a8844276db',
+  appId: '9467ce766ed63423e86a19d2f36cc9a9926daf27',
   osImage: 'dstack-0.5.9',
-  osImageHash: UNSET, // read from the first live quote after deploy
-  composeHash: UNSET, // read back from the CVM RTMR3 after deploy
+  osImageHash: 'bd369a8c2f9edb2b52dad48ac8e0b32dde5f1337c423a506b48d07403a7d8033',
+  composeHash: 'cf50a8d6fc95f1765af2c8c498baf04bbc9e4175ff8a4e44563d4c6dfebe1ded',
   sourceRepo: 'https://github.com/FiiLabs/sub2api.git',
-  sourceCommit: UNSET.slice(0, 40),
+  sourceCommit: 'd4b181da492ab600aa15a41e91fffb5b0bf2e384',
   images: [
-    { name: 'sub2api', digest: `docker.io/markerdao/sub2api@sha256:${UNSET}` },
-    { name: 'sub2api-attestor', digest: `docker.io/markerdao/sub2api-attestor@sha256:${UNSET}` },
+    {
+      name: 'sub2api',
+      digest:
+        'docker.io/markerdao/sub2api@sha256:b03f6ac4ae50e4fd70ea93b6096def816278944e11cd112a451f62d217b02b25',
+    },
+    {
+      name: 'sub2api-attestor',
+      digest:
+        'docker.io/markerdao/sub2api-attestor@sha256:8b8affb684c4f676bf15277601dfa9d1a66f02a37a1a3add8ae3280d9cf5d793',
+    },
   ],
   confidential: false,
 }
 
 /** Phala public-endpoint node hosting the CVM. */
-export const ATTESTOR_NODE = 'dstack-pha-prod9.phala.network'
+export const ATTESTOR_NODE = 'dstack-pha-prod5.phala.network'
 
 /**
  * Attestation sidecar base URL (deploy/attestor/): serves the nonce-bound raw
