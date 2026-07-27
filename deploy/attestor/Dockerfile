@@ -1,12 +1,10 @@
-# Meridian attestation sidecar (enclave B) — a ~90-line Node HTTP server that
-# serves a nonce-bound Intel TDX DCAP quote + dstack event log over CORS. It is
-# a SEPARATE image from meridian-enclave for isolation and a clean measurement:
-# it holds NO secrets and only talks to the dstack guest-agent socket.
+# sub2api attestation sidecar — a ~90-line Node HTTP server that serves a
+# nonce-bound Intel TDX DCAP quote + dstack event log over CORS. It is a
+# SEPARATE image from sub2api for isolation and a clean measurement: it holds
+# NO secrets and only talks to the dstack guest-agent socket.
 #
-# Build & push (pin the resulting digest into compose.cvm.yaml / gen-seats.sh):
-#   docker build -t docker.io/markerdao/meridian-attestor:latest deploy/meridian/attestor
-#   docker push docker.io/markerdao/meridian-attestor:latest
-#   docker inspect --format='{{index .RepoDigests 0}}' docker.io/markerdao/meridian-attestor:latest
+# Built + cosign-signed by .github/workflows/publish-tee-images.yml; pin the
+# resulting linux/amd64 digest into deploy/phala/docker-compose.yml.
 FROM node:22-slim
 WORKDIR /app
 
