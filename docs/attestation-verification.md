@@ -21,8 +21,8 @@ silent rebuild).
 
 | Field | Value |
 | --- | --- |
-| App ID | `aee564d9e3e1188f47413de2eaad17a8844276db` |
-| Node | `dstack-pha-prod9.phala.network` |
+| App ID | `9467ce766ed63423e86a19d2f36cc9a9926daf27` |
+| Node | `dstack-pha-prod5.phala.network` |
 | OS image / hash | see reference.json |
 | compose_hash | see reference.json (dstack-canonicalized app-compose hash, NOT a raw yaml sha256) |
 | Source repo / commit | see reference.json |
@@ -48,8 +48,8 @@ Evidence is downloadable as JSON for offline re-checking.
 ## 3. Manual verification (no browser)
 
 ```bash
-APP=aee564d9e3e1188f47413de2eaad17a8844276db
-NODE=dstack-pha-prod9.phala.network
+APP=9467ce766ed63423e86a19d2f36cc9a9926daf27
+NODE=dstack-pha-prod5.phala.network
 NONCE=$(openssl rand -hex 16)
 
 # Fresh nonce-bound quote + event log
