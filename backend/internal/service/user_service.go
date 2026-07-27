@@ -65,11 +65,15 @@ var (
 
 // UserListFilters contains all filter options for listing users
 type UserListFilters struct {
-	Status     string           // User status filter
-	Role       string           // User role filter
-	Search     string           // Search in email, username
-	GroupName  string           // Filter by allowed group name (fuzzy match)
-	Attributes map[int64]string // Custom attribute filters: attributeID -> value
+	Status    string // User status filter
+	Role      string // User role filter
+	Search    string // Search in email, username
+	GroupName string // Filter by allowed group name (fuzzy match)
+	// APIKeyGroupID filters users who own at least one non-soft-deleted API key
+	// bound to this group (api_keys.group_id). 0 = no filter. Covers all three
+	// group types since it matches the key's group directly, not allowed_groups.
+	APIKeyGroupID int64
+	Attributes    map[int64]string // Custom attribute filters: attributeID -> value
 	// IncludeSubscriptions controls whether ListWithFilters should load active subscriptions.
 	// For large datasets this can be expensive; admin list pages should enable it on demand.
 	// nil means not specified (default: load subscriptions for backward compatibility).
@@ -81,6 +85,11 @@ type UserListFilters struct {
 
 type UserRepository interface {
 	Create(ctx context.Context, user *User) error
+	// CreateWithEmailAliasGuard 创建用户，并在邮箱唯一性锁内复查"收件箱身份"是否已被占用
+	// （+别名 / Gmail 点号 / FQDN 根点变体，见 NormalizeEmailForAliasDedup），
+	// 冲突时返回 ErrEmailExists。仅注册路径使用：同一收件箱的多个别名变体并发注册时，
+	// 服务层的前置查重会同时通过，必须由这里串行化兜底。管理员建号仍走 Create，不受限制。
+	CreateWithEmailAliasGuard(ctx context.Context, user *User) error
 	GetByID(ctx context.Context, id int64) (*User, error)
 	// GetByIDIncludeDeleted 绕过软删除过滤按 ID 取用户（含已删）。仅供管理员审计/usage 点击使用。
 	GetByIDIncludeDeleted(ctx context.Context, id int64) (*User, error)
@@ -103,7 +112,11 @@ type UserRepository interface {
 	UpdateConcurrency(ctx context.Context, id int64, amount int) error
 	BatchSetConcurrency(ctx context.Context, userIDs []int64, value int) (int, error)
 	BatchAddConcurrency(ctx context.Context, userIDs []int64, delta int) (int, error)
+	BatchUpdateLimits(ctx context.Context, userIDs []int64, concurrency, rpmLimit *int) (int, error)
 	ExistsByEmail(ctx context.Context, email string) (bool, error)
+	// ExistsByEmailAlias 判断是否已有账号与该邮箱指向同一收件箱（+别名 / Gmail 点号 /
+	// FQDN 根点变体，见 NormalizeEmailForAliasDedup）。用于注册与发送验证码前的查重。
+	ExistsByEmailAlias(ctx context.Context, email string) (bool, error)
 	RemoveGroupFromAllowedGroups(ctx context.Context, groupID int64) (int64, error)
 	// AddGroupToAllowedGroups 将指定分组增量添加到用户的 allowed_groups（幂等，冲突忽略）
 	AddGroupToAllowedGroups(ctx context.Context, userID int64, groupID int64) error
@@ -116,6 +129,14 @@ type UserRepository interface {
 	UpdateTotpSecret(ctx context.Context, userID int64, encryptedSecret *string) error
 	EnableTotp(ctx context.Context, userID int64) error
 	DisableTotp(ctx context.Context, userID int64) error
+}
+
+// RedeemUserAdjustmentRepository provides the atomic, floor-at-zero updates
+// used by negative-value redeem codes. It is intentionally narrower than
+// UserRepository because normal usage billing is allowed to overdraw.
+type RedeemUserAdjustmentRepository interface {
+	ApplyRedeemBalanceAdjustment(ctx context.Context, id int64, delta float64) error
+	ApplyRedeemConcurrencyAdjustment(ctx context.Context, id int64, delta int) error
 }
 
 type UserAuthIdentityRecord struct {
