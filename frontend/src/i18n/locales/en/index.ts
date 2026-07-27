@@ -5,6 +5,7 @@ import batchImage from './batchImage'
 import admin from './admin'
 import misc from './misc'
 import proof from './proof'
+import home from './home'
 
 export default {
   ...landing,
@@ -14,4 +15,5 @@ export default {
   admin,
   ...misc,
   ...proof,
+  ...home,
 }

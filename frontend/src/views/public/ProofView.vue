@@ -1,23 +1,6 @@
 <template>
-  <div class="min-h-screen bg-gray-50 pt-16 text-gray-900 dark:bg-dark-950 dark:text-white">
-    <!-- Slim public header (the marketing Header lives in the separately deployed site) -->
-    <header class="fixed inset-x-0 top-0 z-40 border-b border-gray-200 bg-white/95 backdrop-blur dark:border-dark-800 dark:bg-dark-900/95">
-      <div class="mx-auto flex h-16 max-w-4xl items-center justify-between gap-4 px-4 sm:px-6">
-        <span class="flex min-w-0 items-center gap-2.5">
-          <span class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-primary-50 text-primary-700 dark:bg-primary-500/10 dark:text-primary-300">
-            <Icon name="shield" size="sm" />
-          </span>
-          <span class="truncate text-base font-semibold text-gray-950 dark:text-white">/proof</span>
-        </span>
-        <span class="flex flex-shrink-0 items-center gap-2">
-          <LocaleSwitcher />
-          <RouterLink
-            to="/home"
-            class="inline-flex items-center rounded-lg border border-gray-300 px-3.5 py-1.5 text-sm font-medium text-gray-700 transition hover:bg-gray-100 dark:border-dark-600 dark:text-dark-200 dark:hover:bg-dark-800"
-          >{{ t('proof.header.backHome') }}</RouterLink>
-        </span>
-      </div>
-    </header>
+  <div class="min-h-screen bg-gray-50 pt-16 text-gray-900 dark:bg-dark-950 dark:text-white md:pt-[72px]">
+    <Header />
 
     <main class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:py-10">
       <!-- Hero / scope -->
@@ -368,7 +351,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
-import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
+import Header from '@/components/layout/Header.vue'
 import {
   ATTESTATION_QUOTE_PATH,
   ATTESTOR_BASE_URL,
