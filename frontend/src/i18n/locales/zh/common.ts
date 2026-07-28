@@ -130,8 +130,11 @@ export default {
     loginAgreement: '登录条款',
     adminCompliance: '部署与运营合规承诺',
     loginAgreementPrompt: {
-      checkboxPrefix: '我已阅读并同意',
-      documentSeparator: '、',
+      consentLeadIn: '注册即表示您同意',
+      firstSeparator: '',
+      separator: '、',
+      lastSeparator: '、',
+      consentSuffix: '。',
       noticeTitle: '继续登录前需要先同意最新条款。',
       noticeDescription: '未同意前，账号密码输入和快捷登录会保持禁用。',
       viewTerms: '查看条款',

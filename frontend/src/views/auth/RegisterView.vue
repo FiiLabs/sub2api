@@ -375,7 +375,7 @@ const invitationCodeEnabled = ref<boolean>(false)
 const affiliateEnabled = ref<boolean>(false)
 const turnstileEnabled = ref<boolean>(false)
 const turnstileSiteKey = ref<string>('')
-const siteName = ref<string>('Sub2API')
+const siteName = ref<string>('ApexOne')
 const linuxdoOAuthEnabled = ref<boolean>(false)
 const wechatOAuthEnabled = ref<boolean>(false)
 const oidcOAuthEnabled = ref<boolean>(false)
@@ -448,8 +448,13 @@ const showOAuthLogin = computed(
     googleOAuthEnabled.value
 )
 
+// checkbox 模式仅作静态告知（注册即视为同意），不阻断注册；
+// 只有 modal 模式才是强制门禁，需用户显式同意后方可提交。
 const agreementGateActive = computed(
-  () => loginAgreementEnabled.value && !agreementAccepted.value
+  () =>
+    loginAgreementEnabled.value &&
+    loginAgreementMode.value !== 'checkbox' &&
+    !agreementAccepted.value
 )
 
 const registrationActionDisabled = computed(
@@ -484,7 +489,7 @@ onMounted(async () => {
     affiliateEnabled.value = settings.affiliate_enabled
     turnstileEnabled.value = settings.turnstile_enabled
     turnstileSiteKey.value = settings.turnstile_site_key || ''
-    siteName.value = settings.site_name || 'Sub2API'
+    siteName.value = settings.site_name || 'ApexOne'
     linuxdoOAuthEnabled.value = settings.linuxdo_oauth_enabled
     wechatOAuthEnabled.value = isWeChatWebOAuthEnabled(settings)
     oidcOAuthEnabled.value = settings.oidc_oauth_enabled

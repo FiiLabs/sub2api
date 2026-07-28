@@ -87,5 +87,10 @@ export const paymentAPI = {
   /** Get provider instance IDs that allow user refund */
   getRefundEligibleProviders() {
     return apiClient.get<{ provider_instance_ids: string[] }>('/payment/orders/refund-eligible-providers')
+  },
+
+  /** Download the invoice PDF for a completed order */
+  downloadInvoice(id: number) {
+    return apiClient.get<Blob>(`/payment/orders/${id}/invoice`, { responseType: 'blob' })
   }
 }

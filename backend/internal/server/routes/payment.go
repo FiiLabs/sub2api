@@ -1,12 +1,16 @@
 package routes
 
 import (
+	"time"
+
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
+	ratelimit "github.com/Wei-Shaw/sub2api/internal/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 )
 
 // RegisterPaymentRoutes registers all payment-related routes:
@@ -20,7 +24,10 @@ func RegisterPaymentRoutes(
 	adminAuth middleware.AdminAuthMiddleware,
 	auditLog middleware.AuditLogMiddleware,
 	settingService *service.SettingService,
+	redisClient *redis.Client,
 ) {
+	rateLimiter := ratelimit.NewRateLimiter(redisClient)
+
 	// --- User-facing payment endpoints (authenticated) ---
 	authenticated := v1.Group("/payment")
 	authenticated.Use(gin.HandlerFunc(jwtAuth))
@@ -39,6 +46,8 @@ func RegisterPaymentRoutes(
 			orders.GET("/:id", paymentHandler.GetOrder)
 			orders.POST("/:id/cancel", paymentHandler.CancelOrder)
 			orders.POST("/:id/refund-request", paymentHandler.RequestRefund)
+			// 发票下载为纯内存渲染、成本低，限流仅作防刷兜底（fail-open：Redis 故障不影响下载）
+			orders.GET("/:id/invoice", rateLimiter.Limit("invoice-download", 10, time.Minute), paymentHandler.DownloadInvoice)
 			orders.GET("/refund-eligible-providers", paymentHandler.GetRefundEligibleProviders)
 		}
 	}

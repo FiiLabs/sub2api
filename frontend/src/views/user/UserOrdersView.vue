@@ -26,6 +26,10 @@
               <Icon name="dollar" size="sm" />
               <span>{{ t('payment.orders.requestRefund') }}</span>
             </button>
+            <button v-if="row.status === 'COMPLETED'" @click="handleDownloadInvoice(row)" :disabled="downloadingInvoiceId === row.id" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 disabled:opacity-50 dark:text-blue-400 dark:hover:bg-blue-900/20">
+              <Icon name="download" size="sm" :class="downloadingInvoiceId === row.id ? 'animate-pulse' : ''" />
+              <span>{{ t('payment.orders.downloadInvoice') }}</span>
+            </button>
           </div>
         </template>
       </OrderTable>
@@ -105,6 +109,7 @@ const orders = ref<PaymentOrder[]>([])
 const refundEligibleProviders = ref<Set<string>>(new Set())
 const currentFilter = ref('')
 const cancelTargetId = ref<number | null>(null)
+const downloadingInvoiceId = ref<number | null>(null)
 const refundTarget = ref<PaymentOrder | null>(null)
 const refundReason = ref('')
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
@@ -155,6 +160,25 @@ async function confirmCancel() {
 }
 
 function openRefundDialog(order: PaymentOrder) { refundTarget.value = order; refundReason.value = '' }
+
+async function handleDownloadInvoice(order: PaymentOrder) {
+  downloadingInvoiceId.value = order.id
+  try {
+    const res = await paymentAPI.downloadInvoice(order.id)
+    const url = URL.createObjectURL(res.data)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `invoice-${order.out_trade_no}.pdf`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  } catch (err: unknown) {
+    appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
+  } finally {
+    downloadingInvoiceId.value = null
+  }
+}
 
 async function confirmRefund() {
   if (!refundTarget.value || !refundReason.value.trim()) return

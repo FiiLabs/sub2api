@@ -130,8 +130,11 @@ export default {
     loginAgreement: 'Login Agreement',
     adminCompliance: 'Deployment and Operation Compliance Commitment',
     loginAgreementPrompt: {
-      checkboxPrefix: 'I have read and agree to ',
-      documentSeparator: ', ',
+      consentLeadIn: 'By signing up, you agree to the',
+      firstSeparator: ' ',
+      separator: ', ',
+      lastSeparator: ' and ',
+      consentSuffix: '.',
       noticeTitle: 'Accept the latest terms before continuing.',
       noticeDescription: 'Account/password login and quick sign-in stay disabled until you accept.',
       viewTerms: 'View terms',

@@ -391,6 +391,7 @@ export default {
       orderType: '订单类型',
       actions: '操作',
       requestRefund: '申请退款',
+      downloadInvoice: '下载发票',
     },
     result: {
       success: '支付成功',
