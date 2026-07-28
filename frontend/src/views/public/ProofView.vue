@@ -191,8 +191,12 @@
           </div>
         </dl>
 
-        <p v-if="loaded" class="mt-2 text-xs text-gray-400 dark:text-dark-500">
-          {{ loaded.source === 'repo' ? t('proof.live.referenceSource.repo') : t('proof.live.referenceSource.bakedIn') }}
+        <p
+          v-if="loaded"
+          class="mt-2 text-xs"
+          :class="loaded.authoritative ? 'text-gray-400 dark:text-dark-500' : 'text-amber-600 dark:text-amber-400'"
+        >
+          {{ t(`proof.live.referenceSource.${referenceSourceKey}`) }}
         </p>
 
         <!-- Verification banner -->
@@ -557,6 +561,9 @@ async function run(): Promise<void> {
     rawResponse.value = (await res.json()) as EnclaveQuoteInput
     result.value = await verifyEnclaveQuote(rawResponse.value, nonceHex.value, {
       reference: loaded.value.reference,
+      // A mirrored or baked-in reference may legitimately lag the live enclave,
+      // so a mismatch against it is undecided, not a failure.
+      referenceAuthoritative: loaded.value.authoritative,
     })
     verifiedAt.value = new Date()
     phase.value = 'done'
@@ -566,6 +573,17 @@ async function run(): Promise<void> {
   }
 }
 
+const referenceSourceKey = computed(() => {
+  switch (loaded.value?.source) {
+    case 'repo':
+      return 'repo'
+    case 'mirror':
+      return 'mirror'
+    default:
+      return 'bakedIn'
+  }
+})
+
 // --- checks ---
 const allChecks = computed<DisplayCheck[]>(() => result.value?.checks ?? [])
 const failingChecks = computed<DisplayCheck[]>(() =>
@@ -574,6 +592,8 @@ const failingChecks = computed<DisplayCheck[]>(() =>
 
 function checkMark(c: DisplayCheck): { sym: string; class: string } {
   if (c.ok) return { sym: '✓', class: 'text-green-600 dark:text-green-400' }
+  // Could not be decided: compared against a reference we cannot vouch for.
+  if (c.indeterminate) return { sym: '?', class: 'text-amber-600 dark:text-amber-400' }
   // Non-gating checks are informational (e.g. raw MRTD has no published reference).
   if (c.gating === false) return { sym: 'ℹ', class: 'text-gray-400 dark:text-dark-500' }
   return { sym: '✗', class: 'text-red-600 dark:text-red-400' }
@@ -583,9 +603,11 @@ const checksSummary = computed(() => {
   const checks = allChecks.value
   const passed = checks.filter((c) => c.ok).length
   const failed = checks.filter((c) => !c.ok && c.gating !== false).length
-  const info = checks.filter((c) => !c.ok && c.gating === false).length
+  const undecided = checks.filter((c) => !c.ok && c.indeterminate === true).length
+  const info = checks.filter((c) => !c.ok && !c.indeterminate && c.gating === false).length
   const parts = [t('proof.auditors.checksPassed', { n: passed })]
   if (failed) parts.push(t('proof.auditors.checksFailed', { n: failed }))
+  if (undecided) parts.push(t('proof.auditors.checksUndecided', { n: undecided }))
   if (info) parts.push(t('proof.auditors.checksInfo', { n: info }))
   return parts.join(' · ')
 })
@@ -600,8 +622,12 @@ function checkOk(id: string): boolean | undefined {
   return allChecks.value.find((c) => c.id === id)?.ok
 }
 
+function checkUndecided(id: string): boolean {
+  return allChecks.value.find((c) => c.id === id)?.indeterminate === true
+}
+
 // --- journey hops (status driven by the real per-check results) ---
-type HopStatus = 'pending' | 'checking' | 'pass' | 'fail' | 'disclosure'
+type HopStatus = 'pending' | 'checking' | 'pass' | 'fail' | 'unknown' | 'disclosure'
 
 // hop1: genuine hardware running exactly the published code (fingerprints).
 // hop2: the proof is fresh (nonce) and the measurement log is authentic.
@@ -618,7 +644,10 @@ const HOP2_CHECKS = ['nonce_binding', 'measurement_rtmr3_replay']
 function hopStatus(checkIds: string[]): HopStatus {
   if (phase.value === 'running') return 'checking'
   if (phase.value !== 'done') return 'pending'
-  return checkIds.every((id) => checkOk(id) === true) ? 'pass' : 'fail'
+  if (checkIds.every((id) => checkOk(id) === true)) return 'pass'
+  // A hop whose only not-passing steps are undecided is undecided, not failed.
+  const hardFail = checkIds.some((id) => checkOk(id) !== true && !checkUndecided(id))
+  return hardFail ? 'fail' : 'unknown'
 }
 
 const hops = computed(() => [
@@ -665,6 +694,8 @@ function statusClass(status: HopStatus): string {
       return 'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300'
     case 'fail':
       return 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300'
+    case 'unknown':
+      return 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'
     case 'checking':
       return 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300'
     default:
@@ -673,12 +704,17 @@ function statusClass(status: HopStatus): string {
 }
 
 // --- banner ---
-const overallState = computed<'idle' | 'running' | 'pass' | 'fail' | 'error'>(() => {
-  if (phase.value === 'idle') return 'idle'
-  if (phase.value === 'running') return 'running'
-  if (phase.value === 'error') return 'error'
-  return result.value?.ok ? 'pass' : 'fail'
-})
+const overallState = computed<'idle' | 'running' | 'pass' | 'fail' | 'indeterminate' | 'error'>(
+  () => {
+    if (phase.value === 'idle') return 'idle'
+    if (phase.value === 'running') return 'running'
+    if (phase.value === 'error') return 'error'
+    if (!result.value?.ok) return 'fail'
+    // Everything that could be decided passed, but at least one measurement
+    // comparison was made against a reference we cannot vouch for.
+    return result.value.indeterminate ? 'indeterminate' : 'pass'
+  },
+)
 
 const bannerTitle = computed(() => {
   switch (overallState.value) {
@@ -686,6 +722,8 @@ const bannerTitle = computed(() => {
       return t('proof.verify.running.title')
     case 'pass':
       return t('proof.verify.pass.title')
+    case 'indeterminate':
+      return t('proof.verify.indeterminate.title')
     case 'fail':
       return t('proof.verify.fail.title')
     default:
@@ -698,6 +736,8 @@ const bannerNote = computed(() => {
       return t('proof.verify.running.note')
     case 'pass':
       return t('proof.verify.pass.note')
+    case 'indeterminate':
+      return t('proof.verify.indeterminate.note')
     case 'fail':
       return t('proof.verify.fail.note')
     default:
@@ -710,6 +750,7 @@ const bannerClass = computed(() => {
       return 'border-green-200 bg-green-50 text-green-800 dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-200'
     case 'fail':
       return 'border-red-200 bg-red-50 text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200'
+    case 'indeterminate':
     case 'error':
       return 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200'
     default:

@@ -35,10 +35,13 @@ export interface EnclaveReference {
 }
 
 /**
- * Baked-in fallback reference for the production publicai-gateway CVM
- * (node dstack-pha-prod5). Kept in sync with deploy/phala/reference.json —
- * that file wins when reachable, and is updated first after each deploy (a
- * baked value here may lag one generation behind by design).
+ * Baked-in last-resort reference for the production publicai-gateway CVM
+ * (node dstack-pha-prod5). This copy can never be authoritative by
+ * construction: it lives inside the measured image, so writing the current
+ * composeHash here changes the image digest, which changes the composeHash.
+ * It is a hint for offline inspection only — a mismatch against it must be
+ * reported as undecided, never as a failed enclave. deploy/phala/reference.json
+ * is the source of truth.
  */
 export const SUB2API_REFERENCE: EnclaveReference = {
   appId: '9467ce766ed63423e86a19d2f36cc9a9926daf27',
@@ -82,3 +85,18 @@ export const ATTESTATION_QUOTE_PATH = '/attestation/quote'
 export const REFERENCE_JSON_URL: string =
   (import.meta.env.VITE_REFERENCE_JSON_URL as string | undefined) ||
   'https://raw.githubusercontent.com/FiiLabs/sub2api/proof-solo/deploy/phala/reference.json'
+
+/**
+ * Mirrors of the same file, tried in order when the authoritative URL is
+ * unreachable (raw.githubusercontent.com is blocked or rate-limited in some
+ * networks). A CDN caches branch refs, so a mirror may lag the repo — mirrors
+ * are therefore treated as non-authoritative: a measurement mismatch against
+ * one is reported as undecided rather than as a failed enclave.
+ */
+export const REFERENCE_JSON_MIRROR_URLS: readonly string[] = (
+  (import.meta.env.VITE_REFERENCE_JSON_MIRROR_URLS as string | undefined) ||
+  'https://cdn.jsdelivr.net/gh/FiiLabs/sub2api@proof-solo/deploy/phala/reference.json'
+)
+  .split(',')
+  .map((u) => u.trim())
+  .filter(Boolean)

@@ -35,6 +35,13 @@ export interface Check {
   id: string
   ok: boolean
   detail?: string
+  /**
+   * True when this step could not be decided rather than having failed — set
+   * for measurement comparisons made against a reference we cannot vouch for
+   * (mirror or baked-in copy). Such a step never gates the overall verdict:
+   * a stale reference must not be reported as a tampered enclave.
+   */
+  indeterminate?: boolean
 }
 
 /** Default Phala PCCS endpoint (verified CORS-clean for browser fetches). */
@@ -278,6 +285,14 @@ export interface EnclaveQuoteInput {
 export interface VerifyEnclaveQuoteOptions extends VerifyTdxQuoteOptions {
   /** Published reference to compare measurements against (required). */
   reference: EnclaveReference
+  /**
+   * Whether `reference` came from the authoritative source (the public repo).
+   * Defaults to true. When false the reference may legitimately lag the running
+   * deployment — a CDN mirror caches, and the baked-in copy can never be current
+   * by construction (editing it changes the image, which changes composeHash).
+   * Mismatches are then reported as *indeterminate*, not as failures.
+   */
+  referenceAuthoritative?: boolean
   /** TCB statuses treated as a clean pass. Defaults to ["UpToDate"]. */
   acceptableTcbStatuses?: readonly string[]
 }
@@ -304,6 +319,12 @@ export interface QuoteBindingMeasurements {
 export interface VerifyEnclaveQuoteResult {
   /** True iff every gating check passed (non-gating/informational excluded). */
   ok: boolean
+  /**
+   * True when the hardware itself verified but at least one measurement could
+   * not be compared against an authoritative reference. Neither a pass nor a
+   * fail — the caller must render it as "could not complete".
+   */
+  indeterminate: boolean
   checks: (Check & { gating?: boolean })[]
   measurements: QuoteBindingMeasurements
 }
@@ -338,6 +359,58 @@ export function checkNonceBinding(
 }
 
 /**
+ * Compare the measurements read out of the quote/event log against the
+ * published reference.
+ *
+ * `authoritative` says whether the reference is the live copy from the public
+ * repo. When it is not (a CDN mirror, or the copy baked into this page — which
+ * can never be current, since writing it changes the image it lives in), the
+ * reference is *allowed* to lag the enclave. A mismatch then means "we could
+ * not check", not "the enclave is not what it claims": such a check is marked
+ * indeterminate and made non-gating, so a stale reference can never be
+ * reported to the user as a tampered enclave.
+ */
+export function compareToReference(
+  measurements: QuoteBindingMeasurements,
+  reference: EnclaveReference,
+  authoritative: boolean,
+): (Check & { gating?: boolean })[] {
+  const compare = (id: string, ok: boolean, detail: string): Check & { gating?: boolean } =>
+    ok || authoritative
+      ? { id, ok, detail, gating: true }
+      : {
+          id,
+          ok: false,
+          indeterminate: true,
+          gating: false,
+          detail: `${detail} — reference is not the authoritative copy, so this mismatch is undecided, not a failure`,
+        }
+
+  return [
+    compare(
+      'measurement_app_id',
+      measurements.appIdFromEventLog === reference.appId.toLowerCase(),
+      `event=${measurements.appIdFromEventLog} ref=${reference.appId}`,
+    ),
+    compare(
+      'measurement_compose_hash_eventlog',
+      measurements.composeHashFromEventLog === reference.composeHash.toLowerCase(),
+      `event=${measurements.composeHashFromEventLog} ref=${reference.composeHash}`,
+    ),
+    compare(
+      'measurement_compose_hash_mrconfigid',
+      measurements.composeHashFromConfigId === reference.composeHash.toLowerCase(),
+      `mr_config_id[1..33]=${measurements.composeHashFromConfigId} ref=${reference.composeHash}`,
+    ),
+    compare(
+      'measurement_os_image_hash',
+      measurements.osImageHashFromEventLog === reference.osImageHash.toLowerCase(),
+      `event=${measurements.osImageHashFromEventLog} ref=${reference.osImageHash}`,
+    ),
+  ]
+}
+
+/**
  * Verify the sub2api CVM's attestation (nonce-bound TDX quote + dstack event
  * log): genuine TDX hardware + TCB + nonce freshness + measurements against the
  * published reference. Returns granular per-check results for the UI.
@@ -354,7 +427,7 @@ export async function verifyEnclaveQuote(
 
   if (!input.quote || typeof input.quote !== 'string') {
     push('quote_present', false, 'no quote in attestor response')
-    return { ok: false, checks, measurements }
+    return { ok: false, indeterminate: false, checks, measurements }
   }
 
   // 1. Genuine hardware + TCB.
@@ -363,7 +436,7 @@ export async function verifyEnclaveQuote(
     quote = await verifyTdxQuote(input.quote, opts)
   } catch (e) {
     push('quote_genuine', false, `js_verify failed: ${String(e)}`)
-    return { ok: false, checks, measurements }
+    return { ok: false, indeterminate: false, checks, measurements }
   }
   push('quote_genuine', quote.verified, 'TDX quote signature chain verified against Intel collateral')
 
@@ -446,25 +519,8 @@ export async function verifyEnclaveQuote(
 
   const reference = opts.reference
   measurements.reference = reference
-  push(
-    'measurement_app_id',
-    measurements.appIdFromEventLog === reference.appId.toLowerCase(),
-    `event=${measurements.appIdFromEventLog} ref=${reference.appId}`,
-  )
-  push(
-    'measurement_compose_hash_eventlog',
-    measurements.composeHashFromEventLog === reference.composeHash.toLowerCase(),
-    `event=${measurements.composeHashFromEventLog} ref=${reference.composeHash}`,
-  )
-  push(
-    'measurement_compose_hash_mrconfigid',
-    measurements.composeHashFromConfigId === reference.composeHash.toLowerCase(),
-    `mr_config_id[1..33]=${measurements.composeHashFromConfigId} ref=${reference.composeHash}`,
-  )
-  push(
-    'measurement_os_image_hash',
-    measurements.osImageHashFromEventLog === reference.osImageHash.toLowerCase(),
-    `event=${measurements.osImageHashFromEventLog} ref=${reference.osImageHash}`,
+  checks.push(
+    ...compareToReference(measurements, reference, opts.referenceAuthoritative !== false),
   )
   // Raw firmware/boot registers: no published reference exists (osImageHash is
   // the dstack os-image-hash event, not the firmware MRTD). Expose raw and mark
@@ -479,5 +535,6 @@ export async function verifyEnclaveQuote(
   )
 
   const ok = checks.filter((c) => c.gating !== false).every((c) => c.ok)
-  return { ok, checks, measurements }
+  const indeterminate = checks.some((c) => c.indeterminate === true)
+  return { ok, indeterminate, checks, measurements }
 }

@@ -29,6 +29,7 @@ export default {
       checking: '验证中…',
       pass: '已通过',
       fail: '未通过',
+      unknown: '无法判定',
       disclosure: '服务商侧'
     },
     journey: {
@@ -90,6 +91,10 @@ export default {
         title: '验证未通过',
         note: '有一项或多项关键检查没通过。请不要信任这个服务——见下方逐项结果。'
       },
+      indeterminate: {
+        title: '硬件已验证 —— 代码指纹无法判定',
+        note: '这确实是真正的 Intel 机密硬件,证明也绑定到了你这次的一次性随机数,度量日志同样可信。唯一没能判定的是"跑的代码是否与公布指纹一致":权威的 reference.json 这次没能取到,只好退回到一份允许滞后的副本来比对。这不是被篡改的证据——你可以重试,或自己去公开仓库核对指纹。'
+      },
       error: {
         title: '验证没能完成',
         note: '没能取到硬件证明或验证数据(网络/服务暂时不可达)。这不算失败也不算通过——请重试。'
@@ -126,7 +131,8 @@ export default {
       autoNote: '💡 打开本页时会自动在你的浏览器里验证;出现绿色对勾就代表通过。你也可以随时点上方按钮、用一组新的随机数重新验证。',
       referenceSource: {
         repo: '参考值实时取自公开仓库(变更历史可在 git 审计)',
-        bakedIn: '参考值使用内置回退副本(仓库副本拉取失败,数值可能滞后)'
+        mirror: '⚠ 公开仓库不可达,参考值取自 CDN 镜像;镜像有缓存、可能滞后,因此指纹比对只标记为"无法判定",不算失败。',
+        bakedIn: '⚠ 参考值来自本页内置的副本。它按构造就不可能是最新的(写进去就会改变它所在的镜像),因此指纹比对只标记为"无法判定",不算失败。'
       }
     },
     auditors: {
@@ -135,6 +141,7 @@ export default {
       checks: '逐项检查结果',
       checksPassed: '{n} 项通过',
       checksFailed: '{n} 项失败',
+      checksUndecided: '{n} 项无法判定',
       checksInfo: '{n} 项提示',
       rawReport: '原始证明数据',
       referenceHint: '逐行比对指纹'

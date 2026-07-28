@@ -30,6 +30,7 @@ export default {
       checking: 'Checking…',
       pass: 'Verified',
       fail: 'Failed',
+      unknown: 'Undecided',
       disclosure: 'Provider side'
     },
     journey: {
@@ -91,6 +92,10 @@ export default {
         title: 'Verification FAILED',
         note: 'One or more gating checks did not pass. Do not trust this service — see the per-check results below.'
       },
+      indeterminate: {
+        title: 'Hardware verified — code fingerprints undecided',
+        note: 'The hardware is genuine Intel confidential hardware, the proof is bound to your one-time nonce, and the measurement log is authentic. What could not be decided is whether the running code matches the published fingerprints: the authoritative reference.json could not be fetched, so the comparison fell back to a copy that is allowed to lag behind. That is not evidence of tampering — retry, or check the fingerprints yourself against the public repository.'
+      },
       error: {
         title: 'Verification could not complete',
         note: 'Could not fetch the attestation or verification collateral (network / service temporarily unreachable). This is neither a pass nor a fail — please retry.'
@@ -127,7 +132,8 @@ export default {
       autoNote: '💡 Verification runs automatically in your browser when this page opens; green check marks mean pass. You can re-run any time with a fresh nonce using the button above.',
       referenceSource: {
         repo: 'Reference fetched live from the public repository (history auditable in git)',
-        bakedIn: 'Reference is the baked-in fallback copy (repository fetch failed — values may lag)'
+        mirror: '⚠ Repository unreachable — reference came from a CDN mirror, which may be cached and lag behind. Fingerprint comparisons are shown as undecided rather than failed.',
+        bakedIn: '⚠ Reference is the copy baked into this page. It can never be current by construction (writing it changes the image it lives in), so fingerprint comparisons are shown as undecided rather than failed.'
       }
     },
     auditors: {
@@ -136,6 +142,7 @@ export default {
       checks: 'Per-check results',
       checksPassed: '{n} passed',
       checksFailed: '{n} failed',
+      checksUndecided: '{n} undecided',
       checksInfo: '{n} informational',
       rawReport: 'Raw attestation payload',
       referenceHint: 'compare fingerprints line-by-line'
