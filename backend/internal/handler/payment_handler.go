@@ -2,6 +2,7 @@ package handler
 
 import (
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -429,6 +430,43 @@ func (h *PaymentHandler) RequestRefund(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"message": "refund requested"})
+}
+
+// DownloadInvoice streams the invoice PDF for one of the authenticated
+// user's completed orders. Only orders currently in COMPLETED status are
+// invoice-eligible; refund-family states are not (see CONTEXT.md "Order
+// Invoice").
+// GET /api/v1/payment/orders/:id/invoice
+func (h *PaymentHandler) DownloadInvoice(c *gin.Context) {
+	subject, ok := requireAuth(c)
+	if !ok {
+		return
+	}
+
+	orderID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid order ID")
+		return
+	}
+
+	order, err := h.paymentService.GetOrder(c.Request.Context(), orderID, subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if order.Status != payment.OrderStatusCompleted {
+		response.ErrorFrom(c, infraerrors.NotFound("INVOICE_NOT_AVAILABLE", "invoice is only available for completed orders"))
+		return
+	}
+
+	pdfBytes, err := service.RenderOrderInvoicePDF(order, order.UserEmail)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	c.Header("Content-Disposition", `attachment; filename="invoice-`+order.OutTradeNo+`.pdf"`)
+	c.Data(http.StatusOK, "application/pdf", pdfBytes)
 }
 
 // GetRefundEligibleProviders returns provider instance IDs that allow user refund.

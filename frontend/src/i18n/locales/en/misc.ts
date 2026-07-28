@@ -367,6 +367,7 @@ export default {
       orderType: 'Order Type',
       actions: 'Actions',
       requestRefund: 'Request Refund',
+      downloadInvoice: 'Invoice',
     },
     result: {
       success: 'Payment Successful',

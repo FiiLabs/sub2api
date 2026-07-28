@@ -119,6 +119,7 @@ tests
 !deploy/tests/
 !deploy/tests/**
 CLAUDE.md
+.agents/
 .claude
 scripts
 !backend/scripts/

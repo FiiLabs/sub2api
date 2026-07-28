@@ -47,7 +47,9 @@ onUnmounted(() => {
 /* 桌面端：Flexbox 布局 */
 .table-page-layout {
   @apply flex flex-col gap-6;
-  height: calc(100vh - 64px - 4rem); /* 减去 header + lg:p-8 的上下padding */
+  /* 填充 AppLayout 的 <main> 滚动容器；不再按视口绝对定高，从而给页脚留出空间、避免重叠 */
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .layout-section-fixed {
@@ -89,6 +91,12 @@ onUnmounted(() => {
 
 .table-scroll-container :deep(td) {
   @apply px-5 py-4 text-sm text-gray-700 dark:text-gray-300 border-b border-gray-100 dark:border-dark-800;
+}
+
+/* 移动端：整体按内容高度增长，交给 <main> 整页滚动（避免被 flex 压缩后与页脚重叠） */
+.table-page-layout.mobile-mode {
+  flex: 0 0 auto;
+  min-height: auto;
 }
 
 /* 移动端：恢复正常滚动 */

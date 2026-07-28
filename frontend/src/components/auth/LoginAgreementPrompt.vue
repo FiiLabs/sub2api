@@ -3,36 +3,18 @@
     v-if="mode === 'checkbox' && documents.length > 0"
     class="px-0.5"
   >
-    <div class="flex items-start gap-2">
-      <input
-        id="login-agreement-consent"
-        type="checkbox"
-        :checked="accepted"
-        class="mt-[2px] h-4 w-4 flex-shrink-0 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-900"
-        @change="handleCheckboxChange"
-      />
-      <div class="min-w-0 flex-1">
-        <p class="text-[13px] leading-5 text-gray-600 dark:text-dark-300">
-          <label
-            for="login-agreement-consent"
-            class="cursor-pointer text-gray-700 dark:text-dark-200"
-          >
-            {{ t('legal.loginAgreementPrompt.checkboxPrefix') }}
-          </label>
-          <template v-for="(doc, index) in documents" :key="doc.id || doc.title">
-            <RouterLink
-              :to="documentRoute(doc)"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="font-medium text-primary-600 underline-offset-4 transition hover:text-primary-700 hover:underline dark:text-primary-300 dark:hover:text-primary-200"
-            >
-              {{ doc.title }}
-            </RouterLink>
-            <span v-if="index < documents.length - 1">{{ t('legal.loginAgreementPrompt.documentSeparator') }}</span>
-          </template>
-        </p>
-      </div>
-    </div>
+    <!-- checkbox 模式只做静态告知（提交即视为同意），标签紧贴避免渲染出多余空白 -->
+    <p class="text-[13px] leading-5 text-gray-600 dark:text-dark-300">
+      <span>{{ t('legal.loginAgreementPrompt.consentLeadIn') }}</span><template
+        v-for="(doc, index) in documents"
+        :key="doc.id || doc.title"
+      ><span>{{ agreementSeparator(index) }}</span><RouterLink
+        :to="documentRoute(doc)"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="font-medium text-primary-600 underline-offset-4 transition hover:text-primary-700 hover:underline dark:text-primary-300 dark:hover:text-primary-200"
+      >{{ doc.title }}</RouterLink></template><span>{{ t('legal.loginAgreementPrompt.consentSuffix') }}</span>
+    </p>
   </div>
 
   <div
@@ -181,13 +163,14 @@ function documentRoute(doc: LoginAgreementDocument) {
   }
 }
 
-function handleCheckboxChange(event: Event): void {
-  const checked = (event.target as HTMLInputElement).checked
-  if (checked) {
-    emit('accept')
-  } else {
-    emit('reject')
+function agreementSeparator(index: number): string {
+  if (index === 0) {
+    return t('legal.loginAgreementPrompt.firstSeparator')
   }
+  if (index === documents.value.length - 1) {
+    return t('legal.loginAgreementPrompt.lastSeparator')
+  }
+  return t('legal.loginAgreementPrompt.separator')
 }
 
 function documentIcon(index: number, title: string): 'document' | 'shield' | 'globe' | 'cog' {

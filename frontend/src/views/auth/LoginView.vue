@@ -278,8 +278,13 @@ const validationToastMessage = computed(
   () => errors.email || errors.password || errors.turnstile || ''
 )
 
+// checkbox 模式仅作静态告知（注册即视为同意），不阻断登录；
+// 只有 modal 模式才是强制门禁，需用户显式同意后方可提交。
 const agreementGateActive = computed(
-  () => loginAgreementEnabled.value && !agreementAccepted.value
+  () =>
+    loginAgreementEnabled.value &&
+    loginAgreementMode.value !== 'checkbox' &&
+    !agreementAccepted.value
 )
 
 const authActionDisabled = computed(
