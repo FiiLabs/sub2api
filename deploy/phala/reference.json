@@ -1,22 +1,22 @@
 {
-  "$comment": "Authoritative attestation reference for the production publicai-gateway CVM (sub2api single-enclave architecture). Fetched at runtime by the /proof page (see frontend/src/utils/attestation/reference.ts). Every change to this file is public git history — that is part of the trust story. composeHash was read back from the CVM's RTMR3 via the attestor on 2026-07-28 and independently derives from deploy/phala/docker-compose.yml; image digests are the linux/amd64 children of the cosign-signed proof-v10 indexes built from sourceCommit by publish-tee-images (run 30340900982). The proof-v10 change is copy-only: the honest-disclosure text on /proof still described the pre-ingress topology (TLS terminating at a Phala gateway in front of the enclave), which stopped being true when dstack-ingress moved TLS termination inside the confidential VM; it now states that, and no longer implies the attestation says anything about what the code records for usage and billing. Frontend-only, but the image is measured, so both images were rebuilt and composeHash moved with them (c0136825… → c86ba435…). The enclave's E2EE public key is derived from the app key and is unchanged across this upgrade.",
+  "$comment": "Authoritative attestation reference for the production publicai-gateway CVM (sub2api single-enclave architecture). Fetched at runtime by the /proof page (see frontend/src/utils/attestation/reference.ts). Every change to this file is public git history — that is part of the trust story. composeHash was read back from the CVM's RTMR3 via the attestor on 2026-07-28; it was also predicted before the upgrade by rebuilding the app-compose.json wrapper Phala stores for this CVM (sha256 over the null-stripped, key-sorted, compact JSON) and swapping in the new compose text — prediction and RTMR3 read-back agree, so the publish window after an upgrade is now seconds rather than minutes. Image digests are the linux/amd64 children of the cosign-signed proof-v11 indexes built from sourceCommit by publish-tee-images (run 30344520905). proof-v11 fixes a design flaw in /proof itself: when reference.json could not be fetched, the page silently compared the live enclave against the copy baked into the measured image — a copy that can never be current by construction — and reported the resulting mismatch as 'Verification FAILED, do not trust this service'. Such a mismatch is now reported as undecided and does not gate the verdict; only a mismatch against this authoritative file still fails. A CDN mirror was added as a middle fallback. The enclave's E2EE public key is derived from the app key and is unchanged across this upgrade.",
   "version": 1,
   "updatedAt": "2026-07-28",
   "enclave": {
     "appId": "9467ce766ed63423e86a19d2f36cc9a9926daf27",
     "osImage": "dstack-0.5.9",
     "osImageHash": "bd369a8c2f9edb2b52dad48ac8e0b32dde5f1337c423a506b48d07403a7d8033",
-    "composeHash": "c86ba435f41dafd69056121d4283b694ed872ae6d705334707fa01b41cf9fa26",
+    "composeHash": "0fa1adbf2fd01c067ede2cd98350b98a123b3f4ba68b989ee74ed17f94aa4e10",
     "sourceRepo": "https://github.com/FiiLabs/sub2api.git",
-    "sourceCommit": "3a0e609d8694e40891827d0fa5a44d929c9340fa",
+    "sourceCommit": "9a59d95434a5b7f6632d63dade2f63d8c1c65aa6",
     "images": [
       {
         "name": "sub2api",
-        "digest": "docker.io/markerdao/sub2api@sha256:b5d2db7aab15bfac52b71b6afe189fe46e8d8fc08a8d6991453c76ed34d97841"
+        "digest": "docker.io/markerdao/sub2api@sha256:8776b0d9c6644f40cc442627cbd2ad86d15fef2cdd521b4ee11a4ff99d833967"
       },
       {
         "name": "sub2api-attestor",
-        "digest": "docker.io/markerdao/sub2api-attestor@sha256:a69103b11d5c74c39d86193c42c2a1b391fb038827783207de020367faf3d7df"
+        "digest": "docker.io/markerdao/sub2api-attestor@sha256:36b4279e63384294f8ebb08c84c3e50887cce7f287e87843ccaf649628f18fc9"
       }
     ],
     "confidential": false
