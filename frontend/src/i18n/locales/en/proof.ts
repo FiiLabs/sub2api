@@ -75,7 +75,7 @@ export default {
     disclosure: {
       title: 'Honest disclosure: upstream providers see plaintext',
       body:
-        'Models are ultimately served by upstream providers (e.g. Anthropic, OpenAI), which necessarily process forwarded request content under their own policies. Also, your encrypted connection (TLS) terminates at the Phala gateway in front of the confidential computer — this page adds no end-to-end encryption on top. What we prove is that the confidential computer runs exactly the public, untampered code.'
+        'Models are ultimately served by upstream providers (e.g. Anthropic, OpenAI), which necessarily process forwarded request content under their own policies. Your encrypted connection (TLS) terminates inside the confidential computer itself — the certificate private key is generated in the enclave and never leaves it, so no edge server outside the hardware boundary handles your plaintext. What we prove is that the confidential computer runs exactly the public, untampered code; we make no claim about what that code records for usage and billing, which is why the code is public.'
     },
     verify: {
       checksTitle: 'Per-check results',
@@ -163,7 +163,7 @@ export default {
         desc: 'An optional live test. Click below and your browser encrypts a prompt, sends it to the confidential computer’s REAL inference endpoint, then decrypts the encrypted model reply — showing you exactly who saw what, so you can confirm middleboxes only ever held ciphertext.',
         disclosure: 'Honest disclosure: this demo prompt is decrypted inside the confidential computer, then forwarded in plaintext to the upstream model provider by design, and consumes a small amount of quota (tokens). Do not paste anything sensitive. Your API key stays in your browser and is sent only with this one request for authorization. Want to check for yourself? Open your browser devtools, Network tab — the request body contains only ciphertext.',
         claimTitle: 'What this demo proves',
-        claimBody: 'Your prompt is encrypted into ciphertext right in your browser, and only the hardware-attested confidential computer above can open it. The network, the TLS terminator and every middlebox handle only that ciphertext — your content is unreadable to them. That it can decrypt and encrypt a reply proves exactly this. (Note: after decryption the enclave forwards your prompt in plaintext to the upstream model provider — see the honest disclosure.)',
+        claimBody: 'Your prompt is encrypted into ciphertext right in your browser, and only the hardware-attested confidential computer above can open it. The network and every middlebox on the way handle only that ciphertext — your content is unreadable to them, and this holds even if you assume TLS itself is broken or intercepted. That the enclave can decrypt it and encrypt a reply proves exactly this. (Note: after decryption the enclave forwards your prompt in plaintext to the upstream model provider — see the honest disclosure.)',
         sealedToLabel: 'Encrypted to (hardware-attested key, sha256)',
         concludeTitle: 'Conclusion',
         concludeBody: 'The receipt decrypts and authenticates ⟹ only the confidential computer holding the hardware-attested private key could open what you sent. The network and any middlebox cannot — and this holds regardless of whether you trust TLS.',
@@ -175,7 +175,7 @@ export default {
         run: 'Encrypt & round-trip once',
         running: 'Encrypting & verifying…',
         successTitle: 'The attested confidential computer decrypted your ciphertext',
-        successNote: 'Your prompt was encrypted in your browser to the enclave’s dedicated key, completed a real inference round-trip, and the encrypted reply passed authenticated decryption. No middlebox (network, TLS terminator) saw your plaintext.',
+        successNote: 'Your prompt was encrypted in your browser to the enclave’s dedicated key, completed a real inference round-trip, and the encrypted reply passed authenticated decryption. No middlebox on the network path saw your plaintext — and that conclusion does not depend on trusting TLS.',
         promptSentLabel: '① Your message (plaintext — visible only to you and the enclave)',
         wireLabel: '② The actual bytes sent (all that the network and any middlebox see)',
         replyLabel: '③ Decrypted model reply (returned encrypted by the enclave)',
