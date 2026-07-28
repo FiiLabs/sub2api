@@ -1,22 +1,22 @@
 {
-  "$comment": "Authoritative attestation reference for the production publicai-gateway CVM (sub2api single-enclave architecture). Fetched at runtime by the /proof page (see frontend/src/utils/attestation/reference.ts). Every change to this file is public git history — that is part of the trust story. composeHash was read back from the CVM's RTMR3 via the attestor on 2026-07-28 and independently derives from deploy/phala/docker-compose.yml; image digests are the linux/amd64 children of the cosign-signed proof-v9 indexes built from sourceCommit by publish-tee-images (run 30337877905). The 2026-07-28 proof-v9 change adds cryptocurrency payment support as a Stripe sub-method (backend payment type 'crypto' routed through the existing Stripe channel and webhook, plus the frontend method ordering and admin toggle) — an application change, so both images were rebuilt and composeHash moved with them (f0097948… → c0136825…). The enclave's E2EE public key is derived from the app key and is unchanged across this upgrade.",
+  "$comment": "Authoritative attestation reference for the production publicai-gateway CVM (sub2api single-enclave architecture). Fetched at runtime by the /proof page (see frontend/src/utils/attestation/reference.ts). Every change to this file is public git history — that is part of the trust story. composeHash was read back from the CVM's RTMR3 via the attestor on 2026-07-28 and independently derives from deploy/phala/docker-compose.yml; image digests are the linux/amd64 children of the cosign-signed proof-v10 indexes built from sourceCommit by publish-tee-images (run 30340900982). The proof-v10 change is copy-only: the honest-disclosure text on /proof still described the pre-ingress topology (TLS terminating at a Phala gateway in front of the enclave), which stopped being true when dstack-ingress moved TLS termination inside the confidential VM; it now states that, and no longer implies the attestation says anything about what the code records for usage and billing. Frontend-only, but the image is measured, so both images were rebuilt and composeHash moved with them (c0136825… → c86ba435…). The enclave's E2EE public key is derived from the app key and is unchanged across this upgrade.",
   "version": 1,
   "updatedAt": "2026-07-28",
   "enclave": {
     "appId": "9467ce766ed63423e86a19d2f36cc9a9926daf27",
     "osImage": "dstack-0.5.9",
     "osImageHash": "bd369a8c2f9edb2b52dad48ac8e0b32dde5f1337c423a506b48d07403a7d8033",
-    "composeHash": "c0136825a499473144d996363249fc6dd3b3ff189a552f746f26734dc00bbeee",
+    "composeHash": "c86ba435f41dafd69056121d4283b694ed872ae6d705334707fa01b41cf9fa26",
     "sourceRepo": "https://github.com/FiiLabs/sub2api.git",
-    "sourceCommit": "654dfe0f735ca70d1d742a4676298688c9dc5349",
+    "sourceCommit": "3a0e609d8694e40891827d0fa5a44d929c9340fa",
     "images": [
       {
         "name": "sub2api",
-        "digest": "docker.io/markerdao/sub2api@sha256:8911863c6e36217302cfbb46cf6c84ef3c1efaa3380f8cc896de6f7f0a4c0a50"
+        "digest": "docker.io/markerdao/sub2api@sha256:b5d2db7aab15bfac52b71b6afe189fe46e8d8fc08a8d6991453c76ed34d97841"
       },
       {
         "name": "sub2api-attestor",
-        "digest": "docker.io/markerdao/sub2api-attestor@sha256:8b57c70f9570dc70388e5f0f72c39418b0640616f6353e6e88209ac556e8bb62"
+        "digest": "docker.io/markerdao/sub2api-attestor@sha256:a69103b11d5c74c39d86193c42c2a1b391fb038827783207de020367faf3d7df"
       }
     ],
     "confidential": false
