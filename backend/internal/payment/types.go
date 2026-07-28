@@ -15,6 +15,7 @@ const (
 	TypeWxpayDirect  PaymentType = "wxpay_direct"
 	TypeStripe       PaymentType = "stripe"
 	TypeCard         PaymentType = "card"
+	TypeCrypto       PaymentType = "crypto"
 	TypeLink         PaymentType = "link"
 	TypeEasyPay      PaymentType = "easypay"
 	TypeAirwallex    PaymentType = "airwallex"
@@ -86,7 +87,7 @@ func GetBasePaymentType(t string) string {
 		return TypeEasyPay
 	case t == TypeAirwallex:
 		return TypeAirwallex
-	case t == TypeStripe || t == TypeCard || t == TypeLink:
+	case t == TypeStripe || t == TypeCard || t == TypeCrypto || t == TypeLink:
 		return TypeStripe
 	case len(t) >= len(TypeAlipay) && t[:len(TypeAlipay)] == TypeAlipay:
 		return TypeAlipay

@@ -40,7 +40,7 @@ export const PROVIDER_SUPPORTED_TYPES: Record<string, string[]> = {
   easypay: ['alipay', 'wxpay'],
   alipay: ['alipay'],
   wxpay: ['wxpay'],
-  stripe: ['card', 'alipay', 'wxpay', 'link'],
+  stripe: ['card', 'crypto', 'alipay', 'wxpay', 'link'],
   airwallex: ['airwallex'],
 }
 

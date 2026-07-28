@@ -249,7 +249,7 @@ function mountPaymentElement(stripe: Stripe, clientSecret: string) {
   elementsInstance = elements
   const paymentElement = elements.create('payment', {
     layout: 'tabs',
-    paymentMethodOrder: ['alipay', 'wechat_pay', 'card', 'link'],
+    paymentMethodOrder: ['crypto', 'alipay', 'wechat_pay', 'card', 'link'],
   } as Record<string, unknown>)
   paymentElement.mount('#stripe-payment-element')
   paymentElement.on('ready', () => { stripeReady.value = true })
