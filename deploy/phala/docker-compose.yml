@@ -137,6 +137,51 @@ services:
       # (A unix socket needs r/w, so NOT :ro.)
       - /var/run/dstack.sock:/var/run/dstack.sock
 
+  # Custom-domain ingress: TLS terminates INSIDE this CVM.
+  # Gives users a clean base URL (https://api.apex1.us) that resolves straight to
+  # this attested enclave. dstack-ingress uses the Cloudflare token to write the
+  # CNAME/TXT/CAA records itself, obtains a Let's Encrypt cert via DNS-01, listens
+  # on :443, and forwards plaintext to sub2api:8080 OVER THE COMPOSE NETWORK — so
+  # the plaintext prompt never leaves this TEE CVM. The direct
+  # <app-id>-8080.<node>.phala.network endpoint keeps working alongside this.
+  #
+  # The CAA record it writes pins issuance to the Let's Encrypt ACCOUNT that lives
+  # inside this enclave: nobody — including the operator — can obtain a public cert
+  # for these names outside the CVM. That guarantee is part of the /proof story.
+  #
+  # Only dstack.sock is mounted: entrypoint.sh prefers it and falls back to the
+  # legacy tappd.sock only when absent (dstack 0.5.9 provides dstack.sock).
+  dstack-ingress:
+    image: docker.io/dstacktee/dstack-ingress:2.2@sha256:d05a7b343c37c1cca1bba8dbf7e8f3c6d2118158af2d41c455103796db4f67f0
+    container_name: sub2api-ingress
+    restart: unless-stopped
+    ports:
+      - "443:443"
+    environment:
+      # DOMAINS drives CERTIFICATE acquisition only. Routing comes from
+      # ROUTING_MAP: entrypoint.sh writes haproxy.cfg only when ROUTING_MAP is
+      # set, or when the SINGULAR $DOMAIN is set — with DOMAINS alone neither
+      # branch fires, no haproxy.cfg is produced and the container crash-loops.
+      # Both lists accept comma separation (they are `tr ',' '\n'`-normalised).
+      - DOMAINS=apex1.us,api.apex1.us
+      - ROUTING_MAP=apex1.us=sub2api:8080,api.apex1.us=sub2api:8080
+      - TARGET_ENDPOINT=sub2api:8080
+      - GATEWAY_DOMAIN=_.dstack-pha-prod5.phala.network
+      - DNS_PROVIDER=cloudflare
+      - SET_CAA=true
+      - CERTBOT_EMAIL=${CERTBOT_EMAIL:?set CERTBOT_EMAIL (Let's Encrypt expiry notifications)}
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN:?set CLOUDFLARE_API_TOKEN (Cloudflare Edit-zone-DNS token) via sealed env}
+    volumes:
+      # dstack guest-agent socket — used to read this CVM's app_id for the
+      # _dstack-app-address TXT record and to fetch the domain-attestation quote.
+      - /var/run/dstack.sock:/var/run/dstack.sock
+      - ingress_certs:/etc/letsencrypt
+      - ingress_evidences:/evidences
+    depends_on:
+      - sub2api
+    networks:
+      - sub2api-network
+
   postgres:
     image: postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
     container_name: sub2api-postgres
@@ -203,6 +248,14 @@ volumes:
   postgres_data:
     driver: local
   redis_data:
+    driver: local
+  # dstack-ingress Let's Encrypt account + certs (must persist across restarts,
+  # otherwise every restart registers a new ACME account and the CAA accounturi
+  # pin breaks).
+  ingress_certs:
+    driver: local
+  # dstack-ingress domain-attestation evidence bundle.
+  ingress_evidences:
     driver: local
 
 networks:

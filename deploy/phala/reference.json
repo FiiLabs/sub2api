@@ -1,12 +1,12 @@
 {
-  "$comment": "Authoritative attestation reference for the production publicai-gateway CVM (sub2api single-enclave architecture). Fetched at runtime by the /proof page (see frontend/src/utils/attestation/reference.ts). Every change to this file is public git history — that is part of the trust story. composeHash was read back from the CVM's RTMR3 via the attestor on 2026-07-27 and independently derives from deploy/phala/docker-compose.yml; image digests are the linux/amd64 children of the cosign-signed proof-v8 indexes built from sourceCommit by publish-tee-images (run 30255739178).",
+  "$comment": "Authoritative attestation reference for the production publicai-gateway CVM (sub2api single-enclave architecture). Fetched at runtime by the /proof page (see frontend/src/utils/attestation/reference.ts). Every change to this file is public git history — that is part of the trust story. composeHash was read back from the CVM's RTMR3 via the attestor on 2026-07-28 and independently derives from deploy/phala/docker-compose.yml; image digests are the linux/amd64 children of the cosign-signed proof-v8 indexes built from sourceCommit by publish-tee-images (run 30255739178). The 2026-07-28 change adds the dstack-ingress service (custom domains apex1.us / api.apex1.us, TLS terminated inside the enclave) — compose-only, so the images and sourceCommit are unchanged and no rebuild was needed; only composeHash moved (6e53a36d… → f0097948…).",
   "version": 1,
-  "updatedAt": "2026-07-27",
+  "updatedAt": "2026-07-28",
   "enclave": {
     "appId": "9467ce766ed63423e86a19d2f36cc9a9926daf27",
     "osImage": "dstack-0.5.9",
     "osImageHash": "bd369a8c2f9edb2b52dad48ac8e0b32dde5f1337c423a506b48d07403a7d8033",
-    "composeHash": "6e53a36db19196d73a1a91d11526f66ff906dbadc4d7bb1f2b478e4132d890d1",
+    "composeHash": "f00979487724757a59a19a627bf938b5dc02eb80f0a834fcc0b065f0e1e8c008",
     "sourceRepo": "https://github.com/FiiLabs/sub2api.git",
     "sourceCommit": "0b6d88130c7526d47ef85eef6f2b1cda61c042ac",
     "images": [
