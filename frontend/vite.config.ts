@@ -2,6 +2,15 @@ import { defineConfig, loadEnv, Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import checker from 'vite-plugin-checker'
 import { resolve } from 'path'
+import { createRequire } from 'module'
+
+// 从 @phala/dcap-qvl 自身的位置解析它声明的 `buffer` polyfill，拿到绝对路径。
+// 走依赖图而不是写死 node_modules 路径，pnpm 的严格布局和 CI 的 hoisted
+// 布局下都成立，且拿到的一定是 dcap-qvl 实际使用的那份。
+const requireFromHere = createRequire(resolve(__dirname, 'vite.config.ts'))
+const bufferPolyfillPath = createRequire(
+  requireFromHere.resolve('@phala/dcap-qvl/package.json')
+).resolve('buffer/')
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({
@@ -95,7 +104,13 @@ export default defineConfig(({ mode }) => {
     alias: {
       '@': resolve(__dirname, 'src'),
       // 使用 vue-i18n 运行时版本，避免 CSP unsafe-eval 问题
-      'vue-i18n': 'vue-i18n/dist/vue-i18n.runtime.esm-bundler.js'
+      'vue-i18n': 'vue-i18n/dist/vue-i18n.runtime.esm-bundler.js',
+      // @phala/dcap-qvl 的依赖链（asn1.js → safer-buffer）里有裸 `require('buffer')`。
+      // Vite 默认把它当成 Node 内置模块外部化为空对象，safer-buffer 求值时会去读
+      // `undefined.prototype` 而直接抛 TypeError —— /proof 的远程证明验证会整块失效，
+      // 而构建只报一条 warning，很容易漏掉。dcap-qvl 本身就把 `buffer` 这个纯 JS
+      // polyfill 列为依赖，这里显式指过去。
+      buffer: bufferPolyfillPath
     }
   },
   define: {

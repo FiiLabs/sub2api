@@ -3,14 +3,23 @@
  * (single-enclave architecture: one sub2api CVM on Phala dstack).
  *
  * This is the hardware root of trust that lets the /proof page mark steps
- * "verified". It wraps `@phala/dcap-qvl-web` (the audited `dcap-qvl` Rust core
- * compiled to wasm) — crypto is NOT reimplemented here. Collateral (Intel PCK
- * chain / TCB / QE identity) is fetched from Phala PCCS directly in the
- * browser.
+ * "verified". It wraps `@phala/dcap-qvl` (Phala's pure-JS DCAP verifier) —
+ * crypto is NOT reimplemented here. Collateral (Intel PCK chain / TCB / QE
+ * identity) is fetched from Phala PCCS directly in the browser.
+ *
+ * Why not `@phala/dcap-qvl-web`: that wasm build is affected by
+ * CVE-2026-22696 / GHSA-796p-j2gh-9m2q (CVSS 9.3) — it fetched the QE Identity
+ * collateral but never verified its signature against the Intel-rooted issuer
+ * chain, and never enforced MRSIGNER / ISVPRODID / ISVSVN on the QE report. A
+ * forged QE Identity could therefore whitelist a rogue Quoting Enclave and sign
+ * arbitrary quotes, defeating the whole point of this page. No fixed release
+ * exists for the `-web` package; upstream's remedy is this pure-JS package
+ * (fixed in 0.3.9), which verifies the QE Identity signature and enforces the
+ * QE report policy.
  *
  * Verification chain (verifyEnclaveQuote):
- *   1. `js_verify` proves the quote is genuine TDX hardware and reports its TCB
- *      posture (audited signature-chain + collateral check).
+ *   1. `verify()` proves the quote is genuine TDX hardware and reports its TCB
+ *      posture (signature chain + collateral, including QE Identity).
  *   2. nonce binding: the quote's 64-byte report_data must be
  *      `nonce(left-justified into [0..32]) || zeros(32)` — the nonce this
  *      verifier generated, proving the quote is fresh, not replayed.
@@ -26,6 +35,7 @@
  * rather than faked green — OS-image identity is instead verified transitively
  * via the anchored `os-image-hash` event.
  */
+import { getCollateral, verify as dcapVerify } from '@phala/dcap-qvl'
 import { sha256, sha384 } from '@noble/hashes/sha2.js'
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js'
 import type { EnclaveReference } from '@/constants/attestation'
@@ -56,66 +66,32 @@ export function decodeHex(value: string): Uint8Array {
   return hexToBytes(stripped)
 }
 
-// --- wasm module typing (from @phala/dcap-qvl-web 0.3.3 .d.ts) ---------------
+// --- dcap-qvl report shapes ---------------------------------------------------
+// Mirrors @phala/dcap-qvl 0.6.x: register fields are camelCase `Uint8Array`
+// (the wasm build used to hand back snake_case hex strings).
 
-type WasmInitInput = BufferSource | WebAssembly.Module | string | URL | Request | Response
-interface DcapQvlWasm {
-  default: (arg?: { module_or_path: WasmInitInput } | WasmInitInput) => Promise<unknown>
-  js_get_collateral: (pccsUrl: string, rawQuote: Uint8Array) => Promise<unknown>
-  js_verify: (rawQuote: Uint8Array, collateral: unknown, now: bigint) => VerifyResult
+interface DcapTd10 {
+  mrTd: Uint8Array
+  mrConfigId: Uint8Array
+  rtMr0: Uint8Array
+  rtMr1: Uint8Array
+  rtMr2: Uint8Array
+  rtMr3: Uint8Array
+  reportData: Uint8Array
 }
 
-/** Raw shape returned by `js_verify` (mirrors dcap-qvl `VerifiedReport`). */
+/** dcap-qvl `Report`: variant tag + payload; `asTd10()` unwraps TD15's `base`. */
+interface DcapReport {
+  type: 'sgx' | 'td10' | 'td15'
+  asTd10: () => DcapTd10 | null
+  asSgx: () => { reportData: Uint8Array } | null
+}
+
+/** Result of `verify()` (dcap-qvl `VerifiedReport`). */
 export interface VerifyResult {
   status: string
   advisory_ids: string[]
-  report: RawReportEnum
-}
-
-/** dcap-qvl `Report` enum, tagged by variant name. TD15 nests TD10 under `base`. */
-interface RawTd10 {
-  mr_td: string
-  mr_config_id: string
-  rt_mr0: string
-  rt_mr1: string
-  rt_mr2: string
-  rt_mr3: string
-  report_data: string
-  [k: string]: unknown
-}
-interface RawReportEnum {
-  TD10?: RawTd10
-  TD15?: { base: RawTd10; [k: string]: unknown }
-  SgxEnclave?: { report_data: string; [k: string]: unknown }
-}
-
-// --- lazy wasm init ----------------------------------------------------------
-
-let wasmPromise: Promise<DcapQvlWasm> | null = null
-let wasmInputOverride: BufferSource | WebAssembly.Module | undefined
-
-/**
- * Test-only hook: pre-seed the wasm bytes so init can run under Node/vitest
- * (where the `?url` asset resolves to a filesystem path that `fetch` can't
- * load). Never called by production code — the browser path uses `?url`.
- */
-export function __setWasmInputForTests(input: BufferSource | WebAssembly.Module | undefined): void {
-  wasmInputOverride = input
-  wasmPromise = null
-}
-
-async function loadWasm(): Promise<DcapQvlWasm> {
-  if (!wasmPromise) {
-    wasmPromise = (async () => {
-      const mod = (await import('@phala/dcap-qvl-web')) as unknown as DcapQvlWasm
-      const input =
-        wasmInputOverride ??
-        (await import('@phala/dcap-qvl-web/dcap-qvl-web_bg.wasm?url')).default
-      await mod.default({ module_or_path: input })
-      return mod
-    })()
-  }
-  return wasmPromise
+  report: DcapReport
 }
 
 // --- register extraction -----------------------------------------------------
@@ -134,24 +110,35 @@ export interface TdxRegisters {
   rtMr3Hex?: string
 }
 
-export function extractRegisters(report: RawReportEnum): TdxRegisters {
-  const td = report.TD10 ?? report.TD15?.base
+export function extractRegisters(report: DcapReport): TdxRegisters {
+  const td = report.type === 'td10' || report.type === 'td15' ? report.asTd10() : null
   if (td) {
     return {
-      kind: report.TD15 ? 'TD15' : 'TD10',
-      reportDataHex: normHex(td.report_data),
-      mrTdHex: normHex(td.mr_td),
-      mrConfigIdHex: normHex(td.mr_config_id),
-      rtMr0Hex: normHex(td.rt_mr0),
-      rtMr1Hex: normHex(td.rt_mr1),
-      rtMr2Hex: normHex(td.rt_mr2),
-      rtMr3Hex: normHex(td.rt_mr3),
+      kind: report.type === 'td15' ? 'TD15' : 'TD10',
+      reportDataHex: toHex(td.reportData),
+      mrTdHex: toHex(td.mrTd),
+      mrConfigIdHex: toHex(td.mrConfigId),
+      rtMr0Hex: toHex(td.rtMr0),
+      rtMr1Hex: toHex(td.rtMr1),
+      rtMr2Hex: toHex(td.rtMr2),
+      rtMr3Hex: toHex(td.rtMr3),
     }
   }
-  if (report.SgxEnclave) {
-    return { kind: 'SgxEnclave', reportDataHex: normHex(report.SgxEnclave.report_data) }
+  const sgx = report.type === 'sgx' ? report.asSgx() : null
+  if (sgx) {
+    return { kind: 'SgxEnclave', reportDataHex: toHex(sgx.reportData) }
   }
-  throw new Error('unrecognized dcap-qvl report variant (expected TD10/TD15/SgxEnclave)')
+  throw new Error('unrecognized dcap-qvl report variant (expected td10/td15/sgx)')
+}
+
+/**
+ * Register bytes -> lowercase hex. dcap-qvl hands back `Uint8Array` (Buffer is
+ * a subclass, so both work); anything else means the field moved and we must
+ * not silently pass an empty string off as a measurement.
+ */
+function toHex(v: unknown): string {
+  if (v instanceof Uint8Array) return bytesToHex(v)
+  throw new Error('dcap-qvl register field is not a Uint8Array (upstream shape changed?)')
 }
 
 function normHex(v: unknown): string {
@@ -175,7 +162,7 @@ export interface VerifyTdxQuoteResult {
   advisoryIds: string[]
   /** Normalized quote registers. */
   report: TdxRegisters
-  /** Raw `js_verify` result. */
+  /** Raw `verify()` result. */
   raw: VerifyResult
 }
 
@@ -183,19 +170,18 @@ export interface VerifyTdxQuoteResult {
  * Verify a raw TDX DCAP quote against Intel collateral fetched from PCCS.
  *
  * Reaching a result means the quote's signature chain verified against the
- * Intel PCK/TCB/QE collateral (i.e. genuine hardware); `js_verify` throws
+ * Intel PCK/TCB/QE collateral (i.e. genuine hardware); `verify()` throws
  * otherwise. `tcbStatus` conveys the TCB level separately.
  */
 export async function verifyTdxQuote(
   quoteHex: string,
   opts: VerifyTdxQuoteOptions = {},
 ): Promise<VerifyTdxQuoteResult> {
-  const wasm = await loadWasm()
   const quote = decodeHex(quoteHex)
   const pccsUrl = opts.pccsUrl ?? PHALA_PCCS_URL
-  const collateral = await wasm.js_get_collateral(pccsUrl, quote)
+  const collateral = await getCollateral(pccsUrl, quote)
   const nowSecs = opts.nowSecs ?? Math.floor(Date.now() / 1000)
-  const raw = wasm.js_verify(quote, collateral, BigInt(nowSecs))
+  const raw = dcapVerify(quote, collateral, nowSecs) as unknown as VerifyResult
   return {
     verified: true,
     tcbStatus: raw.status,
@@ -435,7 +421,7 @@ export async function verifyEnclaveQuote(
   try {
     quote = await verifyTdxQuote(input.quote, opts)
   } catch (e) {
-    push('quote_genuine', false, `js_verify failed: ${String(e)}`)
+    push('quote_genuine', false, `dcap-qvl verify failed: ${String(e)}`)
     return { ok: false, indeterminate: false, checks, measurements }
   }
   push('quote_genuine', quote.verified, 'TDX quote signature chain verified against Intel collateral')
