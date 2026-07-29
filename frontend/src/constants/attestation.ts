@@ -47,19 +47,19 @@ export const SUB2API_REFERENCE: EnclaveReference = {
   appId: '9467ce766ed63423e86a19d2f36cc9a9926daf27',
   osImage: 'dstack-0.5.9',
   osImageHash: 'bd369a8c2f9edb2b52dad48ac8e0b32dde5f1337c423a506b48d07403a7d8033',
-  composeHash: '6e53a36db19196d73a1a91d11526f66ff906dbadc4d7bb1f2b478e4132d890d1',
+  composeHash: 'aff1eef46cad8c1d25c4295d1cdc25e067185d3b500c410efdfd6b6067047630',
   sourceRepo: 'https://github.com/FiiLabs/sub2api.git',
-  sourceCommit: '0b6d88130c7526d47ef85eef6f2b1cda61c042ac',
+  sourceCommit: 'ba82db8cb3a55fa5adafea84e57b284969b17bd9',
   images: [
     {
       name: 'sub2api',
       digest:
-        'docker.io/markerdao/sub2api@sha256:0e0ef066b0c1e635fa61161d551273aa7f607ddae1596152134f29be3f5405e4',
+        'docker.io/markerdao/sub2api@sha256:beb0a197c41b218bf4f690f2626b745e3ce8a5627721bd25f3a20ddf3de5d7f6',
     },
     {
       name: 'sub2api-attestor',
       digest:
-        'docker.io/markerdao/sub2api-attestor@sha256:eca2512866450f9381c083f97bb9d93d595a0824a8f988f0cafe029b9b11681d',
+        'docker.io/markerdao/sub2api-attestor@sha256:595112f86287008bd57d2058c32ea548dc035625993d55431154d23bc2f8376c',
     },
   ],
   confidential: false,
