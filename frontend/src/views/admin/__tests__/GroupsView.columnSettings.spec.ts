@@ -51,6 +51,10 @@ vi.mock('@/api/admin', () => ({
       getModelsListCandidates,
       getUsageSummary,
       getCapacitySummary,
+      // onMounted 里有个 `void loadLiveCapability()`，不补这条 mock 的话
+      // 调用 undefined 会同步抛 TypeError，实现里的 .catch 根本挂不上去，
+      // 断言全绿但 vitest 以 unhandled rejection 退出 1。
+      getLiveCapability: vi.fn(async () => ({ supported: false })),
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
