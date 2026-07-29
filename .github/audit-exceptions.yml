@@ -14,24 +14,10 @@ exceptions:
     mitigation: "Load only on export; restrict export permissions and data scope"
     expires_on: "2026-10-06"
     owner: "security@your-domain"
-  - package: lodash
-    advisory: "GHSA-r5fr-rjxr-66jc"
-    severity: high
-    reason: "lodash _.template not used with untrusted input; only internal admin UI templates"
-    mitigation: "No user-controlled template strings; plan to migrate to lodash-es tree-shaken imports"
-    expires_on: "2026-07-02"
-    owner: "security@your-domain"
-  - package: lodash-es
-    advisory: "GHSA-r5fr-rjxr-66jc"
-    severity: high
-    reason: "lodash-es _.template not used with untrusted input; only internal admin UI templates"
-    mitigation: "No user-controlled template strings; plan to migrate to native JS alternatives"
-    expires_on: "2026-07-02"
-    owner: "security@your-domain"
-  - package: axios
-    advisory: "GHSA-3p68-rc4w-qgx5"
-    severity: critical
-    reason: "NO_PROXY bypass not exploitable; all API calls go to known endpoints via server-side proxy"
-    mitigation: "Proxy configuration not user-controlled; upgrade when axios releases fix"
-    expires_on: "2026-07-10"
-    owner: "security@your-domain"
+  # 2026-07-29 移除三条已失效的例外：lodash / lodash-es（GHSA-r5fr-rjxr-66jc）与
+  # axios（GHSA-3p68-rc4w-qgx5）。这三个包仍在 prod 依赖树里（lodash 4.18.1、
+  # lodash-es 4.18.1、axios 1.18.1），但装的版本已在各自 advisory 的修复范围内，
+  # `pnpm audit --prod --ignore-workspace` 不再报出这三条，例外条目因此永远匹配
+  # 不到、`expires_on` 也永远不被检查（校验脚本只对命中的发现查过期）。
+  # 留着等于挂了三条看起来生效、实则是死条目的豁免；哪天真被降级重新引入，
+  # 现在会以"缺少例外"直接报红，比一条过期豁免更清楚。

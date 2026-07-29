@@ -14,6 +14,10 @@ vi.mock('../client', () => ({
 
 import { getRollbackVersions, rollback, type RollbackVersionInfo } from '@/api/admin/system'
 
+// 镜像 src/api/admin/system.ts 里的模块私有常量：回滚要重启进程，
+// 用默认超时会在服务端还没起来时就把请求判死，故放宽到 15 分钟。
+const UPDATE_REQUEST_TIMEOUT_MS = 15 * 60 * 1000
+
 describe('admin system rollback API', () => {
   beforeEach(() => {
     get.mockReset()
@@ -41,7 +45,9 @@ describe('admin system rollback API', () => {
 
     const result = await rollback('0.1.146')
 
-    expect(post).toHaveBeenCalledWith('/admin/system/rollback', { version: '0.1.146' })
+    expect(post).toHaveBeenCalledWith('/admin/system/rollback', { version: '0.1.146' }, {
+      timeout: UPDATE_REQUEST_TIMEOUT_MS
+    })
     expect(result.need_restart).toBe(true)
   })
 
@@ -50,6 +56,8 @@ describe('admin system rollback API', () => {
 
     await rollback()
 
-    expect(post).toHaveBeenCalledWith('/admin/system/rollback', undefined)
+    expect(post).toHaveBeenCalledWith('/admin/system/rollback', undefined, {
+      timeout: UPDATE_REQUEST_TIMEOUT_MS
+    })
   })
 })

@@ -31,6 +31,9 @@ vi.mock('@/api/admin', () => ({
       getModelsListCandidates,
       getUsageSummary,
       getCapacitySummary,
+      // 同 columnSettings：onMounted 会 `void loadLiveCapability()`，
+      // 缺这条 mock 会让整个文件以 unhandled rejection 退出 1。
+      getLiveCapability: vi.fn(async () => ({ supported: false })),
       getAll: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),

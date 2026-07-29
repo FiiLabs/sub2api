@@ -18,12 +18,13 @@ describe('doc_url sanitization', () => {
     expect(headerSource).toContain('sanitizeUrl(appStore.docUrl)')
   })
 
-  it('HomeView imports sanitizeUrl', () => {
-    expect(homeViewSource).toContain("import { sanitizeUrl } from '@/utils/url'")
-  })
-
-  it('HomeView applies sanitizeUrl to docUrl', () => {
-    expect(homeViewSource).toContain('sanitizeUrl(appStore.cachedPublicSettings?.doc_url || appStore.docUrl')
+  // HomeView 重写为 ApexOne 落地页后已不再渲染 doc_url（对 appStore 只剩
+  // publicSettingsLoaded / fetchPublicSettings，模板里没有任何动态 :href），
+  // 因此没有可消毒的东西。这条反向守卫保证它不会在无人注意时把 docUrl 重新
+  // 引进来 —— 真要引入，就必须同时走 sanitizeUrl，届时改回正向断言。
+  it('HomeView does not consume docUrl, so there is nothing to sanitize', () => {
+    expect(homeViewSource).not.toContain('docUrl')
+    expect(homeViewSource).not.toContain('doc_url')
   })
 
   it('KeyUsageView imports sanitizeUrl', () => {

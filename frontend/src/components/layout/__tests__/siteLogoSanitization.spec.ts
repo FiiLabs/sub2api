@@ -15,16 +15,19 @@ describe('site_logo sanitization', () => {
     expect(sidebarSource).toContain('sanitizeUrl(appStore.siteLogo')
   })
 
-  it('HomeView applies sanitizeUrl to siteLogo', () => {
-    expect(homeViewSource).toContain('sanitizeUrl(appStore.cachedPublicSettings?.site_logo || appStore.siteLogo')
+  // 同 docUrlSanitization：HomeView 已不再渲染 site_logo，改为反向守卫，
+  // 防止日后无声地把未消毒的 siteLogo 重新引入落地页。
+  it('HomeView does not consume siteLogo, so there is nothing to sanitize', () => {
+    expect(homeViewSource).not.toContain('siteLogo')
+    expect(homeViewSource).not.toContain('site_logo')
   })
 
   it('KeyUsageView applies sanitizeUrl to siteLogo', () => {
     expect(keyUsageViewSource).toContain('sanitizeUrl(appStore.cachedPublicSettings?.site_logo || appStore.siteLogo')
   })
 
-  it('all three pass allowRelative and allowDataUrl options', () => {
-    for (const src of [sidebarSource, homeViewSource, keyUsageViewSource]) {
+  it('both remaining consumers pass allowRelative and allowDataUrl options', () => {
+    for (const src of [sidebarSource, keyUsageViewSource]) {
       expect(src).toContain('allowRelative: true')
       expect(src).toContain('allowDataUrl: true')
     }
