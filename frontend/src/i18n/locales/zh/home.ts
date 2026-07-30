@@ -217,6 +217,11 @@ export default {
           }
         }
       },
+      video: {
+        eyebrow: '// 为什么是 ApexOne',
+        title: '价格减半，隐私不打折',
+        subtitle: '便宜和隐私，不用二选一。'
+      },
       cta: {
         title: '用得起，也信得过的 AI。',
         description: 'Claude Fable 5，官方半价，TEE 全程密封。',

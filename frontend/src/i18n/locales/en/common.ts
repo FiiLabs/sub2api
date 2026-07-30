@@ -2,6 +2,18 @@ export default {
   common: {
     loading: 'Loading...',
     submitting: 'Submitting...',
+    videoPlayer: {
+      play: 'Play video',
+      pause: 'Pause video',
+      mute: 'Mute',
+      unmute: 'Unmute',
+      seek: 'Seek',
+      fullscreen: 'Fullscreen',
+      error: 'The video failed to load',
+      errorHint: 'Retried {count} time(s) automatically.',
+      retry: 'Retry',
+      openExternal: 'Open in new tab'
+    },
     justNow: 'just now',
     peakRateTooltip: 'Peak rate: {window}',
     peakRateImageNote: '; image tokens billed as tokens are also affected, per-image billing is unaffected',

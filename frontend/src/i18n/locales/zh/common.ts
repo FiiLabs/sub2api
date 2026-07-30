@@ -2,6 +2,18 @@ export default {
   common: {
     loading: '加载中...',
     submitting: '提交中...',
+    videoPlayer: {
+      play: '播放视频',
+      pause: '暂停视频',
+      mute: '静音',
+      unmute: '取消静音',
+      seek: '播放进度',
+      fullscreen: '全屏',
+      error: '视频加载失败',
+      errorHint: '已自动重试 {count} 次。',
+      retry: '重新加载',
+      openExternal: '在新窗口打开'
+    },
     justNow: '刚刚',
     peakRateTooltip: '高峰倍率：{window}',
     peakRateImageNote: '；token 计费的图片 token 同样适用，图片按次计费不受高峰影响',

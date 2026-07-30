@@ -315,6 +315,18 @@
         </div>
       </section>
 
+      <!-- PROMO VIDEO — 未配置链接时整段不渲染 -->
+      <section v-if="promoVideoUrl" id="why" class="mx-auto mt-14 max-w-5xl">
+        <div v-reveal class="reveal-item text-center">
+          <span :class="eyebrowClass">{{ t('home.landing.video.eyebrow') }}</span>
+          <h2 :class="headingClass" class="mt-1.5">{{ t('home.landing.video.title') }}</h2>
+          <p :class="subClass" class="mx-auto mb-6 mt-2 max-w-2xl">{{ t('home.landing.video.subtitle') }}</p>
+        </div>
+        <div v-reveal :class="cardClass" class="reveal-item overflow-hidden p-2 md:p-3">
+          <VideoPlayer :src="promoVideoUrl" :poster="promoVideoPoster" fit="contain" />
+        </div>
+      </section>
+
       <!-- CTA -->
       <section class="mx-auto mt-14 max-w-5xl">
         <div v-reveal
@@ -356,6 +368,8 @@ import { useAppStore, useAuthStore } from '@/stores'
 import AppFooter from '@/components/layout/AppFooter.vue'
 import Header from '@/components/layout/Header.vue'
 import StatusIcon from '@/components/icons/StatusIcon.vue'
+import VideoPlayer from '@/components/common/VideoPlayer.vue'
+import promoPosterUrl from '@/assets/promo-poster.jpg'
 
 const { t } = useI18n()
 
@@ -440,6 +454,10 @@ const pricingPlans = computed(() => [
     features: [1, 2, 3, 4, 5, 6].map((i) => t(`home.landing.pricing.personal.features.f${i}`))
   }
 ])
+
+// PROMO VIDEO
+const promoVideoUrl = 'https://publicai.s3.ap-east-1.amazonaws.com/common/apex1-launch-47s-v4.mp4'
+const promoVideoPoster = promoPosterUrl
 
 // CTA pills
 const ctaPills = computed(() => [

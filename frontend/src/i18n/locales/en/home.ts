@@ -218,6 +218,11 @@ export default {
           }
         }
       },
+      video: {
+        eyebrow: '// Why ApexOne',
+        title: 'Half the price, none of the trade-off.',
+        subtitle: "Why you don't have to trade privacy for cost."
+      },
       cta: {
         title: 'Build on AI You Can Verify.',
         description: 'Claude Fable 5, half the official price, sealed inside a TEE.',
