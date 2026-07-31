@@ -359,6 +359,27 @@ func TestEnhanceCSPPolicy(t *testing.T) {
 		assert.Equal(t, 1, countDirectiveValue(enhanced, "style-src", AirwallexDemoCheckoutDomain))
 		assert.Equal(t, 1, countDirectiveValue(enhanced, "frame-src", AirwallexDemoCheckoutDomain))
 	})
+
+	t.Run("adds_media_src_for_offsite_promo_video", func(t *testing.T) {
+		// 落地页的宣传视频托管在站外对象存储。策略里没有 media-src 时，<video>
+		// 会回落到 default-src 'self' 被拦掉，且只在线上暴露（dev server 不发 CSP）。
+		policy := "default-src 'self'; script-src 'self' __CSP_NONCE__"
+		enhanced := enhanceCSPPolicy(policy)
+
+		assert.Contains(t, enhanced, "media-src")
+		assert.Equal(t, 1, countDirectiveValue(enhanced, "media-src", "https:"))
+		assert.Equal(t, 1, countDirectiveValue(enhanced, "media-src", "blob:"))
+		// 新建指令时必须自带 'self'，否则同源媒体反被这条新指令挡住。
+		assert.Equal(t, 1, countDirectiveValue(enhanced, "media-src", "'self'"))
+	})
+
+	t.Run("does_not_duplicate_media_src_values", func(t *testing.T) {
+		policy := "default-src 'self'; media-src 'self' https: blob:"
+		enhanced := enhanceCSPPolicy(policy)
+
+		assert.Equal(t, 1, countDirectiveValue(enhanced, "media-src", "https:"))
+		assert.Equal(t, 1, countDirectiveValue(enhanced, "media-src", "blob:"))
+	})
 }
 
 func countDirectiveValue(policy, directive, value string) int {

@@ -38,6 +38,12 @@ var requiredCSPDirectiveValues = []struct {
 	// build of dcap-qvl; browsers gate WebAssembly compilation behind
 	// 'wasm-unsafe-eval' (JS eval stays blocked).
 	{"script-src", "'wasm-unsafe-eval'"},
+	// 落地页的宣传视频托管在站外对象存储上。CSP 没有 media-src 时，<video>
+	// 会回落到 default-src 'self'，跨源媒体被直接拦掉——本地 dev server 不带
+	// 这份策略，所以只会在线上暴露。headless Chrome 实测：不加这条报
+	// "media-src <- https://…mp4"，加了才能 loadedmetadata。
+	{"media-src", "https:"},
+	{"media-src", "blob:"},
 	{"script-src", CloudflareInsightsDomain},
 	{"script-src", StripeDomain},
 	{"frame-src", StripeDomain},

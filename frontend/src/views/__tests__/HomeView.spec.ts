@@ -60,9 +60,22 @@ function mountHomeView() {
 describe('HomeView ApexOne landing content', () => {
   beforeEach(() => {
     localStorage.clear()
+    // 这里要的是 matches:false（全局 setup 默认 true），但覆盖时必须把监听方法
+    // 一起给全：@vueuse 的 useMediaQuery 会调 addEventListener，退化路径调
+    // addListener，只给 { matches } 会让引入了 usePreferredReducedMotion 的
+    // 子组件（VideoPlayer）在挂载时抛 TypeError。
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
-      value: vi.fn().mockReturnValue({ matches: false })
+      value: vi.fn((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn()
+      }))
     })
   })
 
