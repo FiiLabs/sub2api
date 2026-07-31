@@ -1,22 +1,22 @@
 {
-  "$comment": "Authoritative attestation reference for the production publicai-gateway CVM (sub2api single-enclave architecture). Fetched at runtime by the /proof page (see frontend/src/utils/attestation/reference.ts). Every change to this file is public git history — that is part of the trust story. composeHash was read back from the CVM's RTMR3 via the attestor's event log on 2026-07-29 and cross-checked against the Phala control-plane API; both report aff1eef4. Image digests are the linux/amd64 children of the cosign-signed proof-v12 indexes built from sourceCommit by publish-tee-images (run 30417873445). proof-v12 fixes CVE-2026-22696 (GHSA-796p-j2gh-9m2q, CVSS 9.3) in /proof's own verifier: the previous @phala/dcap-qvl-web package never verified the QE Identity signature, so a quote could carry an unauthenticated quoting enclave and still be reported as verified. The verifier is now @phala/dcap-qvl, which performs that check; a regression test pins the behaviour against a real nonce-bound quote captured from this attestor. Honest note on the publish window: unlike the proof-v11 upgrade, composeHash was NOT predicted ahead of the deploy this time — the app-compose.json wrapper returned by the API no longer reproduces the live hash under the CLI's serialization, so the value could only be read back afterwards. Between the CVM update and this commit, /proof therefore reported a mismatch against this file as a failed enclave. osImageHash and appId are unchanged, so the enclave's E2EE public key, derived from the app key, is also unchanged.",
+  "$comment": "Authoritative attestation reference for the production publicai-gateway CVM (sub2api single-enclave architecture). Fetched at runtime by the /proof page (see frontend/src/utils/attestation/reference.ts). Every change to this file is public git history — that is part of the trust story. composeHash was read back from the CVM's RTMR3 via the attestor's event log on 2026-07-31 and cross-checked against the Phala control-plane API; both report 4092bc20. Image digests are the linux/amd64 children of the cosign-signed proof-v13 indexes built from sourceCommit by publish-tee-images (run 30598354038); the keyless signatures were verified against certificate identity https://github.com/FiiLabs/sub2api/.github/workflows/publish-tee-images.yml@refs/heads/proof-solo, and the Fulcio certificates embed githubWorkflowSha = the sourceCommit below, so the digest-to-source binding is cryptographic rather than self-reported. This release adds the landing-page promo section and, with it, a media-src directive to the Content-Security-Policy: the promo video is hosted off-site, and without that directive <video> falls back to default-src 'self' and the browser blocks it. Note that this widens what the landing page may load from third parties; the /proof page itself loads no off-site media, and the measured-code guarantees are unaffected. Honest note on the publish window: as with proof-v12, composeHash could NOT be predicted ahead of the deploy — the app-compose.json wrapper returned by the API no longer reproduces the live hash under the CLI's serialization — so it was read back afterwards. Between the CVM update and this commit, /proof reported a mismatch against this file as a failed enclave. osImageHash, appId and instanceId are unchanged, so the enclave's E2EE public key, derived from the app key, is also unchanged.",
   "version": 1,
-  "updatedAt": "2026-07-29",
+  "updatedAt": "2026-07-31",
   "enclave": {
     "appId": "9467ce766ed63423e86a19d2f36cc9a9926daf27",
     "osImage": "dstack-0.5.9",
     "osImageHash": "bd369a8c2f9edb2b52dad48ac8e0b32dde5f1337c423a506b48d07403a7d8033",
-    "composeHash": "aff1eef46cad8c1d25c4295d1cdc25e067185d3b500c410efdfd6b6067047630",
+    "composeHash": "4092bc20dbe27e7b748fb162556b65b01c4c963b71f122585b8850ea4f3834f0",
     "sourceRepo": "https://github.com/FiiLabs/sub2api.git",
-    "sourceCommit": "ba82db8cb3a55fa5adafea84e57b284969b17bd9",
+    "sourceCommit": "31c279473fb2932fe99b6f86eff54c56ab04d800",
     "images": [
       {
         "name": "sub2api",
-        "digest": "docker.io/markerdao/sub2api@sha256:beb0a197c41b218bf4f690f2626b745e3ce8a5627721bd25f3a20ddf3de5d7f6"
+        "digest": "docker.io/markerdao/sub2api@sha256:1e51e9fce84cdc1ad7aba6e239d625f1b79ca7685ab8b6e0af1290ce9c235c61"
       },
       {
         "name": "sub2api-attestor",
-        "digest": "docker.io/markerdao/sub2api-attestor@sha256:595112f86287008bd57d2058c32ea548dc035625993d55431154d23bc2f8376c"
+        "digest": "docker.io/markerdao/sub2api-attestor@sha256:fd50dc02e027c28d35c8dedccc5181f6ecacb245a25bd8ecb404ccdcfba01e04"
       }
     ],
     "confidential": false
