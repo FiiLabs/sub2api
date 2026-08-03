@@ -24,7 +24,10 @@ func RegisterPaymentRoutes(
 	adminAuth middleware.AdminAuthMiddleware,
 	auditLog middleware.AuditLogMiddleware,
 	settingService *service.SettingService,
+	// 发票下载的防刷限流（本分支的发票 PDF 功能）与 upstream 的面板全局限流
+	// 是两套东西，各自需要自己的依赖，都要传进来。
 	redisClient *redis.Client,
+	panelRateLimiter *middleware.PanelRateLimiter,
 ) {
 	rateLimiter := ratelimit.NewRateLimiter(redisClient)
 
@@ -32,6 +35,8 @@ func RegisterPaymentRoutes(
 	authenticated := v1.Group("/payment")
 	authenticated.Use(gin.HandlerFunc(jwtAuth))
 	authenticated.Use(middleware.BackendModeUserGuard(settingService))
+	// 面板全局按用户限流
+	authenticated.Use(panelRateLimiter.Global())
 	{
 		authenticated.GET("/config", paymentHandler.GetPaymentConfig)
 		authenticated.GET("/checkout-info", paymentHandler.GetCheckoutInfo)
