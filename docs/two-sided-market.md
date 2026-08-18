@@ -47,7 +47,11 @@
 | affiliate 模板含 `handler/affiliate*.go`、`routes/affiliate.go` | affiliate **没有**独立 handler/routes 文件：service/repo 是 `internal/{service,repository}/affiliate_*.go`，路由挂在 `routes/admin.go:768` 的 `admin.Group("/affiliates")` 下。供给侧仍按扁平文件模式新建，但 `routes/supplier.go` 是纯新增，无同名先例可抄 |
 | `usage_billing_repo.go:174` `applyUsageBillingEffects` | **仍在 :174**，签名未变，fork 未改动 → 冲突风险确实低 |
 
-另有一处设计缺口需在实现时补：**`service.UsageBillingCommand`（`internal/service/usage_billing.go:19-45`）没有 account_cost / 成本口径字段**。结算 accrue 的基数（`total_cost × account_rate_multiplier`）拿不到，需要给命令结构新增字段并在其构造处填值——这是交接件未预见的一处额外 core touch。
+**关于分成基数的一处更正**（本文档早先版本写错，以此处为准）：曾判定「`service.UsageBillingCommand` 没有 account_cost 字段，accrue 拿不到基数，需新增成本口径字段」。实测后作废——分成基数是**消费者实付**，不是账号成本口径，而实付已经完整地在命令里：`BalanceCost + SubscriptionCost`（见 `gateway_usage_billing.go:277-330`，两者都由 `p.Cost.ActualCost` 赋值，已乘过分组倍率，构造处二选一）。
+
+顺带钉死一处易错点：`AccountQuotaCost = TotalCost × AccountRateMultiplier` 是**账号维度记账口径（近似官方价）**，拿它当分成基数会让供给者按官方价拿 70%，而消费者只按 0.5× 官方价付费——每笔都亏。已有单测 `TestSupplierSettlementBasisUsesConsumerActualPayment` 守住。
+
+因此 `UsageBillingCommand` 上新增的不是成本字段，而是结算**参数**（比例/冻结窗/是否走钱包），见 core touch #3。
 
 ## 3. 扩展层落法
 
@@ -71,6 +75,9 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 |---|---|---|---|
 | 供给账号归属 | `ent/schema/account.go`（唯一一处 ent 改动） | `224` / `224a_notx` | 见 core touch #1 |
 | 赚取钱包 | `internal/service/supplier_credit.go`（类型+接口）、`internal/repository/supplier_credit_repo.go`（SQL） | `225` | `supplier_credits` 余额 + `supplier_credit_ledger` 追加式流水，结构照抄 `user_affiliates` 那套 |
+| 计费内结算 | `internal/repository/usage_billing_supplier.go` | — | 基数取值、归属查询、accrue、钱包优先扣减；core 侧只留两处调用（见 core touch #2/#3） |
+
+**结算参数当前尚未有人填**：`UsageBillingSupplierParams` 全零，即代码已在计费主链路上但功能是关的。打开开关（读 settings → 在 `buildUsageBillingCommand` 填参数）属于 #5 的范围。在那之前，供给结算对线上零影响，且有单测钉住这一点。
 
 赚取钱包的三条设计约束（实现里已钉死，改动前先读）：
 
@@ -90,8 +97,8 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 |---|---|---|---|---|---|
 | 1 | `backend/ent/schema/account.go` | 字段区 + 索引区 | 加 `owner_user_id` (Optional/Nillable) 及其 `index.Fields`；迁移 `224` / `224a_notx`（部分索引 `WHERE owner_user_id IS NOT NULL`） | 供给账号归属。NULL = 管理员自建，调度/计费/删除均不读该字段，向后兼容。刻意做成可空标量而非 Required edge，关掉供给池即可退回纯自营网关；外键 `ON DELETE SET NULL`，供给者销号不级联删掉握着上游 OAuth 凭证的账号 | **已做** `22f21e7fa` |
 | 1a | `backend/internal/repository/account_repo_upstream_billing_probe_update_test.go` | `updatedAccountRows` :475 | 补一个 `nil` | go-sqlmock 按 `dbaccount.Columns` 位置构行，加字段即 32→33 列，不补会 panic。**交接件未预见**：ent 加字段会牵动所有位置式 sqlmock fixture | **已做** `22f21e7fa` |
-| 2 | `backend/internal/repository/usage_billing_repo.go` | `applyUsageBillingEffects` :174 | 加「扣赚取钱包优先」+「供给者 accrue」两个分支 | 决策人裁定结算 accrue 内联绑计费事务（结算正确性 > 合并便利），同事务同 `RequestID` 幂等保证「消耗 === 入账」 | 待做 |
-| 3 | `backend/internal/service/usage_billing.go` | `UsageBillingCommand` :19 | 新增成本口径字段供 accrue 取基数 | 现结构无 account_cost，accrue 拿不到分成基数（交接件未预见） | 待做 |
+| 2 | `backend/internal/repository/usage_billing_repo.go` | `applyUsageBillingEffects` :181 与 :220 | 插入两处各 4 行：balance 分支前 `spendFromSupplierWallet`，函数末尾 `accrueSupplierRevenue`。逻辑全在新文件 `usage_billing_supplier.go` | 决策人裁定结算 accrue 内联绑计费事务（结算正确性 > 合并便利），同事务同 `RequestID` 幂等保证「消耗 === 入账」。钱包扣减必须在 balance 分支**之前**，「同一请求只扣一处」由 `walletPaid` 一个布尔量单点保证 | **已做** `39b90f1a8` |
+| 3 | `backend/internal/service/usage_billing.go` | `UsageBillingCommand` 尾部 | 新增 `Supplier UsageBillingSupplierParams`（比例/冻结窗/是否走钱包），全零 = 关闭 | 结算参数须随命令下传：结算发生在计费事务内部，在那里读 settings 既慢又可能读到与本次请求不同的值。**不是**成本字段——分成基数用已有的 `BalanceCost + SubscriptionCost`（见 §2 更正）。已验证 `buildUsageBillingFingerprint` 用显式字段列表，加字段不改指纹；`quantizeMonetaryFields` 未动 | **已做** `39b90f1a8` |
 | 4 | `backend/internal/server/router.go` | :117-132 调用块 | 加 `routes.RegisterSupplierRoutes(...)` 一行 | 供给侧用户路由入口 | 待做 |
 | 5 | `backend/internal/handler/handler.go` + `handler/wire.go` + `service/wire.go` + `repository/wire.go` | 各 ProviderSet | 各加一个 provider 注册 | wire 标准注册点，生成式非手维护 | 待做 |
 | 6 | `frontend/src/router/index.ts`、`i18n/{en,zh}/index.ts`、`AppSidebar.vue` | 桶文件末尾 | 追加供给侧路由/文案/入口 | 前端冲突热区，只在末尾追加 | 待做 |
