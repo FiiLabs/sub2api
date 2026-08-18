@@ -188,6 +188,8 @@ func ProvideHandlers(
 	modelPlazaHandler *ModelPlazaHandler,
 	asyncImageHandler *AsyncImageHandler,
 	batchImageHandler *BatchImageHandler,
+	// APEXONE-EXT: 双边市场——供给者自助接入
+	supplierHandler *SupplierHandler,
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
 ) *Handlers {
@@ -213,6 +215,7 @@ func ProvideHandlers(
 		ModelPlaza:       modelPlazaHandler,
 		AsyncImage:       asyncImageHandler,
 		BatchImage:       batchImageHandler,
+		Supplier:         supplierHandler,
 	}
 }
 
@@ -239,6 +242,8 @@ var ProviderSet = wire.NewSet(
 	NewModelPlazaHandler,
 	NewAsyncImageHandler,
 	ProvideBatchImageHandler,
+	// APEXONE-EXT: 双边市场——供给者自助接入
+	NewSupplierHandler,
 
 	// Admin handlers
 	admin.NewDashboardHandler,

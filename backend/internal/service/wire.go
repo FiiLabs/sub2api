@@ -862,6 +862,8 @@ var ProviderSet = wire.NewSet(
 	// APEXONE-EXT: 双边市场——赚取钱包读侧服务 + 冻结额释放任务。
 	NewSupplierCreditService,
 	ProvideSupplierThawService,
+	// APEXONE-EXT: 双边市场——供给者自助接入。
+	NewSupplierOnboardingService,
 	ProvidePaymentConfigService,
 	ProvidePaymentService,
 	ProvidePaymentOrderExpiryService,

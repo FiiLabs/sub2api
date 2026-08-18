@@ -47,6 +47,8 @@
 | affiliate 模板含 `handler/affiliate*.go`、`routes/affiliate.go` | affiliate **没有**独立 handler/routes 文件：service/repo 是 `internal/{service,repository}/affiliate_*.go`，路由挂在 `routes/admin.go:768` 的 `admin.Group("/affiliates")` 下。供给侧仍按扁平文件模式新建，但 `routes/supplier.go` 是纯新增，无同名先例可抄 |
 | `usage_billing_repo.go:174` `applyUsageBillingEffects` | **仍在 :174**，签名未变，fork 未改动 → 冲突风险确实低 |
 | ticket 07：「供给池干涸溢出到自营池，用现成的 `fallback_group_id`，零 core 改动」 | **不成立**。`fallback_group_id` 的唯一读者是 `resolveGatewayGroup`（`gateway_scheduling.go:872`），触发条件是「分组开了 `claude_code_only` 而请求不是 Claude Code 客户端」——按**客户端类型**做的静态降级，发生在选号**之前**，与有没有可用账号无关。供给池被抽干时请求照样在供给池里走完整轮调度然后拿 `ErrNoAvailableAccounts` 出来。溢出必须另起一条规则，代价是一处 core 侵入（见 core touch #7） |
+| ticket 06：「健康检查复用现成的 `TestAccountConnection`」 | **不成立**。`AccountTestService.TestAccountConnection`（`account_test_service.go:263`）第一个形参是 `*gin.Context`，函数体直接往响应流里写 SSE——它是一个 HTTP 处理器，不是可复用的探针。观察期要判「这个号还活着吗」得另写一个无 gin 依赖的探测函数（随 #9 落），或退而用既有的 token 刷新结果当健康信号 |
+| ticket 06：「持久化会话照抄 `pending_auth_sessions`」 | 形态可抄，**语义不可抄**。登录侧的待定会话没有「归属人」这一维（那时用户还没登录），而供给侧的会话必须有：它决定账号最终挂到谁名下。所以 `supplier_oauth_sessions` 多了 `user_id` + `consumed_at`（见 §3.3） |
 
 **关于分成基数的一处更正**（本文档早先版本写错，以此处为准）：曾判定「`service.UsageBillingCommand` 没有 account_cost 字段，accrue 拿不到基数，需新增成本口径字段」。实测后作废——分成基数是**消费者实付**，不是账号成本口径，而实付已经完整地在命令里：`BalanceCost + SubscriptionCost`（见 `gateway_usage_billing.go:277-330`，两者都由 `p.Cost.ActualCost` 赋值，已乘过分组倍率，构造处二选一）。
 
@@ -83,6 +85,9 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 | 钱包读侧 | `internal/service/supplier_credit_service.go` | — | 仪表盘用的余额/流水读取，读前顺手懒解冻 |
 | 供给池路由配置 | `internal/service/setting_supply_pool.go` | — | 第二个 JSON settings key `supply_pool_settings`（开关 / 供给池分组 id / 溢出目标分组 id），缓存形态同上 |
 | 供给池溢出 | `internal/service/gateway_supply_overflow.go` | — | 供给池硬耗尽时在自营池上重跑一轮调度；core 侧只留一个函数改名（见 core touch #7） |
+| 供给者自助接入 | `internal/service/supplier_onboarding.go`（类型+接口）、`supplier_onboarding_service.go`（编排）、`internal/repository/supplier_onboarding_repo.go`（SQL） | `226` | 持久化 OAuth 会话 + 建号 + 写归属 + 入池；见 §3.3 |
+| OAuth 协议层复用 | `internal/service/oauth_service_supplier.go` | — | 把 PKCE 生成与兑换从上游进程内的 `sessionStore` 解耦出来。同包新文件，**core 侵入为零**（`exchangeCodeForToken` 未导出，同包才调得到） |
+| 供给侧 HTTP | `internal/handler/supplier_handler.go`、`internal/server/routes/supplier.go` | — | `/api/v1/user/supply/*`，中间件与用户面一字不差（JWT + BackendModeUserGuard + 面板限流 + 审计） |
 
 **结算参数现在有人填了，但默认是关的**。`GetSupplierSettlementSettings` 读那个 JSON key，`ToBillingParams()` 在总开关关闭时返回全零值——也就是计费里「什么都不做」的那一支。配置行不存在（当前生产状态）、JSON 损坏、数据库读失败，一律回退到关闭：这是**刻意的 fail-closed**，与本包其他网关行为设置的 fail-open 相反。网关设置读不到时放行请求最多少一层加工；结算参数读不到时按猜测值给钱，错的是账。打开开关要管理员显式调 `SetSupplierSettlementSettings`（管理端 API 属于 #8 的范围）。
 
@@ -106,6 +111,18 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 
 **门开得很窄，是防误配不是防滥用**。只有 `supply_pool_settings.supply_group_id` 显式指定的那**一个**分组会溢出，判据用的是 `resolveGatewayGroup` **解析后**的分组（在失败路径上才解析，热路径零成本）而不是 API key 上的原始 id——claude-code 降级会在选号前换掉分组，那种情况下耗尽的是降级分组不是供给池。另外：只在硬耗尽（`ErrNoAvailableAccounts`）时溢出，「有号但都忙」返回的等待计划不触发（那是拥挤不是缺货）；只重试一次不成链；溢出池也空时**返回原始错误**，因为请求打的是消费者自己的分组，报一个指向自营池的错误会把排查的人引到错误的池子上。
 
+### 3.3 自助接入的五条边界（改动前先读）
+
+**新号一定不可调度，而且靠两条独立理由**。`CompleteOAuth` 建号时显式写 `Schedulable: false`（不靠「`AccountService.Create` 恰好不设这个字段」的零值——`adminServiceImpl.CreateAccount` 那条路径就显式设了 `true`，靠零值等于把安全性押在上游不改），并且**先不绑分组**。建号到写归属之间有一个窗口，窗口里这个号没有主人；若此时它能被调度，产生的用量会按自营账号计——供给者干了活拿不到钱，且事后无从追认（`usage_log` 不回溯归属）。顺序 `Create → SetAccountOwner → BindGroups` 由单测钉死。
+
+**本切片没有任何东西把 `pending_review` 变成 `active`**。观察期与入池是 #9 的事。现状是：供给者能接上、能看见自己的号、能自己下线，但号不会接真实流量。这是有意的顺序（先把归属和钱的账本铺好再放流量），不是漏做。`ResumeAccount` 也**只**把状态改回 `pending_review`、绝不触碰 `schedulable`——否则供给者点一下就能绕过观察期把号推进池子。
+
+**会话领取必须原子**。领取是一条 `UPDATE ... SET consumed_at = NOW() WHERE session_id = $1 AND user_id = $2 AND consumed_at IS NULL AND expires_at > NOW() RETURNING ...`。写成「查出来 → 判断 → 更新」的话，并发重放会让两个请求都通过检查、同一个授权码被兑换两次、建出两个账号。归属人不符 / 已过期 / 已消费 / 不存在四种情况合并成同一个 `ErrSupplierOAuthSessionInvalid`——区分它们等于提供一个枚举他人会话的信息面；同理 `ErrSupplierAccountNotFound` 合并了「不存在」与「不是你的」。已消费的会话行**不删**（过期清理只扫 `consumed_at IS NULL`），它是「这个账号是谁在什么时候挂上来的」的唯一证据。
+
+**上游账号查重不限 owner**。按 `credentials->>'account_uuid'` 查，命中就拒。同一个上游订阅被两个人分别挂上来，正是「一号两卖」的形态——两边按同一份额度各算各的分成，平台按两份供给计价而实际只有一份。**遗留风险**：查重依赖上游在 token 响应里返回 `account.uuid`；返回为空时（协议变更，或某类账号没有该字段）这一层失效，重复接入只能靠观察期人工发现。
+
+**只要 `user:inference` scope**。走 setup-token 而非完整 OAuth scope：平台需要的只是替供给者转发推理请求，完整 scope 还附带读 profile、建 API key、列会话——供给者把订阅挂上来不等于把账号交出来。`code_verifier` 明文入库是可接受的：PKCE verifier 单独无用（必须配一次性授权码），行 15 分钟过期、一次性消费，相对内存方案的差别只是「进程内存」换成「数据库」，在本仓凭证本来就明文存 jsonb 的现状下不是新增短板。要收紧应当连同 `accounts.credentials` 一起做应用层加密，那是独立的一刀。
+
 ## 4. Core Touch 台账
 
 core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APEXONE-EXT:` 可 grep 标记 + 详尽注释 + 单测。下表随实现逐行填。
@@ -117,10 +134,10 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 | 2 | `backend/internal/repository/usage_billing_repo.go` | `applyUsageBillingEffects` :181 与 :220 | 插入两处各 4 行：balance 分支前 `spendFromSupplierWallet`，函数末尾 `accrueSupplierRevenue`。逻辑全在新文件 `usage_billing_supplier.go` | 决策人裁定结算 accrue 内联绑计费事务（结算正确性 > 合并便利），同事务同 `RequestID` 幂等保证「消耗 === 入账」。钱包扣减必须在 balance 分支**之前**，「同一请求只扣一处」由 `walletPaid` 一个布尔量单点保证 | **已做** `39b90f1a8` |
 | 3 | `backend/internal/service/usage_billing.go` | `UsageBillingCommand` 尾部 | 新增 `Supplier UsageBillingSupplierParams`（比例/冻结窗/是否走钱包），全零 = 关闭 | 结算参数须随命令下传：结算发生在计费事务内部，在那里读 settings 既慢又可能读到与本次请求不同的值。**不是**成本字段——分成基数用已有的 `BalanceCost + SubscriptionCost`（见 §2 更正）。已验证 `buildUsageBillingFingerprint` 用显式字段列表，加字段不改指纹；`quantizeMonetaryFields` 未动 | **已做** `39b90f1a8` |
 | 3a | `backend/internal/service/gateway_usage_billing.go` | `billingDeps` 结构体 + `billingDeps()` + `applyUsageBilling` 内 | 加一个 `settingService` 字段及其赋值，`buildUsageBillingCommand` 之后加一行 `applySupplierSettlementParams`。逻辑全在新文件 `gateway_supplier_settlement.go` | 参数取一次快照随命令走完全程。刻意**不**放进 `buildUsageBillingCommand`：那是个纯函数（无 ctx、无依赖），保持它纯的，单测就不必为造一条命令而准备一个 `SettingService`。结算参数不参与请求指纹也不参与金额量化，晚于 `Normalize()` 赋值安全 | **已做** |
-| 4 | `backend/internal/server/router.go` | :117-132 调用块 | 加 `routes.RegisterSupplierRoutes(...)` 一行 | 供给侧用户路由入口 | 待做 |
+| 4 | `backend/internal/server/router.go` | :117-132 调用块 | 加 `routes.RegisterSupplierRoutes(...)` 一行 + 一行 `// APEXONE-EXT:` 注释 | 供给侧用户路由入口。路由**单起 `routes/supplier.go`** 而非往 `routes/user.go` 里插一段：那个文件是上游合并热区，独立文件把路由层的侵入压到这一行 | **已做** |
 | 5 | `backend/internal/service/wire.go` + `internal/repository/wire.go` | 各 ProviderSet | `NewSupplierCreditRepository` / `NewSupplierCreditService` / `ProvideSupplierThawService` 三个注册 | wire 标准注册点 | **已做** |
 | 5a | `backend/cmd/server/wire.go` | `provideCleanup` 形参 + 停机步骤 | 加 `supplierThaw *service.SupplierThawService` 及其 `Stop()` 步骤；`wire_gen.go` 重新生成（+12 行） | 既为优雅停机，也是**为了让 wire 真的把它构造出来**——`Provide*` 里调了 `Start()`，没有任何消费者引用它 wire 就会把整个 provider 剪掉，任务永远不启动。`wire_gen_test.go` 的 `provideCleanup` 调用同步补一个 `nil` | **已做** |
-| 5b | `backend/internal/handler/handler.go` + `handler/wire.go` | 各 ProviderSet | 供给侧 handler 注册 | 随 #7/#8 一起落 | 待做 |
+| 5b | `backend/internal/handler/handler.go` + `handler/wire.go` | `Handlers` 结构体尾部、`ProvideHandlers` 形参与返回值、`ProviderSet` | 加 `Supplier *SupplierHandler` 字段 + 一个形参 + 一个 provider；`repository/wire.go` 与 `service/wire.go` 各加一个 provider；`wire_gen.go` 重新生成（+4 行） | wire 标准注册点。形参插在 `batchImageHandler` 之后、两个 `_` 占位参之前，避开尾部占位约定 | **已做** |
 | 6 | `frontend/src/router/index.ts`、`i18n/{en,zh}/index.ts`、`AppSidebar.vue` | 桶文件末尾 | 追加供给侧路由/文案/入口 | 前端冲突热区，只在末尾追加 | 待做 |
 | 7 | `backend/internal/service/gateway_scheduling.go` | :97 函数签名 | **仅函数改名**：`SelectAccountWithLoadAwareness` → `selectAccountInPoolWithLoadAwareness`，函数体一字未改。导出名归新文件 `gateway_supply_overflow.go` 里的同名包装函数 | 交接件说的「零 core 溢出」不成立（见 §2）。耗尽有十几个 return 点，逐个插判断等于把一条新规则摊成十几处侵入；改名 + 外层包装是**一处**。合并冲突面小到只有一行签名，且上游若改了函数体，冲突会照常落在函数体上而不被包装掩盖 | **已做** |
 | 7a | — （**未覆盖面，记账用**） | `openai_codex_models_handler.go:44`、`gateway_handler.go:2058` | 这两处走的是 `SelectAccountForModel`，不经包装函数，因此**不溢出** | 首版切片的供给池只面向 Claude Code 形态消费，这两条路径不在范围内。若日后供给池扩到 codex 形态，需在此处补同样的包装 | 已知缺口 |

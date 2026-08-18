@@ -66,6 +66,8 @@ type Handlers struct {
 	ModelPlaza       *ModelPlazaHandler
 	AsyncImage       *AsyncImageHandler
 	BatchImage       *BatchImageHandler
+	// APEXONE-EXT: 双边市场——供给者自助接入
+	Supplier *SupplierHandler
 }
 
 // BuildInfo contains build-time information
