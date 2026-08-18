@@ -94,10 +94,15 @@ func (s *GatewayService) SelectAccountForModelWithExclusions(ctx context.Context
 	return s.hydrateSelectedAccount(ctx, account)
 }
 
-// SelectAccountWithLoadAwareness selects account with load-awareness and wait plan.
+// selectAccountInPoolWithLoadAwareness selects account with load-awareness and wait plan.
 // metadataUserID: 用于客户端亲和调度，从中提取客户端 ID
 // sub2apiUserID: 系统用户 ID，用于二维亲和调度
-func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, metadataUserID string, sub2apiUserID int64) (*AccountSelectionResult, error) {
+//
+// APEXONE-EXT: 双边市场——本函数原名 SelectAccountWithLoadAwareness，除函数名外一字未改。
+// 那个导出名现在归 gateway_supply_overflow.go 里的同名包装函数，它在本函数返回
+// ErrNoAvailableAccounts 时把整轮调度在自营池上重跑一次。改成「重命名 + 外层包装」而不是
+// 在本函数体内插判断，是因为耗尽有十几个 return 点，逐个插等于把一条新规则摊成十几处侵入。
+func (s *GatewayService) selectAccountInPoolWithLoadAwareness(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, metadataUserID string, sub2apiUserID int64) (*AccountSelectionResult, error) {
 	// 调试日志：记录调度入口参数
 	excludedIDsList := make([]int64, 0, len(excludedIDs))
 	for id := range excludedIDs {
