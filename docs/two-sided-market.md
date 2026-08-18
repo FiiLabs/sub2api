@@ -65,6 +65,23 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 
 前端坑（实测）：build 产物 `frontend/dist` 需同步到 `backend/internal/web/dist` 才被 Go embed。
 
+### 3.1 已落地的扩展层模块
+
+| 模块 | 文件 | 迁移 | 说明 |
+|---|---|---|---|
+| 供给账号归属 | `ent/schema/account.go`（唯一一处 ent 改动） | `224` / `224a_notx` | 见 core touch #1 |
+| 赚取钱包 | `internal/service/supplier_credit.go`（类型+接口）、`internal/repository/supplier_credit_repo.go`（SQL） | `225` | `supplier_credits` 余额 + `supplier_credit_ledger` 追加式流水，结构照抄 `user_affiliates` 那套 |
+
+赚取钱包的三条设计约束（实现里已钉死，改动前先读）：
+
+1. **幂等闸门先于余额**。`accrue`/`spend` 都是「先插流水后动钱」：流水表上有部分唯一索引 `(action, request_id) WHERE request_id IS NOT NULL`，插不进去就说明这笔已记过账，余额一分不动。Go 侧 `ON CONFLICT` 的推断子句必须与该索引谓词逐字一致，否则 Postgres 直接报错而非降级——已用测试钉住两边一致性。
+2. **入账金额服务端现算**（`BasisAmount × ShareRatio`），调用方传不进金额。流水里「基数 × 比例 = 金额」三要素自洽，供给者不必信任服务端算术即可核对。
+3. **`spend` 余额不足返回 `false` 而非报错**，计费侧据此回退扣 `users.balance`；重放已扣过的请求返回 `true`（不是 `false`），否则计费侧会转头去扣 balance，同一请求就扣了两处。
+
+写操作都拆成「接受 executor 的包级 `*Tx` 函数」+「自己开事务的方法」两层，core 侧（#2）因此只需要一行调用。
+
+`clawback`（冻结窗内拒付追回）目前只有动作常量与流水表字段，**函数未实现**——它的调用点在支付回调侧，随风控刀次一起落。在那之前不变量 2 只在数据结构上成立，运营上不成立。
+
 ## 4. Core Touch 台账
 
 core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APEXONE-EXT:` 可 grep 标记 + 详尽注释 + 单测。下表随实现逐行填。
