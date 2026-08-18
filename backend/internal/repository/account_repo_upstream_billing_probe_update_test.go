@@ -479,5 +479,7 @@ func updatedAccountRows(id int64, extra string) *sqlmock.Rows {
 		[]byte(`{"api_key":"sk-test"}`), []byte(extra), nil, nil, 1, nil, 1, 1.0,
 		service.StatusActive, nil, nil, nil, false, true, nil, nil, nil, nil, nil, nil,
 		nil, nil, nil, service.QuotaDimensionGlobal,
+		// APEXONE-EXT: owner_user_id —— nil = 自营账号，正是本组上游测试的语义。
+		nil,
 	)
 }

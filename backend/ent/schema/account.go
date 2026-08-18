@@ -201,6 +201,14 @@ func (Account) Fields() []ent.Field {
 			Comment("Parent account id for a linked spark shadow (NULL = normal)."),
 		field.Enum("quota_dimension").Values("global", "spark").Default("global").
 			Comment("'global' (default) or 'spark' (shadow reads codex_bengalfox)."),
+
+		// APEXONE-EXT: 双边市场——供给账号归属。
+		// NULL = 管理员自建/自营账号（上游原有语义，向后兼容）；非 NULL = 用户自助提交的
+		// 供给账号，该 user 即分成对象。刻意做成一个可空标量而非 Required edge：调度、
+		// 计费、删除三条主链路都不读这个字段，供给能力因此是纯增量层，关掉供给池即可
+		// 一键退回纯自营网关。
+		field.Int64("owner_user_id").Optional().Nillable().
+			Comment("Supplier who owns this account (NULL = admin-created / first-party)."),
 	}
 }
 
@@ -249,5 +257,8 @@ func (Account) Indexes() []ent.Index {
 		index.Fields("priority", "status"),
 		index.Fields("deleted_at"), // 软删除查询优化
 		index.Fields("parent_account_id"),
+		// APEXONE-EXT: 供给者仪表盘按 owner 列自己的账号；线上由迁移 224 建部分索引
+		// （WHERE owner_user_id IS NOT NULL），此处仅为模型可读性对齐。
+		index.Fields("owner_user_id"),
 	}
 }
