@@ -42,6 +42,26 @@ type UsageBillingCommand struct {
 	APIKeyQuotaCost     float64
 	APIKeyRateLimitCost float64
 	AccountQuotaCost    float64
+
+	// APEXONE-EXT: 双边市场结算参数。零值 = 供给结算关闭，计费与上游原逻辑一字不差。
+	Supplier UsageBillingSupplierParams
+}
+
+// UsageBillingSupplierParams 是一次请求的供给侧结算参数。
+//
+// 刻意让参数随命令下传，而不是让仓储层去读配置：结算发生在计费事务内部，那里再去
+// 读一次 settings 既慢又可能读到与本次请求不同的值。参数在命令构造处（service 层，
+// 有配置访问权）取一次，之后整条链路用的都是同一个快照。
+//
+// 全零值即「关闭」：ShareRatio <= 0 不入账，SpendFromWalletFirst=false 不动扣费顺序。
+// 这让供给能力可以先带着代码上线、观察，再由配置开关打开。
+type UsageBillingSupplierParams struct {
+	// ShareRatio 供给者分成比例（如 0.70）。基数是消费者实付，不是官方价。
+	ShareRatio float64
+	// FreezeHours 入账冻结小时数，必须 ≥ 支付通道拒付窗。<= 0 表示直接可用。
+	FreezeHours int
+	// SpendFromWalletFirst 为真时，消费者的赚取钱包余额优先于 users.balance 被扣。
+	SpendFromWalletFirst bool
 }
 
 func (c *UsageBillingCommand) Normalize() {

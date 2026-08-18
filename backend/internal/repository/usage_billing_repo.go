@@ -178,7 +178,15 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 		}
 	}
 
-	if cmd.BalanceCost > 0 {
+	// APEXONE-EXT: 双边市场——赚取钱包优先扣减。细节见 usage_billing_supplier.go。
+	// 必须在 balance 分支之前：钱包付掉了就不能再扣余额，
+	// 「同一请求只扣一处」由 walletPaid 这一个布尔量单点保证。
+	walletPaid, err := spendFromSupplierWallet(ctx, tx, cmd)
+	if err != nil {
+		return err
+	}
+
+	if cmd.BalanceCost > 0 && !walletPaid {
 		newBalance, sufficient, err := deductUsageBillingBalance(ctx, tx, cmd.UserID, cmd.BalanceCost)
 		if err != nil {
 			return err
@@ -207,6 +215,12 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 			return err
 		}
 		result.QuotaState = quotaState
+	}
+
+	// APEXONE-EXT: 双边市场——供给者分成入账。细节见 usage_billing_supplier.go。
+	// 放在最后且与扣费同事务：出错会回滚整笔计费，这是「消耗 === 入账」不变量的落点。
+	if err := accrueSupplierRevenue(ctx, tx, cmd); err != nil {
+		return err
 	}
 
 	return nil
