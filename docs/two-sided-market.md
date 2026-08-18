@@ -76,8 +76,14 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 | 供给账号归属 | `ent/schema/account.go`（唯一一处 ent 改动） | `224` / `224a_notx` | 见 core touch #1 |
 | 赚取钱包 | `internal/service/supplier_credit.go`（类型+接口）、`internal/repository/supplier_credit_repo.go`（SQL） | `225` | `supplier_credits` 余额 + `supplier_credit_ledger` 追加式流水，结构照抄 `user_affiliates` 那套 |
 | 计费内结算 | `internal/repository/usage_billing_supplier.go` | — | 基数取值、归属查询、accrue、钱包优先扣减；core 侧只留两处调用（见 core touch #2/#3） |
+| 结算参数配置 | `internal/service/setting_supplier.go` | — | 一个 JSON settings key `supplier_settlement_settings`（总开关 / 比例 / 冻结窗 / 是否走钱包）；atomic + singleflight 缓存 60s |
+| 参数→计费的接缝 | `internal/service/gateway_supplier_settlement.go` | — | `applySupplierSettlementParams`，core 侧只留一行（见 core touch #3a） |
+| 冻结额释放 | `internal/service/supplier_thaw_service.go` | — | 周期扫描（10min / leader lock / 单轮 500 人），照抄 `PaymentOrderExpiryService` 形态 |
+| 钱包读侧 | `internal/service/supplier_credit_service.go` | — | 仪表盘用的余额/流水读取，读前顺手懒解冻 |
 
-**结算参数当前尚未有人填**：`UsageBillingSupplierParams` 全零，即代码已在计费主链路上但功能是关的。打开开关（读 settings → 在 `buildUsageBillingCommand` 填参数）属于 #5 的范围。在那之前，供给结算对线上零影响，且有单测钉住这一点。
+**结算参数现在有人填了，但默认是关的**。`GetSupplierSettlementSettings` 读那个 JSON key，`ToBillingParams()` 在总开关关闭时返回全零值——也就是计费里「什么都不做」的那一支。配置行不存在（当前生产状态）、JSON 损坏、数据库读失败，一律回退到关闭：这是**刻意的 fail-closed**，与本包其他网关行为设置的 fail-open 相反。网关设置读不到时放行请求最多少一层加工；结算参数读不到时按猜测值给钱，错的是账。打开开关要管理员显式调 `SetSupplierSettlementSettings`（管理端 API 属于 #8 的范围）。
+
+**为什么冻结额释放必须有后台任务**，而不能照抄 affiliate 的「读仪表盘时顺手解冻」：affiliate 返利额的唯一出口是在面板上看见然后花掉，用户不开面板就用不到它，懒解冻够用。供给者 credit 的主出口是**抵扣自己发起的 API 请求**，那条路径上没有人打开过任何页面——只做懒解冻的话，一个从不登面板、只用 API 的供给者的钱会永远躺在冻结区，每次请求照扣 `users.balance`，功能在他身上等于不存在。所以两条都做：`SupplierThawService` 周期扫描兜底，`SupplierCreditService.GetWallet` 读前即时解冻（低延迟体感）。两者都幂等，同时命中不会多搬一分钱（到期流水被 `UPDATE ... WHERE frozen_until <= NOW()` 一次性摘掉，第二次扫不到）。
 
 赚取钱包的三条设计约束（实现里已钉死，改动前先读）：
 
@@ -99,8 +105,11 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 | 1a | `backend/internal/repository/account_repo_upstream_billing_probe_update_test.go` | `updatedAccountRows` :475 | 补一个 `nil` | go-sqlmock 按 `dbaccount.Columns` 位置构行，加字段即 32→33 列，不补会 panic。**交接件未预见**：ent 加字段会牵动所有位置式 sqlmock fixture | **已做** `22f21e7fa` |
 | 2 | `backend/internal/repository/usage_billing_repo.go` | `applyUsageBillingEffects` :181 与 :220 | 插入两处各 4 行：balance 分支前 `spendFromSupplierWallet`，函数末尾 `accrueSupplierRevenue`。逻辑全在新文件 `usage_billing_supplier.go` | 决策人裁定结算 accrue 内联绑计费事务（结算正确性 > 合并便利），同事务同 `RequestID` 幂等保证「消耗 === 入账」。钱包扣减必须在 balance 分支**之前**，「同一请求只扣一处」由 `walletPaid` 一个布尔量单点保证 | **已做** `39b90f1a8` |
 | 3 | `backend/internal/service/usage_billing.go` | `UsageBillingCommand` 尾部 | 新增 `Supplier UsageBillingSupplierParams`（比例/冻结窗/是否走钱包），全零 = 关闭 | 结算参数须随命令下传：结算发生在计费事务内部，在那里读 settings 既慢又可能读到与本次请求不同的值。**不是**成本字段——分成基数用已有的 `BalanceCost + SubscriptionCost`（见 §2 更正）。已验证 `buildUsageBillingFingerprint` 用显式字段列表，加字段不改指纹；`quantizeMonetaryFields` 未动 | **已做** `39b90f1a8` |
+| 3a | `backend/internal/service/gateway_usage_billing.go` | `billingDeps` 结构体 + `billingDeps()` + `applyUsageBilling` 内 | 加一个 `settingService` 字段及其赋值，`buildUsageBillingCommand` 之后加一行 `applySupplierSettlementParams`。逻辑全在新文件 `gateway_supplier_settlement.go` | 参数取一次快照随命令走完全程。刻意**不**放进 `buildUsageBillingCommand`：那是个纯函数（无 ctx、无依赖），保持它纯的，单测就不必为造一条命令而准备一个 `SettingService`。结算参数不参与请求指纹也不参与金额量化，晚于 `Normalize()` 赋值安全 | **已做** |
 | 4 | `backend/internal/server/router.go` | :117-132 调用块 | 加 `routes.RegisterSupplierRoutes(...)` 一行 | 供给侧用户路由入口 | 待做 |
-| 5 | `backend/internal/handler/handler.go` + `handler/wire.go` + `service/wire.go` + `repository/wire.go` | 各 ProviderSet | 各加一个 provider 注册 | wire 标准注册点，生成式非手维护 | 待做 |
+| 5 | `backend/internal/service/wire.go` + `internal/repository/wire.go` | 各 ProviderSet | `NewSupplierCreditRepository` / `NewSupplierCreditService` / `ProvideSupplierThawService` 三个注册 | wire 标准注册点 | **已做** |
+| 5a | `backend/cmd/server/wire.go` | `provideCleanup` 形参 + 停机步骤 | 加 `supplierThaw *service.SupplierThawService` 及其 `Stop()` 步骤；`wire_gen.go` 重新生成（+12 行） | 既为优雅停机，也是**为了让 wire 真的把它构造出来**——`Provide*` 里调了 `Start()`，没有任何消费者引用它 wire 就会把整个 provider 剪掉，任务永远不启动。`wire_gen_test.go` 的 `provideCleanup` 调用同步补一个 `nil` | **已做** |
+| 5b | `backend/internal/handler/handler.go` + `handler/wire.go` | 各 ProviderSet | 供给侧 handler 注册 | 随 #7/#8 一起落 | 待做 |
 | 6 | `frontend/src/router/index.ts`、`i18n/{en,zh}/index.ts`、`AppSidebar.vue` | 桶文件末尾 | 追加供给侧路由/文案/入口 | 前端冲突热区，只在末尾追加 | 待做 |
 
 ## 5. 结算不变量（实现必须守住）
@@ -112,11 +121,15 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 
 ## 6. 待定参数（fog，实现期取默认值、运营期调）
 
+前四个已经是**真实可配的**了，落在 settings key `supplier_settlement_settings` 里（见 §3.1）；表里的「拟定默认」就是 `DefaultSupplierSettlementSettings()` 的值，且总开关 `enabled` 默认 `false`。
+
 | 参数 | 拟定默认 | 说明 |
 |---|---|---|
-| `supplier_revenue_share_ratio` | 0.70 | 供给者分成，基数 = 消费者实付（非官方价） |
-| 供给池 `rate_multiplier` | 0.5 | 消费者价 = 0.5× 官方价 |
-| `supplier_earning_freeze_hours` | `168`（7 天，**占位**） | 须 ≥ 支付通道拒付窗。7 天只是能跑通流程的占位值，**上线前必须按 Stripe/支付方实际拒付窗重设**（Stripe 争议窗远长于 7 天），否则不变量 2「已释放 = 拒付安全」不成立 |
+| `enabled` | `false` | 总开关。默认关就是上线策略：代码先随版本进生产、在计费主链路上待着，管理员显式打开才开始动钱 |
+| `share_ratio` | 0.70 | 供给者分成，基数 = 消费者实付（非官方价） |
+| `spend_from_wallet_first` | `false` | 与 `enabled` 分开是有意的：可以先只开入账让供给者攒着，等钱包侧观察稳了再打开消费出口 |
+| 供给池 `rate_multiplier` | 0.5 | 消费者价 = 0.5× 官方价。**不在这个 key 里**，走 Group 配置（#6） |
+| `freeze_hours` | `168`（7 天，**占位**） | 须 ≥ 支付通道拒付窗。7 天只是能跑通流程的占位值，**上线前必须按 Stripe/支付方实际拒付窗重设**（Stripe 争议窗远长于 7 天），否则不变量 2「已释放 = 拒付安全」不成立。代码侧只 clamp 到 90 天上限，拦不住「配小了」——这一条只能靠人 |
 | 自营池 `rate_multiplier` | `1.0`（**占位**） | 需覆盖真实 API 成本 + 毛利，上线前重设 |
 | 观察期强度/时长 | **待定** | 先做成参数，运营期标定 |
 | 每 IP 账号数上限 N | **待定** | 起步压到住宅户级小 N，按 IP 封禁率动态收紧 |

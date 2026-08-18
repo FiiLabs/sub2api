@@ -109,6 +109,9 @@ func provideCleanup(
 	scheduledTestRunner *service.ScheduledTestRunnerService,
 	backupSvc *service.BackupService,
 	paymentOrderExpiry *service.PaymentOrderExpiryService,
+	// APEXONE-EXT: 双边市场——冻结额释放任务。列在这里既是为了优雅停机，
+	// 也是为了让 wire 真的把它构造出来（Provide* 里 Start，没人引用就不会启动）。
+	supplierThaw *service.SupplierThawService,
 	channelMonitorRunner *service.ChannelMonitorRunner,
 	channelMonitorV2Aggregator *service.ChannelMonitorV2Aggregator,
 	quotaFlusher *service.UserPlatformQuotaUsageFlusher,
@@ -317,6 +320,13 @@ func provideCleanup(
 			{"PaymentOrderExpiryService", func() error {
 				if paymentOrderExpiry != nil {
 					paymentOrderExpiry.Stop()
+				}
+				return nil
+			}},
+			// APEXONE-EXT: 双边市场。
+			{"SupplierThawService", func() error {
+				if supplierThaw != nil {
+					supplierThaw.Stop()
 				}
 				return nil
 			}},

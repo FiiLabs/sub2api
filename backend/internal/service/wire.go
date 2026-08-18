@@ -859,6 +859,9 @@ var ProviderSet = wire.NewSet(
 	NewModelPricingResolver,
 	NewContentModerationService,
 	NewAffiliateService,
+	// APEXONE-EXT: 双边市场——赚取钱包读侧服务 + 冻结额释放任务。
+	NewSupplierCreditService,
+	ProvideSupplierThawService,
 	ProvidePaymentConfigService,
 	ProvidePaymentService,
 	ProvidePaymentOrderExpiryService,
@@ -901,6 +904,15 @@ func ProvidePaymentService(entClient *dbent.Client, registry *payment.Registry, 
 // ProvidePaymentOrderExpiryService creates and starts PaymentOrderExpiryService.
 func ProvidePaymentOrderExpiryService(paymentSvc *PaymentService, lockCache LeaderLockCache, db *sql.DB) *PaymentOrderExpiryService {
 	svc := NewPaymentOrderExpiryService(paymentSvc, 60*time.Second)
+	svc.SetLeaderLock(lockCache, db)
+	svc.Start()
+	return svc
+}
+
+// APEXONE-EXT: ProvideSupplierThawService 创建并启动供给冻结额释放任务。
+// 与 ProvidePaymentOrderExpiryService 同形：构造 → 注入选主 → Start。
+func ProvideSupplierThawService(repo SupplierCreditRepository, lockCache LeaderLockCache, db *sql.DB) *SupplierThawService {
+	svc := NewSupplierThawService(repo, SupplierThawDefaultInterval)
 	svc.SetLeaderLock(lockCache, db)
 	svc.Start()
 	return svc

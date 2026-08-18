@@ -342,6 +342,10 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 		return true, nil
 	}
 
+	// APEXONE-EXT: 双边市场——取一次结算参数快照随命令下传。细节见
+	// gateway_supplier_settlement.go。结算关闭时留零值，计费与上游原逻辑一字不差。
+	applySupplierSettlementParams(ctx, cmd, deps)
+
 	billingCtx, cancel := detachedBillingContext(ctx)
 	defer cancel()
 
@@ -549,6 +553,8 @@ type billingDeps struct {
 	balanceNotifyService  *BalanceNotifyService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
 	cfg                   *config.Config
+	// APEXONE-EXT: 双边市场结算参数的来源。见 gateway_supplier_settlement.go。
+	settingService *SettingService
 }
 
 func (s *GatewayService) billingDeps() *billingDeps {
@@ -561,6 +567,8 @@ func (s *GatewayService) billingDeps() *billingDeps {
 		balanceNotifyService:  s.balanceNotifyService,
 		userPlatformQuotaRepo: s.userPlatformQuotaRepo,
 		cfg:                   s.cfg,
+		// APEXONE-EXT: 同上。nil 时结算静默关闭，不影响任何既有计费行为。
+		settingService: s.settingService,
 	}
 }
 
