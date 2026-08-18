@@ -71,7 +71,8 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 
 | # | 文件 | 位置 | 改动 | 理由 | 状态 |
 |---|---|---|---|---|---|
-| 1 | `backend/ent/schema/account.go` | 字段区 | 加 `owner_user_id` (Optional/Nillable) | 供给账号归属。NULL = 管理员自建，调度/计费/删除均不读该字段，向后兼容 | 待做 |
+| 1 | `backend/ent/schema/account.go` | 字段区 + 索引区 | 加 `owner_user_id` (Optional/Nillable) 及其 `index.Fields`；迁移 `224` / `224a_notx`（部分索引 `WHERE owner_user_id IS NOT NULL`） | 供给账号归属。NULL = 管理员自建，调度/计费/删除均不读该字段，向后兼容。刻意做成可空标量而非 Required edge，关掉供给池即可退回纯自营网关；外键 `ON DELETE SET NULL`，供给者销号不级联删掉握着上游 OAuth 凭证的账号 | **已做** `22f21e7fa` |
+| 1a | `backend/internal/repository/account_repo_upstream_billing_probe_update_test.go` | `updatedAccountRows` :475 | 补一个 `nil` | go-sqlmock 按 `dbaccount.Columns` 位置构行，加字段即 32→33 列，不补会 panic。**交接件未预见**：ent 加字段会牵动所有位置式 sqlmock fixture | **已做** `22f21e7fa` |
 | 2 | `backend/internal/repository/usage_billing_repo.go` | `applyUsageBillingEffects` :174 | 加「扣赚取钱包优先」+「供给者 accrue」两个分支 | 决策人裁定结算 accrue 内联绑计费事务（结算正确性 > 合并便利），同事务同 `RequestID` 幂等保证「消耗 === 入账」 | 待做 |
 | 3 | `backend/internal/service/usage_billing.go` | `UsageBillingCommand` :19 | 新增成本口径字段供 accrue 取基数 | 现结构无 account_cost，accrue 拿不到分成基数（交接件未预见） | 待做 |
 | 4 | `backend/internal/server/router.go` | :117-132 调用块 | 加 `routes.RegisterSupplierRoutes(...)` 一行 | 供给侧用户路由入口 | 待做 |
