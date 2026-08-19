@@ -35,6 +35,10 @@ type supplierCreditRepoStub struct {
 	listResult []SupplierCreditLedgerEntry
 	listTotal  int64
 	listErr    error
+
+	clawbackCalls  []SupplierClawbackParams
+	clawbackResult *SupplierClawbackResult
+	clawbackErr    error
 }
 
 func (r *supplierCreditRepoStub) ThawAllMaturedUsers(_ context.Context, limit int) (int, float64, error) {
@@ -74,6 +78,19 @@ func (r *supplierCreditRepoStub) Accrue(context.Context, SupplierAccrueParams) (
 }
 func (r *supplierCreditRepoStub) Spend(context.Context, int64, float64, string) (bool, error) {
 	panic("unexpected Spend call")
+}
+
+func (r *supplierCreditRepoStub) Clawback(_ context.Context, params SupplierClawbackParams) (*SupplierClawbackResult, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.clawbackCalls = append(r.clawbackCalls, params)
+	return r.clawbackResult, r.clawbackErr
+}
+
+func (r *supplierCreditRepoStub) snapshotClawbackCalls() []SupplierClawbackParams {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]SupplierClawbackParams(nil), r.clawbackCalls...)
 }
 
 func (r *supplierCreditRepoStub) snapshotThawAllCalls() int {

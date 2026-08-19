@@ -313,7 +313,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	supplierOnboardingRepository := repository.NewSupplierOnboardingRepository(client)
 	supplierOnboardingService := service.NewSupplierOnboardingService(supplierOnboardingRepository, accountRepository, oAuthService, settingService)
 	supplierCreditRepository := repository.NewSupplierCreditRepository(client)
-	supplierCreditService := service.NewSupplierCreditService(supplierCreditRepository, settingService)
+	supplierCreditService := service.ProvideSupplierCreditService(supplierCreditRepository, settingService)
 	supplierHandler := handler.NewSupplierHandler(supplierOnboardingService, supplierCreditService)
 	idempotencyCoordinator := service.ProvideIdempotencyCoordinator(idempotencyRepository, configConfig)
 	idempotencyCleanupService := service.ProvideIdempotencyCleanupService(idempotencyRepository, configConfig)

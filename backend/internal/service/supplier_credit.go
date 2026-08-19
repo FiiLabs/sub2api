@@ -70,6 +70,39 @@ type SupplierAccrueParams struct {
 	FreezeHours int
 }
 
+// SupplierClawbackParams 描述一次拒付/退款追回。
+//
+// 与 SupplierAccrueParams 同一个脾气：调用方传的是**基数**（退给消费者的钱），
+// 不是要收回多少 credit。收回多少由被撤销的那几条入账各自带的 amount 决定，
+// 服务端现算——否则退款侧就得复刻一遍分成算术，两处算法一漂移就是钱算错。
+type SupplierClawbackParams struct {
+	// ConsumerUserID 被退款的消费者。追回只找 source_user_id 命中他的入账，
+	// 不会波及同一个供给者从别人那里赚到的钱。
+	ConsumerUserID int64
+	// BasisAmount 需要追回的消费基数 = 本次退款金额，与 accrue 的 BasisAmount 同口径
+	// （都是 users.balance 的单位）。
+	BasisAmount float64
+	// Reason 写进流水 remark，是运营事后回答「这笔钱为什么被收回」的唯一线索。
+	Reason string
+	// MaxEntries 单次最多撤销几条入账；<= 0 用实现默认上限。
+	MaxEntries int
+}
+
+// SupplierClawbackResult 一次追回的结果。全部用于日志与运营核对，不参与任何判定。
+type SupplierClawbackResult struct {
+	// ReversedCredit 实际从冻结区收回的 credit 总额。
+	ReversedCredit float64
+	// ReversedBasis 被撤销的入账所对应的消费基数之和。
+	ReversedBasis float64
+	// UncoveredBasis = max(0, BasisAmount - ReversedBasis)。
+	// 大于 0 意味着这部分亏损平台自吃：对应的分成已经解冻（不变量 2 认了这个结果），
+	// 或者冻结区里根本没有这个消费者产生的入账。它是「冻结窗配短了」的直接证据。
+	UncoveredBasis float64
+	// Entries 撤销了几条入账，Suppliers 涉及几个供给者。
+	Entries   int
+	Suppliers int
+}
+
 // SupplierCreditLedgerEntry 是一条钱包流水，自带审计快照。
 type SupplierCreditLedgerEntry struct {
 	ID             int64      `json:"id"`
@@ -114,6 +147,9 @@ type SupplierCreditRepository interface {
 	Accrue(ctx context.Context, params SupplierAccrueParams) (bool, error)
 	// Spend 从可用区扣减。返回 false 表示余额不足，调用方应回退到 users.balance。
 	Spend(ctx context.Context, userID int64, amount float64, requestID string) (bool, error)
+	// Clawback 撤销该消费者名下仍在冻结区的入账，直到覆盖 BasisAmount。
+	// 只动冻结区——已解冻的钱按不变量 2 就是拒付安全的，追回它等于毁约。
+	Clawback(ctx context.Context, params SupplierClawbackParams) (*SupplierClawbackResult, error)
 	// ThawMatured 把某个供给者已到期的冻结额搬进可用区，返回搬运金额。
 	ThawMatured(ctx context.Context, userID int64) (float64, error)
 	// ThawAllMaturedUsers 扫描所有有到期冻结额的供给者并逐个解冻，

@@ -107,7 +107,15 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 
 写操作都拆成「接受 executor 的包级 `*Tx` 函数」+「自己开事务的方法」两层，core 侧（#2）因此只需要一行调用。
 
-`clawback`（冻结窗内拒付追回）目前只有动作常量与流水表字段，**函数未实现**——它的调用点在支付回调侧，随风控刀次一起落。在那之前不变量 2 只在数据结构上成立，运营上不成立。
+**`clawback`（冻结窗内拒付追回）已落地**（`supplier_credit_repo.go` + `supplier_clawback.go`），调用点在退款成功之后。它把不变量 2 从「数据结构上成立」推到「运营上成立」。五条设计约束，改动前先读：
+
+1. **只动冻结区**。候选集限定 `action='accrue' AND source_user_id=$1 AND frozen_until IS NOT NULL`——已释放的钱按不变量 2 就是拒付安全的，追回它等于毁约。
+2. **按笔整撤，不按金额切**。逐条撤销该消费者名下最新的入账直到覆盖退款基数，跨过界的那一条整条撤掉（超撤 ≤ 一个请求的分成）。换来的是一条 accrue 恰好配一条 clawback 的干净配对，也就是幂等的抓手。多撤的部分记在 `ReversedBasis`、撤不满的缺口记在 `UncoveredBasis`，两个数都随日志出来——沉默地少追回才是账不平。
+3. **幂等复用已有索引**，不新加迁移：clawback 流水沿用被撤入账的 `request_id`，`(action, request_id)` 上的部分唯一索引天然保证「一条入账只能被撤一次」。候选 SQL 里的 `NOT EXISTS` 与 `frozen_until IS NOT NULL` 是另外两道各自独立的闸。
+4. **必须把被撤的入账摘出解冻队列**（`SET frozen_until = NULL`）。只扣 `frozen_credit` 不摘队列的话，解冻任务过后会把同一笔钱再往可用区搬一次——`GREATEST` 只护住了冻结区不为负，可用区会凭空变多。这条 UPDATE 是止损，不是记账，已被 SQL 形状测 + 行为测 + 真库集成测三处钉住。
+5. **`history_credit` 保持单调**，追回不减它。它是对账锚点（`history = SUM(accrue.amount)`）；净收益 = `history − SUM(clawback.amount)`，在读侧算。
+
+调用点两处（`markRefundOk` 与 `finalizePendingRefundSuccess`），都是 **best-effort**：走到那一行时钱已经在支付通道退出去了，追回失败只记 `slog.Error`，绝不让一笔成功的退款回滚成「钱退了、系统说没退」。`finalizePendingRefundSuccess` 那处刻意放在 `tx.Commit()` **之后**——事务内报错会把整个退款事务置为 aborted，吞掉错误也救不回来。追回也**刻意不看结算总开关**：关掉开关后冻结区里仍躺着开着时产生的入账，按 `enabled` 短路等于给「先关开关再退款」开一条套利路径。
 
 ### 3.2 供给池溢出的四条边界（改动前先读）
 
@@ -177,6 +185,7 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 | 6 | `frontend/src/router/index.ts`、`i18n/locales/{en,zh}/index.ts`、`components/layout/AppSidebar.vue` | 路由表两处插入；locale 桶各 +2 行；侧边栏 +6 行 | 两条路由（`/supply`、`/admin/supply-market`）、两个 locale 模块 import+spread、两个菜单项 + 一个 `DollarIcon` + `onMounted` 里一行 `ensureStatus()` | 前端冲突热区，改动全是**追加**：locale 只 spread 新命名空间（不碰上游任何一个，见 §3.4），路由项插在既有项之间，菜单项各一条。`/supply` 不设路由守卫——功能没开的状态由页面自己画，守卫拦掉只会给用户一个没有解释的 404 | **已做** |
 | 5c | `backend/internal/service/wire.go` + `backend/cmd/server/wire.go` | ProviderSet / `provideCleanup` 形参 + 停机步骤 | 加 `ProvideSupplierLifecycleService` 注册；`provideCleanup` 加一个形参与一个 `Stop()` 步骤；`wire_gen.go` 重新生成（+9 行），`wire_gen_test.go` 同步补一个 `nil` | 与 #5a 一模一样的理由：provider 里调了 `Start()`，没有消费者引用 wire 就会把它整个剪掉，观察期任务永远不启动。两个后台任务因此都必须出现在 `provideCleanup` 的形参里 | **已做** |
 | 5d | `backend/internal/service/wire.go` + `backend/internal/repository/wire.go` | `ProvideSettingService` 形参 / ProviderSet | `ProvideSettingService` 多一个 `SupplyOverflowCounter` 形参并在里面调 `SetSupplyOverflowCounter`；repository ProviderSet 注册 `NewSupplyOverflowCounter`；`wire_gen.go` 重新生成（+1 行） | 计数器是进程级单例（包级 `atomic.Value`），刻意**不**加在 `SettingService`/`GatewayService` 的结构体上——那两个文件是每轮 upstream sync 的合并热区，为一个扩展字段每次都要解一遍冲突。代价是需要一个注入点，而 `ProvideSettingService` 是 `SettingService` 唯一的构造处，读用量的方法也挂在它上面 | **已做** |
+| 5e | `backend/internal/service/wire.go` + `backend/internal/service/payment_refund.go` | ProviderSet；`markRefundOk` 与 `finalizePendingRefundSuccess` 各一行 | `NewSupplierCreditService` 换成 `ProvideSupplierCreditService`（内部调 `SetSupplierClawbackHandler`）；退款两处收敛点各插一行 `clawbackSupplierCreditOnRefund`。逻辑全在新文件 `supplier_clawback.go`；`wire_gen.go` 重新生成（1 行） | 追回入口同 #5d 做成进程级单例，不往 `PaymentService` 上加字段（合并热区）。**但不能照 #5a/#5c 那样单起一个 provider**：没有消费者引用它 wire 会整个剪掉——所以挂在 `SupplierCreditService` 的构造里，那个结果被 `SupplierHandler` 消费，必定被构造。退款侧那一行是 best-effort 且**在事务外**：事务内报错会把整个退款事务置为 aborted，吞掉错误也救不回来 | **已做** |
 | 8 | `backend/internal/server/routes/admin.go` | `registerSettingsRoutes` 末尾 | 追加六行路由 + 一行 `// APEXONE-EXT:` 注释 | 挂进既有 settings group 而不是自起一个 admin group：那个 group 上有 adminAuth + 面板限流 + 审计 + `AdminComplianceGuard` 四层中间件，复制一份等着它日后与上游漂移，而漂移掉的是合规相关的那几层。handler 方法挂在既有的 `*SettingHandler` 上，因此 wire、`AdminHandlers`、`ProvideAdminHandlers` 三处热区一处没动 | **已做** |
 | 7 | `backend/internal/service/gateway_scheduling.go` | :97 函数签名 | **仅函数改名**：`SelectAccountWithLoadAwareness` → `selectAccountInPoolWithLoadAwareness`，函数体一字未改。导出名归新文件 `gateway_supply_overflow.go` 里的同名包装函数 | 交接件说的「零 core 溢出」不成立（见 §2）。耗尽有十几个 return 点，逐个插判断等于把一条新规则摊成十几处侵入；改名 + 外层包装是**一处**。合并冲突面小到只有一行签名，且上游若改了函数体，冲突会照常落在函数体上而不被包装掩盖 | **已做** |
 | 7a | — （**未覆盖面，记账用**） | `openai_codex_models_handler.go:44`、`gateway_handler.go:2058` | 这两处走的是 `SelectAccountForModel`，不经包装函数，因此**不溢出** | 首版切片的供给池只面向 Claude Code 形态消费，这两条路径不在范围内。若日后供给池扩到 codex 形态，需在此处补同样的包装 | 已知缺口 |
@@ -184,7 +193,7 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 ## 5. 结算不变量（实现必须守住）
 
 1. **消耗 === 入账**：failover 后只有产出被计费响应的账号入账（以 `usage_log.account_id` 为准）；失败/重试/无计费产出零入账。accrue 幂等键 = `usage_log.RequestID`。
-2. **冻结窗 ≥ 拒付窗**：使「已释放 = 拒付安全」。冻结期内拒付 → 从供给者冻结 earnings 追回；释放后拒付平台自吃。
+2. **冻结窗 ≥ 拒付窗**：使「已释放 = 拒付安全」。冻结期内拒付 → 从供给者冻结 earnings 追回（`SupplierCreditRepository.Clawback`，退款成功后触发）；释放后拒付平台自吃。冻结窗配小了不会报错，只会让追回**撤不满**——缺口体现为 `UncoveredBasis > 0` 与一条 `slog.Warn`，这是这条不变量在运营期唯一的可观测信号。
 3. **同一请求只扣一处**：赚取钱包或 `users.balance`，由 `applyUsageBillingEffects` 单点保证。
 4. **审计快照**：ledger 每条带快照，供给者可自行核对计量。
 

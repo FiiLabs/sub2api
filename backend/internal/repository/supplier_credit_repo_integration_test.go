@@ -263,3 +263,153 @@ func TestSupplierCredit_RepositoryWalletAndLedgerRoundTrip(t *testing.T) {
 	require.NotNil(t, entries[0].ShareRatio)
 	require.InDelta(t, 0.25, *entries[0].ShareRatio, 1e-9)
 }
+
+// ---------------------------------------------------------------------------
+// clawback（冻结窗内拒付追回）
+// ---------------------------------------------------------------------------
+
+// 追回只动冻结区，且必须把被撤的入账摘出解冻队列。
+//
+// 后半句是真库才证得了的：解冻任务扫的是 frozen_until IS NOT NULL，摘漏了的话
+// 已经扣走的钱会被再往可用区搬一次，供给者的可用余额凭空变多。
+func TestSupplierCredit_ClawbackReversesOnlyFrozenAccruals(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	supplierID := mustCreateSupplier(t, client, "clawback-supplier")
+	consumerID := mustCreateSupplier(t, client, "clawback-consumer")
+	otherConsumerID := mustCreateSupplier(t, client, "clawback-other")
+
+	// 冻结 2.0（可追回）+ 已释放 1.0（不可追回）+ 别人产生的 1.0（不该被波及）。
+	_, err := client.ExecContext(txCtx, `
+INSERT INTO supplier_credits (user_id, available_credit, frozen_credit, history_credit, created_at, updated_at)
+VALUES ($1, 1.0, 3.0, 4.0, NOW(), NOW())`, supplierID)
+	require.NoError(t, err)
+
+	frozenReq := fmt.Sprintf("req-frozen-%d", time.Now().UnixNano())
+	releasedReq := fmt.Sprintf("req-released-%d", time.Now().UnixNano())
+	otherReq := fmt.Sprintf("req-other-%d", time.Now().UnixNano())
+	_, err = client.ExecContext(txCtx, `
+INSERT INTO supplier_credit_ledger
+    (user_id, action, amount, request_id, source_user_id, basis_amount, share_ratio, frozen_until, created_at, updated_at)
+VALUES ($1, 'accrue', 2.0, $2, $3, 4.0, 0.5, NOW() + INTERVAL '100 hours', NOW(), NOW()),
+       ($1, 'accrue', 1.0, $4, $3, 2.0, 0.5, NULL,                          NOW(), NOW()),
+       ($1, 'accrue', 1.0, $5, $6, 2.0, 0.5, NOW() + INTERVAL '100 hours', NOW(), NOW())`,
+		supplierID, frozenReq, consumerID, releasedReq, otherReq, otherConsumerID)
+	require.NoError(t, err)
+
+	// 退款基数 100：远超冻结区能覆盖的部分，用来同时验证"撤到没得撤为止"与 UncoveredBasis。
+	result, err := clawbackSupplierCreditTx(txCtx, client, service.SupplierClawbackParams{
+		ConsumerUserID: consumerID,
+		BasisAmount:    100.0,
+		Reason:         "refund order:77",
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Entries)
+	require.Equal(t, 1, result.Suppliers)
+	require.InDelta(t, 2.0, result.ReversedCredit, 1e-9)
+	require.InDelta(t, 4.0, result.ReversedBasis, 1e-9)
+	require.InDelta(t, 96.0, result.UncoveredBasis, 1e-9)
+
+	// 冻结区少了 2.0；可用区与 history 一分未动。
+	require.InDelta(t, 1.0, querySingleFloat(t, txCtx, client,
+		"SELECT frozen_credit::double precision FROM supplier_credits WHERE user_id = $1", supplierID), 1e-9)
+	require.InDelta(t, 1.0, querySingleFloat(t, txCtx, client,
+		"SELECT available_credit::double precision FROM supplier_credits WHERE user_id = $1", supplierID), 1e-9)
+	require.InDelta(t, 4.0, querySingleFloat(t, txCtx, client,
+		"SELECT history_credit::double precision FROM supplier_credits WHERE user_id = $1", supplierID), 1e-9)
+
+	// clawback 流水与被撤的入账共用 request_id，且自带审计快照。
+	require.Equal(t, 1, querySingleInt(t, txCtx, client,
+		"SELECT COUNT(*)::int FROM supplier_credit_ledger WHERE action = 'clawback' AND request_id = $1", frozenReq))
+	require.InDelta(t, 1.0, querySingleFloat(t, txCtx, client,
+		"SELECT frozen_after::double precision FROM supplier_credit_ledger WHERE action = 'clawback' AND request_id = $1", frozenReq), 1e-9)
+
+	// 被撤的入账已摘出解冻队列：解冻任务再跑也搬不动它。
+	require.Equal(t, 0, querySingleInt(t, txCtx, client,
+		"SELECT COUNT(*)::int FROM supplier_credit_ledger WHERE request_id = $1 AND frozen_until IS NOT NULL", frozenReq))
+	// 别人产生的那笔仍在冻结队列里，没被波及。
+	require.Equal(t, 1, querySingleInt(t, txCtx, client,
+		"SELECT COUNT(*)::int FROM supplier_credit_ledger WHERE request_id = $1 AND frozen_until IS NOT NULL", otherReq))
+}
+
+// 重放同一次退款不能收第二遍钱。跨事务的闸门是流水表上的部分唯一索引，
+// 只有真库能证明它确实拦得住。
+func TestSupplierCredit_ClawbackIsIdempotentAcrossReplays(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	supplierID := mustCreateSupplier(t, client, "clawback-replay-supplier")
+	consumerID := mustCreateSupplier(t, client, "clawback-replay-consumer")
+
+	_, err := client.ExecContext(txCtx, `
+INSERT INTO supplier_credits (user_id, frozen_credit, history_credit, created_at, updated_at)
+VALUES ($1, 2.0, 2.0, NOW(), NOW())`, supplierID)
+	require.NoError(t, err)
+	requestID := fmt.Sprintf("req-replay-%d", time.Now().UnixNano())
+	_, err = client.ExecContext(txCtx, `
+INSERT INTO supplier_credit_ledger
+    (user_id, action, amount, request_id, source_user_id, basis_amount, share_ratio, frozen_until, created_at, updated_at)
+VALUES ($1, 'accrue', 2.0, $2, $3, 4.0, 0.5, NOW() + INTERVAL '100 hours', NOW(), NOW())`,
+		supplierID, requestID, consumerID)
+	require.NoError(t, err)
+
+	params := service.SupplierClawbackParams{ConsumerUserID: consumerID, BasisAmount: 4.0, Reason: "refund order:88"}
+
+	result, err := clawbackSupplierCreditTx(txCtx, client, params)
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Entries)
+
+	result, err = clawbackSupplierCreditTx(txCtx, client, params)
+	require.NoError(t, err)
+	require.Zero(t, result.Entries)
+
+	require.Zero(t, querySingleFloat(t, txCtx, client,
+		"SELECT frozen_credit::double precision FROM supplier_credits WHERE user_id = $1", supplierID))
+	require.Equal(t, 1, querySingleInt(t, txCtx, client,
+		"SELECT COUNT(*)::int FROM supplier_credit_ledger WHERE action = 'clawback' AND request_id = $1", requestID))
+}
+
+// 追回之后再跑解冻：被撤的那笔不能被搬进可用区。
+// 这是 clawback 与 thaw 两条写路径唯一会打架的地方，单测证不了。
+func TestSupplierCredit_ClawbackSurvivesLaterThaw(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	supplierID := mustCreateSupplier(t, client, "clawback-thaw-supplier")
+	consumerID := mustCreateSupplier(t, client, "clawback-thaw-consumer")
+
+	_, err := client.ExecContext(txCtx, `
+INSERT INTO supplier_credits (user_id, frozen_credit, history_credit, created_at, updated_at)
+VALUES ($1, 2.0, 2.0, NOW(), NOW())`, supplierID)
+	require.NoError(t, err)
+	// 已经到期但解冻任务还没跑到的入账——追回与解冻抢同一笔钱的窗口。
+	requestID := fmt.Sprintf("req-race-%d", time.Now().UnixNano())
+	_, err = client.ExecContext(txCtx, `
+INSERT INTO supplier_credit_ledger
+    (user_id, action, amount, request_id, source_user_id, basis_amount, share_ratio, frozen_until, created_at, updated_at)
+VALUES ($1, 'accrue', 2.0, $2, $3, 4.0, 0.5, NOW() - INTERVAL '1 hour', NOW(), NOW())`,
+		supplierID, requestID, consumerID)
+	require.NoError(t, err)
+
+	result, err := clawbackSupplierCreditTx(txCtx, client, service.SupplierClawbackParams{
+		ConsumerUserID: consumerID,
+		BasisAmount:    4.0,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Entries)
+
+	thawed, err := thawSupplierCreditTx(txCtx, client, supplierID)
+	require.NoError(t, err)
+	require.Zero(t, thawed)
+	require.Zero(t, querySingleFloat(t, txCtx, client,
+		"SELECT available_credit::double precision FROM supplier_credits WHERE user_id = $1", supplierID))
+	require.Zero(t, querySingleFloat(t, txCtx, client,
+		"SELECT frozen_credit::double precision FROM supplier_credits WHERE user_id = $1", supplierID))
+}

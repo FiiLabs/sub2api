@@ -864,7 +864,7 @@ var ProviderSet = wire.NewSet(
 	NewContentModerationService,
 	NewAffiliateService,
 	// APEXONE-EXT: 双边市场——赚取钱包读侧服务 + 冻结额释放任务。
-	NewSupplierCreditService,
+	ProvideSupplierCreditService,
 	ProvideSupplierThawService,
 	// APEXONE-EXT: 双边市场——供给者自助接入 + 观察期/排空推进任务。
 	NewSupplierOnboardingService,
@@ -914,6 +914,17 @@ func ProvidePaymentOrderExpiryService(paymentSvc *PaymentService, lockCache Lead
 	svc.SetLeaderLock(lockCache, db)
 	svc.Start()
 	return svc
+}
+
+// APEXONE-EXT: ProvideSupplierCreditService 构造读侧服务，并顺手装配拒付追回入口。
+//
+// 追回入口是进程级单例（见 supplier_clawback.go 里为什么不挂在 PaymentService 上），
+// 挂在这里是因为它需要一个「一定会被 wire 构造出来」的宿主：SupplierCreditService 被
+// SupplierHandler 消费，不会被剪掉；而单独给追回起一个 provider 的话，没有任何消费者
+// 引用它，wire 会把它整个剪掉，退款路径上那一行就永远是空转（和 #5a/#5c 同一个坑）。
+func ProvideSupplierCreditService(repo SupplierCreditRepository, settingService *SettingService) *SupplierCreditService {
+	SetSupplierClawbackHandler(NewSupplierClawbackService(repo))
+	return NewSupplierCreditService(repo, settingService)
 }
 
 // APEXONE-EXT: ProvideSupplierThawService 创建并启动供给冻结额释放任务。

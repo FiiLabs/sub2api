@@ -505,6 +505,10 @@ func (s *PaymentService) finalizePendingRefundSuccess(ctx context.Context, p *Re
 	if err = tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit refund finalization: %w", err)
 	}
+	// APEXONE-EXT: 同 markRefundOk。刻意放在 Commit **之后**而不是事务里：
+	// 追回一旦在事务内报错，Postgres 会把整个退款事务置为 aborted，
+	// 吞掉错误也救不回来——已经在通道退成功的这笔退款会连订单状态一起回滚。
+	clawbackSupplierCreditOnRefund(ctx, p.Order.UserID, p.RefundAmount, refundClawbackReason(p.OrderID))
 	return result, nil
 }
 
@@ -616,7 +620,17 @@ func (s *PaymentService) markRefundOk(ctx context.Context, p *RefundPlan) (*Refu
 		return nil, fmt.Errorf("mark refund: %w", err)
 	}
 	s.writeAuditLog(ctx, p.OrderID, "REFUND_SUCCESS", "admin", map[string]any{"refundAmount": p.RefundAmount, "reason": p.Reason, "balanceDeducted": p.BalanceToDeduct, "force": p.Force})
+	// APEXONE-EXT: 双边市场——退款成功后追回供给者尚在冻结区的分成。
+	// 全部细节（为什么是 best-effort、为什么挂在单例上）在 supplier_clawback.go。
+	clawbackSupplierCreditOnRefund(ctx, p.Order.UserID, p.RefundAmount, refundClawbackReason(p.OrderID))
 	return &RefundResult{Success: true, BalanceDeducted: p.BalanceToDeduct, SubDaysDeducted: p.SubDaysToDeduct}, nil
+}
+
+// APEXONE-EXT: refundClawbackReason 是追回流水 remark 的唯一格式。
+// 单独抽出来是为了让两条退款收敛路径写进流水的字符串**逐字相同**——
+// 运营按订单号搜 remark 时，格式漂了就等于搜不到。
+func refundClawbackReason(orderID int64) string {
+	return fmt.Sprintf("refund order:%d", orderID)
 }
 
 func (s *PaymentService) markRefundOkTx(ctx context.Context, client *dbent.Client, p *RefundPlan) (*RefundResult, error) {
