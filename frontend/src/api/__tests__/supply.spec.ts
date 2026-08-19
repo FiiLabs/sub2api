@@ -69,6 +69,21 @@ describe('supply api', () => {
     })
   })
 
+  it('reads the agreement without any parameter', async () => {
+    await supplyAPI.getAgreement()
+
+    expect(get).toHaveBeenCalledWith('/user/supply/agreement')
+  })
+
+  it('sends the version the user actually saw when accepting', async () => {
+    // 不能省掉 version 让服务端自己取「当前版本」：那样只能证明他点了按钮，
+    // 证明不了他看的是哪一版。页面开着没刷新的人点下去，就会把新版协议
+    // 记成"已同意"——协议的证据链在这一个字段上。
+    await supplyAPI.acceptAgreement('v2')
+
+    expect(post).toHaveBeenCalledWith('/user/supply/agreement/accept', { version: 'v2' })
+  })
+
   it('never sends a user id — ownership comes from the JWT', async () => {
     await supplyAPI.listAccounts()
 
@@ -132,6 +147,24 @@ describe('admin supply market api', () => {
     })
   })
 
+  it('writes only the three editable agreement fields, never published/*_max_len', async () => {
+    // published 和三个 *_max_len 都是后端算出来的只读字段。把它们 PUT 回去，
+    // 管理员就在声称自己能决定协议算不算已发布——而那件事只由 version 是否为空决定。
+    const put = vi.fn().mockResolvedValue({ data: {} })
+    const client = (await import('@/api/client')).apiClient as unknown as Record<string, unknown>
+    client.put = put
+
+    await adminSupplyMarketAPI.getAgreementSettings()
+    expect(get).toHaveBeenCalledWith('/admin/settings/supply-agreement')
+
+    await adminSupplyMarketAPI.updateAgreementSettings({ version: 'v1', url: '', body: '正文' })
+    expect(put).toHaveBeenCalledWith('/admin/settings/supply-agreement', {
+      version: 'v1',
+      url: '',
+      body: '正文',
+    })
+  })
+
   it('keeps 0 in the payload — it means unlimited, not "unset"', async () => {
     // 0 被过滤掉的话后端会当成「没填」而保留旧配额，管理员点了保存却发现限制还在。
     const put = vi.fn().mockResolvedValue({ data: {} })
@@ -188,6 +221,7 @@ describe('admin supply ops api (read-only)', () => {
     // 先经过一次设计讨论，而不是顺手加在这个 API 对象上。
     const writers = Object.keys(adminSupplyMarketAPI).filter((key) => /^(update|create|delete)/.test(key))
     expect(writers.sort()).toEqual([
+      'updateAgreementSettings',
       'updatePoolSettings',
       'updateProbationSettings',
       'updateSettlementSettings',

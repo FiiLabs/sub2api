@@ -95,6 +95,31 @@ export interface SupplyLedgerPage {
   pages: number
 }
 
+/**
+ * 供给者协议的状态。四种情况被压在这三个字段里，界面要按这个顺序判：
+ *
+ *   1. !published            → 平台还没发布协议，接入被拒，供给者点什么都没用
+ *   2. published && accepted → 可以接入
+ *   3. published && accepted_version 非空且不等于 version → 协议改版了，要重新确认
+ *   4. published && accepted_version 为空 → 从没同意过
+ *
+ * 3 和 4 的界面文案必须不同：对一个明明点过同意的人说「请先同意」，他会以为系统坏了。
+ */
+export interface SupplyAgreement {
+  /** 当前生效的协议版本号。空 = 平台尚未发布。 */
+  version: string
+  published: boolean
+  /** 协议全文外链，可空 */
+  url?: string
+  /** 协议正文，可空。**按纯文本渲染**，不得当 HTML/markdown 塞进 v-html。 */
+  body?: string
+  /** 当前用户是否已同意 version 这一版。这一个布尔就是门禁的判据。 */
+  accepted: boolean
+  accepted_at?: string
+  /** 该用户最近一次同意的版本号 */
+  accepted_version?: string
+}
+
 export interface StartOAuthResponse {
   auth_url: string
   session_id: string
@@ -102,6 +127,24 @@ export interface StartOAuthResponse {
 
 async function getStatus(): Promise<SupplyStatus> {
   const { data } = await apiClient.get<SupplyStatus>('/user/supply/status')
+  return data
+}
+
+async function getAgreement(): Promise<SupplyAgreement> {
+  const { data } = await apiClient.get<SupplyAgreement>('/user/supply/agreement')
+  return data
+}
+
+/**
+ * 同意当前版本的协议。
+ *
+ * version 必须是**页面上正在显示的那一版**，不能省略让服务端自己取当前版本：
+ * 前者能证明他看到的就是这一版，后者只能证明他点了一下按钮。页面开了两天没刷新
+ * 的人，点的是旧版正文——那时服务端会回 SUPPLIER_AGREEMENT_VERSION_MISMATCH，
+ * 界面该做的是重新拉一次协议让他再读一遍，而不是重试。
+ */
+async function acceptAgreement(version: string): Promise<SupplyAgreement> {
+  const { data } = await apiClient.post<SupplyAgreement>('/user/supply/agreement/accept', { version })
   return data
 }
 
@@ -176,6 +219,8 @@ async function listLedger(params: { page?: number; page_size?: number; action?: 
 
 export const supplyAPI = {
   getStatus,
+  getAgreement,
+  acceptAgreement,
   startOAuth,
   completeOAuth,
   listAccounts,

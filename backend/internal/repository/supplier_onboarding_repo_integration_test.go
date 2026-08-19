@@ -546,3 +546,123 @@ func TestSupplierOnboarding_UnknownIdentityKeyIsAnError(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, found)
 }
+
+// ============================================================================
+// 协议同意（迁移 228）
+// ============================================================================
+
+// 重复点同意保留**最早**那一行。
+//
+// 这条性质整个落在 `ON CONFLICT (user_id, version) DO NOTHING` 上，而那个冲突目标
+// 是一个唯一索引——索引没建出来的话，第二次点同意会插进第二行，而"他什么时候
+// 同意的"从此有两个答案。这只有真库能证。
+func TestSupplierAgreement_AcceptanceIsIdempotentAndKeepsEarliest(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewSupplierOnboardingRepository(client)
+
+	userID := mustCreateSupplier(t, client, "agreement-idem")
+	first := &service.SupplierAgreementAcceptance{
+		UserID: userID, Version: "v1", IP: "203.0.113.9", UserAgent: "ua-1",
+	}
+	require.NoError(t, repo.RecordAgreementAcceptance(txCtx, first))
+
+	stored, err := repo.FindAgreementAcceptance(txCtx, userID, "v1")
+	require.NoError(t, err)
+	require.NotNil(t, stored)
+	require.Equal(t, "203.0.113.9", stored.IP)
+	require.Equal(t, "ua-1", stored.UserAgent)
+	require.False(t, stored.AcceptedAt.IsZero())
+
+	// 第二次点，换了 IP 和 UA：什么都不该改。
+	require.NoError(t, repo.RecordAgreementAcceptance(txCtx, &service.SupplierAgreementAcceptance{
+		UserID: userID, Version: "v1", IP: "198.51.100.7", UserAgent: "ua-2",
+	}))
+
+	again, err := repo.FindAgreementAcceptance(txCtx, userID, "v1")
+	require.NoError(t, err)
+	require.NotNil(t, again)
+	require.Equal(t, "203.0.113.9", again.IP, "同意记录是证据，后来的一次点击不该改写它")
+	require.Equal(t, "ua-1", again.UserAgent)
+	require.Equal(t, stored.AcceptedAt.UnixNano(), again.AcceptedAt.UnixNano())
+
+	rows, err := client.QueryContext(txCtx,
+		`SELECT COUNT(*) FROM supplier_agreement_acceptances WHERE user_id = $1 AND version = $2`,
+		userID, "v1")
+	require.NoError(t, err)
+	defer func() { _ = rows.Close() }()
+	require.True(t, rows.Next())
+	var count int
+	require.NoError(t, rows.Scan(&count))
+	require.Equal(t, 1, count, "同一版本只该有一行")
+}
+
+// 精确版本查询与"最近一次同意"是两个问题：门禁问前者，界面问后者。
+func TestSupplierAgreement_ExactVersionAndLatestAreDifferentQuestions(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewSupplierOnboardingRepository(client)
+
+	userID := mustCreateSupplier(t, client, "agreement-latest")
+	require.NoError(t, repo.RecordAgreementAcceptance(txCtx,
+		&service.SupplierAgreementAcceptance{UserID: userID, Version: "v1"}))
+	require.NoError(t, repo.RecordAgreementAcceptance(txCtx,
+		&service.SupplierAgreementAcceptance{UserID: userID, Version: "v2"}))
+
+	// 没同意过的版本查不到——门禁据此拒绝。
+	missing, err := repo.FindAgreementAcceptance(txCtx, userID, "v3")
+	require.NoError(t, err)
+	require.Nil(t, missing, "没同意过就必须查不到，而不是回一条空记录")
+
+	// 同一个事务里两行的 accepted_at 是同一个 NOW()，所以排序还得靠 id 兜底——
+	// 这正是 ORDER BY accepted_at DESC, id DESC 里第二个键存在的理由。
+	latest, err := repo.LatestAgreementAcceptance(txCtx, userID)
+	require.NoError(t, err)
+	require.NotNil(t, latest)
+	require.Equal(t, "v2", latest.Version)
+}
+
+// 同意记录按人隔离：查别人的同意记录必须查不到，否则一个人签字就能放行全站。
+func TestSupplierAgreement_AcceptanceIsScopedByUser(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewSupplierOnboardingRepository(client)
+
+	signer := mustCreateSupplier(t, client, "agreement-signer")
+	bystander := mustCreateSupplier(t, client, "agreement-bystander")
+	require.NoError(t, repo.RecordAgreementAcceptance(txCtx,
+		&service.SupplierAgreementAcceptance{UserID: signer, Version: "v1"}))
+
+	found, err := repo.FindAgreementAcceptance(txCtx, bystander, "v1")
+	require.NoError(t, err)
+	require.Nil(t, found)
+
+	latest, err := repo.LatestAgreementAcceptance(txCtx, bystander)
+	require.NoError(t, err)
+	require.Nil(t, latest, "从没同意过的人不该有「最近一次同意」")
+}
+
+// IP/UA 是可空的旁证：不给也能记下同意本身。
+func TestSupplierAgreement_AcceptanceWithoutEvidenceFieldsIsStillValid(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewSupplierOnboardingRepository(client)
+
+	userID := mustCreateSupplier(t, client, "agreement-noevidence")
+	require.NoError(t, repo.RecordAgreementAcceptance(txCtx,
+		&service.SupplierAgreementAcceptance{UserID: userID, Version: "v1"}))
+
+	stored, err := repo.FindAgreementAcceptance(txCtx, userID, "v1")
+	require.NoError(t, err)
+	require.NotNil(t, stored)
+	require.Empty(t, stored.IP)
+	require.Empty(t, stored.UserAgent)
+}

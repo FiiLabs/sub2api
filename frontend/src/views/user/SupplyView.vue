@@ -95,18 +95,93 @@
           <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('supply.connect.title') }}</h3>
           <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ t('supply.connect.description') }}</p>
 
-          <button
-            v-if="!pendingAuth"
-            class="btn btn-primary mt-4"
-            :disabled="starting"
-            data-testid="supply-start-oauth"
-            @click="startOAuth"
+          <!-- 协议门禁。整块挡在接入按钮之前，而不是做成提交时的一个勾选框：
+               服务端在 StartOAuth 和 CompleteOAuth 上都会拒绝没同意的人，界面
+               把按钮留着只会让他跑完一整遍上游授权之后才被告知。 -->
+          <div
+            v-if="!agreement.published"
+            class="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/40 dark:bg-amber-900/20"
+            data-testid="supply-agreement-unpublished"
           >
-            <Icon name="plus" size="sm" />
-            <span>{{ starting ? t('supply.connect.starting') : t('supply.connect.start') }}</span>
-          </button>
+            <p class="text-sm font-medium text-amber-800 dark:text-amber-200">
+              {{ t('supply.agreement.unpublishedTitle') }}
+            </p>
+            <p class="mt-1 text-sm text-amber-700 dark:text-amber-300">{{ t('supply.agreement.unpublishedBody') }}</p>
+          </div>
 
-          <div v-else class="mt-4 space-y-4">
+          <div v-else-if="!agreement.accepted" class="mt-4 space-y-3" data-testid="supply-agreement-gate">
+            <!-- 「协议改版了」与「你还没同意过」是两句不同的话：对一个明明点过同意的人
+                 说"请先同意"，他会以为系统坏了。 -->
+            <p class="text-sm font-medium text-gray-800 dark:text-gray-100">
+              {{ agreement.accepted_version ? t('supply.agreement.updatedTitle') : t('supply.agreement.title') }}
+            </p>
+            <p class="text-xs text-gray-400 dark:text-dark-500">
+              {{ t('supply.agreement.version', { version: agreement.version }) }}
+            </p>
+
+            <!-- 正文按纯文本渲染（whitespace-pre-wrap + 插值），**不用 v-html**：
+                 这份文本来自管理端表单，从别处粘来的条款里的 <script> 不该因为
+                 它是"协议"就获得执行权。 -->
+            <div
+              v-if="agreement.body"
+              class="max-h-64 overflow-y-auto whitespace-pre-wrap rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300"
+              data-testid="supply-agreement-body"
+            >{{ agreement.body }}</div>
+
+            <a
+              v-if="agreement.url"
+              class="inline-flex items-center gap-1 text-sm text-primary-600 hover:underline dark:text-primary-400"
+              :href="agreement.url"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Icon name="externalLink" size="sm" />
+              <span>{{ t('supply.agreement.openFullText') }}</span>
+            </a>
+
+            <label class="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input
+                v-model="agreementChecked"
+                class="mt-0.5"
+                type="checkbox"
+                data-testid="supply-agreement-checkbox"
+              />
+              <span>{{ t('supply.agreement.checkbox', { version: agreement.version }) }}</span>
+            </label>
+
+            <button
+              class="btn btn-primary"
+              :disabled="!agreementChecked || accepting"
+              data-testid="supply-agreement-accept"
+              @click="acceptAgreement"
+            >
+              <Icon name="check" size="sm" />
+              <span>{{ accepting ? t('supply.agreement.accepting') : t('supply.agreement.accept') }}</span>
+            </button>
+          </div>
+
+          <template v-else>
+            <p class="mt-3 text-xs text-gray-400 dark:text-dark-500" data-testid="supply-agreement-accepted">
+              {{
+                t('supply.agreement.acceptedAt', {
+                  version: agreement.version,
+                  time: agreement.accepted_at ? formatDateTime(agreement.accepted_at) : '-',
+                })
+              }}
+            </p>
+
+            <button
+              v-if="!pendingAuth"
+              class="btn btn-primary mt-4"
+              :disabled="starting"
+              data-testid="supply-start-oauth"
+              @click="startOAuth"
+            >
+              <Icon name="plus" size="sm" />
+              <span>{{ starting ? t('supply.connect.starting') : t('supply.connect.start') }}</span>
+            </button>
+
+            <div v-else class="mt-4 space-y-4">
             <div class="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-900">
               <p class="text-sm font-medium text-gray-800 dark:text-gray-100">{{ t('supply.connect.step1') }}</p>
               <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ t('supply.connect.step1Hint') }}</p>
@@ -168,7 +243,8 @@
                 </button>
               </div>
             </div>
-          </div>
+            </div>
+          </template>
         </div>
 
         <!-- ===================== 我的号 ===================== -->
@@ -379,7 +455,7 @@ import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { supplyAPI, type SupplyAccount, type SupplyLedgerEntry, type SupplyPauseMode, type SupplyStatus, type SupplyWallet, type StartOAuthResponse } from '@/api/supply'
+import { supplyAPI, type SupplyAccount, type SupplyAgreement, type SupplyLedgerEntry, type SupplyPauseMode, type SupplyStatus, type SupplyWallet, type StartOAuthResponse } from '@/api/supply'
 import { useAppStore } from '@/stores/app'
 import { useSupplyStore } from '@/stores/supply'
 import { useClipboard } from '@/composables/useClipboard'
@@ -406,6 +482,11 @@ const ledger = ref<SupplyLedgerEntry[]>([])
 const ledgerPage = ref(1)
 const ledgerPages = ref(1)
 const ledgerTotal = ref(0)
+
+const accepting = ref(false)
+const agreementChecked = ref(false)
+// 初值是「未发布」而不是「已同意」：还没拉到协议之前，接入按钮不该先亮出来。
+const agreement = ref<SupplyAgreement>({ version: '', published: false, accepted: false })
 
 const pendingAuth = ref<StartOAuthResponse | null>(null)
 const authCode = ref('')
@@ -481,9 +562,43 @@ async function goLedgerPage(page: number): Promise<void> {
   await loadLedger(page)
 }
 
-/** 并发拉三份数据。任一份失败只影响它自己那一块，不该让整页空着。 */
+async function loadAgreement(): Promise<void> {
+  try {
+    agreement.value = await supplyAPI.getAgreement()
+  } catch (error) {
+    // 读不到就按"平台尚未发布"渲染——与服务端 fail-closed 同向。把接入按钮
+    // 留着更糟：他会一路走到最后一步才被拒，而那时授权码已经生成了。
+    agreement.value = { version: '', published: false, accepted: false }
+    appStore.showError(extractApiErrorMessage(error, t('supply.error.loadFailed')))
+  }
+}
+
+/** 并发拉四份数据。任一份失败只影响它自己那一块，不该让整页空着。 */
 async function loadAll(): Promise<void> {
-  await Promise.all([loadWallet(), loadAccounts(), loadLedger(1)])
+  await Promise.all([loadAgreement(), loadWallet(), loadAccounts(), loadLedger(1)])
+}
+
+/**
+ * 同意当前版本。
+ *
+ * 回传的是页面上正在显示的那个版本号，不是让服务端自己取当前版本：页面开了很久
+ * 的人点的是旧版正文。服务端这时会回 VERSION_MISMATCH，界面该做的是重新拉一次
+ * 协议让他读新的那一份，而不是原样重试——所以失败分支里必然跟着一次 loadAgreement。
+ */
+async function acceptAgreement(): Promise<void> {
+  if (!agreement.value.published || !agreementChecked.value) return
+  accepting.value = true
+  try {
+    agreement.value = await supplyAPI.acceptAgreement(agreement.value.version)
+    agreementChecked.value = false
+    appStore.showSuccess(t('supply.agreement.acceptedToast'))
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('supply.error.acceptFailed')))
+    agreementChecked.value = false
+    await loadAgreement()
+  } finally {
+    accepting.value = false
+  }
 }
 
 async function refreshAll(): Promise<void> {

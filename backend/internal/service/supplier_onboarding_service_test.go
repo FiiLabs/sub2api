@@ -55,6 +55,83 @@ type supplierOnboardingRepoStub struct {
 
 	scrubCalls [][2]int64
 	scrubErr   error
+
+	// acceptances 按 "userID|version" 索引已经存在的同意记录。
+	acceptances map[string]*SupplierAgreementAcceptance
+	// agreementAcceptedByDefault = 「这个人什么版本都同意过」。
+	//
+	// newOnboardingService 默认打开它，好让那几十个测接入编排的用例不必每一个都
+	// 先补一条同意记录。协议门禁本身有自己的一组用例，那些用例会显式关掉它。
+	agreementAcceptedByDefault bool
+	recordedAcceptances        []SupplierAgreementAcceptance
+	recordAgreementErr         error
+	findAgreementErr           error
+	latestAgreementErr         error
+	latestAgreement            *SupplierAgreementAcceptance
+}
+
+// acceptAgreement 给替身补一条同意记录，供门禁用例摆场景。
+func (r *supplierOnboardingRepoStub) acceptAgreement(userID int64, version string) {
+	if r.acceptances == nil {
+		r.acceptances = map[string]*SupplierAgreementAcceptance{}
+	}
+	r.acceptances[agreementStubKey(userID, version)] = &SupplierAgreementAcceptance{
+		UserID:     userID,
+		Version:    version,
+		AcceptedAt: time.Unix(1700000000, 0),
+	}
+}
+
+func agreementStubKey(userID int64, version string) string {
+	return strconv.FormatInt(userID, 10) + "|" + version
+}
+
+func (r *supplierOnboardingRepoStub) RecordAgreementAcceptance(_ context.Context, acceptance *SupplierAgreementAcceptance) error {
+	r.calls = append(r.calls, "RecordAgreementAcceptance")
+	r.record("RecordAgreementAcceptance")
+	if r.recordAgreementErr != nil {
+		return r.recordAgreementErr
+	}
+	if acceptance == nil {
+		return nil
+	}
+	r.recordedAcceptances = append(r.recordedAcceptances, *acceptance)
+	// 与真实实现同构：ON CONFLICT DO NOTHING，重复同意保留最早那一行。
+	if r.acceptances == nil {
+		r.acceptances = map[string]*SupplierAgreementAcceptance{}
+	}
+	key := agreementStubKey(acceptance.UserID, acceptance.Version)
+	if _, exists := r.acceptances[key]; !exists {
+		stored := *acceptance
+		r.acceptances[key] = &stored
+	}
+	return nil
+}
+
+func (r *supplierOnboardingRepoStub) FindAgreementAcceptance(_ context.Context, userID int64, version string) (*SupplierAgreementAcceptance, error) {
+	// 刻意不进 seq：那条流水记的是跨仓储的**写**顺序（建号→归属→进池），
+	// 而这里是一次纯读，混进去只会让那几条顺序断言变得难读。
+	r.calls = append(r.calls, "FindAgreementAcceptance")
+	if r.findAgreementErr != nil {
+		return nil, r.findAgreementErr
+	}
+	if found, ok := r.acceptances[agreementStubKey(userID, version)]; ok {
+		return found, nil
+	}
+	if r.agreementAcceptedByDefault {
+		return &SupplierAgreementAcceptance{
+			UserID: userID, Version: version, AcceptedAt: time.Unix(1700000000, 0),
+		}, nil
+	}
+	return nil, nil
+}
+
+func (r *supplierOnboardingRepoStub) LatestAgreementAcceptance(_ context.Context, _ int64) (*SupplierAgreementAcceptance, error) {
+	r.calls = append(r.calls, "LatestAgreementAcceptance")
+	if r.latestAgreementErr != nil {
+		return nil, r.latestAgreementErr
+	}
+	return r.latestAgreement, nil
 }
 
 func (r *supplierOnboardingRepoStub) record(name string) {
@@ -352,13 +429,26 @@ func newOnboardingService(
 	settingsJSON string,
 ) *SupplierOnboardingService {
 	t.Helper()
-	settingRepo := &supplyPoolSettingRepoStub{value: settingsJSON}
+	// 默认场景是「协议已发布，且这个人已经同意」。协议门禁自己那一组用例会把
+	// 这两个前提逐个拆掉；其余用例测的是编排，不该每一个都先演一遍签字。
+	settingRepo := &supplyPoolSettingRepoStub{
+		value:          settingsJSON,
+		agreementValue: publishedAgreementJSON(),
+	}
+	repo.agreementAcceptedByDefault = true
 	return &SupplierOnboardingService{
 		repo:        repo,
 		accountRepo: store,
 		oauth:       oauth,
 		settings:    newSupplyPoolSettingService(t, settingRepo),
 	}
+}
+
+// testAgreementVersion 是这些用例里"当前生效"的协议版本。
+const testAgreementVersion = "v1"
+
+func publishedAgreementJSON() string {
+	return `{"version":"` + testAgreementVersion + `","url":"https://example.com/supplier-terms","body":"条款正文"}`
 }
 
 func enabledSupplyPoolJSON() string {
@@ -527,8 +617,10 @@ func TestCompleteOAuthWritesOwnerBeforeBindingGroup(t *testing.T) {
 	// 而且不可调度，所以无论如何都服务不了请求。
 	assert.Equal(t, []string{"Create", "SetAccountOwner", "BindGroups"}, seq)
 
-	// 会话领取必须是第一件事：兑换之前就要确认这个 code 是这个人的。
-	assert.Equal(t, "ClaimSession", repo.calls[0])
+	// 会话领取排在协议门禁之后、其余一切之前：门禁是一次纯读，被它挡住的人不该
+	// 丢掉手上的授权码；而领取一旦发生，兑换之前就已经确认了这个 code 是这个人的。
+	require.GreaterOrEqual(t, len(repo.calls), 2)
+	assert.Equal(t, []string{"FindAgreementAcceptance", "ClaimSession"}, repo.calls[:2])
 }
 
 func TestCompleteOAuthRejectsDuplicateUpstreamAccount(t *testing.T) {

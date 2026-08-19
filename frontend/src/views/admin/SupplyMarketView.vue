@@ -298,13 +298,111 @@
             </button>
           </div>
         </div>
+
+        <!-- ===================== 供给者协议 ===================== -->
+        <div class="card space-y-4 p-6">
+          <div>
+            <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('supplyAdmin.agreement.title') }}</h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.agreement.description') }}</p>
+          </div>
+
+          <!-- 没发布 = 自助接入整个停着。这不是一个"建议填写"的字段，
+               所以状态要摆在最上面，而不是等运营去猜为什么没人挂号。 -->
+          <div
+            class="rounded-lg border p-3"
+            :class="
+              agreementPublished
+                ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-900/20'
+                : 'border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-900/20'
+            "
+            data-testid="supply-agreement-status"
+          >
+            <p
+              class="text-xs"
+              :class="
+                agreementPublished
+                  ? 'text-emerald-700 dark:text-emerald-300'
+                  : 'text-amber-700 dark:text-amber-300'
+              "
+            >
+              {{ agreementPublished ? t('supplyAdmin.agreement.publishedNotice') : t('supplyAdmin.agreement.unpublishedNotice') }}
+            </p>
+          </div>
+
+          <div class="space-y-4 border-t border-gray-100 pt-4 dark:border-dark-700">
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('supplyAdmin.agreement.version') }}
+              </label>
+              <input
+                v-model.trim="agreementForm.version"
+                type="text"
+                class="input"
+                :maxlength="agreementBounds.version_max_len"
+                :placeholder="t('supplyAdmin.agreement.versionPlaceholder')"
+                data-testid="supply-agreement-version"
+              />
+              <!-- 改版本号 = 让所有人重新点一次同意。这句话必须在输入框边上，
+                   不能只写在文档里：错别字改一改就把全站供给者挡在门外了。 -->
+              <p class="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                {{ t('supplyAdmin.agreement.versionHint') }}
+              </p>
+            </div>
+
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('supplyAdmin.agreement.url') }}
+              </label>
+              <input
+                v-model.trim="agreementForm.url"
+                type="url"
+                class="input"
+                :maxlength="agreementBounds.url_max_len"
+                placeholder="https://"
+                data-testid="supply-agreement-url"
+              />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.agreement.urlHint') }}</p>
+            </div>
+
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('supplyAdmin.agreement.body') }}
+              </label>
+              <textarea
+                v-model="agreementForm.body"
+                class="input min-h-[12rem] font-mono text-xs"
+                :maxlength="agreementBounds.body_max_len"
+                :placeholder="t('supplyAdmin.agreement.bodyPlaceholder')"
+                data-testid="supply-agreement-body"
+              ></textarea>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('supplyAdmin.agreement.bodyHint', { max: agreementBounds.body_max_len }) }}
+              </p>
+            </div>
+
+            <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-900">
+              <p class="text-xs text-gray-600 dark:text-gray-300">{{ t('supplyAdmin.agreement.rejectNotice') }}</p>
+            </div>
+          </div>
+
+          <div class="flex justify-end">
+            <button
+              class="btn btn-primary"
+              :disabled="savingAgreement"
+              data-testid="supply-agreement-save"
+              @click="saveAgreement"
+            >
+              {{ t('supplyAdmin.agreement.save') }}
+            </button>
+          </div>
+        </div>
       </template>
     </div>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Toggle from '@/components/common/Toggle.vue'
@@ -314,6 +412,8 @@ import {
   type SupplyPoolSettings,
   type SupplyProbationPayload,
   type SupplyProbationSettings,
+  type SupplyAgreementPayload,
+  type SupplyAgreementSettings,
 } from '@/api/admin/supplyMarket'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
@@ -325,6 +425,7 @@ const loading = ref(true)
 const savingSettlement = ref(false)
 const savingPool = ref(false)
 const savingProbation = ref(false)
+const savingAgreement = ref(false)
 
 const settlementForm = reactive({
   enabled: false,
@@ -372,6 +473,24 @@ const probationBounds = reactive({
   drain_window_minutes_max: 60 * 24,
 })
 
+// 协议默认是空的 = 尚未发布 = 自助接入被拒。这个默认值是刻意的：开源部署第一次
+// 打开供给池时会撞上它，而那正是运营该决定"我拿什么条款收别人订阅"的时刻。
+const agreementForm = reactive<SupplyAgreementPayload>({
+  version: '',
+  url: '',
+  body: '',
+})
+
+const agreementBounds = reactive({
+  version_max_len: 64,
+  url_max_len: 512,
+  body_max_len: 100000,
+})
+
+// 用表单里的版本号算，而不是记住后端上次返回的 published：运营清空版本号的那一刻
+// 就该看到"接入会停"的警示，而不是等保存完才看到。
+const agreementPublished = computed(() => agreementForm.version.trim() !== '')
+
 async function loadSettlement(): Promise<void> {
   const settings = await adminSupplyMarketAPI.getSettlementSettings()
   settlementForm.enabled = settings.enabled
@@ -418,6 +537,46 @@ function applyProbationBounds(settings: SupplyProbationSettings): void {
   }
   if (settings.drain_window_minutes_max > 0) {
     probationBounds.drain_window_minutes_max = settings.drain_window_minutes_max
+  }
+}
+
+async function loadAgreement(): Promise<void> {
+  const settings = await adminSupplyMarketAPI.getAgreementSettings()
+  agreementForm.version = settings.version ?? ''
+  agreementForm.url = settings.url ?? ''
+  agreementForm.body = settings.body ?? ''
+  applyAgreementBounds(settings)
+}
+
+function applyAgreementBounds(settings: SupplyAgreementSettings): void {
+  if (settings.version_max_len > 0) agreementBounds.version_max_len = settings.version_max_len
+  if (settings.url_max_len > 0) agreementBounds.url_max_len = settings.url_max_len
+  if (settings.body_max_len > 0) agreementBounds.body_max_len = settings.body_max_len
+}
+
+/**
+ * 保存协议。
+ *
+ * 与观察期那一组的差别要留意：后端对越界值**报错**而不是夹回，所以这里没有
+ * "被夹回的值要写回表单"的问题——保存成功就意味着存下的与填的一字不差。
+ */
+async function saveAgreement(): Promise<void> {
+  savingAgreement.value = true
+  try {
+    const saved = await adminSupplyMarketAPI.updateAgreementSettings({
+      version: agreementForm.version,
+      url: agreementForm.url,
+      body: agreementForm.body,
+    })
+    agreementForm.version = saved.version ?? ''
+    agreementForm.url = saved.url ?? ''
+    agreementForm.body = saved.body ?? ''
+    applyAgreementBounds(saved)
+    appStore.showSuccess(t('supplyAdmin.agreement.saved'))
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('supplyAdmin.error.saveFailed')))
+  } finally {
+    savingAgreement.value = false
   }
 }
 
@@ -496,7 +655,7 @@ async function saveProbation(): Promise<void> {
 
 onMounted(async () => {
   try {
-    await Promise.all([loadSettlement(), loadPool(), loadProbation()])
+    await Promise.all([loadSettlement(), loadPool(), loadProbation(), loadAgreement()])
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, t('supplyAdmin.error.loadFailed')))
   } finally {

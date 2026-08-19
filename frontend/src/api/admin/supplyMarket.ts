@@ -78,6 +78,27 @@ export type SupplyProbationPayload = Omit<
   | 'drain_window_minutes_max'
 >
 
+export interface SupplyAgreementSettings {
+  /** 协议版本号。空 = 尚未发布 = 自助接入被**拒绝**（不是"跳过同意"）。 */
+  version: string
+  /** 协议全文外链，可空。只允许 http/https，后端会拒绝别的协议头。 */
+  url: string
+  /** 协议正文，可空。纯文本，页面上不会被当 HTML 渲染。 */
+  body: string
+  /** 后端算好的「有没有发布」，前端不必自己判断空字符串的含义。 */
+  published: boolean
+
+  /** 后端下发的边界值，前端不要另抄一份。 */
+  version_max_len: number
+  url_max_len: number
+  body_max_len: number
+}
+
+export type SupplyAgreementPayload = Omit<
+  SupplyAgreementSettings,
+  'published' | 'version_max_len' | 'url_max_len' | 'body_max_len'
+>
+
 // ============================ 运营视图（只读） ============================
 //
 // 下面这一组对应 /admin/supply/*，全部是 GET。这一刀刻意不给管理端任何改动供给侧
@@ -278,6 +299,24 @@ async function updateProbationSettings(
   return data
 }
 
+async function getAgreementSettings(): Promise<SupplyAgreementSettings> {
+  const { data } = await apiClient.get<SupplyAgreementSettings>('/admin/settings/supply-agreement')
+  return data
+}
+
+/**
+ * 写协议配置。
+ *
+ * 与观察期参数刻意不同：越界值后端**拒绝**而不是夹回（这是法律文本，静默截断
+ * 比报错糟得多），所以这里的错误一定要原样弹给运营看，不能吞。
+ */
+async function updateAgreementSettings(
+  payload: SupplyAgreementPayload
+): Promise<SupplyAgreementSettings> {
+  const { data } = await apiClient.put<SupplyAgreementSettings>('/admin/settings/supply-agreement', payload)
+  return data
+}
+
 export const adminSupplyMarketAPI = {
   getOverview,
   listSuppliers,
@@ -289,6 +328,8 @@ export const adminSupplyMarketAPI = {
   updatePoolSettings,
   getProbationSettings,
   updateProbationSettings,
+  getAgreementSettings,
+  updateAgreementSettings,
 }
 
 export default adminSupplyMarketAPI

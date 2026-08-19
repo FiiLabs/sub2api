@@ -61,10 +61,12 @@ type supplierClaudeOAuth interface {
 	ExchangeSupplierCode(ctx context.Context, code string, auth *SupplierAuthorization) (*TokenInfo, error)
 }
 
-// supplierSettingsReader 读自助接入要用的两组配置：挂哪个分组，观察期多长。
+// supplierSettingsReader 读自助接入要用的三组配置：挂哪个分组，观察期多长，
+// 以及当前生效的供给者协议（见 supplier_agreement.go）。
 type supplierSettingsReader interface {
 	GetSupplyPoolSettings(ctx context.Context) *SupplyPoolSettings
 	GetSupplyProbationSettings(ctx context.Context) *SupplyProbationSettings
+	GetSupplyAgreementSettings(ctx context.Context) *SupplyAgreementSettings
 }
 
 // supplierAccountStore 是自助接入用到的账号读写子集。
@@ -154,6 +156,12 @@ func (s *SupplierOnboardingService) StartOAuth(ctx context.Context, userID int64
 	if _, ok := s.supplyGroupID(ctx); !ok {
 		return nil, ErrSupplierOnboardingDisabled
 	}
+	// 协议门禁在这里纯粹是为了体验：真正不可绕过的那一道在 CompleteOAuth。
+	// 不拦的话，供给者会跑完一整遍上游授权之后才被告知"你还没同意协议"，
+	// 而那时他已经在 Anthropic 那边生成了一个 setup token。
+	if err := s.requireAgreement(ctx, userID); err != nil {
+		return nil, err
+	}
 
 	pending, err := s.repo.CountPendingSessions(ctx, userID)
 	if err != nil {
@@ -234,6 +242,13 @@ func (s *SupplierOnboardingService) CompleteOAuth(ctx context.Context, input *Co
 	}
 	if strings.TrimSpace(input.Code) == "" || strings.TrimSpace(input.SessionID) == "" {
 		return nil, ErrSupplierOAuthSessionInvalid
+	}
+	// 这是不可绕过的那一道协议门禁：下面几行之后，一个握着别人上游凭证的 accounts 行
+	// 就建出来了。**必须排在领会话之前**——领取是一次性消费，在它之后被拒的人会丢掉
+	// 手上那个授权码，得从头再授权一遍，而他被拒的原因（没同意协议）本来在第一行就
+	// 能判出来。
+	if err := s.requireAgreement(ctx, input.UserID); err != nil {
+		return nil, err
 	}
 
 	// 原子领取。会话在这一刻就被标成已消费，即使后面的兑换失败也不退回——

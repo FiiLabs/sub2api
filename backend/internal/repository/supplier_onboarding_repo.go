@@ -382,6 +382,94 @@ func (r *supplierOnboardingRepository) ListAccountIDsWithUnavailableOwner(ctx co
 	return ids, rows.Err()
 }
 
+// ============================================================================
+// 协议同意记录（迁移 228）。
+// ============================================================================
+
+// supplierAgreementInsertSQL 记一次同意。
+//
+// ON CONFLICT DO NOTHING 而不是 DO UPDATE：唯一索引是 (user_id, version)，冲突意味着
+// 这个人已经同意过这一版了。保留**最早**那一行是刻意的——那是他真正做出决定的时刻，
+// 后面几次不过是重复点击或者刷新页面。用 DO UPDATE 覆盖时间戳，等于每刷新一次就把
+// 证据往后挪一次，最后留下的是一个和决定无关的时刻。
+const supplierAgreementInsertSQL = `
+INSERT INTO supplier_agreement_acceptances (user_id, version, accepted_at, ip, user_agent, created_at)
+VALUES ($1, $2, NOW(), NULLIF($3, ''), NULLIF($4, ''), NOW())
+ON CONFLICT (user_id, version) DO NOTHING`
+
+// supplierAgreementFindSQL 精确版本查询——门禁比对的就是它。
+const supplierAgreementFindSQL = `
+SELECT user_id, version, accepted_at, COALESCE(ip, ''), COALESCE(user_agent, '')
+FROM supplier_agreement_acceptances
+WHERE user_id = $1 AND version = $2
+LIMIT 1`
+
+// supplierAgreementLatestSQL 最近一次同意，用于在界面上区分「没同意过」与「同意的是旧版」。
+//
+// 按 accepted_at 排序，同刻再按 id：两条同一秒的记录在翻页/展示间换位是小事，
+// 但一个不确定的 ORDER BY 会让同一个页面刷两次显示不同的版本号。
+const supplierAgreementLatestSQL = `
+SELECT user_id, version, accepted_at, COALESCE(ip, ''), COALESCE(user_agent, '')
+FROM supplier_agreement_acceptances
+WHERE user_id = $1
+ORDER BY accepted_at DESC, id DESC
+LIMIT 1`
+
+func (r *supplierOnboardingRepository) RecordAgreementAcceptance(ctx context.Context, acceptance *service.SupplierAgreementAcceptance) error {
+	if acceptance == nil {
+		return fmt.Errorf("acceptance cannot be nil")
+	}
+	if acceptance.UserID <= 0 || strings.TrimSpace(acceptance.Version) == "" {
+		// 空版本号会插出一条谁也解释不了的记录：它既不匹配任何一版协议，
+		// 又会被 LatestAgreementAcceptance 当成"他最近同意的版本"显示出来。
+		return fmt.Errorf("acceptance requires a user and a version")
+	}
+	_, err := r.client.ExecContext(ctx, supplierAgreementInsertSQL,
+		acceptance.UserID, strings.TrimSpace(acceptance.Version), acceptance.IP, acceptance.UserAgent)
+	if err != nil {
+		return fmt.Errorf("record supplier agreement acceptance: %w", err)
+	}
+	return nil
+}
+
+func (r *supplierOnboardingRepository) FindAgreementAcceptance(ctx context.Context, userID int64, version string) (*service.SupplierAgreementAcceptance, error) {
+	version = strings.TrimSpace(version)
+	if userID <= 0 || version == "" {
+		return nil, nil
+	}
+	return r.queryAgreementAcceptance(ctx, supplierAgreementFindSQL, userID, version)
+}
+
+func (r *supplierOnboardingRepository) LatestAgreementAcceptance(ctx context.Context, userID int64) (*service.SupplierAgreementAcceptance, error) {
+	if userID <= 0 {
+		return nil, nil
+	}
+	return r.queryAgreementAcceptance(ctx, supplierAgreementLatestSQL, userID)
+}
+
+// queryAgreementAcceptance 两条查询共用的取行与扫描。
+//
+// 「没有记录」是 (nil, nil) 而不是一个错误：调用方要区分的是「没同意过」和
+// 「查不了」，把前者做成错误会让门禁在这两种情况下走同一条分支——而它们一个该
+// 提示用户去点同意，一个该让请求失败。
+func (r *supplierOnboardingRepository) queryAgreementAcceptance(ctx context.Context, query string, args ...any) (*service.SupplierAgreementAcceptance, error) {
+	rows, err := r.client.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query supplier agreement acceptance: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	if !rows.Next() {
+		return nil, rows.Err()
+	}
+	var acceptance service.SupplierAgreementAcceptance
+	if err := rows.Scan(&acceptance.UserID, &acceptance.Version, &acceptance.AcceptedAt,
+		&acceptance.IP, &acceptance.UserAgent); err != nil {
+		return nil, fmt.Errorf("scan supplier agreement acceptance: %w", err)
+	}
+	return &acceptance, rows.Err()
+}
+
 // supplierIdentitySQL 把身份键翻译成对应的那条语句。
 //
 // 未知的键返回空串而不是随便挑一条：调用方据此报错，而不是拿一条不相干的语句

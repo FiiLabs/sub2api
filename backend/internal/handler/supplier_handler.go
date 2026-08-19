@@ -82,6 +82,68 @@ func (h *SupplierHandler) GetStatus(c *gin.Context) {
 	response.Success(c, resp)
 }
 
+// GetAgreement 读当前协议与本人的同意状态。
+// GET /api/v1/user/supply/agreement
+//
+// 未登录之外没有任何前置条件——供给池没开、协议没发布，这个接口都照常回答，
+// 因为它的作用就是解释「为什么现在不能接入」。
+func (h *SupplierHandler) GetAgreement(c *gin.Context) {
+	userID, ok := h.currentUserID(c)
+	if !ok {
+		return
+	}
+	if h.onboardingService == nil {
+		response.ErrorFrom(c, service.ErrSupplierOnboardingDisabled)
+		return
+	}
+
+	view, err := h.onboardingService.GetAgreement(c.Request.Context(), userID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, view)
+}
+
+// SupplierAcceptAgreementRequest 是同意协议的请求。
+//
+// version 是必填的，且必须是他看到的那一版：服务端不会"自动取当前版本"帮他补上。
+// 理由见 service 侧 AcceptAgreement 的注释——那样记下来的证据只能证明他点了一下。
+type SupplierAcceptAgreementRequest struct {
+	Version string `json:"version" binding:"required"`
+}
+
+// AcceptAgreement 记一次同意。
+// POST /api/v1/user/supply/agreement/accept
+//
+// IP 与 UA 在这里取（而不是让 service 从 ctx 里挖）：它们是 HTTP 层的事实，
+// 让 service 去 gin.Context 里翻，等于把这一层的细节漏进领域逻辑，也让单测得造一个
+// 假的请求上下文才能测同意本身。
+func (h *SupplierHandler) AcceptAgreement(c *gin.Context) {
+	userID, ok := h.currentUserID(c)
+	if !ok {
+		return
+	}
+	if h.onboardingService == nil {
+		response.ErrorFrom(c, service.ErrSupplierOnboardingDisabled)
+		return
+	}
+
+	var req SupplierAcceptAgreementRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request body")
+		return
+	}
+
+	view, err := h.onboardingService.AcceptAgreement(c.Request.Context(), userID,
+		req.Version, c.ClientIP(), c.Request.UserAgent())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, view)
+}
+
 // SupplierStartOAuthResponse 是发起授权的响应。
 //
 // 只回 auth_url 和 session_id。state 与 code_verifier 留在服务端——前端拿不到，

@@ -15,12 +15,14 @@ import (
 // supplyPoolSettingRepoStub 与 supplierSettingRepoStub 同样的把戏：读到不认识的 key 就 panic，
 // 好让「顺手多读了一个 key」这类回归当场暴露而不是悄悄通过。
 //
-// 认两个 key：池配置和观察期配置。自助接入服务两个都读（一个决定挂哪个分组，
-// 一个决定排空窗和 EligibleAt），所以这个替身不能只认一个。
+// 认三个 key：池配置、观察期配置、协议配置。自助接入服务三个都读（一个决定挂哪个分组，
+// 一个决定排空窗和 EligibleAt，一个决定能不能接入），所以这个替身不能只认一个。
 type supplyPoolSettingRepoStub struct {
 	value string
 	// probationValue 观察期配置的原始 JSON。空串 = 走默认（不自动入池、10 分钟排空窗）。
 	probationValue string
+	// agreementValue 协议配置的原始 JSON。空串 = 尚未发布协议 = 接入被拒。
+	agreementValue string
 	getErr         error
 	getCalls       int
 
@@ -39,6 +41,8 @@ func (r *supplyPoolSettingRepoStub) GetValue(_ context.Context, key string) (str
 		return r.value, nil
 	case SettingKeySupplyProbation:
 		return r.probationValue, nil
+	case SettingKeySupplyAgreement:
+		return r.agreementValue, nil
 	default:
 		panic("unexpected settings key: " + key)
 	}
@@ -72,8 +76,10 @@ func newSupplyPoolSettingService(t *testing.T, repo *supplyPoolSettingRepoStub) 
 	t.Helper()
 	invalidateSupplyPoolCache()
 	invalidateSupplyProbationCache()
+	invalidateSupplyAgreementCache()
 	t.Cleanup(invalidateSupplyPoolCache)
 	t.Cleanup(invalidateSupplyProbationCache)
+	t.Cleanup(invalidateSupplyAgreementCache)
 	return &SettingService{settingRepo: repo}
 }
 

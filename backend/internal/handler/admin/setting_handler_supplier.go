@@ -275,3 +275,79 @@ func (h *SettingHandler) UpdateSupplyProbationSettings(c *gin.Context) {
 	response.Success(c, newSupplyProbationSettingsResponse(
 		h.settingService.GetSupplyProbationSettings(c.Request.Context())))
 }
+
+// SupplyAgreementSettingsResponse 是供给者协议配置的对外形态。
+type SupplyAgreementSettingsResponse struct {
+	Version string `json:"version"`
+	URL     string `json:"url"`
+	Body    string `json:"body"`
+
+	// Published 版本号是否非空。这就是「自助接入现在能不能用」的判据之一，
+	// 让面板不必自己去判断空字符串的含义。
+	Published bool `json:"published"`
+
+	// 长度上限随配置下发，理由同结算参数的 *_max：前端抄一份就等于给同一条规则
+	// 立了两个源头，而后端改了上限之后，用户会看到一个前端说不行、后端其实允许的值。
+	VersionMaxLen int `json:"version_max_len"`
+	URLMaxLen     int `json:"url_max_len"`
+	BodyMaxLen    int `json:"body_max_len"`
+}
+
+func newSupplyAgreementSettingsResponse(s *service.SupplyAgreementSettings) SupplyAgreementSettingsResponse {
+	resp := SupplyAgreementSettingsResponse{
+		VersionMaxLen: service.SupplyAgreementVersionMaxLen,
+		URLMaxLen:     service.SupplyAgreementURLMaxLen,
+		BodyMaxLen:    service.SupplyAgreementBodyMaxLen,
+	}
+	if s == nil {
+		return resp
+	}
+	resp.Version = s.Version
+	resp.URL = s.URL
+	resp.Body = s.Body
+	resp.Published = s.Published()
+	return resp
+}
+
+// GetSupplyAgreementSettings 读供给者协议配置
+// GET /api/v1/admin/settings/supply-agreement
+func (h *SettingHandler) GetSupplyAgreementSettings(c *gin.Context) {
+	settings := h.settingService.GetSupplyAgreementSettings(c.Request.Context())
+	response.Success(c, newSupplyAgreementSettingsResponse(settings))
+}
+
+// UpdateSupplyAgreementSettingsRequest 更新协议配置请求。
+type UpdateSupplyAgreementSettingsRequest struct {
+	Version string `json:"version"`
+	URL     string `json:"url"`
+	Body    string `json:"body"`
+}
+
+// UpdateSupplyAgreementSettings 写供给者协议配置
+// PUT /api/v1/admin/settings/supply-agreement
+//
+// 与观察期参数不同，越界值在 service 侧**拒绝**而不是夹回：这是法律文本，
+// 悄悄把正文截断或把版本号截短，比报一个错糟得多（理由见 setting_supply_agreement.go）。
+//
+// 改动 version 的后果要在面板上说清楚：那一刻起，所有人都得重新点一次同意才能接入
+// 新号（存量号不受影响）。这里不做任何"确认"式的拦截——那是界面的事，不是接口的事。
+func (h *SettingHandler) UpdateSupplyAgreementSettings(c *gin.Context) {
+	var req UpdateSupplyAgreementSettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	settings := &service.SupplyAgreementSettings{
+		Version: req.Version,
+		URL:     req.URL,
+		Body:    req.Body,
+	}
+	if err := h.settingService.SetSupplyAgreementSettings(c.Request.Context(), settings); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.Success(c, newSupplyAgreementSettingsResponse(
+		h.settingService.GetSupplyAgreementSettings(c.Request.Context())))
+}

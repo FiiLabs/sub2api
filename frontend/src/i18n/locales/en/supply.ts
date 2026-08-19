@@ -31,6 +31,23 @@ export default {
       refresh: 'Refresh'
     },
 
+    // Four states, four sentences: unpublished / never accepted / accepted an
+    // older version / accepted. Telling someone who did click accept to
+    // "accept first" reads as a broken system, hence the separate updatedTitle.
+    agreement: {
+      title: 'Read and accept the supplier agreement before connecting',
+      updatedTitle: 'The supplier agreement has been updated — please review it again',
+      version: 'Current version: {version}',
+      openFullText: 'Read the full agreement',
+      checkbox: 'I have read and accept version {version} of the Supplier Agreement',
+      accept: 'Accept and continue',
+      accepting: 'Submitting…',
+      acceptedToast: 'Your acceptance has been recorded',
+      acceptedAt: 'You accepted version {version} on {time}.',
+      unpublishedTitle: 'No supplier agreement has been published yet',
+      unpublishedBody: 'Subscriptions cannot be connected until the agreement is published. Only an administrator can do this — please contact the site admin.'
+    },
+
     connect: {
       title: 'Connect a subscription',
       description: 'Two steps: authorize, then paste the code back here.',
@@ -148,7 +165,8 @@ export default {
       pauseFailed: 'Failed to take offline',
       resumeFailed: 'Failed to put back',
       detachFailed: 'Failed to disconnect',
-      codeRequired: 'Enter the authorization code first'
+      acceptFailed: 'Failed to accept the agreement',
+      codeRequired:'Enter the authorization code first'
     }
   },
 
@@ -222,6 +240,26 @@ export default {
         'Out-of-range values in this group are clamped and saved (not rejected). After saving, the form shows what is actually stored.',
       save: 'Save review settings',
       saved: 'Review settings saved'
+    },
+
+    // APEXONE-EXT: supplier agreement. Keep the tone narrow: this page decides
+    // which version is published, not what the agreement says.
+    agreement: {
+      title: 'Supplier agreement',
+      description: 'The text a supplier must accept before their first connection. With no agreement published, self-service onboarding is closed entirely.',
+      publishedNotice: 'Agreement published. The consent gate is live: anyone who has not accepted this version cannot start an authorization.',
+      unpublishedNotice: 'No agreement published — nobody can connect an account right now (the backend refuses to start authorization). Fill in a version and save to open it up.',
+      version: 'Version',
+      versionPlaceholder: 'e.g. v1, 2026-08-01',
+      versionHint: 'Clearing the version withdraws the agreement and closes self-service onboarding. Changing it to a new value forces everyone who already accepted to accept again — including a typo fix. Handle with care.',
+      url: 'Full-text link',
+      urlHint: 'Optional. Absolute http/https URLs only. When set, the consent screen shows a "read the full text" link.',
+      body: 'Agreement text',
+      bodyPlaceholder: 'Paste plain text. The frontend renders it as plain text and does not parse HTML or Markdown.',
+      bodyHint: 'Optional (leaving it empty means the link is all suppliers get). Up to {max} characters, counted as characters and not bytes.',
+      rejectNotice: 'Out-of-range values here are rejected with an error rather than silently clamped like the review settings — half a truncated agreement is not an acceptable outcome.',
+      save: 'Save agreement',
+      saved: 'Agreement saved'
     },
 
     error: {

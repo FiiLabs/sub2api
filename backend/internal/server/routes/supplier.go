@@ -38,6 +38,11 @@ func RegisterSupplierRoutes(
 	supply := authenticated.Group("/user/supply")
 	{
 		supply.GET("/status", h.Supplier.GetStatus)
+		// 协议在接入之前读、在接入之前签。同意是一次会被当成证据的动作，
+		// 因此和其余写接口一样走审计中间件；但不套 Heavy 限流——它只写一行，
+		// 而把它限住等于让一个想接入的人卡在同意书上。
+		supply.GET("/agreement", h.Supplier.GetAgreement)
+		supply.POST("/agreement/accept", h.Supplier.AcceptAgreement)
 		// 发起授权会写一行会话并向上游拿一个链接，算重操作：单独套一层重限流，
 		// 免得有人用它刷会话表。
 		supply.POST("/oauth/start", panelRateLimiter.Heavy(), h.Supplier.StartOAuth)

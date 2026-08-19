@@ -216,6 +216,20 @@ type SupplierOnboardingRepository interface {
 	//
 	// 账号不存在、不属于 userID、或已经被删，一律返回 ErrSupplierAccountNotFound。
 	ScrubAccountCredentials(ctx context.Context, accountID int64, userID int64) error
+	// RecordAgreementAcceptance 记一条协议同意（见 supplier_agreement.go）。
+	//
+	// 幂等：同一个人对同一个版本重复点同意不报错，且库里保留**最早**那一行——
+	// 那才是他做出决定的时刻，后面几次只是重复点击。
+	RecordAgreementAcceptance(ctx context.Context, acceptance *SupplierAgreementAcceptance) error
+	// FindAgreementAcceptance 查某人是否同意过某个具体版本；没有返回 (nil, nil)。
+	//
+	// 门禁比对的就是它。刻意是"精确版本"而不是"最近一次同意"：运营把协议回滚到
+	// 上一版时，同意过那一版的人不该被要求重新同意。
+	FindAgreementAcceptance(ctx context.Context, userID int64, version string) (*SupplierAgreementAcceptance, error)
+	// LatestAgreementAcceptance 查某人最近一次同意的记录；没有返回 (nil, nil)。
+	// 只用来在界面上区分「从没同意过」与「同意的是旧版」，不参与门禁判断。
+	LatestAgreementAcceptance(ctx context.Context, userID int64) (*SupplierAgreementAcceptance, error)
+
 	// FindAccountIDByUpstreamIdentity 按某个上游身份键查已存在的账号，用于拒绝重复提交。
 	// 返回 0 表示没有。key 只接受 SupplierIdentityKeys 里的值，实现按它选一条写死的
 	// 语句——键名绝不拼进 SQL。

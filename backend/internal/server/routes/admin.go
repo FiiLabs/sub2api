@@ -582,6 +582,8 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		adminSettings.PUT("/supply-pool", h.Admin.Setting.UpdateSupplyPoolSettings)
 		adminSettings.GET("/supply-probation", h.Admin.Setting.GetSupplyProbationSettings)
 		adminSettings.PUT("/supply-probation", h.Admin.Setting.UpdateSupplyProbationSettings)
+		adminSettings.GET("/supply-agreement", h.Admin.Setting.GetSupplyAgreementSettings)
+		adminSettings.PUT("/supply-agreement", h.Admin.Setting.UpdateSupplyAgreementSettings)
 	}
 }
 

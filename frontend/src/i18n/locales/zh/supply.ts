@@ -29,6 +29,23 @@ export default {
       refresh: '刷新'
     },
 
+    // 协议同意。四种状态四句话：未发布 / 没同意过 / 同意的是旧版 / 已同意。
+    // 对一个明明点过同意的人说"请先同意"，他会以为系统坏了，所以 title 和
+    // updatedTitle 必须分开。
+    agreement: {
+      title: '接入前请先阅读并同意供给者协议',
+      updatedTitle: '供给者协议已更新，请重新确认',
+      version: '当前版本：{version}',
+      openFullText: '查看协议全文',
+      checkbox: '我已阅读并同意 {version} 版《供给者协议》',
+      accept: '同意并继续',
+      accepting: '正在提交…',
+      acceptedToast: '已记录你的同意',
+      acceptedAt: '你已于 {time} 同意 {version} 版协议。',
+      unpublishedTitle: '平台尚未发布供给者协议',
+      unpublishedBody: '在协议发布之前无法接入订阅。这一步只有管理员能完成，请联系站点管理员。'
+    },
+
     connect: {
       title: '接入一个新订阅',
       description: '整个过程分两步：先去授权，再把拿到的授权码贴回来。',
@@ -141,6 +158,7 @@ export default {
       pauseFailed: '下线失败',
       resumeFailed: '挂回失败',
       detachFailed: '解绑失败',
+      acceptFailed: '同意协议失败',
       codeRequired: '请先填写授权码'
     }
   },
@@ -202,6 +220,26 @@ export default {
       clampNotice: '这一组参数越界时后端会夹回区间并保存（不会报错），保存后表单显示的是库里真正存下的值。',
       save: '保存观察期参数',
       saved: '观察期参数已保存'
+    },
+
+    // APEXONE-EXT: 供给者协议。这一组文案的分寸要拿准：协议是法律文本，
+    // 后台这一页只负责"发布哪一版"，不负责替运营解释协议写了什么。
+    agreement: {
+      title: '供给者协议',
+      description: '供给者第一次接入前必须点头同意的那份文本。没发布协议，自助接入整个是关着的。',
+      publishedNotice: '协议已发布，自助接入的协议门禁生效中：没同意过这一版的人发不起授权。',
+      unpublishedNotice: '尚未发布协议——当前任何人都无法自助接入（后端直接拒绝发起授权）。填好版本号并保存即可开放。',
+      version: '版本号',
+      versionPlaceholder: '例如 v1、2026-08-01',
+      versionHint: '清空版本号 = 撤下协议、关闭自助接入。改成一个新值 = 所有已同意的人都要重新同意一次——改错别字也算，请谨慎。',
+      url: '协议全文链接',
+      urlHint: '可留空。只接受 http/https 的绝对地址，填了会在同意页上多一个"查看全文"的外链。',
+      body: '协议正文',
+      bodyPlaceholder: '直接粘贴纯文本。前端按纯文本渲染，不解析 HTML 或 Markdown。',
+      bodyHint: '可留空（那就只剩外链）。最长 {max} 字符，按字符数算不是字节数。',
+      rejectNotice: '这一组字段越界时后端会报错拒绝保存，不会像观察期参数那样悄悄夹回来——协议文本被截断一半是没法接受的。',
+      save: '保存协议',
+      saved: '协议已保存'
     },
 
     error: {
