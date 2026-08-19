@@ -43,6 +43,15 @@ type SupplyPoolSettings struct {
 	SupplyGroupID int64 `json:"supply_group_id"`
 	// OverflowGroupID 兜底分组 id（自营池）。
 	OverflowGroupID int64 `json:"overflow_group_id"`
+	// DailyOverflowLimit 当日最多溢出多少次，0 = 不限量（仍然计数）。
+	//
+	// 这是成本闸门，不是限流：每次溢出平台都在按自营成本供货却按供给池价收费，
+	// 没有上限的话，一个能持续把供给池打空的消费者就能长期薅这个差价（§3.2 的遗留
+	// 风险）。配额用完后请求拿回它原本就会拿到的 ErrNoAvailableAccounts——
+	// 也就是「溢出没开」时的行为，不是新增的故障面。
+	//
+	// 判定与计数在同一条 SQL 里完成，见 supply_overflow_budget.go。
+	DailyOverflowLimit int `json:"daily_overflow_limit"`
 }
 
 // DefaultSupplyPoolSettings 返回「不启用」的默认配置。
@@ -156,6 +165,11 @@ func (s *SettingService) SetSupplyPoolSettings(ctx context.Context, settings *Su
 	}
 	if settings == nil {
 		return fmt.Errorf("settings cannot be nil")
+	}
+	// 负数在闸门那边与 0 同义（不限量），但存下去会让面板显示一个看起来像限制、
+	// 实际不限制的数字。夹成 0，让「不限量」在库里只有一种写法。
+	if settings.DailyOverflowLimit < 0 {
+		settings.DailyOverflowLimit = 0
 	}
 	if settings.Enabled {
 		if settings.SupplyGroupID <= 0 {

@@ -162,6 +162,10 @@ export default {
       supplyGroupIdHint: '只有解析后落在这个分组上的请求才会溢出。这个门开得窄是有意的：如果任何空分组都能往自营池溢，一个配错的分组会静默地拿平台自有账号供货。',
       overflowGroupId: '兜底分组 ID（自营池）',
       overflowGroupIdHint: '必须与供给池分组不同。这里不校验分组是否存在——分组可能在配置之后被删掉，真正的兜底在调度侧。',
+      dailyOverflowLimit: '每日溢出上限（次）',
+      dailyOverflowLimitHint:
+        '0 = 不限量（仍然计数）。配额用完后，供给池耗尽的请求拿回它原本就会拿到的「无可用账号」，不会新增故障面。计数不可用时按不溢出处理——花平台的钱的决定不能建立在「不知道今天花了多少」之上。',
+      overflowUsage: '今日（{day}）已溢出 {used} 次，因配额拦下 {denied} 次。',
       costWarning: '每一次溢出，平台都在按自营成本供货却按供给池价收费。溢出率是要盯着的经营指标（服务端日志 [SupplyPool] supply pool exhausted）。',
       save: '保存池配置',
       saved: '池配置已保存'

@@ -85,4 +85,45 @@ describe('admin supply market api', () => {
       drain_window_minutes: 10,
     })
   })
+
+  it('writes the overflow cap but never writes back the usage readout', async () => {
+    // 用量是后端算出来的只读数字。把它一起 PUT 回去，管理员保存一次配置就等于
+    // 声称自己知道今天溢出了多少次——那是个会被后端忽略、却先污染了请求语义的字段。
+    const put = vi.fn().mockResolvedValue({ data: {} })
+    const client = (await import('@/api/client')).apiClient as unknown as Record<string, unknown>
+    client.put = put
+
+    await adminSupplyMarketAPI.updatePoolSettings({
+      enabled: true,
+      supply_group_id: 10,
+      overflow_group_id: 11,
+      daily_overflow_limit: 500,
+    })
+
+    expect(put).toHaveBeenCalledWith('/admin/settings/supply-pool', {
+      enabled: true,
+      supply_group_id: 10,
+      overflow_group_id: 11,
+      daily_overflow_limit: 500,
+    })
+  })
+
+  it('keeps 0 in the payload — it means unlimited, not "unset"', async () => {
+    // 0 被过滤掉的话后端会当成「没填」而保留旧配额，管理员点了保存却发现限制还在。
+    const put = vi.fn().mockResolvedValue({ data: {} })
+    const client = (await import('@/api/client')).apiClient as unknown as Record<string, unknown>
+    client.put = put
+
+    await adminSupplyMarketAPI.updatePoolSettings({
+      enabled: true,
+      supply_group_id: 10,
+      overflow_group_id: 11,
+      daily_overflow_limit: 0,
+    })
+
+    expect(put).toHaveBeenCalledWith(
+      '/admin/settings/supply-pool',
+      expect.objectContaining({ daily_overflow_limit: 0 })
+    )
+  })
 })

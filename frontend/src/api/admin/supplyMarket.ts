@@ -32,7 +32,20 @@ export interface SupplyPoolSettings {
   supply_group_id: number
   /** 兜底分组 id（自营池）。 */
   overflow_group_id: number
+  /** 当日溢出次数上限，0 = 不限量（仍然计数）。每次溢出平台都在按自营成本供货。 */
+  daily_overflow_limit: number
+
+  /** 以下为后端下发的只读用量，PUT 时会被忽略。 */
+  usage_day: string
+  overflow_used_today: number
+  overflow_denied_today: number
 }
+
+/** 写回时只带配置，不带用量——用量是读出来的，写回去没有意义。 */
+export type SupplyPoolPayload = Omit<
+  SupplyPoolSettings,
+  'usage_day' | 'overflow_used_today' | 'overflow_denied_today'
+>
 
 export interface SupplyProbationSettings {
   /** 自动入池总开关。关着时只探测、只记录，不放行——起步形态就是关的。 */
@@ -82,7 +95,7 @@ async function getPoolSettings(): Promise<SupplyPoolSettings> {
   return data
 }
 
-async function updatePoolSettings(payload: SupplyPoolSettings): Promise<SupplyPoolSettings> {
+async function updatePoolSettings(payload: SupplyPoolPayload): Promise<SupplyPoolSettings> {
   const { data } = await apiClient.put<SupplyPoolSettings>('/admin/settings/supply-pool', payload)
   return data
 }

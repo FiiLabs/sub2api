@@ -48,8 +48,21 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 		return result, err
 	}
 
-	overflowGroupID, ok := s.resolveSupplyOverflowGroupID(ctx, groupID)
+	overflowGroupID, dailyLimit, ok := s.resolveSupplyOverflowGroupID(ctx, groupID)
 	if !ok {
+		return result, err
+	}
+
+	// 日配额闸门。放在解析之后是有意的：只有确实该溢出的请求才去消耗配额，
+	// 否则任何一个空分组的耗尽都会把供给池的预算吃掉。
+	if !allowSupplyOverflow(ctx, dailyLimit) {
+		// Warn 而非 Error：配额生效时平台在**省钱**，这不是故障。但它同时说明
+		// 供给侧规模已经明显跟不上需求，是要人看的经营信号。
+		slog.Warn("[SupplyPool] daily overflow budget exhausted, not overflowing",
+			"supply_group_id", derefGroupID(groupID),
+			"overflow_group_id", overflowGroupID,
+			"daily_limit", dailyLimit,
+			"model", requestedModel)
 		return result, err
 	}
 
@@ -75,24 +88,31 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 	return overflowResult, nil
 }
 
-// resolveSupplyOverflowGroupID 判定本次失败是否该溢出，以及溢出到哪里。
+// resolveSupplyOverflowGroupID 判定本次失败是否该溢出、溢出到哪里、以及当日配额上限。
 //
 // 只在失败路径上调用，所以这里多做一次分组解析对热路径零成本；换来的是精确：
 // 拿**解析后**的分组去比对供给池 id，而不是拿 API key 上那个原始 id。两者可能不同——
 // claude-code 降级会在选号前就把分组换掉，那种情况下耗尽的是降级分组，不是供给池，
 // 不该按供给干涸处理。
-func (s *GatewayService) resolveSupplyOverflowGroupID(ctx context.Context, groupID *int64) (int64, bool) {
+//
+// 配额上限跟着一起返回，是为了让调用方不必再读一次配置：这两个值必须来自**同一份**
+// 快照，否则一次配置变更落在两次读中间时，会拿新的上限去管旧的目标分组。
+func (s *GatewayService) resolveSupplyOverflowGroupID(ctx context.Context, groupID *int64) (int64, int, bool) {
 	if s == nil || groupID == nil || s.settingService == nil {
-		return 0, false
+		return 0, 0, false
 	}
 	settings := s.settingService.GetSupplyPoolSettings(ctx)
 	if settings == nil || !settings.Enabled {
-		return 0, false
+		return 0, 0, false
 	}
 
 	_, resolvedGroupID, err := s.resolveGatewayGroup(ctx, groupID)
 	if err != nil || resolvedGroupID == nil {
-		return 0, false
+		return 0, 0, false
 	}
-	return settings.overflowTargetFor(*resolvedGroupID)
+	target, ok := settings.overflowTargetFor(*resolvedGroupID)
+	if !ok {
+		return 0, 0, false
+	}
+	return target, settings.DailyOverflowLimit, true
 }

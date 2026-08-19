@@ -83,8 +83,9 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 | 参数→计费的接缝 | `internal/service/gateway_supplier_settlement.go` | — | `applySupplierSettlementParams`，core 侧只留一行（见 core touch #3a） |
 | 冻结额释放 | `internal/service/supplier_thaw_service.go` | — | 周期扫描（10min / leader lock / 单轮 500 人），照抄 `PaymentOrderExpiryService` 形态 |
 | 钱包读侧 | `internal/service/supplier_credit_service.go` | — | 仪表盘用的余额/流水读取，读前顺手懒解冻 |
-| 供给池路由配置 | `internal/service/setting_supply_pool.go` | — | 第二个 JSON settings key `supply_pool_settings`（开关 / 供给池分组 id / 溢出目标分组 id），缓存形态同上 |
+| 供给池路由配置 | `internal/service/setting_supply_pool.go` | — | 第二个 JSON settings key `supply_pool_settings`（开关 / 供给池分组 id / 溢出目标分组 id / **日溢出配额**），缓存形态同上 |
 | 供给池溢出 | `internal/service/gateway_supply_overflow.go` | — | 供给池硬耗尽时在自营池上重跑一轮调度；core 侧只留一个函数改名（见 core touch #7） |
+| 溢出日配额与计数 | `internal/service/supply_overflow_budget.go`（闸门+接口）、`internal/repository/supply_overflow_repo.go`（SQL） | `227` | 溢出前先过日配额闸门：判定与计数是**同一条** `ON CONFLICT DO UPDATE ... WHERE` 语句，并发下不会超发；被拦下的次数单独计入 `denied_count`。计数不可用时 fail-closed（不溢出）。见 §3.2 |
 | 供给者自助接入 | `internal/service/supplier_onboarding.go`（类型+接口）、`supplier_onboarding_service.go`（编排）、`internal/repository/supplier_onboarding_repo.go`（SQL） | `226` | 持久化 OAuth 会话 + 建号 + 写归属 + 入池；见 §3.3 |
 | OAuth 协议层复用 | `internal/service/oauth_service_supplier.go` | — | 把 PKCE 生成与兑换从上游进程内的 `sessionStore` 解耦出来。同包新文件，**core 侵入为零**（`exchangeCodeForToken` 未导出，同包才调得到） |
 | 供给侧 HTTP | `internal/handler/supplier_handler.go`、`internal/server/routes/supplier.go` | — | `/api/v1/user/supply/*`：status / oauth 两步 / accounts 增删挂起 / wallet / ledger。中间件与用户面一字不差（JWT + BackendModeUserGuard + 面板限流 + 审计）；所有端点的用户 id **只**取自 JWT，没有一个接受 `user_id` 入参 |
@@ -92,7 +93,7 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 | 观察期与排空 | `internal/service/supplier_lifecycle_service.go` | — | 周期任务（5min / leader lock / 单轮 200 个 / 单轮至多 20 次探测），形态照抄 `SupplierThawService`；两件事：`draining` 到期转 `retired`，`pending_review` 探测达标后入池 |
 | 管理端配置 HTTP | `internal/handler/admin/setting_handler_supplier.go` | — | `GET/PUT /api/v1/admin/settings/{supplier-settlement,supply-pool,supply-probation}`，三组配置各自一对端点。方法挂在**既有**的 `*SettingHandler` 上（它已经持有 `settingService`），因此 wire 零改动；路由挂进既有的 `registerSettingsRoutes`（见 core touch #8） |
 | 供给侧前端 | `frontend/src/api/supply.ts`、`stores/supply.ts`、`views/user/SupplyView.vue`、`i18n/locales/{zh,en}/supply.ts` | — | 接入页与仪表盘合一页：钱包四格 + 两步授权 + 我的订阅表 + 收益流水分页；下线两条通道（两套确认文案）、`draining` 徽章与排空截止时间、观察期进度（探测次数 / `eligible_at` 用「不早于」语气 / 探测失败原因）。见 §3.4、§3.5 |
-| 管理端前端 | `frontend/src/api/admin/supplyMarket.ts`、`views/admin/SupplyMarketView.vue` | — | 单起一页而不是往 `SettingsView.vue`（近九千行、上游最痛的合并热区）里加三个 section；三组配置各自一个保存按钮，审计日志才分得清谁改了什么 |
+| 管理端前端 | `frontend/src/api/admin/supplyMarket.ts`、`views/admin/SupplyMarketView.vue` | — | 单起一页而不是往 `SettingsView.vue`（近九千行、上游最痛的合并热区）里加三个 section；三组配置各自一个保存按钮，审计日志才分得清谁改了什么。池卡片里配额输入框与「今日已溢出 N 次 / 被拦 M 次」挨着显示——单看配额说明不了任何事 |
 
 **结算参数现在有人填了，但默认是关的**。`GetSupplierSettlementSettings` 读那个 JSON key，`ToBillingParams()` 在总开关关闭时返回全零值——也就是计费里「什么都不做」的那一支。配置行不存在（当前生产状态）、JSON 损坏、数据库读失败，一律回退到关闭：这是**刻意的 fail-closed**，与本包其他网关行为设置的 fail-open 相反。网关设置读不到时放行请求最多少一层加工；结算参数读不到时按猜测值给钱，错的是账。打开开关要管理员在「双边市场」页显式保存一次（`PUT /api/v1/admin/settings/supplier-settlement`）。
 
@@ -108,11 +109,19 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 
 `clawback`（冻结窗内拒付追回）目前只有动作常量与流水表字段，**函数未实现**——它的调用点在支付回调侧，随风控刀次一起落。在那之前不变量 2 只在数据结构上成立，运营上不成立。
 
-### 3.2 供给池溢出的三条边界（改动前先读）
+### 3.2 供给池溢出的四条边界（改动前先读）
 
 **溢出不换价签，这是白捡的**。消费者价来自 `apiKey.Group.RateMultiplier`（`gateway_usage_billing.go:806-813`），而调度用的 group 是调度函数内部的局部变量，从不回传给计费。所以溢出只换供货来源：消费者按自己买的 0.5× 档付钱，平台自吃「按自营成本供货却按供给池价收费」的差额。这既是对的（供给干涸是平台的问题，不该让消费者按 2 倍结账），也不是新造的语义——已有的 claude-code 降级早就在跑同一条路：账号来自 fallback 分组、计价来自 apiKey 分组。
 
-**代价必须是被盯着的指标**。每一次溢出平台都在亏钱供货，所以溢出走 `slog.Warn`（`[SupplyPool] supply pool exhausted`），这条日志的频率就是溢出率，涨起来是要人介入的经营信号。**遗留风险**：溢出率目前只有日志，没有 metric、没有告警、没有自动熔断——如果消费者有办法持续把供给池打空（比如批量小号并发），就能长期用 0.5× 的价买到 1.0× 成本的服务，而平台侧只有日志会喊。上线前须补一个溢出率告警，或给溢出加日配额。
+**代价必须是被盯着的指标**。每一次溢出平台都在亏钱供货，所以溢出走 `slog.Warn`（`[SupplyPool] supply pool exhausted`），这条日志的频率就是溢出率，涨起来是要人介入的经营信号。
+
+**配额是这条代价的硬上限**（原先记在这里的「只有日志、没有熔断」遗留风险已关闭）。`supply_pool_settings.daily_overflow_limit` 给溢出加了一个按平台时区自然日结算的次数上限：配额用完后，供给池耗尽的请求拿回它**原本就会拿到**的 `ErrNoAvailableAccounts`，也就是「溢出没开」时的行为，不是新增的故障面。三条实现约束改动前必须读（都在 `supply_overflow_budget.go` 顶部）：
+
+1. **判定与计数是同一次写**。「先读计数再判断再加一」在并发下会超发——配额设 100 时几十个并发的耗尽请求会各自读到 99 然后一起放行。所以配额判定下沉成一条 `INSERT ... ON CONFLICT (day) DO UPDATE SET overflow_count = overflow_count + 1 WHERE overflow_count < $2 RETURNING overflow_count`：有返回行 = 允许，无返回行 = 已满且**没有**写入。判定和加一发生在同一个行锁里。
+2. **fail-closed**。计数写失败（数据库抖动、表还没迁移）时不溢出，理由与 `GetSupplyPoolSettings` 读不到时不溢出一致：溢出是要花平台的钱的动作，花钱的决定不能建立在「不知道现在花了多少」之上。**但「计数器没装」不算失败**——那时放行，否则某次装配漏了 provider 会静默地把整个溢出功能关掉，比不装更难查。
+3. **被拦下的次数单独计**（`denied_count`）。混进 `overflow_count` 的话，「今天 500 次」既可能是花了 500 次的钱，也可能是省了 500 次，对运营的含义正好相反。
+
+配额消耗发生在**溢出目标解析成功之后**：否则任何一个空分组的耗尽都会去吃供给池的预算。计数落在 Postgres（`supply_overflow_daily`）而不是 Redis，因为同一批数字既是判定依据又是管理端要看的经营读数，重启/驱逐后归零的经营数据不如没有。
 
 **门开得很窄，是防误配不是防滥用**。只有 `supply_pool_settings.supply_group_id` 显式指定的那**一个**分组会溢出，判据用的是 `resolveGatewayGroup` **解析后**的分组（在失败路径上才解析，热路径零成本）而不是 API key 上的原始 id——claude-code 降级会在选号前换掉分组，那种情况下耗尽的是降级分组不是供给池。另外：只在硬耗尽（`ErrNoAvailableAccounts`）时溢出，「有号但都忙」返回的等待计划不触发（那是拥挤不是缺货）；只重试一次不成链；溢出池也空时**返回原始错误**，因为请求打的是消费者自己的分组，报一个指向自营池的错误会把排查的人引到错误的池子上。
 
@@ -167,6 +176,7 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 | 5b | `backend/internal/handler/handler.go` + `handler/wire.go` | `Handlers` 结构体尾部、`ProvideHandlers` 形参与返回值、`ProviderSet` | 加 `Supplier *SupplierHandler` 字段 + 一个形参 + 一个 provider；`repository/wire.go` 与 `service/wire.go` 各加一个 provider；`wire_gen.go` 重新生成（+4 行） | wire 标准注册点。形参插在 `batchImageHandler` 之后、两个 `_` 占位参之前，避开尾部占位约定 | **已做** |
 | 6 | `frontend/src/router/index.ts`、`i18n/locales/{en,zh}/index.ts`、`components/layout/AppSidebar.vue` | 路由表两处插入；locale 桶各 +2 行；侧边栏 +6 行 | 两条路由（`/supply`、`/admin/supply-market`）、两个 locale 模块 import+spread、两个菜单项 + 一个 `DollarIcon` + `onMounted` 里一行 `ensureStatus()` | 前端冲突热区，改动全是**追加**：locale 只 spread 新命名空间（不碰上游任何一个，见 §3.4），路由项插在既有项之间，菜单项各一条。`/supply` 不设路由守卫——功能没开的状态由页面自己画，守卫拦掉只会给用户一个没有解释的 404 | **已做** |
 | 5c | `backend/internal/service/wire.go` + `backend/cmd/server/wire.go` | ProviderSet / `provideCleanup` 形参 + 停机步骤 | 加 `ProvideSupplierLifecycleService` 注册；`provideCleanup` 加一个形参与一个 `Stop()` 步骤；`wire_gen.go` 重新生成（+9 行），`wire_gen_test.go` 同步补一个 `nil` | 与 #5a 一模一样的理由：provider 里调了 `Start()`，没有消费者引用 wire 就会把它整个剪掉，观察期任务永远不启动。两个后台任务因此都必须出现在 `provideCleanup` 的形参里 | **已做** |
+| 5d | `backend/internal/service/wire.go` + `backend/internal/repository/wire.go` | `ProvideSettingService` 形参 / ProviderSet | `ProvideSettingService` 多一个 `SupplyOverflowCounter` 形参并在里面调 `SetSupplyOverflowCounter`；repository ProviderSet 注册 `NewSupplyOverflowCounter`；`wire_gen.go` 重新生成（+1 行） | 计数器是进程级单例（包级 `atomic.Value`），刻意**不**加在 `SettingService`/`GatewayService` 的结构体上——那两个文件是每轮 upstream sync 的合并热区，为一个扩展字段每次都要解一遍冲突。代价是需要一个注入点，而 `ProvideSettingService` 是 `SettingService` 唯一的构造处，读用量的方法也挂在它上面 | **已做** |
 | 8 | `backend/internal/server/routes/admin.go` | `registerSettingsRoutes` 末尾 | 追加六行路由 + 一行 `// APEXONE-EXT:` 注释 | 挂进既有 settings group 而不是自起一个 admin group：那个 group 上有 adminAuth + 面板限流 + 审计 + `AdminComplianceGuard` 四层中间件，复制一份等着它日后与上游漂移，而漂移掉的是合规相关的那几层。handler 方法挂在既有的 `*SettingHandler` 上，因此 wire、`AdminHandlers`、`ProvideAdminHandlers` 三处热区一处没动 | **已做** |
 | 7 | `backend/internal/service/gateway_scheduling.go` | :97 函数签名 | **仅函数改名**：`SelectAccountWithLoadAwareness` → `selectAccountInPoolWithLoadAwareness`，函数体一字未改。导出名归新文件 `gateway_supply_overflow.go` 里的同名包装函数 | 交接件说的「零 core 溢出」不成立（见 §2）。耗尽有十几个 return 点，逐个插判断等于把一条新规则摊成十几处侵入；改名 + 外层包装是**一处**。合并冲突面小到只有一行签名，且上游若改了函数体，冲突会照常落在函数体上而不被包装掩盖 | **已做** |
 | 7a | — （**未覆盖面，记账用**） | `openai_codex_models_handler.go:44`、`gateway_handler.go:2058` | 这两处走的是 `SelectAccountForModel`，不经包装函数，因此**不溢出** | 首版切片的供给池只面向 Claude Code 形态消费，这两条路径不在范围内。若日后供给池扩到 codex 形态，需在此处补同样的包装 | 已知缺口 |
@@ -182,7 +192,7 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 
 前四个已经是**真实可配的**了，落在 settings key `supplier_settlement_settings` 里（见 §3.1）；表里的「拟定默认」就是 `DefaultSupplierSettlementSettings()` 的值，且总开关 `enabled` 默认 `false`。
 
-第二个 key `supply_pool_settings`（`enabled` / `supply_group_id` / `overflow_group_id`）同样默认关，装的是路由而不是钱。第三个 key `supply_probation_settings`（见 §3.5）装的是准入与下线时序，`enabled` 同样默认关。**刻意分成三个 key**：这三组配置因完全不同的原因变动（动分成比例 / 动兜底池 / 动准入门槛），合成一个会让三次意图完全不同的修改共用一条审计记录。
+第二个 key `supply_pool_settings`（`enabled` / `supply_group_id` / `overflow_group_id` / `daily_overflow_limit`）同样默认关，装的是路由而不是钱。第三个 key `supply_probation_settings`（见 §3.5）装的是准入与下线时序，`enabled` 同样默认关。**刻意分成三个 key**：这三组配置因完全不同的原因变动（动分成比例 / 动兜底池 / 动准入门槛），合成一个会让三次意图完全不同的修改共用一条审计记录。
 
 三个 key 都已有管理端 API 与界面（`/admin/supply-market` 页，三张卡各自一个保存按钮）。
 
@@ -194,6 +204,7 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 | 供给池 `rate_multiplier` | 0.5 | 消费者价 = 0.5× 官方价。**不在这两个 key 里**，是分组自己的 `rate_multiplier` 字段，管理端分组页配 |
 | `freeze_hours` | `168`（7 天，**占位**） | 须 ≥ 支付通道拒付窗。7 天只是能跑通流程的占位值，**上线前必须按 Stripe/支付方实际拒付窗重设**（Stripe 争议窗远长于 7 天），否则不变量 2「已释放 = 拒付安全」不成立。代码侧只 clamp 到 90 天上限，拦不住「配小了」——这一条只能靠人 |
 | 自营池 `rate_multiplier` | `1.0`（**占位**） | 需覆盖真实 API 成本 + 毛利，上线前重设 |
+| `daily_overflow_limit` | `0`（不限量，**待定**） | 溢出的日次数上限，在 `supply_pool_settings` 里。默认 0 = 不限量但照常计数——先跑几天看真实溢出量再定值，凭空拍一个上限会在供给正常波动时误伤。打开溢出后应尽快设成一个可预算的数：这是「按自营成本供货却按供给池价收费」这笔亏损的唯一硬上限 |
 | 观察期强度/时长 | `enabled=false`、60 分钟、连续 2 次、探测间隔 15 分钟、排空窗 10 分钟 | 已参数化，落在 `supply_probation_settings` 里。默认**不自动入池**：先让它探测、记录，运营看几天再打开。这些数字是能跑通流程的起步值，不是标定过的 |
 | 每 IP 账号数上限 N | **待定** | 起步压到住宅户级小 N，按 IP 封禁率动态收紧 |
 

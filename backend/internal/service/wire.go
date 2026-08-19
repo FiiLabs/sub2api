@@ -693,10 +693,14 @@ func ProvideOpsIngressRejectAggregator(opsRepo OpsRepository, opsService *OpsSer
 }
 
 // ProvideSettingService wires SettingService with group reader and proxy repo.
-func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupRepository, proxyRepo ProxyRepository, cfg *config.Config) *SettingService {
+func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupRepository, proxyRepo ProxyRepository, overflowCounter SupplyOverflowCounter, cfg *config.Config) *SettingService {
 	svc := NewSettingService(settingRepo, cfg)
 	svc.SetDefaultSubscriptionGroupReader(groupRepo)
 	svc.SetProxyRepository(proxyRepo)
+	// APEXONE-EXT: 双边市场——溢出日配额计数器是进程级单例（见 supply_overflow_budget.go
+	// 里为什么不挂在结构体上），在这里注入是因为这是 SettingService 唯一的构造点，
+	// 而读用量的 GetSupplyOverflowUsage 也挂在它上面。
+	SetSupplyOverflowCounter(overflowCounter)
 	if err := svc.LoadForwardedClientIPSettings(context.Background()); err != nil {
 		logger.LegacyPrintf("service.setting", "Warning: load forwarded client IP settings failed: %v", err)
 	}

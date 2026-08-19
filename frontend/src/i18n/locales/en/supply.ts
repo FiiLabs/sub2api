@@ -174,6 +174,10 @@ export default {
       overflowGroupId: 'Fallback group ID (first-party pool)',
       overflowGroupIdHint:
         'Must differ from the supply group. Existence is not validated here — a group can be deleted after configuration, so the real backstop lives in the scheduler.',
+      dailyOverflowLimit: 'Daily overflow cap',
+      dailyOverflowLimitHint:
+        '0 = unlimited (still counted). Once the cap is used up, an exhausted supply pool returns the same "no available account" error it would have returned anyway — no new failure mode. If the counter is unreachable, overflow is refused: spending platform money cannot rest on not knowing how much was already spent.',
+      overflowUsage: 'Today ({day}): {used} overflowed, {denied} blocked by the cap.',
       costWarning:
         'Every overflow serves traffic at first-party cost while charging supply-pool price. Overflow rate is an operational metric worth watching (server log: [SupplyPool] supply pool exhausted).',
       save: 'Save pool routing',

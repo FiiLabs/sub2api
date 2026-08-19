@@ -101,35 +101,56 @@ func (h *SettingHandler) UpdateSupplierSettlementSettings(c *gin.Context) {
 }
 
 // SupplyPoolSettingsResponse 是供给池路由配置的对外形态。
+//
+// 配置与当日用量放在同一个响应里，是因为它们只有对照着看才有意义：单看「配额 500」
+// 说明不了任何事，「配额 500 / 今天已用 487」才是一个要管理员做决定的画面。
 type SupplyPoolSettingsResponse struct {
-	Enabled         bool  `json:"enabled"`
-	SupplyGroupID   int64 `json:"supply_group_id"`
-	OverflowGroupID int64 `json:"overflow_group_id"`
+	Enabled            bool  `json:"enabled"`
+	SupplyGroupID      int64 `json:"supply_group_id"`
+	OverflowGroupID    int64 `json:"overflow_group_id"`
+	DailyOverflowLimit int   `json:"daily_overflow_limit"`
+
+	// 以下为只读用量，PUT 时会被忽略。
+	UsageDay            string `json:"usage_day"`
+	OverflowUsedToday   int64  `json:"overflow_used_today"`
+	OverflowDeniedToday int64  `json:"overflow_denied_today"`
 }
 
-func newSupplyPoolSettingsResponse(s *service.SupplyPoolSettings) SupplyPoolSettingsResponse {
-	if s == nil {
-		return SupplyPoolSettingsResponse{}
+func newSupplyPoolSettingsResponse(s *service.SupplyPoolSettings, usage *service.SupplyOverflowUsage) SupplyPoolSettingsResponse {
+	resp := SupplyPoolSettingsResponse{}
+	if s != nil {
+		resp.Enabled = s.Enabled
+		resp.SupplyGroupID = s.SupplyGroupID
+		resp.OverflowGroupID = s.OverflowGroupID
+		resp.DailyOverflowLimit = s.DailyOverflowLimit
 	}
-	return SupplyPoolSettingsResponse{
-		Enabled:         s.Enabled,
-		SupplyGroupID:   s.SupplyGroupID,
-		OverflowGroupID: s.OverflowGroupID,
+	if usage != nil {
+		resp.UsageDay = usage.Day
+		resp.OverflowUsedToday = usage.OverflowCount
+		resp.OverflowDeniedToday = usage.DeniedCount
 	}
+	return resp
 }
 
 // GetSupplyPoolSettings 读供给池路由配置
 // GET /api/v1/admin/settings/supply-pool
 func (h *SettingHandler) GetSupplyPoolSettings(c *gin.Context) {
-	settings := h.settingService.GetSupplyPoolSettings(c.Request.Context())
-	response.Success(c, newSupplyPoolSettingsResponse(settings))
+	ctx := c.Request.Context()
+	response.Success(c, newSupplyPoolSettingsResponse(
+		h.settingService.GetSupplyPoolSettings(ctx),
+		h.settingService.GetSupplyOverflowUsage(ctx),
+	))
 }
 
 // UpdateSupplyPoolSettingsRequest 更新供给池路由配置请求。
+//
+// DailyOverflowLimit 用指针：0 是「不限量」这个有意义的取值，不是「没填」。
+// 用值类型的话，任何漏传这个字段的旧前端都会把管理员配好的配额静默清成不限量。
 type UpdateSupplyPoolSettingsRequest struct {
-	Enabled         bool  `json:"enabled"`
-	SupplyGroupID   int64 `json:"supply_group_id"`
-	OverflowGroupID int64 `json:"overflow_group_id"`
+	Enabled            bool  `json:"enabled"`
+	SupplyGroupID      int64 `json:"supply_group_id"`
+	OverflowGroupID    int64 `json:"overflow_group_id"`
+	DailyOverflowLimit *int  `json:"daily_overflow_limit"`
 }
 
 // UpdateSupplyPoolSettings 写供给池路由配置
@@ -144,18 +165,29 @@ func (h *SettingHandler) UpdateSupplyPoolSettings(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	settings := &service.SupplyPoolSettings{
-		Enabled:         req.Enabled,
-		SupplyGroupID:   req.SupplyGroupID,
-		OverflowGroupID: req.OverflowGroupID,
+		Enabled:            req.Enabled,
+		SupplyGroupID:      req.SupplyGroupID,
+		OverflowGroupID:    req.OverflowGroupID,
+		DailyOverflowLimit: h.settingService.GetSupplyPoolSettings(ctx).DailyOverflowLimit,
 	}
-	if err := h.settingService.SetSupplyPoolSettings(c.Request.Context(), settings); err != nil {
+	if req.DailyOverflowLimit != nil {
+		if *req.DailyOverflowLimit < 0 {
+			response.BadRequest(c, "daily_overflow_limit cannot be negative")
+			return
+		}
+		settings.DailyOverflowLimit = *req.DailyOverflowLimit
+	}
+	if err := h.settingService.SetSupplyPoolSettings(ctx, settings); err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
 
 	response.Success(c, newSupplyPoolSettingsResponse(
-		h.settingService.GetSupplyPoolSettings(c.Request.Context())))
+		h.settingService.GetSupplyPoolSettings(ctx),
+		h.settingService.GetSupplyOverflowUsage(ctx),
+	))
 }
 
 // SupplyProbationSettingsResponse 是观察期参数的对外形态。

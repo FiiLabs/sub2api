@@ -247,16 +247,16 @@ func TestResolveSupplyOverflowGroupIDIsNilSafe(t *testing.T) {
 	ctx := context.Background()
 
 	var nilSvc *GatewayService
-	_, ok := nilSvc.resolveSupplyOverflowGroupID(ctx, &groupID)
+	_, _, ok := nilSvc.resolveSupplyOverflowGroupID(ctx, &groupID)
 	assert.False(t, ok)
 
 	// 没注入 SettingService 的老装配路径：静默不溢出，不是 panic。
-	_, ok = (&GatewayService{}).resolveSupplyOverflowGroupID(ctx, &groupID)
+	_, _, ok = (&GatewayService{}).resolveSupplyOverflowGroupID(ctx, &groupID)
 	assert.False(t, ok)
 
 	repo := newGroupAwareAccountRepo(map[int64][]Account{})
 	svc, _ := newOverflowGateway(t, repo, overflowEnabledJSON())
-	_, ok = svc.resolveSupplyOverflowGroupID(ctx, nil)
+	_, _, ok = svc.resolveSupplyOverflowGroupID(ctx, nil)
 	assert.False(t, ok)
 }
 
@@ -266,6 +266,6 @@ func TestResolveSupplyOverflowGroupIDIgnoresUnresolvableGroup(t *testing.T) {
 	svc, _ := newOverflowGateway(t, repo, overflowEnabledJSON())
 
 	missing := int64(999)
-	_, ok := svc.resolveSupplyOverflowGroupID(context.Background(), &missing)
+	_, _, ok := svc.resolveSupplyOverflowGroupID(context.Background(), &missing)
 	assert.False(t, ok)
 }

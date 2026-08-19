@@ -138,6 +138,33 @@
               <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.pool.overflowGroupIdHint') }}</p>
             </div>
 
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('supplyAdmin.pool.dailyOverflowLimit') }}
+              </label>
+              <input
+                v-model.number="poolForm.daily_overflow_limit"
+                type="number"
+                min="0"
+                step="1"
+                class="input"
+                data-testid="supply-daily-overflow-limit"
+              />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('supplyAdmin.pool.dailyOverflowLimitHint') }}
+              </p>
+              <!-- 配额与今日用量必须挨着看：单看「配额 500」说明不了任何事。 -->
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400" data-testid="supply-overflow-usage">
+                {{
+                  t('supplyAdmin.pool.overflowUsage', {
+                    day: poolUsage.usage_day || '—',
+                    used: poolUsage.overflow_used_today,
+                    denied: poolUsage.overflow_denied_today,
+                  })
+                }}
+              </p>
+            </div>
+
             <div
               v-if="poolForm.enabled"
               class="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/40 dark:bg-amber-900/20"
@@ -283,6 +310,7 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import {
   adminSupplyMarketAPI,
+  type SupplyPoolPayload,
   type SupplyPoolSettings,
   type SupplyProbationPayload,
   type SupplyProbationSettings,
@@ -309,11 +337,21 @@ const settlementForm = reactive({
 // 抄死上限的下场是后端改了、前端还在按旧值拦。
 const settlementBounds = reactive({ share_ratio_max: 1, freeze_hours_max: 24 * 90 })
 
-const poolForm = reactive<SupplyPoolSettings>({
+const poolForm = reactive<SupplyPoolPayload>({
   enabled: false,
   supply_group_id: 0,
   overflow_group_id: 0,
+  daily_overflow_limit: 0,
 })
+
+// 今日用量与表单分开存：它是只读读数，混进 poolForm 会让保存时不小心把它一起 PUT 上去。
+const poolUsage = reactive({ usage_day: '', overflow_used_today: 0, overflow_denied_today: 0 })
+
+function applyPoolUsage(settings: SupplyPoolSettings): void {
+  poolUsage.usage_day = settings.usage_day ?? ''
+  poolUsage.overflow_used_today = settings.overflow_used_today ?? 0
+  poolUsage.overflow_denied_today = settings.overflow_denied_today ?? 0
+}
 
 // 默认值与后端 defaultSupplyProbationSettings 对齐，但只是"后端读不到时也能渲染"的兜底：
 // 真值一律以 loadProbation() 拉回来的为准。
@@ -349,6 +387,8 @@ async function loadPool(): Promise<void> {
   poolForm.enabled = settings.enabled
   poolForm.supply_group_id = settings.supply_group_id
   poolForm.overflow_group_id = settings.overflow_group_id
+  poolForm.daily_overflow_limit = settings.daily_overflow_limit ?? 0
+  applyPoolUsage(settings)
 }
 
 async function loadProbation(): Promise<void> {
@@ -410,10 +450,14 @@ async function savePool(): Promise<void> {
       enabled: poolForm.enabled,
       supply_group_id: poolForm.supply_group_id,
       overflow_group_id: poolForm.overflow_group_id,
+      daily_overflow_limit: poolForm.daily_overflow_limit,
     })
     poolForm.enabled = saved.enabled
     poolForm.supply_group_id = saved.supply_group_id
     poolForm.overflow_group_id = saved.overflow_group_id
+    poolForm.daily_overflow_limit = saved.daily_overflow_limit ?? 0
+    // 保存的响应里带着最新用量，顺手刷新——否则保存完这块读数就停在打开页面那一刻。
+    applyPoolUsage(saved)
     appStore.showSuccess(t('supplyAdmin.pool.saved'))
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, t('supplyAdmin.error.saveFailed')))
