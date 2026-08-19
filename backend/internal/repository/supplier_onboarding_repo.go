@@ -9,6 +9,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -174,17 +175,33 @@ WHERE deleted_at IS NULL
 ORDER BY id
 LIMIT $2`, service.SupplyStateExtraKey, service.SupplyStatePendingReview)
 
-// supplierAccountFindByUpstreamUUIDSQL 按上游账号 uuid 找已存在的账号。
+// 按上游身份键找已存在的账号。每个键一条写死的语句，**键名不拼进 SQL**。
 //
-// 不限 owner：同一个上游订阅被**另一个供给者**提交过，同样必须拒绝——那正是
-// 「一号两卖」的形态，两边都会按同一份额度计分成。也不限 schedulable：
-// 一个挂着但停用的号仍然占着这个 uuid。
-const supplierAccountFindByUpstreamUUIDSQL = `
+// 为什么不写成一条 `credentials->>$2 = $3` 的通用语句：那样键名就成了运行期数据，
+// 一个拼错的键会静默地永远查不到任何行——查重于是变成一个恒真的放行闸，而症状
+// （重复的号悄悄进池）要到对账时才看得见。写死成几条，键名错了是编译期的事。
+//
+// 三条共同约束：
+//   - **不限 owner**：同一个上游订阅被另一个供给者提交过同样必须拒绝——那正是
+//     「一号两卖」的形态，两边都会按同一份额度计分成。
+//   - **不限 schedulable**：一个挂着但停用的号仍然占着这个身份。
+//   - **不限接入状态**：已下线（retired）的号也算占着——它随时能被主人重新挂回来。
+const supplierAccountFindByAccountUUIDSQL = `
 SELECT id
 FROM accounts
 WHERE deleted_at IS NULL
   AND platform = $1
   AND credentials->>'account_uuid' = $2
+LIMIT 1`
+
+// 邮箱比对大小写不敏感：上游对 Foo@x.com 与 foo@x.com 是同一个账号，
+// 按字节比会让改一下大小写就能把同一份订阅再挂一遍。
+const supplierAccountFindByEmailSQL = `
+SELECT id
+FROM accounts
+WHERE deleted_at IS NULL
+  AND platform = $1
+  AND LOWER(credentials->>'email_address') = LOWER($2)
 LIMIT 1`
 
 func (r *supplierOnboardingRepository) SetAccountOwner(ctx context.Context, accountID int64, userID int64) error {
@@ -265,13 +282,32 @@ func (r *supplierOnboardingRepository) ListAccountIDsBySupplyState(ctx context.C
 	return ids, rows.Err()
 }
 
-func (r *supplierOnboardingRepository) FindAccountIDByUpstreamUUID(ctx context.Context, platform, accountUUID string) (int64, error) {
-	if accountUUID == "" {
+// supplierIdentitySQL 把身份键翻译成对应的那条语句。
+//
+// 未知的键返回空串而不是随便挑一条：调用方据此报错，而不是拿一条不相干的语句
+// 去查一个恒假的条件——后者会把「加了新键但忘了加语句」变成静默放行。
+func supplierIdentitySQL(key service.SupplierIdentityKey) string {
+	switch key {
+	case service.SupplierIdentityAccountUUID:
+		return supplierAccountFindByAccountUUIDSQL
+	case service.SupplierIdentityEmailAddress:
+		return supplierAccountFindByEmailSQL
+	default:
+		return ""
+	}
+}
+
+func (r *supplierOnboardingRepository) FindAccountIDByUpstreamIdentity(ctx context.Context, platform string, key service.SupplierIdentityKey, value string) (int64, error) {
+	if strings.TrimSpace(value) == "" {
 		return 0, nil
 	}
-	rows, err := r.client.QueryContext(ctx, supplierAccountFindByUpstreamUUIDSQL, platform, accountUUID)
+	query := supplierIdentitySQL(key)
+	if query == "" {
+		return 0, fmt.Errorf("unsupported supplier identity key %q", key)
+	}
+	rows, err := r.client.QueryContext(ctx, query, platform, value)
 	if err != nil {
-		return 0, fmt.Errorf("find account by upstream uuid: %w", err)
+		return 0, fmt.Errorf("find account by upstream identity %s: %w", key, err)
 	}
 	defer func() { _ = rows.Close() }()
 

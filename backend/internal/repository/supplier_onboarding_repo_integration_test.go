@@ -16,6 +16,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -256,17 +257,70 @@ func TestSupplierOnboarding_UpstreamUUIDLookupIgnoresOwnerAndSchedulable(t *test
 	_, err := client.ExecContext(txCtx, `UPDATE accounts SET schedulable = false WHERE id = $1`, account.ID)
 	require.NoError(t, err)
 
-	found, err := repo.FindAccountIDByUpstreamUUID(txCtx, service.PlatformAnthropic, accountUUID)
+	found, err := repo.FindAccountIDByUpstreamIdentity(txCtx,
+		service.PlatformAnthropic, service.SupplierIdentityAccountUUID, accountUUID)
 	require.NoError(t, err)
 	require.Equal(t, account.ID, found)
 
 	// 平台不同不算同一个号。
-	found, err = repo.FindAccountIDByUpstreamUUID(txCtx, service.PlatformOpenAI, accountUUID)
+	found, err = repo.FindAccountIDByUpstreamIdentity(txCtx,
+		service.PlatformOpenAI, service.SupplierIdentityAccountUUID, accountUUID)
 	require.NoError(t, err)
 	require.Zero(t, found)
 
 	// 从未见过的 uuid 返回零值而不是错误——调用方据此判定「可以挂」。
-	found, err = repo.FindAccountIDByUpstreamUUID(txCtx, service.PlatformAnthropic, "never-seen")
+	found, err = repo.FindAccountIDByUpstreamIdentity(txCtx,
+		service.PlatformAnthropic, service.SupplierIdentityAccountUUID, "never-seen")
+	require.NoError(t, err)
+	require.Zero(t, found)
+}
+
+// 邮箱是次级身份键，用在上游没吐 uuid 的那些授权上。
+//
+// 大小写不敏感必须在真库上证：上游对 Foo@x.com 与 foo@x.com 是同一个账号，
+// 按字节比的话，改一下大小写就能把同一份订阅再挂一遍、再领一份分成。
+func TestSupplierOnboarding_EmailIdentityLookupIsCaseInsensitive(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewSupplierOnboardingRepository(client)
+
+	stamp := time.Now().UnixNano()
+	email := fmt.Sprintf("Supplier-%d@Example.COM", stamp)
+	// 刻意只写邮箱、不写 uuid：这正是需要次级键的那种账号。
+	account := mustCreateAccount(t, client, &service.Account{
+		Name:        fmt.Sprintf("email-acct-%d", stamp),
+		Credentials: map[string]any{"email_address": email},
+	})
+
+	found, err := repo.FindAccountIDByUpstreamIdentity(txCtx,
+		service.PlatformAnthropic, service.SupplierIdentityEmailAddress, strings.ToLower(email))
+	require.NoError(t, err)
+	require.Equal(t, account.ID, found, "改大小写不能绕过查重")
+
+	// 用 uuid 键去查这个只有邮箱的号，查不到——两个键各查各的。
+	found, err = repo.FindAccountIDByUpstreamIdentity(txCtx,
+		service.PlatformAnthropic, service.SupplierIdentityAccountUUID, email)
+	require.NoError(t, err)
+	require.Zero(t, found)
+}
+
+// 未知的身份键必须报错，而不是查一个恒假的条件后返回"没找到"。
+// 后者会把「加了新键但忘了加语句」变成一个静默放行的闸门。
+func TestSupplierOnboarding_UnknownIdentityKeyIsAnError(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	repo := NewSupplierOnboardingRepository(tx.Client())
+
+	_, err := repo.FindAccountIDByUpstreamIdentity(txCtx,
+		service.PlatformAnthropic, service.SupplierIdentityKey("org_uuid"), "org-1")
+	require.Error(t, err)
+
+	// 空值提前返回，不打库——调用方本来就不该拿空值来查。
+	found, err := repo.FindAccountIDByUpstreamIdentity(txCtx,
+		service.PlatformAnthropic, service.SupplierIdentityAccountUUID, "   ")
 	require.NoError(t, err)
 	require.Zero(t, found)
 }

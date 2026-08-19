@@ -141,7 +141,15 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 
 **会话领取必须原子**。领取是一条 `UPDATE ... SET consumed_at = NOW() WHERE session_id = $1 AND user_id = $2 AND consumed_at IS NULL AND expires_at > NOW() RETURNING ...`。写成「查出来 → 判断 → 更新」的话，并发重放会让两个请求都通过检查、同一个授权码被兑换两次、建出两个账号。归属人不符 / 已过期 / 已消费 / 不存在四种情况合并成同一个 `ErrSupplierOAuthSessionInvalid`——区分它们等于提供一个枚举他人会话的信息面；同理 `ErrSupplierAccountNotFound` 合并了「不存在」与「不是你的」。已消费的会话行**不删**（过期清理只扫 `consumed_at IS NULL`），它是「这个账号是谁在什么时候挂上来的」的唯一证据。
 
-**上游账号查重不限 owner**。按 `credentials->>'account_uuid'` 查，命中就拒。同一个上游订阅被两个人分别挂上来，正是「一号两卖」的形态——两边按同一份额度各算各的分成，平台按两份供给计价而实际只有一份。**遗留风险**：查重依赖上游在 token 响应里返回 `account.uuid`；返回为空时（协议变更，或某类账号没有该字段）这一层失效，重复接入只能靠观察期人工发现。
+**上游账号查重不限 owner，且身份键是分层的**。同一个上游订阅被挂两次（自己挂两遍，或被两个人分别挂），是这套系统里唯一一个能凭空造钱的口子——两边按同一份额度各算各的分成，平台按两份供给计价而实际只有一份。所以查重不看归属，命中任何一个身份键就拒。
+
+身份键按强度排：`account_uuid` → `email_address`（`service.SupplierIdentityKeys`）。三条规则由单测钉死：
+
+- **查所有可用的键，不是只查最强的那个**。上游只给了邮箱、没给 uuid 时，如果只认 uuid 就等于放行。
+- **一个键都拿不到时是拒绝，不是放行**。`ErrSupplierAccountIdentityUnavailable` 是刻意的拒绝而非故障兜底：没有身份键就查不了重，让供给者重走一遍授权，比放进来一个查不了重的号便宜得多。查重出错同样 fail-closed，不吞。
+- **`org_uuid` 刻意不在键里**。团队组织下多个席位共享同一个 org，拿它查重会把合法供给误判成重复——这类误报是静默挡供给，比漏判更难发现。
+
+邮箱比对走 `LOWER(...) = LOWER(...)`：上游把 `Foo@x.com` 与 `foo@x.com` 当同一个账号，按字节比等于「改一下大小写就能把同一份订阅再挂一遍」。键名**绝不拼进 SQL**——`supplierIdentitySQL` 用 switch 把键映射到两条写死的语句，未知键返回空串→报错，于是「加了键但忘了写语句」是响的，而不是一道永远放行的闸。
 
 **只要 `user:inference` scope**。走 setup-token 而非完整 OAuth scope：平台需要的只是替供给者转发推理请求，完整 scope 还附带读 profile、建 API key、列会话——供给者把订阅挂上来不等于把账号交出来。`code_verifier` 明文入库是可接受的：PKCE verifier 单独无用（必须配一次性授权码），行 15 分钟过期、一次性消费，相对内存方案的差别只是「进程内存」换成「数据库」，在本仓凭证本来就明文存 jsonb 的现状下不是新增短板。要收紧应当连同 `accounts.credentials` 一起做应用层加密，那是独立的一刀。
 
@@ -254,7 +262,7 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 | 迁移 | 文件 | 只有真库能证的性质 |
 |---|---|---|
 | 225 | `supplier_credit_repo_integration_test.go`（+3） | 追回只动冻结区、`history_credit` 不变；追回幂等靠 `(action, request_id)` 部分唯一索引；**追回后再跑解冻搬不动那笔钱**——clawback 与 thaw 两条写路径唯一会打架的地方 |
-| 226 + 224 | `supplier_onboarding_repo_integration_test.go`（7 例，新文件） | 会话一次性领取（`UPDATE ... WHERE consumed_at IS NULL RETURNING` 的行锁语义）；拿别人 session_id 领不走且**失败的领取不会把会话标记成已消费**（否则是一条免费的拒绝服务）；过期判定用数据库时钟；已消费的会话不被过期清理带走；`owner_user_id` 写一次即定、不能从 A 改成 B；按状态扫号时**状态缺失兜底成 `pending_review`**（拼接 SQL 与 service 常量的契约，漂移了是静默失效）；上游 uuid 查重不看归属也不看 `schedulable` |
+| 226 + 224 | `supplier_onboarding_repo_integration_test.go`（9 例，新文件） | 会话一次性领取（`UPDATE ... WHERE consumed_at IS NULL RETURNING` 的行锁语义）；拿别人 session_id 领不走且**失败的领取不会把会话标记成已消费**（否则是一条免费的拒绝服务）；过期判定用数据库时钟；已消费的会话不被过期清理带走；`owner_user_id` 写一次即定、不能从 A 改成 B；按状态扫号时**状态缺失兜底成 `pending_review`**（拼接 SQL 与 service 常量的契约，漂移了是静默失效）；上游 uuid 查重不看归属也不看 `schedulable`；**邮箱查重大小写不敏感**（`LOWER()` 比对真的走得通，不是靠 sqlmock 认字符串）；未知身份键是报错而非静默放行 |
 | 227 | `supply_overflow_repo_integration_test.go`（5 例，新文件） | **并发下不超发**：60 个 goroutine 抢 10 次配额，放行数必须恰好 10。这是那条 `ON CONFLICT DO UPDATE ... WHERE` 存在的全部理由，写成"先 SELECT 再 UPDATE"在这个测试里必挂。另有配额跨日重置、被拒次数单独计、不限量时照常计数 |
 
 并发那一例刻意**不走 `testEntTx`**：那个 harness 是一个会回滚的单事务，会把所有写串行化，正好掩盖掉要测的东西。它用 `integrationEntClient` 直连并自行清理。

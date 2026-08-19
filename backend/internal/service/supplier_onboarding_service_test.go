@@ -39,10 +39,13 @@ type supplierOnboardingRepoStub struct {
 	setOwnerErr    error
 	setOwnerCalls  [][2]int64
 
-	ownedIDs   []int64
-	ownedErr   error
-	lookupUUID map[string]int64
-	lookupErr  error
+	ownedIDs []int64
+	ownedErr error
+	// lookupIdentity 按 "键=值" 索引已存在的账号，例如 "account_uuid=uuid-1"。
+	// 拍平成一个 map 是为了让测试能一眼看出「哪个键上撞了」。
+	lookupIdentity map[string]int64
+	lookupKeys     []SupplierIdentityKey
+	lookupErr      error
 
 	idsByState map[string][]int64
 	stateErr   error
@@ -122,12 +125,13 @@ func (r *supplierOnboardingRepoStub) ListAccountIDsBySupplyState(_ context.Conte
 	return r.idsByState[state], nil
 }
 
-func (r *supplierOnboardingRepoStub) FindAccountIDByUpstreamUUID(_ context.Context, _, accountUUID string) (int64, error) {
-	r.calls = append(r.calls, "FindAccountIDByUpstreamUUID")
+func (r *supplierOnboardingRepoStub) FindAccountIDByUpstreamIdentity(_ context.Context, _ string, key SupplierIdentityKey, value string) (int64, error) {
+	r.calls = append(r.calls, "FindAccountIDByUpstreamIdentity")
+	r.lookupKeys = append(r.lookupKeys, key)
 	if r.lookupErr != nil {
 		return 0, r.lookupErr
 	}
-	return r.lookupUUID[accountUUID], nil
+	return r.lookupIdentity[string(key)+"="+value], nil
 }
 
 // supplierAccountStoreStub 是一个记账式的账号仓储替身。
@@ -490,8 +494,8 @@ func TestCompleteOAuthWritesOwnerBeforeBindingGroup(t *testing.T) {
 
 func TestCompleteOAuthRejectsDuplicateUpstreamAccount(t *testing.T) {
 	repo := &supplierOnboardingRepoStub{
-		claimSession: claimedSession(),
-		lookupUUID:   map[string]int64{"uuid-1": 999},
+		claimSession:   claimedSession(),
+		lookupIdentity: map[string]int64{"account_uuid=uuid-1": 999},
 	}
 	store := newSupplierAccountStoreStub()
 	svc := newOnboardingService(t, repo, store, &supplierOAuthStub{}, enabledSupplyPoolJSON())
@@ -499,6 +503,89 @@ func TestCompleteOAuthRejectsDuplicateUpstreamAccount(t *testing.T) {
 	_, err := svc.CompleteOAuth(context.Background(), &CompleteOAuthInput{UserID: 7, SessionID: "sess-1", Code: "c"})
 	assert.ErrorIs(t, err, ErrSupplierAccountAlreadyBound)
 	assert.Empty(t, store.accounts, "查重不通过就不该建号")
+}
+
+// 早先挂上来的号可能只记下了邮箱（那一次上游没给 uuid），这次上游给了 uuid。
+// 只查最强的那个键就会放行同一份订阅，于是同一份额度被计两份分成。
+func TestCompleteOAuthRejectsDuplicateByEmailWhenUUIDIsFresh(t *testing.T) {
+	repo := &supplierOnboardingRepoStub{
+		claimSession:   claimedSession(),
+		lookupIdentity: map[string]int64{"email_address=supplier@example.com": 999},
+	}
+	store := newSupplierAccountStoreStub()
+	svc := newOnboardingService(t, repo, store, &supplierOAuthStub{}, enabledSupplyPoolJSON())
+
+	_, err := svc.CompleteOAuth(context.Background(), &CompleteOAuthInput{UserID: 7, SessionID: "sess-1", Code: "c"})
+	assert.ErrorIs(t, err, ErrSupplierAccountAlreadyBound)
+	assert.Empty(t, store.accounts)
+	// 拿到几个键就查几个，顺序从强到弱。
+	assert.Equal(t,
+		[]SupplierIdentityKey{SupplierIdentityAccountUUID, SupplierIdentityEmailAddress},
+		repo.lookupKeys)
+}
+
+// 一个身份键都拿不到时**拒绝挂号**。
+//
+// 这是整套结算里唯一一个能凭空造钱的口子：查不了重就挡不住同一份订阅挂任意多次，
+// 每一份都按同一份额度独立计分成。宁可让供给者重走一遍授权。
+func TestCompleteOAuthRefusesWhenUpstreamGivesNoIdentity(t *testing.T) {
+	repo := &supplierOnboardingRepoStub{claimSession: claimedSession()}
+	store := newSupplierAccountStoreStub()
+	oauth := &supplierOAuthStub{token: &TokenInfo{
+		AccessToken: "at",
+		TokenType:   "Bearer",
+		ExpiresIn:   3600,
+		// account / organization 两个块在上游响应里都是可选的，这不是假想情况。
+	}}
+	svc := newOnboardingService(t, repo, store, oauth, enabledSupplyPoolJSON())
+
+	_, err := svc.CompleteOAuth(context.Background(), &CompleteOAuthInput{UserID: 7, SessionID: "sess-1", Code: "c"})
+	assert.ErrorIs(t, err, ErrSupplierAccountIdentityUnavailable)
+	assert.Empty(t, store.accounts, "查不了重就不能建号")
+	assert.Empty(t, repo.lookupKeys, "没有键可查，不该白打一次库")
+}
+
+// 只有邮箱也能挂：邮箱足够把同一份订阅认出来。
+func TestCompleteOAuthAcceptsEmailOnlyIdentity(t *testing.T) {
+	repo := &supplierOnboardingRepoStub{claimSession: claimedSession()}
+	store := newSupplierAccountStoreStub()
+	oauth := &supplierOAuthStub{token: &TokenInfo{
+		AccessToken:  "at",
+		TokenType:    "Bearer",
+		ExpiresIn:    3600,
+		EmailAddress: "only-email@example.com",
+	}}
+	svc := newOnboardingService(t, repo, store, oauth, enabledSupplyPoolJSON())
+
+	_, err := svc.CompleteOAuth(context.Background(), &CompleteOAuthInput{UserID: 7, SessionID: "sess-1", Code: "c"})
+	require.NoError(t, err)
+	require.Len(t, store.accounts, 1)
+	assert.Equal(t, []SupplierIdentityKey{SupplierIdentityEmailAddress}, repo.lookupKeys)
+}
+
+// 查重查不动时必须报错，不能放行——闸门的开关不能建立在「数据库这一刻是否健康」之上。
+func TestCompleteOAuthFailsClosedWhenLookupErrors(t *testing.T) {
+	repo := &supplierOnboardingRepoStub{
+		claimSession: claimedSession(),
+		lookupErr:    errors.New("connection reset"),
+	}
+	store := newSupplierAccountStoreStub()
+	svc := newOnboardingService(t, repo, store, &supplierOAuthStub{}, enabledSupplyPoolJSON())
+
+	_, err := svc.CompleteOAuth(context.Background(), &CompleteOAuthInput{UserID: 7, SessionID: "sess-1", Code: "c"})
+	require.Error(t, err)
+	assert.Empty(t, store.accounts)
+}
+
+// org_uuid 刻意不是身份键：团队组织下多个成员各有各的订阅席位，
+// 拿它查重会把同事的合法第二个号判成重复——一个会挡住真实供给的误报。
+func TestSupplierIdentityKeysExcludeOrgUUID(t *testing.T) {
+	assert.Equal(t,
+		[]SupplierIdentityKey{SupplierIdentityAccountUUID, SupplierIdentityEmailAddress},
+		SupplierIdentityKeys)
+
+	values := supplierIdentityValues(&TokenInfo{OrgUUID: "org-1"})
+	assert.Empty(t, values, "只有 org_uuid 不算拿到了身份")
 }
 
 func TestCompleteOAuthPropagatesClaimFailure(t *testing.T) {

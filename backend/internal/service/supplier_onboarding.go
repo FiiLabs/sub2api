@@ -28,6 +28,14 @@ var (
 	// ErrSupplierAccountAlreadyBound 同一个上游账号已经挂在平台上了。
 	ErrSupplierAccountAlreadyBound = infraerrors.BadRequest(
 		"SUPPLIER_ACCOUNT_ALREADY_BOUND", "this upstream account is already connected")
+	// ErrSupplierAccountIdentityUnavailable 上游没吐出任何能唯一标识这个订阅的字段。
+	//
+	// 这是一个**刻意的拒绝**，不是故障兜底。没有身份键就查不了重，查不了重就挡不住
+	// 「同一份订阅挂两次、按同一份额度算两份分成」——那是这套系统里唯一一个能凭空
+	// 造钱的口子。放行一个查不了重的号，比让供给者重走一遍授权贵得多。
+	ErrSupplierAccountIdentityUnavailable = infraerrors.BadRequest(
+		"SUPPLIER_ACCOUNT_IDENTITY_UNAVAILABLE",
+		"upstream did not return an identifier for this subscription; please retry the authorization")
 	// ErrSupplierAccountNotFound 账号不存在，或不属于当前供给者。
 	//
 	// 同样合成：「存在但不是你的」和「不存在」对调用方必须是同一个回答，
@@ -179,7 +187,32 @@ type SupplierOnboardingRepository interface {
 	// 这条流水线碰到——它会改 schedulable，把管理员手工停用的自营号推回池子里
 	// 是一次静默的、谁也没同意过的变更。
 	ListAccountIDsBySupplyState(ctx context.Context, state string, limit int) ([]int64, error)
-	// FindAccountIDByUpstreamUUID 按上游账号 uuid 查已存在的账号，用于拒绝重复提交。
-	// 返回 0 表示没有。
-	FindAccountIDByUpstreamUUID(ctx context.Context, platform, accountUUID string) (int64, error)
+	// FindAccountIDByUpstreamIdentity 按某个上游身份键查已存在的账号，用于拒绝重复提交。
+	// 返回 0 表示没有。key 只接受 SupplierIdentityKeys 里的值，实现按它选一条写死的
+	// 语句——键名绝不拼进 SQL。
+	FindAccountIDByUpstreamIdentity(ctx context.Context, platform string, key SupplierIdentityKey, value string) (int64, error)
+}
+
+// SupplierIdentityKey 是用来判定「这是不是同一份上游订阅」的凭证字段名。
+//
+// 取值同时也是 accounts.credentials 里的 jsonb 键名——查重语句读的就是建号时写进去
+// 的那几个字段，两边共用同一组常量，漂移了会直接编译不过。
+type SupplierIdentityKey string
+
+const (
+	// SupplierIdentityAccountUUID 上游账号 uuid。最强的键：一个订阅一个值。
+	SupplierIdentityAccountUUID SupplierIdentityKey = "account_uuid"
+	// SupplierIdentityEmailAddress 上游账号邮箱。次强：同一个人重挂会被它抓住。
+	SupplierIdentityEmailAddress SupplierIdentityKey = "email_address"
+)
+
+// SupplierIdentityKeys 是查重时依次尝试的键，强度从高到低。
+//
+// **刻意不含 org_uuid**。团队组织下多个成员各有各的订阅席位，用 org_uuid 查重会把
+// 同事的合法第二个号判成重复——那是一个会挡住真实供给的误报，比漏报更难被发现
+// （供给者只会看到一句「已经连过了」然后放弃）。org_uuid 仍然写进 credentials，
+// 只是不拿它当身份键。
+var SupplierIdentityKeys = []SupplierIdentityKey{
+	SupplierIdentityAccountUUID,
+	SupplierIdentityEmailAddress,
 }

@@ -247,14 +247,8 @@ func (s *SupplierOnboardingService) CompleteOAuth(ctx context.Context, input *Co
 
 	// 查重必须在建号之前。同一个上游订阅被挂两次（自己挂两遍，或被两个人分别挂），
 	// 两个账号会按同一份额度各算各的分成——平台按两份供给计价，实际只有一份。
-	if tokenInfo.AccountUUID != "" {
-		existingID, err := s.repo.FindAccountIDByUpstreamUUID(ctx, session.Platform, tokenInfo.AccountUUID)
-		if err != nil {
-			return nil, err
-		}
-		if existingID > 0 {
-			return nil, ErrSupplierAccountAlreadyBound
-		}
+	if err := s.rejectDuplicateSubscription(ctx, session.Platform, tokenInfo); err != nil {
+		return nil, err
 	}
 
 	account := &Account{
@@ -345,6 +339,67 @@ func buildSupplierClaudeCredentials(tokenInfo *TokenInfo) map[string]any {
 		creds["email_address"] = tokenInfo.EmailAddress
 	}
 	return creds
+}
+
+// supplierIdentityValues 取出这次授权结果里所有可用的身份键，顺序同 SupplierIdentityKeys。
+//
+// 返回空 = 上游一个能唯一标识订阅的字段都没给。TokenInfo 里 account / organization
+// 两个块在上游响应里都是可选的（oauth_service.go:270-283 逐个判空），所以这不是
+// 一个假想的情况。
+func supplierIdentityValues(tokenInfo *TokenInfo) map[SupplierIdentityKey]string {
+	values := make(map[SupplierIdentityKey]string, len(SupplierIdentityKeys))
+	if tokenInfo == nil {
+		return values
+	}
+	if v := strings.TrimSpace(tokenInfo.AccountUUID); v != "" {
+		values[SupplierIdentityAccountUUID] = v
+	}
+	if v := strings.TrimSpace(tokenInfo.EmailAddress); v != "" {
+		values[SupplierIdentityEmailAddress] = v
+	}
+	return values
+}
+
+// rejectDuplicateSubscription 在建号之前挡住「同一份订阅挂两次」。
+//
+// 两条性质，缺一条这个闸门就是纸糊的：
+//
+//  1. **一个身份键都拿不到时拒绝挂号**，而不是放行。这原本是个 `if uuid != ""` 的
+//     乐观分支：上游没吐 uuid 就整个跳过查重，于是同一份订阅可以挂任意多次，每一份
+//     都按同一份额度独立计分成——这是整套结算里唯一一个能凭空造钱的口子。代价是
+//     偶发的授权要重来一次，比起把钱算错，这个代价不值一提。
+//  2. **拿到几个就查几个**，不是"最强的那个查到了就够"。早先挂上来的号可能只记下了
+//     邮箱（那次上游没给 uuid），这次给了 uuid——只查 uuid 就会放行同一份订阅。
+//     逐个查是 O(键数) 次索引查询，键就两个。
+//
+// 查询本身出错一律往上抛：查重失败时放行等于关掉闸门，而这个闸门的开关不能建立在
+// 「数据库这一刻是否健康」之上。
+func (s *SupplierOnboardingService) rejectDuplicateSubscription(ctx context.Context, platform string, tokenInfo *TokenInfo) error {
+	values := supplierIdentityValues(tokenInfo)
+	if len(values) == 0 {
+		slog.Warn("[SupplierOnboarding] upstream returned no identity field, refusing to bind",
+			"platform", platform)
+		return ErrSupplierAccountIdentityUnavailable
+	}
+
+	for _, key := range SupplierIdentityKeys {
+		value, ok := values[key]
+		if !ok {
+			continue
+		}
+		existingID, err := s.repo.FindAccountIDByUpstreamIdentity(ctx, platform, key, value)
+		if err != nil {
+			return err
+		}
+		if existingID > 0 {
+			// 不把命中的是哪个键、哪个账号告诉调用方：那会让接入端点变成一个
+			// 「这个邮箱在平台上挂过号吗」的探针。日志里留全，响应里不留。
+			slog.Info("[SupplierOnboarding] duplicate subscription rejected",
+				"platform", platform, "identity_key", string(key), "existing_account_id", existingID)
+			return ErrSupplierAccountAlreadyBound
+		}
+	}
+	return nil
 }
 
 // ListAccounts 列出某个供给者名下的账号。
