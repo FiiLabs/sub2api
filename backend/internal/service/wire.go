@@ -862,8 +862,9 @@ var ProviderSet = wire.NewSet(
 	// APEXONE-EXT: 双边市场——赚取钱包读侧服务 + 冻结额释放任务。
 	NewSupplierCreditService,
 	ProvideSupplierThawService,
-	// APEXONE-EXT: 双边市场——供给者自助接入。
+	// APEXONE-EXT: 双边市场——供给者自助接入 + 观察期/排空推进任务。
 	NewSupplierOnboardingService,
+	ProvideSupplierLifecycleService,
 	ProvidePaymentConfigService,
 	ProvidePaymentService,
 	ProvidePaymentOrderExpiryService,
@@ -915,6 +916,25 @@ func ProvidePaymentOrderExpiryService(paymentSvc *PaymentService, lockCache Lead
 // 与 ProvidePaymentOrderExpiryService 同形：构造 → 注入选主 → Start。
 func ProvideSupplierThawService(repo SupplierCreditRepository, lockCache LeaderLockCache, db *sql.DB) *SupplierThawService {
 	svc := NewSupplierThawService(repo, SupplierThawDefaultInterval)
+	svc.SetLeaderLock(lockCache, db)
+	svc.Start()
+	return svc
+}
+
+// APEXONE-EXT: ProvideSupplierLifecycleService 创建并启动观察期/排空推进任务。
+//
+// 吃 *AccountTestService 是为了复用已有的探测能力（RunTestBackground）而不是另写一条
+// 上游调用路径：探测要走的重试、代理、模型解析、错误归类全在那里，重写一份只会在
+// 「什么算探测失败」这件事上和真实调用产生分歧。
+func ProvideSupplierLifecycleService(
+	repo SupplierOnboardingRepository,
+	accountRepo AccountRepository,
+	settingService *SettingService,
+	testService *AccountTestService,
+	lockCache LeaderLockCache,
+	db *sql.DB,
+) *SupplierLifecycleService {
+	svc := NewSupplierLifecycleService(repo, accountRepo, settingService, testService, SupplierLifecycleDefaultInterval)
 	svc.SetLeaderLock(lockCache, db)
 	svc.Start()
 	return svc

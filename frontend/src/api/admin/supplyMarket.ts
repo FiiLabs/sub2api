@@ -34,6 +34,37 @@ export interface SupplyPoolSettings {
   overflow_group_id: number
 }
 
+export interface SupplyProbationSettings {
+  /** 自动入池总开关。关着时只探测、只记录，不放行——起步形态就是关的。 */
+  enabled: boolean
+  /** 最短观察时长（分钟）。与 required_successes 是「并且」的关系。 */
+  min_observation_minutes: number
+  /** 需要连续成功几次探测，中间失败一次清零。 */
+  required_successes: number
+  /** 两次探测的最小间隔。每次探测花的是供给者自己的额度，所以有下限。 */
+  probe_interval_minutes: number
+  /** 探测用的模型 id，空 = 平台默认测试模型。 */
+  probe_model: string
+  /** 优雅下线的排空窗（分钟）。0 = 优雅下线退化为直接终态。 */
+  drain_window_minutes: number
+
+  /** 后端下发的边界值，前端不要另抄一份。 */
+  min_observation_minutes_max: number
+  required_successes_max: number
+  probe_interval_minutes_min: number
+  probe_interval_minutes_max: number
+  drain_window_minutes_max: number
+}
+
+export type SupplyProbationPayload = Omit<
+  SupplyProbationSettings,
+  | 'min_observation_minutes_max'
+  | 'required_successes_max'
+  | 'probe_interval_minutes_min'
+  | 'probe_interval_minutes_max'
+  | 'drain_window_minutes_max'
+>
+
 async function getSettlementSettings(): Promise<SupplierSettlementSettings> {
   const { data } = await apiClient.get<SupplierSettlementSettings>('/admin/settings/supplier-settlement')
   return data
@@ -56,11 +87,29 @@ async function updatePoolSettings(payload: SupplyPoolSettings): Promise<SupplyPo
   return data
 }
 
+async function getProbationSettings(): Promise<SupplyProbationSettings> {
+  const { data } = await apiClient.get<SupplyProbationSettings>('/admin/settings/supply-probation')
+  return data
+}
+
+/**
+ * 写观察期参数。后端**夹回区间而不是报错**（与结算参数刻意不同），所以这里
+ * 一定要把返回值写回表单——那是运营看到自己填的 1 分钟变成 5 分钟的唯一途径。
+ */
+async function updateProbationSettings(
+  payload: SupplyProbationPayload
+): Promise<SupplyProbationSettings> {
+  const { data } = await apiClient.put<SupplyProbationSettings>('/admin/settings/supply-probation', payload)
+  return data
+}
+
 export const adminSupplyMarketAPI = {
   getSettlementSettings,
   updateSettlementSettings,
   getPoolSettings,
   updatePoolSettings,
+  getProbationSettings,
+  updateProbationSettings,
 }
 
 export default adminSupplyMarketAPI

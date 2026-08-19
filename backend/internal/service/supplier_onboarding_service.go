@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -60,9 +61,10 @@ type supplierClaudeOAuth interface {
 	ExchangeSupplierCode(ctx context.Context, code string, auth *SupplierAuthorization) (*TokenInfo, error)
 }
 
-// supplierSupplyPoolReader 读供给池路由配置，用来确定新账号该挂哪个分组。
-type supplierSupplyPoolReader interface {
+// supplierSettingsReader 读自助接入要用的两组配置：挂哪个分组，观察期多长。
+type supplierSettingsReader interface {
 	GetSupplyPoolSettings(ctx context.Context) *SupplyPoolSettings
+	GetSupplyProbationSettings(ctx context.Context) *SupplyProbationSettings
 }
 
 // supplierAccountStore 是自助接入用到的账号读写子集。
@@ -84,7 +86,7 @@ type SupplierOnboardingService struct {
 	repo        SupplierOnboardingRepository
 	accountRepo supplierAccountStore
 	oauth       supplierClaudeOAuth
-	settings    supplierSupplyPoolReader
+	settings    supplierSettingsReader
 }
 
 // NewSupplierOnboardingService 构造自助接入服务。
@@ -121,6 +123,17 @@ func (s *SupplierOnboardingService) supplyGroupID(ctx context.Context) (int64, b
 func (s *SupplierOnboardingService) IsEnabled(ctx context.Context) bool {
 	_, ok := s.supplyGroupID(ctx)
 	return ok
+}
+
+// probationSettings 读观察期参数；读不到返回 nil。
+//
+// 刻意不回退到默认值：这份配置在本文件里只用来算给供给者看的 EligibleAt，
+// 用一个不是真正生效的窗口算出来的时刻会让他按错误的时间等。算不出就不显示。
+func (s *SupplierOnboardingService) probationSettings(ctx context.Context) *SupplyProbationSettings {
+	if s == nil || s.settings == nil {
+		return nil
+	}
+	return s.settings.GetSupplyProbationSettings(ctx)
 }
 
 // StartOAuth 为 userID 发起一次授权，返回授权链接与会话句柄。
@@ -252,6 +265,9 @@ func (s *SupplierOnboardingService) CompleteOAuth(ctx context.Context, input *Co
 		Credentials: buildSupplierClaudeCredentials(tokenInfo),
 		Extra: map[string]any{
 			SupplyStateExtraKey: SupplyStatePendingReview,
+			// 观察窗从建号这一刻开始计时，不等第一次探测。探测只证明「这个号能用」，
+			// 观察窗要的是「它在一段时间里一直能用」——那段时间从它挂上来就开始了。
+			SupplyProbationSinceExtraKey: time.Now().Format(time.RFC3339),
 		},
 		Concurrency: supplierDefaultConcurrency,
 		Priority:    supplierDefaultPriority,
@@ -283,7 +299,7 @@ func (s *SupplierOnboardingService) CompleteOAuth(ctx context.Context, input *Co
 		return nil, fmt.Errorf("bind supply group: %w", err)
 	}
 
-	return newSupplierAccountView(account), nil
+	return newSupplierAccountView(account, s.probationSettings(ctx)), nil
 }
 
 // accountName 决定新号在管理端和供给者仪表盘里叫什么。
@@ -347,12 +363,15 @@ func (s *SupplierOnboardingService) ListAccounts(ctx context.Context, userID int
 	if err != nil {
 		return nil, err
 	}
+	// 配置读一次给整批用：GetSupplyProbationSettings 有进程内缓存，但在循环里调
+	// 仍然会让同一个列表里的两个号用上不同版本的窗口（缓存正好在中途过期）。
+	settings := s.probationSettings(ctx)
 	views := make([]SupplierAccountView, 0, len(accounts))
 	for _, account := range accounts {
 		if account == nil {
 			continue
 		}
-		views = append(views, *newSupplierAccountView(account))
+		views = append(views, *newSupplierAccountView(account, settings))
 	}
 	return views, nil
 }
@@ -386,43 +405,126 @@ func (s *SupplierOnboardingService) GetAccount(ctx context.Context, userID, acco
 	if err != nil {
 		return nil, err
 	}
-	return newSupplierAccountView(account), nil
+	return newSupplierAccountView(account, s.probationSettings(ctx)), nil
 }
 
-// PauseAccount 供给者主动下线一个号。
+// PauseAccount 供给者主动下线一个号，走两条通道之一。
 //
-// 立刻停止接受新的调度。**在途请求不受影响**——它们已经拿到了这个账号，
-// 打断它们只会让消费者收到一个莫名其妙的失败。优雅排空与紧急拔线的完整双通道是 #9。
-func (s *SupplierOnboardingService) PauseAccount(ctx context.Context, userID, accountID int64) error {
+// 两条通道**共有**的部分是最要紧的那一半：立刻 SetSchedulable(false)。
+// 这一下同时切断了新调度和粘性会话的复用（粘性路径会检查 IsSchedulable），
+// 所以无论选哪条通道，「不再接新单」都是立刻生效的。
+//
+// 两条通道**真正的差别**只有两点：终态多快到来，以及还能不能反悔。
+//
+//   - graceful：进 draining，排空窗内保持这个状态，窗口内可以取消（ResumeAccount
+//     会把它放回下线之前的状态，不重走观察期）。窗口到期由后台任务转 retired。
+//   - immediate：直接 retired，没有窗口、不能取消，重新挂回来要重走观察期。
+//
+// 两条通道都**停不掉已经在流的请求**——平台没有连接级 draining 的能力。
+// 把这一点写在这里而不是含糊过去：一个以为点了「立即拔出」就能瞬间切断的供给者，
+// 比一个知道要等在途请求结束的供给者更容易产生纠纷。
+func (s *SupplierOnboardingService) PauseAccount(ctx context.Context, userID, accountID int64, mode string) error {
 	account, err := s.getOwnedAccount(ctx, userID, accountID)
 	if err != nil {
 		return err
 	}
+	currentState := supplyStateOf(account)
+	if currentState == SupplyStateRetired {
+		// 已经是终态。重复点一次不该报错——供给者点两下按钮不是错误。
+		return nil
+	}
+
+	// 先停调度：无论后面写 extra 成不成功，「不再接新单」这件事已经落地。
+	// 顺序反过来的话，中间失败会留下一个写着 retired 却还在接单的号。
 	if err := s.accountRepo.SetSchedulable(ctx, account.ID, false); err != nil {
 		return err
 	}
+
+	window := time.Duration(0)
+	if settings := s.probationSettings(ctx); settings != nil {
+		window = settings.DrainWindow()
+	}
+	// 排空窗为 0（配置成 0，或读不到配置）时优雅下线没有意义——一个立刻到期的
+	// draining 只是让号在终态之前多绕一轮后台任务。直接走终态。
+	if normalizeSupplyPauseMode(mode) != SupplyPauseModeGraceful || window <= 0 {
+		return s.accountRepo.UpdateExtra(ctx, account.ID, map[string]any{
+			SupplyStateExtraKey:       SupplyStateRetired,
+			SupplyDrainUntilExtraKey:  "",
+			SupplyDrainFromExtraKey:   "",
+			SupplyProbePassesExtraKey: 0,
+		})
+	}
+
+	if currentState == SupplyStateDraining {
+		// 已经在排空窗里。不刷新到期时刻——否则反复点「优雅下线」就能把一个号
+		// 无限期地停在 draining，那既不是下线也不是在服务。
+		return nil
+	}
 	return s.accountRepo.UpdateExtra(ctx, account.ID, map[string]any{
-		SupplyStateExtraKey: SupplyStateRetired,
+		SupplyStateExtraKey:      SupplyStateDraining,
+		SupplyDrainUntilExtraKey: time.Now().Add(window).Format(time.RFC3339),
+		// 记住从哪来，取消下线时原样回退。
+		SupplyDrainFromExtraKey: currentState,
 	})
 }
 
-// ResumeAccount 供给者把下线的号重新挂回来。
+// normalizeSupplyPauseMode 把请求里的下线通道归一化。
 //
-// 只对 retired 生效，且只把状态改回 active——**不碰 schedulable**。
-// 一个 pending_review 的号能被它的主人一键变成可调度，等于观察期形同虚设；
-// 而重新入池是平台侧的判断（凭证还有效吗、号还健康吗），不是供给者点一下就成立的事。
-// 真正的重新入池由 #9 的观察期流程做。
+// 无法识别的值一律按 graceful：默认给出可反悔的那条路。反过来（默认立即拔出）
+// 会让一个拼错参数的调用把号推进不可撤销的终态。
+func normalizeSupplyPauseMode(mode string) string {
+	if strings.EqualFold(strings.TrimSpace(mode), SupplyPauseModeImmediate) {
+		return SupplyPauseModeImmediate
+	}
+	return SupplyPauseModeGraceful
+}
+
+// ResumeAccount 供给者把号重新挂回来。两种情形，差别很大。
+//
+//  1. draining（排空窗内取消下线）：回到进入排空之前的状态。如果那时是 active，
+//     连 schedulable 一起恢复——它本来就在池里，是这次下线把它拿下来的，
+//     取消下线就该把它原样放回去，不必重走观察期。
+//  2. retired（已下线，重新挂回）：回到 pending_review 并**重置观察期**，
+//     schedulable 保持 false。号在下线期间发生了什么平台一无所知（订阅可能已经到期、
+//     可能已经被上游封），凭一次点击就把它放回付费流量前面，等于观察期形同虚设。
 func (s *SupplierOnboardingService) ResumeAccount(ctx context.Context, userID, accountID int64) error {
 	account, err := s.getOwnedAccount(ctx, userID, accountID)
 	if err != nil {
 		return err
 	}
-	if supplyStateOf(account) != SupplyStateRetired {
+
+	switch supplyStateOf(account) {
+	case SupplyStateDraining:
+		restored := supplyExtraString(account, SupplyDrainFromExtraKey)
+		if restored != SupplyStateActive && restored != SupplyStatePendingReview {
+			// 来路不明（字段被手工动过、或者是老数据）——回到观察期，是两个候选里
+			// 保守的那个：最坏结果只是多观察一段时间，而不是把一个没验证过的号放进池子。
+			restored = SupplyStatePendingReview
+		}
+		if restored == SupplyStateActive {
+			if err := s.accountRepo.SetSchedulable(ctx, account.ID, true); err != nil {
+				return err
+			}
+		}
+		return s.accountRepo.UpdateExtra(ctx, account.ID, map[string]any{
+			SupplyStateExtraKey:      restored,
+			SupplyDrainUntilExtraKey: "",
+			SupplyDrainFromExtraKey:  "",
+		})
+
+	case SupplyStateRetired:
+		return s.accountRepo.UpdateExtra(ctx, account.ID, map[string]any{
+			SupplyStateExtraKey: SupplyStatePendingReview,
+			// 观察期从头计时。
+			SupplyProbationSinceExtraKey: time.Now().Format(time.RFC3339),
+			SupplyProbePassesExtraKey:    0,
+			SupplyProbeAtExtraKey:        "",
+			SupplyProbeErrorExtraKey:     "",
+		})
+
+	default:
 		return ErrSupplierAccountNotRetired
 	}
-	return s.accountRepo.UpdateExtra(ctx, account.ID, map[string]any{
-		SupplyStateExtraKey: SupplyStatePendingReview,
-	})
 }
 
 // supplyStateOf 读账号的接入状态，读不到按 pending_review 算。
@@ -440,12 +542,71 @@ func supplyStateOf(account *Account) string {
 	return state
 }
 
+// supplyExtraTime 从 extra 里读一个 RFC3339 时刻。第二个返回值区分「没有」与「零值」。
+//
+// 值来自 JSONB，写进去时是字符串；解析失败一律当作没有——一个格式坏掉的时间戳
+// 若被当成零值，会让所有「到期了吗」的判断瞬间全部为真。
+func supplyExtraTime(account *Account, key string) (time.Time, bool) {
+	if account == nil || account.Extra == nil {
+		return time.Time{}, false
+	}
+	raw, _ := account.Extra[key].(string)
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, false
+	}
+	parsed, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return parsed, true
+}
+
+// supplyExtraInt 从 extra 里读一个整数。
+//
+// 三种分支不是防御性冗余：同一个字段在进程内是 int（刚写完还没回库），
+// 从 JSONB 读回来是 float64，而经过某些 JSON 往返会变成 json.Number。
+func supplyExtraInt(account *Account, key string) int {
+	if account == nil || account.Extra == nil {
+		return 0
+	}
+	switch value := account.Extra[key].(type) {
+	case int:
+		return value
+	case int64:
+		return int(value)
+	case float64:
+		return int(value)
+	case json.Number:
+		parsed, err := value.Int64()
+		if err != nil {
+			return 0
+		}
+		return int(parsed)
+	default:
+		return 0
+	}
+}
+
+// supplyExtraString 从 extra 里读一个字符串。
+func supplyExtraString(account *Account, key string) string {
+	if account == nil || account.Extra == nil {
+		return ""
+	}
+	value, _ := account.Extra[key].(string)
+	return strings.TrimSpace(value)
+}
+
 // newSupplierAccountView 把内部账号裁成供给者能看的那几个字段。
-func newSupplierAccountView(account *Account) *SupplierAccountView {
+//
+// settings 可以为 nil：那时算不出 EligibleAt，前端就只显示「观察中」而不显示进度条。
+// 不为此回退到默认观察窗——给出一个由默认值算出来的、与实际生效配置不同的时刻，
+// 比不给更糟，供给者会按那个时刻等。
+func newSupplierAccountView(account *Account, settings *SupplyProbationSettings) *SupplierAccountView {
 	if account == nil {
 		return nil
 	}
-	return &SupplierAccountView{
+	view := &SupplierAccountView{
 		ID:           account.ID,
 		Name:         account.Name,
 		Platform:     account.Platform,
@@ -456,5 +617,18 @@ func newSupplierAccountView(account *Account) *SupplierAccountView {
 		EmailAddress: account.GetCredential("email_address"),
 		LastUsedAt:   account.LastUsedAt,
 		CreatedAt:    account.CreatedAt,
+		ProbePasses:  supplyExtraInt(account, SupplyProbePassesExtraKey),
+		ProbeError:   supplyExtraString(account, SupplyProbeErrorExtraKey),
 	}
+	if since, ok := supplyExtraTime(account, SupplyProbationSinceExtraKey); ok {
+		view.ProbationSince = &since
+		if settings != nil {
+			eligibleAt := since.Add(settings.ObservationWindow())
+			view.EligibleAt = &eligibleAt
+		}
+	}
+	if until, ok := supplyExtraTime(account, SupplyDrainUntilExtraKey); ok {
+		view.DrainUntil = &until
+	}
+	return view
 }

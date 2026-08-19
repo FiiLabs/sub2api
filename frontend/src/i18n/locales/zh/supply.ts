@@ -65,18 +65,29 @@ export default {
       never: '从未使用',
       pause: '下线',
       pausing: '正在下线…',
+      pauseNow: '立即下线',
       resume: '重新挂回',
       resuming: '正在挂回…',
-      pauseConfirm: '下线后这个号立即停止接单，已产生的收益不受影响。确定要下线吗？',
+      cancelPause: '取消下线',
+      pauseHint: '「下线」会先进入排空期，期间不再接新单，你随时可以反悔；「立即下线」直接进终态，要再上线得重走观察期。两者都停不掉已经在传输中的请求——那部分请求会正常跑完。',
+      pauseConfirm: '下线后这个号立即停止接新单，进入排空期，期间你还可以取消。已产生的收益不受影响。确定要下线吗？',
+      pauseNowConfirm: '立即下线会直接进入终态，不能取消；要再上线需要重新走一遍观察期。已经在传输中的请求仍会跑完。确定吗？',
       paused: '已下线',
+      draining: '已停止接新单，进入排空期',
+      pauseCancelled: '已取消下线，这个号继续接单',
       resumed: '已重新挂回，将重新进入观察期',
       schedulable: '接单中',
-      notSchedulable: '未接单'
+      notSchedulable: '未接单',
+      probePasses: '已连续通过 {passes} 次探测',
+      eligibleAt: '不早于 {time} 满足观察时长',
+      probeError: '探测失败：{reason}。多半需要你重新授权这个号。',
+      drainUntil: '排空期至 {time}'
     },
 
     state: {
       pending_review: '观察期',
       active: '已上线',
+      draining: '排空中',
       retired: '已下线',
       unknown: '未知'
     },
@@ -84,6 +95,7 @@ export default {
     stateHint: {
       pending_review: '平台核验中，暂不接单',
       active: '正常接单中',
+      draining: '已停止接新单，排空期结束后转为已下线',
       retired: '你主动下线了这个号'
     },
 
@@ -153,6 +165,27 @@ export default {
       costWarning: '每一次溢出，平台都在按自营成本供货却按供给池价收费。溢出率是要盯着的经营指标（服务端日志 [SupplyPool] supply pool exhausted）。',
       save: '保存池配置',
       saved: '池配置已保存'
+    },
+
+    probation: {
+      title: '观察期与下线',
+      description: '新挂上来的号在什么条件下才放进供给池，以及优雅下线等多久。',
+      enabled: '开启自动入池',
+      enabledHint: '关闭时观察期照常探测、照常记录，但不会自动放行——需要人工把号切成可调度。默认是关的：先看几天数据再打开。',
+      minObservation: '最短观察时长（分钟）',
+      minObservationHint: '从接入那一刻算起。与"连续成功次数"是并且的关系：探测再顺利也得等满这段时间。上限 {max} 分钟。',
+      requiredSuccesses: '需要连续成功次数',
+      requiredSuccessesHint: '中间失败一次计数清零，并把失败原因回显给供给者。上限 {max} 次。',
+      probeInterval: '探测间隔（分钟）',
+      probeIntervalHint: '每次探测都是一个真实的上游请求，花的是供给者自己的额度——间隔太小等于拿人家的额度当探针耗材。区间 {min}–{max} 分钟。',
+      probeModel: '探测模型 ID',
+      probeModelPlaceholder: '留空则用平台默认测试模型',
+      probeModelHint: '填一个便宜的小模型。这个值只影响探测，不影响真实调度。',
+      drainWindow: '排空窗（分钟）',
+      drainWindowHint: '供给者选"下线"后，等多久才转入终态。这不是硬排空——平台打断不了已经在流的请求，这段时间同时也是供给者反悔的窗口。填 0 则"下线"退化成立即终态。上限 {max} 分钟。',
+      clampNotice: '这一组参数越界时后端会夹回区间并保存（不会报错），保存后表单显示的是库里真正存下的值。',
+      save: '保存观察期参数',
+      saved: '观察期参数已保存'
     },
 
     error: {

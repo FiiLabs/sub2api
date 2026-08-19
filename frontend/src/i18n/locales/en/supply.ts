@@ -68,19 +68,32 @@ export default {
       never: 'Never used',
       pause: 'Take offline',
       pausing: 'Taking offline…',
+      pauseNow: 'Take offline now',
       resume: 'Put back',
       resuming: 'Putting back…',
+      cancelPause: 'Cancel offline',
+      pauseHint:
+        '"Take offline" starts a drain window: no new requests are routed to the account, and you can still change your mind. "Take offline now" goes straight to the final state, and putting the account back means going through review again. Neither one cuts off requests already streaming — those finish normally.',
       pauseConfirm:
-        'This account stops serving immediately. Earnings already accrued are unaffected. Take it offline?',
+        'The account stops taking new requests immediately and enters the drain window, which you can still cancel. Earnings already accrued are unaffected. Take it offline?',
+      pauseNowConfirm:
+        'Taking it offline now is final and cannot be cancelled; putting the account back means going through review again. Requests already streaming still finish. Continue?',
       paused: 'Taken offline',
+      draining: 'Stopped taking new requests — draining',
+      pauseCancelled: 'Offline cancelled — the account keeps serving',
       resumed: 'Put back — it re-enters review',
       schedulable: 'Serving',
-      notSchedulable: 'Not serving'
+      notSchedulable: 'Not serving',
+      probePasses: '{passes} consecutive health checks passed',
+      eligibleAt: 'Observation window is met no earlier than {time}',
+      probeError: 'Health check failed: {reason}. You most likely need to re-authorize this account.',
+      drainUntil: 'Draining until {time}'
     },
 
     state: {
       pending_review: 'In review',
       active: 'Live',
+      draining: 'Draining',
       retired: 'Offline',
       unknown: 'Unknown'
     },
@@ -88,6 +101,7 @@ export default {
     stateHint: {
       pending_review: 'Being verified; not serving yet',
       active: 'Serving normally',
+      draining: 'No longer taking new requests; goes offline when the drain window ends',
       retired: 'You took this account offline'
     },
 
@@ -164,6 +178,33 @@ export default {
         'Every overflow serves traffic at first-party cost while charging supply-pool price. Overflow rate is an operational metric worth watching (server log: [SupplyPool] supply pool exhausted).',
       save: 'Save pool routing',
       saved: 'Pool routing saved'
+    },
+
+    probation: {
+      title: 'Review period and offboarding',
+      description: 'What a newly connected account must satisfy before it joins the supply pool, and how long a graceful offline waits.',
+      enabled: 'Enable automatic admission',
+      enabledHint:
+        'When off, the review period still probes and still records, but nothing is admitted automatically — an operator has to make the account schedulable by hand. It ships off by default: watch a few days of data first.',
+      minObservation: 'Minimum observation (minutes)',
+      minObservationHint:
+        'Counted from the moment the account is connected. ANDed with the success count: no matter how well the probes go, this much time still has to pass. Max {max} minutes.',
+      requiredSuccesses: 'Consecutive successes required',
+      requiredSuccessesHint:
+        'One failure resets the counter and surfaces the reason to the supplier. Max {max}.',
+      probeInterval: 'Probe interval (minutes)',
+      probeIntervalHint:
+        "Every probe is a real upstream request billed to the supplier's own quota — too short an interval spends their quota on probes. Range {min}–{max} minutes.",
+      probeModel: 'Probe model ID',
+      probeModelPlaceholder: 'Leave empty to use the platform default test model',
+      probeModelHint: 'Pick a cheap small model. This affects probing only, never real scheduling.',
+      drainWindow: 'Drain window (minutes)',
+      drainWindowHint:
+        'How long after a supplier takes an account offline before it reaches the final state. This is not a hard drain — the platform cannot interrupt requests already streaming, and the window doubles as the supplier\'s chance to change their mind. Set 0 and "take offline" becomes immediate. Max {max} minutes.',
+      clampNotice:
+        'Out-of-range values in this group are clamped and saved (not rejected). After saving, the form shows what is actually stored.',
+      save: 'Save review settings',
+      saved: 'Review settings saved'
     },
 
     error: {

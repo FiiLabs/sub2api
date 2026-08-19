@@ -88,9 +88,11 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 | 供给者自助接入 | `internal/service/supplier_onboarding.go`（类型+接口）、`supplier_onboarding_service.go`（编排）、`internal/repository/supplier_onboarding_repo.go`（SQL） | `226` | 持久化 OAuth 会话 + 建号 + 写归属 + 入池；见 §3.3 |
 | OAuth 协议层复用 | `internal/service/oauth_service_supplier.go` | — | 把 PKCE 生成与兑换从上游进程内的 `sessionStore` 解耦出来。同包新文件，**core 侵入为零**（`exchangeCodeForToken` 未导出，同包才调得到） |
 | 供给侧 HTTP | `internal/handler/supplier_handler.go`、`internal/server/routes/supplier.go` | — | `/api/v1/user/supply/*`：status / oauth 两步 / accounts 增删挂起 / wallet / ledger。中间件与用户面一字不差（JWT + BackendModeUserGuard + 面板限流 + 审计）；所有端点的用户 id **只**取自 JWT，没有一个接受 `user_id` 入参 |
-| 管理端配置 HTTP | `internal/handler/admin/setting_handler_supplier.go` | — | `GET/PUT /api/v1/admin/settings/{supplier-settlement,supply-pool}`，两组配置各自一对端点。方法挂在**既有**的 `*SettingHandler` 上（它已经持有 `settingService`），因此 wire 零改动；路由挂进既有的 `registerSettingsRoutes`（见 core touch #8） |
-| 供给侧前端 | `frontend/src/api/supply.ts`、`stores/supply.ts`、`views/user/SupplyView.vue`、`i18n/locales/{zh,en}/supply.ts` | — | 接入页与仪表盘合一页：钱包四格 + 两步授权 + 我的订阅表 + 收益流水分页。见 §3.4 |
-| 管理端前端 | `frontend/src/api/admin/supplyMarket.ts`、`views/admin/SupplyMarketView.vue` | — | 单起一页而不是往 `SettingsView.vue`（近九千行、上游最痛的合并热区）里加两个 section；两组配置各自一个保存按钮，审计日志才分得清谁改了什么 |
+| 观察期参数配置 | `internal/service/setting_supply_probation.go` | — | 第三个 JSON settings key `supply_probation_settings`（自动入池开关 / 最短观察时长 / 连续成功次数 / 探测间隔 / 探测模型 / 排空窗），缓存形态同上。与另外两组**刻意不同**：越界值 clamp 后照存而不是报错，见 §3.5 |
+| 观察期与排空 | `internal/service/supplier_lifecycle_service.go` | — | 周期任务（5min / leader lock / 单轮 200 个 / 单轮至多 20 次探测），形态照抄 `SupplierThawService`；两件事：`draining` 到期转 `retired`，`pending_review` 探测达标后入池 |
+| 管理端配置 HTTP | `internal/handler/admin/setting_handler_supplier.go` | — | `GET/PUT /api/v1/admin/settings/{supplier-settlement,supply-pool,supply-probation}`，三组配置各自一对端点。方法挂在**既有**的 `*SettingHandler` 上（它已经持有 `settingService`），因此 wire 零改动；路由挂进既有的 `registerSettingsRoutes`（见 core touch #8） |
+| 供给侧前端 | `frontend/src/api/supply.ts`、`stores/supply.ts`、`views/user/SupplyView.vue`、`i18n/locales/{zh,en}/supply.ts` | — | 接入页与仪表盘合一页：钱包四格 + 两步授权 + 我的订阅表 + 收益流水分页；下线两条通道（两套确认文案）、`draining` 徽章与排空截止时间、观察期进度（探测次数 / `eligible_at` 用「不早于」语气 / 探测失败原因）。见 §3.4、§3.5 |
+| 管理端前端 | `frontend/src/api/admin/supplyMarket.ts`、`views/admin/SupplyMarketView.vue` | — | 单起一页而不是往 `SettingsView.vue`（近九千行、上游最痛的合并热区）里加三个 section；三组配置各自一个保存按钮，审计日志才分得清谁改了什么 |
 
 **结算参数现在有人填了，但默认是关的**。`GetSupplierSettlementSettings` 读那个 JSON key，`ToBillingParams()` 在总开关关闭时返回全零值——也就是计费里「什么都不做」的那一支。配置行不存在（当前生产状态）、JSON 损坏、数据库读失败，一律回退到关闭：这是**刻意的 fail-closed**，与本包其他网关行为设置的 fail-open 相反。网关设置读不到时放行请求最多少一层加工；结算参数读不到时按猜测值给钱，错的是账。打开开关要管理员在「双边市场」页显式保存一次（`PUT /api/v1/admin/settings/supplier-settlement`）。
 
@@ -118,7 +120,7 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 
 **新号一定不可调度，而且靠两条独立理由**。`CompleteOAuth` 建号时显式写 `Schedulable: false`（不靠「`AccountService.Create` 恰好不设这个字段」的零值——`adminServiceImpl.CreateAccount` 那条路径就显式设了 `true`，靠零值等于把安全性押在上游不改），并且**先不绑分组**。建号到写归属之间有一个窗口，窗口里这个号没有主人；若此时它能被调度，产生的用量会按自营账号计——供给者干了活拿不到钱，且事后无从追认（`usage_log` 不回溯归属）。顺序 `Create → SetAccountOwner → BindGroups` 由单测钉死。
 
-**本切片没有任何东西把 `pending_review` 变成 `active`**。观察期与入池是 #9 的事。现状是：供给者能接上、能看见自己的号、能自己下线，但号不会接真实流量。这是有意的顺序（先把归属和钱的账本铺好再放流量），不是漏做。`ResumeAccount` 也**只**把状态改回 `pending_review`、绝不触碰 `schedulable`——否则供给者点一下就能绕过观察期把号推进池子。
+**`pending_review → active` 只能由后台任务发生，而且默认关着**（原文写的是「本切片没有任何东西做这件事」，#9 落地后改成这条）。放行者是 `SupplierLifecycleService`，判据三条**同时**成立：`supply_probation_settings.enabled` 为真、连续探测成功数达标、`probation_since + 最短观察时长` 已过。默认配置里第一条就是假的——起步形态是「照常探测、照常记录、不自动放行」，运营看几天数据再打开。`ResumeAccount` 仍然**只**把状态改回 `pending_review`、绝不触碰 `schedulable`——否则供给者点一下就能绕过观察期把号推进池子。
 
 **会话领取必须原子**。领取是一条 `UPDATE ... SET consumed_at = NOW() WHERE session_id = $1 AND user_id = $2 AND consumed_at IS NULL AND expires_at > NOW() RETURNING ...`。写成「查出来 → 判断 → 更新」的话，并发重放会让两个请求都通过检查、同一个授权码被兑换两次、建出两个账号。归属人不符 / 已过期 / 已消费 / 不存在四种情况合并成同一个 `ErrSupplierOAuthSessionInvalid`——区分它们等于提供一个枚举他人会话的信息面；同理 `ErrSupplierAccountNotFound` 合并了「不存在」与「不是你的」。已消费的会话行**不删**（过期清理只扫 `consumed_at IS NULL`），它是「这个账号是谁在什么时候挂上来的」的唯一证据。
 
@@ -136,6 +138,18 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 
 **前端不重复后端的区间校验**。上下限（`share_ratio_max` / `freeze_hours_max`）由 `GET` 响应带下来，本地只留一份兜底初值供后端不可达时渲染；保存后把**后端返回的规范化值**回填进表单，因为写路径会 clamp。抄一份上下限就是给同一条规则立两个源头，后端改了、前端还在按旧值拦。管理端菜单项**不挂 featureFlag**：管理员必须能进到这一页才能把功能打开。
 
+### 3.5 下线双通道与观察期的五条边界（改动前先读）
+
+**两条通道的差别不是「快慢」，而是「能不能反悔」**。`graceful` 与 `immediate` 都在同一次调用里 `SetSchedulable(false)`——**都立刻停止接新单**，包括粘性会话复用（`SetSchedulable` 同时清掉 sticky 复用）。真正的差别只有两个：终态多久到（graceful 等一个排空窗，immediate 当场进 `retired`），以及在那之前能不能取消（graceful 能，immediate 不能）。**两者都停不掉已经在流的请求**——平台没有打断在途 SSE 的能力，排空窗是一段礼貌等待，不是硬排空。界面文案（`supply.accounts.pauseHint`）必须原样保留这句话：供给者唯一会因此投诉的点就是「我点了下线，为什么还在跑」。
+
+**状态机的两次写各自把「中途失败」落在安全的一边**。下线是 `SetSchedulable(false)` **然后**写状态：中途崩了就是「不接单但状态还没变」——保守的那一边，下一轮 sweep 修好。入池反过来，`SetSchedulable(true)` **然后**写 `active`：中途崩了是「已可调度但状态仍是 pending_review」，下一轮 sweep 读到 `schedulable && pending_review` 直接补写状态（这就是 `sweepPendingReview` 里那条「不管开关开没开都先 reconcile」的分支存在的理由）。反过来写的话，两种崩溃场景分别得到「状态说下线了但还在接单」和「状态说上线了但不接单」，前者是事故。
+
+**排空窗到期判断只信 `drain_until`，缺了就立刻收**。`drain_until` 缺失或解析不出来（手工改坏 extra、旧版本遗留的行）一律当作已到期，直接转 `retired`。相反的容错方向会让一个坏字段把号永远钉在 `draining` 这个中间态里——既不接单、也永远不结束、供给者也看不懂。同理**重复点「下线」不延长窗口**：已经在 `draining` 的号再收到一次 graceful 是 no-op，否则一个手抖的双击就把排空窗翻倍。
+
+**探测花的是供给者自己的额度，所以节流有三层**。每次探测是一个真实上游推理请求，账记在供给者头上。三层是：单账号两次探测的最小间隔（配置项，**下限 5 分钟**，读路径也 clamp，一份手工改坏的 `probe_interval_minutes: 0` 不该让任务每秒去戳人家的号）、单轮至多 20 次探测、`status != active` 的号直接跳过（凭证已经坏了，再探也只是重复烧额度）。批次上限或探测预算截断了工作时会 `slog` 记一条——**不做静默截断**，否则日志读起来像是「全扫完了」。
+
+**这一组参数越界时 clamp 而不是报错，与结算参数刻意相反**。理由是错的方向不同：结算参数填错是**算错钱**，必须当场拒绝让人改对；观察期参数填错最多是「观察久一点/短一点」，而拒绝保存会让运营在一个半配好的状态里卡着。代价是运营可能没注意到自己填的 1 分钟变成了 5——所以 `PUT` 返回 clamp 后的值，前端**必须**回填（`SupplyMarketView.vue` 的 `saveProbation` 里那段回填不是可选的），页面上另挂一句 `clampNotice` 说明这个行为。
+
 ## 4. Core Touch 台账
 
 core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APEXONE-EXT:` 可 grep 标记 + 详尽注释 + 单测。下表随实现逐行填。
@@ -152,7 +166,8 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 | 5a | `backend/cmd/server/wire.go` | `provideCleanup` 形参 + 停机步骤 | 加 `supplierThaw *service.SupplierThawService` 及其 `Stop()` 步骤；`wire_gen.go` 重新生成（+12 行） | 既为优雅停机，也是**为了让 wire 真的把它构造出来**——`Provide*` 里调了 `Start()`，没有任何消费者引用它 wire 就会把整个 provider 剪掉，任务永远不启动。`wire_gen_test.go` 的 `provideCleanup` 调用同步补一个 `nil` | **已做** |
 | 5b | `backend/internal/handler/handler.go` + `handler/wire.go` | `Handlers` 结构体尾部、`ProvideHandlers` 形参与返回值、`ProviderSet` | 加 `Supplier *SupplierHandler` 字段 + 一个形参 + 一个 provider；`repository/wire.go` 与 `service/wire.go` 各加一个 provider；`wire_gen.go` 重新生成（+4 行） | wire 标准注册点。形参插在 `batchImageHandler` 之后、两个 `_` 占位参之前，避开尾部占位约定 | **已做** |
 | 6 | `frontend/src/router/index.ts`、`i18n/locales/{en,zh}/index.ts`、`components/layout/AppSidebar.vue` | 路由表两处插入；locale 桶各 +2 行；侧边栏 +6 行 | 两条路由（`/supply`、`/admin/supply-market`）、两个 locale 模块 import+spread、两个菜单项 + 一个 `DollarIcon` + `onMounted` 里一行 `ensureStatus()` | 前端冲突热区，改动全是**追加**：locale 只 spread 新命名空间（不碰上游任何一个，见 §3.4），路由项插在既有项之间，菜单项各一条。`/supply` 不设路由守卫——功能没开的状态由页面自己画，守卫拦掉只会给用户一个没有解释的 404 | **已做** |
-| 8 | `backend/internal/server/routes/admin.go` | `registerSettingsRoutes` 末尾 | 追加四行路由 + 一行 `// APEXONE-EXT:` 注释 | 挂进既有 settings group 而不是自起一个 admin group：那个 group 上有 adminAuth + 面板限流 + 审计 + `AdminComplianceGuard` 四层中间件，复制一份等着它日后与上游漂移，而漂移掉的是合规相关的那几层。handler 方法挂在既有的 `*SettingHandler` 上，因此 wire、`AdminHandlers`、`ProvideAdminHandlers` 三处热区一处没动 | **已做** |
+| 5c | `backend/internal/service/wire.go` + `backend/cmd/server/wire.go` | ProviderSet / `provideCleanup` 形参 + 停机步骤 | 加 `ProvideSupplierLifecycleService` 注册；`provideCleanup` 加一个形参与一个 `Stop()` 步骤；`wire_gen.go` 重新生成（+9 行），`wire_gen_test.go` 同步补一个 `nil` | 与 #5a 一模一样的理由：provider 里调了 `Start()`，没有消费者引用 wire 就会把它整个剪掉，观察期任务永远不启动。两个后台任务因此都必须出现在 `provideCleanup` 的形参里 | **已做** |
+| 8 | `backend/internal/server/routes/admin.go` | `registerSettingsRoutes` 末尾 | 追加六行路由 + 一行 `// APEXONE-EXT:` 注释 | 挂进既有 settings group 而不是自起一个 admin group：那个 group 上有 adminAuth + 面板限流 + 审计 + `AdminComplianceGuard` 四层中间件，复制一份等着它日后与上游漂移，而漂移掉的是合规相关的那几层。handler 方法挂在既有的 `*SettingHandler` 上，因此 wire、`AdminHandlers`、`ProvideAdminHandlers` 三处热区一处没动 | **已做** |
 | 7 | `backend/internal/service/gateway_scheduling.go` | :97 函数签名 | **仅函数改名**：`SelectAccountWithLoadAwareness` → `selectAccountInPoolWithLoadAwareness`，函数体一字未改。导出名归新文件 `gateway_supply_overflow.go` 里的同名包装函数 | 交接件说的「零 core 溢出」不成立（见 §2）。耗尽有十几个 return 点，逐个插判断等于把一条新规则摊成十几处侵入；改名 + 外层包装是**一处**。合并冲突面小到只有一行签名，且上游若改了函数体，冲突会照常落在函数体上而不被包装掩盖 | **已做** |
 | 7a | — （**未覆盖面，记账用**） | `openai_codex_models_handler.go:44`、`gateway_handler.go:2058` | 这两处走的是 `SelectAccountForModel`，不经包装函数，因此**不溢出** | 首版切片的供给池只面向 Claude Code 形态消费，这两条路径不在范围内。若日后供给池扩到 codex 形态，需在此处补同样的包装 | 已知缺口 |
 
@@ -167,9 +182,9 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 
 前四个已经是**真实可配的**了，落在 settings key `supplier_settlement_settings` 里（见 §3.1）；表里的「拟定默认」就是 `DefaultSupplierSettlementSettings()` 的值，且总开关 `enabled` 默认 `false`。
 
-第二个 key `supply_pool_settings`（`enabled` / `supply_group_id` / `overflow_group_id`）同样默认关，装的是路由而不是钱。**刻意分成两个 key**：这两组配置因完全不同的原因变动（一个动分成比例、一个动兜底池），合成一个会让两次意图完全不同的修改共用一条审计记录。
+第二个 key `supply_pool_settings`（`enabled` / `supply_group_id` / `overflow_group_id`）同样默认关，装的是路由而不是钱。第三个 key `supply_probation_settings`（见 §3.5）装的是准入与下线时序，`enabled` 同样默认关。**刻意分成三个 key**：这三组配置因完全不同的原因变动（动分成比例 / 动兜底池 / 动准入门槛），合成一个会让三次意图完全不同的修改共用一条审计记录。
 
-两个 key **目前都还没有管理端 API 或界面**，只能靠直接写 `settings` 表打开——管理端入口属于 #8 的范围。
+三个 key 都已有管理端 API 与界面（`/admin/supply-market` 页，三张卡各自一个保存按钮）。
 
 | 参数 | 拟定默认 | 说明 |
 |---|---|---|
@@ -179,7 +194,7 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 | 供给池 `rate_multiplier` | 0.5 | 消费者价 = 0.5× 官方价。**不在这两个 key 里**，是分组自己的 `rate_multiplier` 字段，管理端分组页配 |
 | `freeze_hours` | `168`（7 天，**占位**） | 须 ≥ 支付通道拒付窗。7 天只是能跑通流程的占位值，**上线前必须按 Stripe/支付方实际拒付窗重设**（Stripe 争议窗远长于 7 天），否则不变量 2「已释放 = 拒付安全」不成立。代码侧只 clamp 到 90 天上限，拦不住「配小了」——这一条只能靠人 |
 | 自营池 `rate_multiplier` | `1.0`（**占位**） | 需覆盖真实 API 成本 + 毛利，上线前重设 |
-| 观察期强度/时长 | **待定** | 先做成参数，运营期标定 |
+| 观察期强度/时长 | `enabled=false`、60 分钟、连续 2 次、探测间隔 15 分钟、排空窗 10 分钟 | 已参数化，落在 `supply_probation_settings` 里。默认**不自动入池**：先让它探测、记录，运营看几天再打开。这些数字是能跑通流程的起步值，不是标定过的 |
 | 每 IP 账号数上限 N | **待定** | 起步压到住宅户级小 N，按 IP 封禁率动态收紧 |
 
 ## 7. 上游合并检查单

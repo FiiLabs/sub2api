@@ -174,6 +174,9 @@
         <!-- ===================== 我的号 ===================== -->
         <div class="card p-6">
           <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('supply.accounts.title') }}</h3>
+          <!-- 两条下线通道的边界，写在表格上方而不是塞进按钮 tooltip：
+               "已经在流的请求停不掉"是用户唯一会因此投诉的点。 -->
+          <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ t('supply.accounts.pauseHint') }}</p>
 
           <p v-if="accounts.length === 0" class="mt-4 text-sm text-gray-500 dark:text-dark-400">
             {{ t('supply.accounts.empty') }}
@@ -208,6 +211,27 @@
                     <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">
                       {{ account.schedulable ? t('supply.accounts.schedulable') : t('supply.accounts.notSchedulable') }}
                     </p>
+
+                    <!-- 观察期进度。两个判据分开显示：用户要能分辨"还在等时间"和
+                         "我的号连不上"——后者只有他自己能修。 -->
+                    <template v-if="account.supply_state === 'pending_review'">
+                      <p v-if="account.probe_passes > 0" class="mt-1 text-xs text-gray-400 dark:text-dark-500">
+                        {{ t('supply.accounts.probePasses', { passes: account.probe_passes }) }}
+                      </p>
+                      <p v-if="account.eligible_at" class="mt-1 text-xs text-gray-400 dark:text-dark-500">
+                        {{ t('supply.accounts.eligibleAt', { time: formatDateTime(account.eligible_at) }) }}
+                      </p>
+                      <p v-if="account.probe_error" class="mt-1 max-w-xs text-xs text-red-500">
+                        {{ t('supply.accounts.probeError', { reason: account.probe_error }) }}
+                      </p>
+                    </template>
+
+                    <p
+                      v-if="account.supply_state === 'draining' && account.drain_until"
+                      class="mt-1 text-xs text-amber-600 dark:text-amber-400"
+                    >
+                      {{ t('supply.accounts.drainUntil', { time: formatDateTime(account.drain_until) }) }}
+                    </p>
                   </td>
                   <td class="px-3 py-3">
                     <span class="text-gray-700 dark:text-gray-300">{{ account.status }}</span>
@@ -220,22 +244,56 @@
                   </td>
                   <td class="px-3 py-3 text-gray-500 dark:text-dark-400">{{ formatDateTime(account.created_at) }}</td>
                   <td class="px-3 py-3 text-right">
-                    <button
-                      v-if="account.supply_state !== 'retired'"
-                      class="btn btn-secondary btn-sm"
-                      :disabled="mutatingId === account.id"
-                      @click="pauseAccount(account)"
-                    >
-                      {{ mutatingId === account.id ? t('supply.accounts.pausing') : t('supply.accounts.pause') }}
-                    </button>
-                    <button
-                      v-else
-                      class="btn btn-secondary btn-sm"
-                      :disabled="mutatingId === account.id"
-                      @click="resumeAccount(account)"
-                    >
-                      {{ mutatingId === account.id ? t('supply.accounts.resuming') : t('supply.accounts.resume') }}
-                    </button>
+                    <!-- 三种状态三套动作。draining 特殊在它同时能"反悔"和"别等了"，
+                         所以那两个按钮必须同时在场，否则用户只能干等排空窗。 -->
+                    <div class="flex flex-wrap justify-end gap-2">
+                      <template v-if="account.supply_state === 'retired'">
+                        <button
+                          class="btn btn-secondary btn-sm"
+                          :disabled="mutatingId === account.id"
+                          :data-testid="`supply-resume-${account.id}`"
+                          @click="resumeAccount(account)"
+                        >
+                          {{ mutatingId === account.id ? t('supply.accounts.resuming') : t('supply.accounts.resume') }}
+                        </button>
+                      </template>
+                      <template v-else-if="account.supply_state === 'draining'">
+                        <button
+                          class="btn btn-secondary btn-sm"
+                          :disabled="mutatingId === account.id"
+                          :data-testid="`supply-cancel-pause-${account.id}`"
+                          @click="resumeAccount(account)"
+                        >
+                          {{ mutatingId === account.id ? t('supply.accounts.resuming') : t('supply.accounts.cancelPause') }}
+                        </button>
+                        <button
+                          class="btn btn-secondary btn-sm"
+                          :disabled="mutatingId === account.id"
+                          :data-testid="`supply-pause-immediate-${account.id}`"
+                          @click="pauseAccount(account, 'immediate')"
+                        >
+                          {{ mutatingId === account.id ? t('supply.accounts.pausing') : t('supply.accounts.pauseNow') }}
+                        </button>
+                      </template>
+                      <template v-else>
+                        <button
+                          class="btn btn-secondary btn-sm"
+                          :disabled="mutatingId === account.id"
+                          :data-testid="`supply-pause-${account.id}`"
+                          @click="pauseAccount(account, 'graceful')"
+                        >
+                          {{ mutatingId === account.id ? t('supply.accounts.pausing') : t('supply.accounts.pause') }}
+                        </button>
+                        <button
+                          class="btn btn-secondary btn-sm"
+                          :disabled="mutatingId === account.id"
+                          :data-testid="`supply-pause-immediate-${account.id}`"
+                          @click="pauseAccount(account, 'immediate')"
+                        >
+                          {{ mutatingId === account.id ? t('supply.accounts.pausing') : t('supply.accounts.pauseNow') }}
+                        </button>
+                      </template>
+                    </div>
                   </td>
                 </tr>
               </tbody>
@@ -310,7 +368,7 @@ import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { supplyAPI, type SupplyAccount, type SupplyLedgerEntry, type SupplyStatus, type SupplyWallet, type StartOAuthResponse } from '@/api/supply'
+import { supplyAPI, type SupplyAccount, type SupplyLedgerEntry, type SupplyPauseMode, type SupplyStatus, type SupplyWallet, type StartOAuthResponse } from '@/api/supply'
 import { useAppStore } from '@/stores/app'
 import { useSupplyStore } from '@/stores/supply'
 import { useClipboard } from '@/composables/useClipboard'
@@ -343,7 +401,7 @@ const authCode = ref('')
 const accountName = ref('')
 
 function stateLabel(state: string): string {
-  const known = ['pending_review', 'active', 'retired']
+  const known = ['pending_review', 'active', 'draining', 'retired']
   return known.includes(state) ? t(`supply.state.${state}`) : t('supply.state.unknown')
 }
 
@@ -353,6 +411,10 @@ function stateBadgeClass(state: string): string {
       return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
     case 'retired':
       return 'bg-gray-100 text-gray-600 dark:bg-dark-800 dark:text-dark-300'
+    case 'draining':
+      // 排空中：已经不接新单了，但还没到终态，也还能反悔——用橙色而不是灰色，
+      // 灰色会读成"已经结束了"。
+      return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
     default:
       // pending_review 及任何未知状态都按"还没在接单"呈现——这是保守的那一边。
       return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
@@ -479,12 +541,22 @@ function replaceAccount(updated: SupplyAccount): void {
   accounts.value = accounts.value.map(item => (item.id === updated.id ? updated : item))
 }
 
-async function pauseAccount(account: SupplyAccount): Promise<void> {
-  if (!window.confirm(t('supply.accounts.pauseConfirm'))) return
+/**
+ * 下线。两条通道用**不同的确认文案**：immediate 不可撤销，graceful 可以，
+ * 共用一句"确定要下线吗"会把这个差别抹掉。
+ */
+async function pauseAccount(account: SupplyAccount, mode: SupplyPauseMode): Promise<void> {
+  const confirmKey = mode === 'immediate' ? 'supply.accounts.pauseNowConfirm' : 'supply.accounts.pauseConfirm'
+  if (!window.confirm(t(confirmKey))) return
   mutatingId.value = account.id
   try {
-    replaceAccount(await supplyAPI.pauseAccount(account.id))
-    appStore.showSuccess(t('supply.accounts.paused'))
+    const updated = await supplyAPI.pauseAccount(account.id, mode)
+    replaceAccount(updated)
+    // 用返回的实际状态而不是请求的 mode 来选提示：排空窗配成 0 时，
+    // graceful 会直接落到 retired，这时说"排空中"就是在骗人。
+    appStore.showSuccess(
+      updated.supply_state === 'draining' ? t('supply.accounts.draining') : t('supply.accounts.paused')
+    )
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, t('supply.error.pauseFailed')))
   } finally {
@@ -493,10 +565,12 @@ async function pauseAccount(account: SupplyAccount): Promise<void> {
 }
 
 async function resumeAccount(account: SupplyAccount): Promise<void> {
+  const wasDraining = account.supply_state === 'draining'
   mutatingId.value = account.id
   try {
     replaceAccount(await supplyAPI.resumeAccount(account.id))
-    appStore.showSuccess(t('supply.accounts.resumed'))
+    // 取消排空是"什么都没发生"，重新挂回是"要重走观察期"——两件事，两句话。
+    appStore.showSuccess(wasDraining ? t('supply.accounts.pauseCancelled') : t('supply.accounts.resumed'))
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, t('supply.error.resumeFailed')))
   } finally {

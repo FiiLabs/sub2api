@@ -157,3 +157,89 @@ func (h *SettingHandler) UpdateSupplyPoolSettings(c *gin.Context) {
 	response.Success(c, newSupplyPoolSettingsResponse(
 		h.settingService.GetSupplyPoolSettings(c.Request.Context())))
 }
+
+// SupplyProbationSettingsResponse 是观察期参数的对外形态。
+type SupplyProbationSettingsResponse struct {
+	Enabled               bool   `json:"enabled"`
+	MinObservationMinutes int    `json:"min_observation_minutes"`
+	RequiredSuccesses     int    `json:"required_successes"`
+	ProbeIntervalMinutes  int    `json:"probe_interval_minutes"`
+	ProbeModel            string `json:"probe_model"`
+	DrainWindowMinutes    int    `json:"drain_window_minutes"`
+
+	// 边界值随配置下发，理由同结算参数：前端抄一遍上限，后端改了就对不上。
+	// 探测间隔的**下限**尤其要下发——它不是一个防呆值，它是「不要拿供给者的额度当
+	// 探针耗材」这条规则的具体数字，运营需要在界面上看见它。
+	MinObservationMinutesMax int `json:"min_observation_minutes_max"`
+	RequiredSuccessesMax     int `json:"required_successes_max"`
+	ProbeIntervalMinutesMin  int `json:"probe_interval_minutes_min"`
+	ProbeIntervalMinutesMax  int `json:"probe_interval_minutes_max"`
+	DrainWindowMinutesMax    int `json:"drain_window_minutes_max"`
+}
+
+func newSupplyProbationSettingsResponse(s *service.SupplyProbationSettings) SupplyProbationSettingsResponse {
+	resp := SupplyProbationSettingsResponse{
+		MinObservationMinutesMax: service.SupplyProbationMinObservationMinutesMax,
+		RequiredSuccessesMax:     service.SupplyProbationRequiredSuccessesMax,
+		ProbeIntervalMinutesMin:  service.SupplyProbationProbeIntervalMinutesMin,
+		ProbeIntervalMinutesMax:  service.SupplyProbationProbeIntervalMinutesMax,
+		DrainWindowMinutesMax:    service.SupplyProbationDrainWindowMinutesMax,
+	}
+	if s == nil {
+		return resp
+	}
+	resp.Enabled = s.Enabled
+	resp.MinObservationMinutes = s.MinObservationMinutes
+	resp.RequiredSuccesses = s.RequiredSuccesses
+	resp.ProbeIntervalMinutes = s.ProbeIntervalMinutes
+	resp.ProbeModel = s.ProbeModel
+	resp.DrainWindowMinutes = s.DrainWindowMinutes
+	return resp
+}
+
+// GetSupplyProbationSettings 读观察期参数
+// GET /api/v1/admin/settings/supply-probation
+func (h *SettingHandler) GetSupplyProbationSettings(c *gin.Context) {
+	settings := h.settingService.GetSupplyProbationSettings(c.Request.Context())
+	response.Success(c, newSupplyProbationSettingsResponse(settings))
+}
+
+// UpdateSupplyProbationSettingsRequest 更新观察期参数请求。
+type UpdateSupplyProbationSettingsRequest struct {
+	Enabled               bool   `json:"enabled"`
+	MinObservationMinutes int    `json:"min_observation_minutes"`
+	RequiredSuccesses     int    `json:"required_successes"`
+	ProbeIntervalMinutes  int    `json:"probe_interval_minutes"`
+	ProbeModel            string `json:"probe_model"`
+	DrainWindowMinutes    int    `json:"drain_window_minutes"`
+}
+
+// UpdateSupplyProbationSettings 写观察期参数
+// PUT /api/v1/admin/settings/supply-probation
+//
+// 与结算参数不同，越界值在 service 侧被夹回区间而不是报错（理由见
+// SetSupplyProbationSettings）。所以这里的回读不只是习惯——它是运营看到自己
+// 填的 1 分钟变成 5 分钟的唯一途径。
+func (h *SettingHandler) UpdateSupplyProbationSettings(c *gin.Context) {
+	var req UpdateSupplyProbationSettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	settings := &service.SupplyProbationSettings{
+		Enabled:               req.Enabled,
+		MinObservationMinutes: req.MinObservationMinutes,
+		RequiredSuccesses:     req.RequiredSuccesses,
+		ProbeIntervalMinutes:  req.ProbeIntervalMinutes,
+		ProbeModel:            req.ProbeModel,
+		DrainWindowMinutes:    req.DrainWindowMinutes,
+	}
+	if err := h.settingService.SetSupplyProbationSettings(c.Request.Context(), settings); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.Success(c, newSupplyProbationSettingsResponse(
+		h.settingService.GetSupplyProbationSettings(c.Request.Context())))
+}

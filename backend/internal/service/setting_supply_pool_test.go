@@ -12,12 +12,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// supplyPoolSettingRepoStub 与 supplierSettingRepoStub 同样的把戏：读到非本 key 就 panic，
+// supplyPoolSettingRepoStub 与 supplierSettingRepoStub 同样的把戏：读到不认识的 key 就 panic，
 // 好让「顺手多读了一个 key」这类回归当场暴露而不是悄悄通过。
+//
+// 认两个 key：池配置和观察期配置。自助接入服务两个都读（一个决定挂哪个分组，
+// 一个决定排空窗和 EligibleAt），所以这个替身不能只认一个。
 type supplyPoolSettingRepoStub struct {
-	value    string
-	getErr   error
-	getCalls int
+	value string
+	// probationValue 观察期配置的原始 JSON。空串 = 走默认（不自动入池、10 分钟排空窗）。
+	probationValue string
+	getErr         error
+	getCalls       int
 
 	setKey   string
 	setValue string
@@ -26,13 +31,17 @@ type supplyPoolSettingRepoStub struct {
 
 func (r *supplyPoolSettingRepoStub) GetValue(_ context.Context, key string) (string, error) {
 	r.getCalls++
-	if key != SettingKeySupplyPool {
+	switch key {
+	case SettingKeySupplyPool:
+		if r.getErr != nil {
+			return "", r.getErr
+		}
+		return r.value, nil
+	case SettingKeySupplyProbation:
+		return r.probationValue, nil
+	default:
 		panic("unexpected settings key: " + key)
 	}
-	if r.getErr != nil {
-		return "", r.getErr
-	}
-	return r.value, nil
 }
 
 func (r *supplyPoolSettingRepoStub) Set(_ context.Context, key, value string) error {
@@ -62,7 +71,9 @@ func (r *supplyPoolSettingRepoStub) Delete(context.Context, string) error {
 func newSupplyPoolSettingService(t *testing.T, repo *supplyPoolSettingRepoStub) *SettingService {
 	t.Helper()
 	invalidateSupplyPoolCache()
+	invalidateSupplyProbationCache()
 	t.Cleanup(invalidateSupplyPoolCache)
+	t.Cleanup(invalidateSupplyProbationCache)
 	return &SettingService{settingRepo: repo}
 }
 

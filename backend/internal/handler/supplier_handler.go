@@ -199,15 +199,28 @@ func (h *SupplierHandler) GetAccount(c *gin.Context) {
 	response.Success(c, view)
 }
 
+// PauseAccountRequest 下线请求。
+type PauseAccountRequest struct {
+	// Mode 下线通道：graceful（默认，可反悔的排空窗）或 immediate（直接终态）。
+	Mode string `json:"mode"`
+}
+
 // PauseAccount 下线一个供给账号。
 // POST /api/v1/user/supply/accounts/:id/pause
+//
+// body 可以为空——那时走默认的 graceful。绑定失败也不报错、同样走 graceful：
+// 这个接口唯一的必要语义是「停止接新单」，因为一个畸形的 body 就把它整个拒掉，
+// 会让一个想紧急下线的供给者卡在一个参数问题上。通道选错的代价（多等一个排空窗、
+// 期间可以取消）远小于下不了线的代价。
 func (h *SupplierHandler) PauseAccount(c *gin.Context) {
+	var req PauseAccountRequest
+	_ = c.ShouldBindJSON(&req)
 	h.mutateAccount(c, func(ctx *gin.Context, userID, accountID int64) error {
-		return h.onboardingService.PauseAccount(ctx.Request.Context(), userID, accountID)
+		return h.onboardingService.PauseAccount(ctx.Request.Context(), userID, accountID, req.Mode)
 	})
 }
 
-// ResumeAccount 把已下线的账号重新挂回来（回到观察期，不直接入池）。
+// ResumeAccount 撤销下线：排空窗内取消则回到原状态，已下线则回到观察期。
 // POST /api/v1/user/supply/accounts/:id/resume
 func (h *SupplierHandler) ResumeAccount(c *gin.Context) {
 	h.mutateAccount(c, func(ctx *gin.Context, userID, accountID int64) error {

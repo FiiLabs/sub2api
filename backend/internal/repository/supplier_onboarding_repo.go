@@ -17,6 +17,12 @@ import (
 // supplierOnboardingSessionCleanupDefaultLimit 单轮清理最多删多少条过期会话。
 const supplierOnboardingSessionCleanupDefaultLimit = 1000
 
+// supplierOnboardingStateScanDefaultLimit 单轮按状态扫描最多取多少个账号。
+//
+// 有上限是因为观察期任务每扫到一个账号就可能打一次上游探测；一轮扫出几千个号、
+// 同时探测，烧的是**供给者自己**的额度。宁可分几轮扫完。
+const supplierOnboardingStateScanDefaultLimit = 200
+
 type supplierOnboardingRepository struct {
 	client *dbent.Client
 }
@@ -154,6 +160,20 @@ FROM accounts
 WHERE owner_user_id = $1 AND deleted_at IS NULL
 ORDER BY id DESC`
 
+// supplierAccountListByStateSQL 按接入状态列出供给账号。
+//
+// extra 的键名与「状态缺失时算 pending_review」这条兜底规则都从 service 侧的常量
+// 拼进来，而不是在 SQL 里再写一遍字面量：这两处一旦漂移，症状是观察期任务扫不到
+// 任何账号——一个完全静默的失效。拼接的是包内常量，不是任何外部输入。
+var supplierAccountListByStateSQL = fmt.Sprintf(`
+SELECT id
+FROM accounts
+WHERE deleted_at IS NULL
+  AND owner_user_id IS NOT NULL
+  AND COALESCE(NULLIF(extra->>'%s', ''), '%s') = $1
+ORDER BY id
+LIMIT $2`, service.SupplyStateExtraKey, service.SupplyStatePendingReview)
+
 // supplierAccountFindByUpstreamUUIDSQL 按上游账号 uuid 找已存在的账号。
 //
 // 不限 owner：同一个上游订阅被**另一个供给者**提交过，同样必须拒绝——那正是
@@ -215,6 +235,30 @@ func (r *supplierOnboardingRepository) ListAccountIDsByOwner(ctx context.Context
 		var id int64
 		if err := rows.Scan(&id); err != nil {
 			return nil, fmt.Errorf("scan owned account id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+func (r *supplierOnboardingRepository) ListAccountIDsBySupplyState(ctx context.Context, state string, limit int) ([]int64, error) {
+	if state == "" {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = supplierOnboardingStateScanDefaultLimit
+	}
+	rows, err := r.client.QueryContext(ctx, supplierAccountListByStateSQL, state, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list accounts by supply state: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan supply state account id: %w", err)
 		}
 		ids = append(ids, id)
 	}

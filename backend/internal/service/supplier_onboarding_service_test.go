@@ -43,6 +43,9 @@ type supplierOnboardingRepoStub struct {
 	ownedErr   error
 	lookupUUID map[string]int64
 	lookupErr  error
+
+	idsByState map[string][]int64
+	stateErr   error
 }
 
 func (r *supplierOnboardingRepoStub) record(name string) {
@@ -109,6 +112,14 @@ func (r *supplierOnboardingRepoStub) GetAccountOwner(_ context.Context, accountI
 func (r *supplierOnboardingRepoStub) ListAccountIDsByOwner(_ context.Context, _ int64) ([]int64, error) {
 	r.calls = append(r.calls, "ListAccountIDsByOwner")
 	return r.ownedIDs, r.ownedErr
+}
+
+func (r *supplierOnboardingRepoStub) ListAccountIDsBySupplyState(_ context.Context, state string, _ int) ([]int64, error) {
+	r.calls = append(r.calls, "ListAccountIDsBySupplyState")
+	if r.stateErr != nil {
+		return nil, r.stateErr
+	}
+	return r.idsByState[state], nil
 }
 
 func (r *supplierOnboardingRepoStub) FindAccountIDByUpstreamUUID(_ context.Context, _, accountUUID string) (int64, error) {
@@ -670,7 +681,26 @@ func TestListAccountsReturnsEmptySliceWhenNothingOwned(t *testing.T) {
 // 下线 / 重新挂回
 // ============================================================================
 
-func TestPauseAccountStopsSchedulingAndMarksRetired(t *testing.T) {
+// 两条通道共有的那一半：无论选哪条，「停止接新单」都是立刻生效的。
+func TestPauseAccountAlwaysStopsSchedulingImmediately(t *testing.T) {
+	for _, mode := range []string{SupplyPauseModeGraceful, SupplyPauseModeImmediate, "", "gArBaGe"} {
+		t.Run("mode="+mode, func(t *testing.T) {
+			store := newSupplierAccountStoreStub()
+			store.accounts[100] = &Account{
+				ID: 100, Schedulable: true,
+				Extra: map[string]any{SupplyStateExtraKey: SupplyStateActive},
+			}
+			repo := &supplierOnboardingRepoStub{ownerByAccount: map[int64]int64{100: 7}}
+			svc := newOnboardingService(t, repo, store, &supplierOAuthStub{}, enabledSupplyPoolJSON())
+
+			require.NoError(t, svc.PauseAccount(context.Background(), 7, 100, mode))
+			assert.False(t, store.schedulableSets[100], "下线的第一件事永远是停止接新单")
+		})
+	}
+}
+
+// 优雅下线进排空窗，不直接进终态，并且记下从哪来（取消下线要靠它回退）。
+func TestPauseAccountGracefulEntersDrainingWithDeadline(t *testing.T) {
 	store := newSupplierAccountStoreStub()
 	store.accounts[100] = &Account{
 		ID: 100, Schedulable: true,
@@ -679,8 +709,86 @@ func TestPauseAccountStopsSchedulingAndMarksRetired(t *testing.T) {
 	repo := &supplierOnboardingRepoStub{ownerByAccount: map[int64]int64{100: 7}}
 	svc := newOnboardingService(t, repo, store, &supplierOAuthStub{}, enabledSupplyPoolJSON())
 
-	require.NoError(t, svc.PauseAccount(context.Background(), 7, 100))
-	assert.False(t, store.schedulableSets[100])
+	require.NoError(t, svc.PauseAccount(context.Background(), 7, 100, SupplyPauseModeGraceful))
+	updates := store.extraUpdates[100]
+	assert.Equal(t, SupplyStateDraining, updates[SupplyStateExtraKey])
+	assert.Equal(t, SupplyStateActive, updates[SupplyDrainFromExtraKey])
+
+	until, err := time.Parse(time.RFC3339, updates[SupplyDrainUntilExtraKey].(string))
+	require.NoError(t, err)
+	assert.True(t, until.After(time.Now()), "排空窗必须落在未来")
+}
+
+// 立即拔出直接进终态，没有窗口。
+func TestPauseAccountImmediateGoesStraightToRetired(t *testing.T) {
+	store := newSupplierAccountStoreStub()
+	store.accounts[100] = &Account{
+		ID: 100, Schedulable: true,
+		Extra: map[string]any{SupplyStateExtraKey: SupplyStateActive},
+	}
+	repo := &supplierOnboardingRepoStub{ownerByAccount: map[int64]int64{100: 7}}
+	svc := newOnboardingService(t, repo, store, &supplierOAuthStub{}, enabledSupplyPoolJSON())
+
+	require.NoError(t, svc.PauseAccount(context.Background(), 7, 100, SupplyPauseModeImmediate))
+	updates := store.extraUpdates[100]
+	assert.Equal(t, SupplyStateRetired, updates[SupplyStateExtraKey])
+	assert.Empty(t, updates[SupplyDrainUntilExtraKey], "终态不该留着排空窗")
+}
+
+// 排空窗配成 0 时优雅下线没有意义——直接终态，而不是造一个立刻到期的中间态。
+func TestPauseAccountGracefulWithZeroWindowRetiresDirectly(t *testing.T) {
+	store := newSupplierAccountStoreStub()
+	store.accounts[100] = &Account{
+		ID: 100, Schedulable: true,
+		Extra: map[string]any{SupplyStateExtraKey: SupplyStateActive},
+	}
+	repo := &supplierOnboardingRepoStub{ownerByAccount: map[int64]int64{100: 7}}
+	settingRepo := &supplyPoolSettingRepoStub{
+		value:          enabledSupplyPoolJSON(),
+		probationValue: `{"enabled":true,"drain_window_minutes":0}`,
+	}
+	svc := &SupplierOnboardingService{
+		repo: repo, accountRepo: store, oauth: &supplierOAuthStub{},
+		settings: newSupplyPoolSettingService(t, settingRepo),
+	}
+
+	require.NoError(t, svc.PauseAccount(context.Background(), 7, 100, SupplyPauseModeGraceful))
+	assert.Equal(t, SupplyStateRetired, store.extraUpdates[100][SupplyStateExtraKey])
+}
+
+// 反复点优雅下线不能把排空窗一直往后推——否则号可以无限期停在既不接单也没下线的中间态。
+func TestPauseAccountGracefulTwiceDoesNotExtendWindow(t *testing.T) {
+	store := newSupplierAccountStoreStub()
+	store.accounts[100] = &Account{
+		ID: 100, Schedulable: false,
+		Extra: map[string]any{
+			SupplyStateExtraKey:      SupplyStateDraining,
+			SupplyDrainUntilExtraKey: time.Now().Add(time.Minute).Format(time.RFC3339),
+			SupplyDrainFromExtraKey:  SupplyStateActive,
+		},
+	}
+	repo := &supplierOnboardingRepoStub{ownerByAccount: map[int64]int64{100: 7}}
+	svc := newOnboardingService(t, repo, store, &supplierOAuthStub{}, enabledSupplyPoolJSON())
+
+	require.NoError(t, svc.PauseAccount(context.Background(), 7, 100, SupplyPauseModeGraceful))
+	assert.Nil(t, store.extraUpdates[100], "已经在排空窗里就什么都不改")
+}
+
+// 排空窗内可以升级成立即拔出：反悔的反面也得走得通。
+func TestPauseAccountImmediateOverridesDraining(t *testing.T) {
+	store := newSupplierAccountStoreStub()
+	store.accounts[100] = &Account{
+		ID: 100, Schedulable: false,
+		Extra: map[string]any{
+			SupplyStateExtraKey:      SupplyStateDraining,
+			SupplyDrainUntilExtraKey: time.Now().Add(time.Hour).Format(time.RFC3339),
+			SupplyDrainFromExtraKey:  SupplyStateActive,
+		},
+	}
+	repo := &supplierOnboardingRepoStub{ownerByAccount: map[int64]int64{100: 7}}
+	svc := newOnboardingService(t, repo, store, &supplierOAuthStub{}, enabledSupplyPoolJSON())
+
+	require.NoError(t, svc.PauseAccount(context.Background(), 7, 100, SupplyPauseModeImmediate))
 	assert.Equal(t, SupplyStateRetired, store.extraUpdates[100][SupplyStateExtraKey])
 }
 
@@ -690,25 +798,74 @@ func TestPauseAccountRejectsForeignAccount(t *testing.T) {
 	repo := &supplierOnboardingRepoStub{ownerByAccount: map[int64]int64{100: 8}}
 	svc := newOnboardingService(t, repo, store, &supplierOAuthStub{}, enabledSupplyPoolJSON())
 
-	err := svc.PauseAccount(context.Background(), 7, 100)
+	err := svc.PauseAccount(context.Background(), 7, 100, SupplyPauseModeImmediate)
 	assert.ErrorIs(t, err, ErrSupplierAccountNotFound)
 	assert.Zero(t, store.schedulableCalls, "不是你的号，一个字段都不许动")
 }
 
-// 重新挂回只回到观察期，绝不自己变可调度——否则供给者可以绕过观察期把号推进池子。
+// 从终态重新挂回只回到观察期，绝不自己变可调度——否则供给者可以绕过观察期把号推进池子。
 func TestResumeAccountReturnsToPendingReviewWithoutBecomingSchedulable(t *testing.T) {
 	store := newSupplierAccountStoreStub()
 	store.accounts[100] = &Account{
 		ID: 100, Schedulable: false,
-		Extra: map[string]any{SupplyStateExtraKey: SupplyStateRetired},
+		Extra: map[string]any{
+			SupplyStateExtraKey:       SupplyStateRetired,
+			SupplyProbePassesExtraKey: 5,
+		},
 	}
 	repo := &supplierOnboardingRepoStub{ownerByAccount: map[int64]int64{100: 7}}
 	svc := newOnboardingService(t, repo, store, &supplierOAuthStub{}, enabledSupplyPoolJSON())
 
 	require.NoError(t, svc.ResumeAccount(context.Background(), 7, 100))
-	assert.Equal(t, SupplyStatePendingReview, store.extraUpdates[100][SupplyStateExtraKey])
+	updates := store.extraUpdates[100]
+	assert.Equal(t, SupplyStatePendingReview, updates[SupplyStateExtraKey])
+	assert.Equal(t, 0, updates[SupplyProbePassesExtraKey], "重新挂回要从零开始观察")
+	assert.NotEmpty(t, updates[SupplyProbationSinceExtraKey], "观察窗要重新计时")
 	assert.Zero(t, store.schedulableCalls, "resume 不得触碰可调度性")
 	assert.False(t, store.accounts[100].Schedulable)
+}
+
+// 排空窗内取消下线：回到进入排空之前的那个状态，不重走观察期。
+func TestResumeAccountCancelsDrainingBackToActive(t *testing.T) {
+	store := newSupplierAccountStoreStub()
+	store.accounts[100] = &Account{
+		ID: 100, Schedulable: false,
+		Extra: map[string]any{
+			SupplyStateExtraKey:      SupplyStateDraining,
+			SupplyDrainUntilExtraKey: time.Now().Add(time.Hour).Format(time.RFC3339),
+			SupplyDrainFromExtraKey:  SupplyStateActive,
+		},
+	}
+	repo := &supplierOnboardingRepoStub{ownerByAccount: map[int64]int64{100: 7}}
+	svc := newOnboardingService(t, repo, store, &supplierOAuthStub{}, enabledSupplyPoolJSON())
+
+	require.NoError(t, svc.ResumeAccount(context.Background(), 7, 100))
+	updates := store.extraUpdates[100]
+	assert.Equal(t, SupplyStateActive, updates[SupplyStateExtraKey])
+	assert.Empty(t, updates[SupplyDrainUntilExtraKey])
+	assert.True(t, store.schedulableSets[100], "本来就在池里，取消下线要原样放回去")
+	assert.NotContains(t, updates, SupplyProbationSinceExtraKey, "取消下线不重走观察期")
+}
+
+// 排空来路不明（字段被手工动过）时回到观察期，不回到 active。
+func TestResumeAccountCancelsDrainingWithUnknownOriginFallsBackToPendingReview(t *testing.T) {
+	for _, origin := range []any{nil, "", "nonsense", 42} {
+		extra := map[string]any{
+			SupplyStateExtraKey:      SupplyStateDraining,
+			SupplyDrainUntilExtraKey: time.Now().Add(time.Hour).Format(time.RFC3339),
+		}
+		if origin != nil {
+			extra[SupplyDrainFromExtraKey] = origin
+		}
+		store := newSupplierAccountStoreStub()
+		store.accounts[100] = &Account{ID: 100, Extra: extra}
+		repo := &supplierOnboardingRepoStub{ownerByAccount: map[int64]int64{100: 7}}
+		svc := newOnboardingService(t, repo, store, &supplierOAuthStub{}, enabledSupplyPoolJSON())
+
+		require.NoError(t, svc.ResumeAccount(context.Background(), 7, 100))
+		assert.Equal(t, SupplyStatePendingReview, store.extraUpdates[100][SupplyStateExtraKey])
+		assert.Zero(t, store.schedulableCalls, "来路不明就不许自己变可调度")
+	}
 }
 
 func TestResumeAccountRejectsNonRetiredAccount(t *testing.T) {
@@ -755,7 +912,7 @@ func TestSupplierAccountViewOmitsInternalFields(t *testing.T) {
 			"email_address": "a@b.c",
 		},
 		Extra: map[string]any{SupplyStateExtraKey: SupplyStateActive},
-	})
+	}, nil)
 
 	require.NotNil(t, view)
 	assert.Equal(t, "a@b.c", view.EmailAddress)

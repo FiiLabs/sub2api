@@ -152,6 +152,125 @@
             </button>
           </div>
         </div>
+
+        <!-- ===================== 观察期 / 下线 ===================== -->
+        <div class="card space-y-4 p-6">
+          <div>
+            <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('supplyAdmin.probation.title') }}</h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.probation.description') }}</p>
+          </div>
+
+          <div class="flex items-center justify-between">
+            <div>
+              <label class="font-medium text-gray-900 dark:text-white">{{ t('supplyAdmin.probation.enabled') }}</label>
+              <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.probation.enabledHint') }}</p>
+            </div>
+            <Toggle v-model="probationForm.enabled" data-testid="supply-probation-enabled" />
+          </div>
+
+          <div class="space-y-4 border-t border-gray-100 pt-4 dark:border-dark-700">
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('supplyAdmin.probation.minObservation') }}
+              </label>
+              <input
+                v-model.number="probationForm.min_observation_minutes"
+                type="number"
+                step="1"
+                min="0"
+                :max="probationBounds.min_observation_minutes_max"
+                class="input"
+                data-testid="supply-probation-min-observation"
+              />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('supplyAdmin.probation.minObservationHint', { max: probationBounds.min_observation_minutes_max }) }}
+              </p>
+            </div>
+
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('supplyAdmin.probation.requiredSuccesses') }}
+              </label>
+              <input
+                v-model.number="probationForm.required_successes"
+                type="number"
+                step="1"
+                min="1"
+                :max="probationBounds.required_successes_max"
+                class="input"
+                data-testid="supply-probation-required-successes"
+              />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('supplyAdmin.probation.requiredSuccessesHint', { max: probationBounds.required_successes_max }) }}
+              </p>
+            </div>
+
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('supplyAdmin.probation.probeInterval') }}
+              </label>
+              <input
+                v-model.number="probationForm.probe_interval_minutes"
+                type="number"
+                step="1"
+                :min="probationBounds.probe_interval_minutes_min"
+                :max="probationBounds.probe_interval_minutes_max"
+                class="input"
+                data-testid="supply-probation-probe-interval"
+              />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{
+                  t('supplyAdmin.probation.probeIntervalHint', {
+                    min: probationBounds.probe_interval_minutes_min,
+                    max: probationBounds.probe_interval_minutes_max,
+                  })
+                }}
+              </p>
+            </div>
+
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('supplyAdmin.probation.probeModel') }}
+              </label>
+              <input
+                v-model.trim="probationForm.probe_model"
+                type="text"
+                class="input"
+                :placeholder="t('supplyAdmin.probation.probeModelPlaceholder')"
+                data-testid="supply-probation-probe-model"
+              />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.probation.probeModelHint') }}</p>
+            </div>
+
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('supplyAdmin.probation.drainWindow') }}
+              </label>
+              <input
+                v-model.number="probationForm.drain_window_minutes"
+                type="number"
+                step="1"
+                min="0"
+                :max="probationBounds.drain_window_minutes_max"
+                class="input"
+                data-testid="supply-probation-drain-window"
+              />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('supplyAdmin.probation.drainWindowHint', { max: probationBounds.drain_window_minutes_max }) }}
+              </p>
+            </div>
+
+            <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-900">
+              <p class="text-xs text-gray-600 dark:text-gray-300">{{ t('supplyAdmin.probation.clampNotice') }}</p>
+            </div>
+          </div>
+
+          <div class="flex justify-end">
+            <button class="btn btn-primary" :disabled="savingProbation" @click="saveProbation">
+              {{ t('supplyAdmin.probation.save') }}
+            </button>
+          </div>
+        </div>
       </template>
     </div>
   </AppLayout>
@@ -162,7 +281,12 @@ import { onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Toggle from '@/components/common/Toggle.vue'
-import { adminSupplyMarketAPI, type SupplyPoolSettings } from '@/api/admin/supplyMarket'
+import {
+  adminSupplyMarketAPI,
+  type SupplyPoolSettings,
+  type SupplyProbationPayload,
+  type SupplyProbationSettings,
+} from '@/api/admin/supplyMarket'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
 
@@ -172,6 +296,7 @@ const appStore = useAppStore()
 const loading = ref(true)
 const savingSettlement = ref(false)
 const savingPool = ref(false)
+const savingProbation = ref(false)
 
 const settlementForm = reactive({
   enabled: false,
@@ -190,6 +315,25 @@ const poolForm = reactive<SupplyPoolSettings>({
   overflow_group_id: 0,
 })
 
+// 默认值与后端 defaultSupplyProbationSettings 对齐，但只是"后端读不到时也能渲染"的兜底：
+// 真值一律以 loadProbation() 拉回来的为准。
+const probationForm = reactive<SupplyProbationPayload>({
+  enabled: false,
+  min_observation_minutes: 60,
+  required_successes: 2,
+  probe_interval_minutes: 15,
+  probe_model: '',
+  drain_window_minutes: 10,
+})
+
+const probationBounds = reactive({
+  min_observation_minutes_max: 60 * 24 * 30,
+  required_successes_max: 20,
+  probe_interval_minutes_min: 5,
+  probe_interval_minutes_max: 60 * 24,
+  drain_window_minutes_max: 60 * 24,
+})
+
 async function loadSettlement(): Promise<void> {
   const settings = await adminSupplyMarketAPI.getSettlementSettings()
   settlementForm.enabled = settings.enabled
@@ -205,6 +349,36 @@ async function loadPool(): Promise<void> {
   poolForm.enabled = settings.enabled
   poolForm.supply_group_id = settings.supply_group_id
   poolForm.overflow_group_id = settings.overflow_group_id
+}
+
+async function loadProbation(): Promise<void> {
+  const settings = await adminSupplyMarketAPI.getProbationSettings()
+  probationForm.enabled = settings.enabled
+  probationForm.min_observation_minutes = settings.min_observation_minutes
+  probationForm.required_successes = settings.required_successes
+  probationForm.probe_interval_minutes = settings.probe_interval_minutes
+  probationForm.probe_model = settings.probe_model
+  probationForm.drain_window_minutes = settings.drain_window_minutes
+  applyProbationBounds(settings)
+}
+
+/** 边界值只在后端确实给了正数时才覆盖本地兜底：字段缺失会被当成 0，把输入框锁死。 */
+function applyProbationBounds(settings: SupplyProbationSettings): void {
+  if (settings.min_observation_minutes_max > 0) {
+    probationBounds.min_observation_minutes_max = settings.min_observation_minutes_max
+  }
+  if (settings.required_successes_max > 0) {
+    probationBounds.required_successes_max = settings.required_successes_max
+  }
+  if (settings.probe_interval_minutes_min > 0) {
+    probationBounds.probe_interval_minutes_min = settings.probe_interval_minutes_min
+  }
+  if (settings.probe_interval_minutes_max > 0) {
+    probationBounds.probe_interval_minutes_max = settings.probe_interval_minutes_max
+  }
+  if (settings.drain_window_minutes_max > 0) {
+    probationBounds.drain_window_minutes_max = settings.drain_window_minutes_max
+  }
 }
 
 async function saveSettlement(): Promise<void> {
@@ -248,9 +422,37 @@ async function savePool(): Promise<void> {
   }
 }
 
+async function saveProbation(): Promise<void> {
+  savingProbation.value = true
+  try {
+    const saved = await adminSupplyMarketAPI.updateProbationSettings({
+      enabled: probationForm.enabled,
+      min_observation_minutes: probationForm.min_observation_minutes,
+      required_successes: probationForm.required_successes,
+      probe_interval_minutes: probationForm.probe_interval_minutes,
+      probe_model: probationForm.probe_model,
+      drain_window_minutes: probationForm.drain_window_minutes,
+    })
+    // 这一组后端是**夹回区间而不是报错**（与结算参数刻意不同），所以回填不是可选的：
+    // 不写回来，运营会以为自己填的 1 分钟生效了，而库里存的是 5。
+    probationForm.enabled = saved.enabled
+    probationForm.min_observation_minutes = saved.min_observation_minutes
+    probationForm.required_successes = saved.required_successes
+    probationForm.probe_interval_minutes = saved.probe_interval_minutes
+    probationForm.probe_model = saved.probe_model
+    probationForm.drain_window_minutes = saved.drain_window_minutes
+    applyProbationBounds(saved)
+    appStore.showSuccess(t('supplyAdmin.probation.saved'))
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('supplyAdmin.error.saveFailed')))
+  } finally {
+    savingProbation.value = false
+  }
+}
+
 onMounted(async () => {
   try {
-    await Promise.all([loadSettlement(), loadPool()])
+    await Promise.all([loadSettlement(), loadPool(), loadProbation()])
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, t('supplyAdmin.error.loadFailed')))
   } finally {

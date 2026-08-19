@@ -15,14 +15,17 @@ export interface SupplyStatus {
   settlement_enabled: boolean
 }
 
+/** 下线通道。graceful 可在排空窗内取消，immediate 直接进终态、不可撤销。 */
+export type SupplyPauseMode = 'graceful' | 'immediate'
+
 /** 供给账号的对外视图。刻意不含 credentials——那是凭证，前端永远不需要。 */
 export interface SupplyAccount {
   id: number
   name: string
   platform: string
-  /** pending_review | active | retired */
+  /** pending_review | active | draining | retired */
   supply_state: string
-  /** 是否可被调度。首版里新号一律 false，由观察期流程（后续切片）放行。 */
+  /** 是否可被调度。新号一律 false，由观察期流程放行。 */
   schedulable: boolean
   /** 上游账号健康状态（active / error / ...），凭证失效时会变 */
   status: string
@@ -31,6 +34,20 @@ export interface SupplyAccount {
   email_address?: string
   last_used_at?: string | null
   created_at: string
+
+  /** 本轮观察期起点 */
+  probation_since?: string | null
+  /**
+   * 观察窗最早何时满足。是一个「不早于」——入池还要求连续探测达标且自动入池开着，
+   * 文案要按这个语气写，不能说成「将于此时入池」。
+   */
+  eligible_at?: string | null
+  /** 已连续通过几次探测 */
+  probe_passes: number
+  /** 上次探测失败原因。有值 = 供给者自己要动手（多半是重新授权）。 */
+  probe_error?: string
+  /** 排空窗到期时刻，仅 draining 状态有值 */
+  drain_until?: string | null
 }
 
 /** 赚取钱包快照。 */
@@ -109,8 +126,12 @@ async function listAccounts(): Promise<SupplyAccount[]> {
   return data?.accounts ?? []
 }
 
-async function pauseAccount(id: number): Promise<SupplyAccount> {
-  const { data } = await apiClient.post<SupplyAccount>(`/user/supply/accounts/${id}/pause`)
+/**
+ * 下线一个号。两条通道都会立刻停止接新单，差别只在终态多快到来、还能不能反悔。
+ * 两者都**停不掉已经在流的请求**——界面文案必须说清楚这一点。
+ */
+async function pauseAccount(id: number, mode: SupplyPauseMode = 'graceful'): Promise<SupplyAccount> {
+  const { data } = await apiClient.post<SupplyAccount>(`/user/supply/accounts/${id}/pause`, { mode })
   return data
 }
 
