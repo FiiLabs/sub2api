@@ -74,7 +74,9 @@ export interface SupplyLedgerEntry {
   amount: number
   request_id?: string
   account_id?: number
-  source_user_id?: number
+  // 这里**没有** source_user_id：消费者身份在服务端就被抹掉了
+  // （service/supplier_credit_service.go 的 stripConsumerIdentity）。
+  // 管理端的 SupplyAdminLedgerEntry 保留该字段，两个类型的差别仅此一处。
   basis_amount?: number
   share_ratio?: number
   frozen_until?: string

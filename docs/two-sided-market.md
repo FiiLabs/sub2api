@@ -189,6 +189,8 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 
 **管理端流水的过滤器是独立类型，刻意不与供给者侧共用**。`SupplyAdminLedgerFilter.UserID == 0` 表示"看全站"，而供给者侧的同名字段 `<= 0` 必须拒绝。把两者合并成一个类型，供给者侧任何一处漏传 user_id 的 bug 就会从"查不到"升级成"看到所有人的账"。
 
+**流水行的类型两边共用，但消费者身份只有管理端看得到**。`SupplyAdminLedgerEntry` 内嵌 `SupplierCreditLedgerEntry`（理由见该类型注释：两份结构体迟早有一份忘了跟着加金额字段）。共用带来的代价是 `source_user_id` 会顺着供给者侧的读路径出网——翻页拉一遍就是一份"谁在用我的号"的 user_id 序列。因此 `SupplierCreditService.ListLedger` 返回前统一走一次 `stripConsumerIdentity`：**抹在 service 而不是 handler**，因为这一层就是"供给者视角"的边界，日后再挂一个读流水的 handler 不会重新漏。管理端保留该字段——追一笔拒付必须能定位到消费者。两条路径的差别仅此一个函数，由 `supplier_credit_service_test.go` 钉住（同时断言序列化后的 JSON 里**没有这个键名**：只断言字段为 nil 的话，`omitempty` 被删掉会变成一个 `"source_user_id": null`，键名本身已经在告诉供给者这个维度存在）。
+
 ## 4. Core Touch 台账
 
 core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APEXONE-EXT:` 可 grep 标记 + 详尽注释 + 单测。下表随实现逐行填。

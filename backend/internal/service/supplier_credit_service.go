@@ -72,5 +72,27 @@ func (s *SupplierCreditService) ListLedger(ctx context.Context, filter SupplierC
 	if filter.PageSize > supplierLedgerMaxPageSize {
 		filter.PageSize = supplierLedgerMaxPageSize
 	}
-	return s.repo.ListLedger(ctx, filter)
+	entries, total, err := s.repo.ListLedger(ctx, filter)
+	if err != nil {
+		return nil, 0, err
+	}
+	return stripConsumerIdentity(entries), total, nil
+}
+
+// stripConsumerIdentity 抹掉流水里指向消费者的字段。
+//
+// 供给者的应得信息是「谁付的钱不关我事，我这一笔赚了多少」。SourceUserID 是入账
+// 幂等与追回用的内部关联键，翻页拉一遍就能得到一份「谁在用我的号」的 user_id 序列，
+// 那是消费者的隐私，不是供给者的对账依据——对账要的 request_id / account_id / 金额
+// 都还在。
+//
+// 抹在这一层而不是 handler 层：本服务就是「供给者视角」的边界，日后再挂一个
+// 读流水的 handler 也不会重新把它漏出去。运营侧走的是 SupplierAdminService，
+// 那里保留该字段（追一笔拒付必须能定位到消费者），两条路径的类型是同一个，
+// 差别只在这个函数。
+func stripConsumerIdentity(entries []SupplierCreditLedgerEntry) []SupplierCreditLedgerEntry {
+	for i := range entries {
+		entries[i].SourceUserID = nil
+	}
+	return entries
 }
