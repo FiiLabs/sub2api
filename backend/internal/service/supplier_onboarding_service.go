@@ -69,9 +69,14 @@ type supplierSettingsReader interface {
 
 // supplierAccountStore 是自助接入用到的账号读写子集。
 //
-// 从 AccountRepository 里挑出来的四个方法。窄接口在这里有实际作用：它让「自助接入
-// 能对账号做什么」变成一份可以一眼读完的清单——建、读、改 extra、改可调度性。
-// 删号、改凭证、改分组绑定都不在里面，供给者的接口够不到它们。
+// 从 AccountRepository 里挑出来的几个方法。窄接口在这里有实际作用：它让「自助接入
+// 能对账号做什么」变成一份可以一眼读完的清单——建、读、改 extra、改可调度性、摘号。
+// 改凭证、改分组优先级、改归属都不在里面，供给者的接口够不到它们。
+//
+// Delete 是后来加进来的，加得很不情愿：它让这份清单多了一件破坏性的事。但解绑
+// （DetachAccount）没有它就做不干净——只抹凭证不摘号，会在供给者的列表和管理端
+// 留下一行"存在但一定用不了"的僵尸记录。加进来的前提是它只被 DetachAccount 调用，
+// 且那条路径必须先过 getOwnedAccount。
 type supplierAccountStore interface {
 	Create(ctx context.Context, account *Account) error
 	GetByID(ctx context.Context, id int64) (*Account, error)
@@ -79,6 +84,8 @@ type supplierAccountStore interface {
 	BindGroups(ctx context.Context, accountID int64, groupIDs []int64) error
 	UpdateExtra(ctx context.Context, id int64, updates map[string]any) error
 	SetSchedulable(ctx context.Context, id int64, schedulable bool) error
+	// Delete 软删账号，同时解掉分组绑定、清掉调度快照、发一次调度变更事件。
+	Delete(ctx context.Context, id int64) error
 }
 
 // SupplierOnboardingService 编排供给者自助接入。
@@ -580,6 +587,68 @@ func (s *SupplierOnboardingService) ResumeAccount(ctx context.Context, userID, a
 	default:
 		return ErrSupplierAccountNotRetired
 	}
+}
+
+// DetachAccount 供给者彻底撤回一个号：平台交还控制权，不再持有他的凭证。
+//
+// # 为什么必须有这个操作
+//
+// 在它之前，供给者能做的最强动作是「下线」（PauseAccount）——号不再接单，但那份
+// refresh token 仍然原封不动地躺在 accounts.credentials 里，平台随时能刷出新的
+// access token。也就是说：供给者交出授权之后就再也收不回来，只能请求平台别用。
+// 一个建立在「请相信我们不会用」之上的双边市场是不成立的，所以这条路径不是功能，
+// 是这套东西能不能对外讲的前提。
+//
+// # 上游没有可调用的撤销端点
+//
+// 抹掉凭证就是这里能给出的全部保证——Anthropic 没有公开 OAuth 撤销端点
+// （token 端点是 platform.claude.com/v1/oauth/token，没有对应的 revoke）。
+// 刻意**不**去 POST 一个猜出来的地址：那会让每次解绑都打一次必然失败的请求，
+// 并在日志里留下"撤销失败"的噪音，营造出一种平台尝试过远端撤销的假象。
+// 真正的远端撤销只有供给者自己在 claude.ai 的账号设置里能做，前端会告诉他这一点。
+//
+// 于是这条路径的承诺被压到一句可验证的话：**平台这边不再有这份凭证**。
+//
+// # 三步的顺序
+//
+//  1. SetSchedulable(false)——同 PauseAccount，先把「不再接新单」落地。走仓储而不是
+//     混进下面那条 SQL：它还会清调度快照、发调度变更事件，那两件事这条 raw SQL 做不到。
+//  2. ScrubAccountCredentials——不可逆的一步。凭证在这一刻消失，同时行上留下解绑时刻。
+//  3. Delete——软删。摘掉分组绑定、从供给者与管理端的列表里消失。
+//
+// 2 在 3 之前是必须的：软删之后那条 UPDATE 的 `deleted_at IS NULL` 就再也匹配不上，
+// 凭证会永远留在一行没人再看的记录里。反过来，2 成功而 3 失败是可以接受的失败态——
+// 号已经停了、凭证已经没了，剩下的只是一行界面上还看得见的空壳，重试一次即可。
+//
+// # 不碰的两样东西
+//
+//   - 钱包：解绑不结算、不清零。已经攒下的余额是平台欠他的债，与他还供不供货无关
+//     （同「注销用户仍可能是债主」，见 docs/two-sided-market.md §3.6）。
+//   - owner_user_id：留在软删的行上。它是「这个号当时是谁的」的唯一记录，
+//     出账目纠纷时要靠它对账。
+func (s *SupplierOnboardingService) DetachAccount(ctx context.Context, userID, accountID int64) error {
+	account, err := s.getOwnedAccount(ctx, userID, accountID)
+	if err != nil {
+		return err
+	}
+
+	if err := s.accountRepo.SetSchedulable(ctx, account.ID, false); err != nil {
+		return err
+	}
+	if err := s.repo.ScrubAccountCredentials(ctx, account.ID, userID); err != nil {
+		return err
+	}
+	if err := s.accountRepo.Delete(ctx, account.ID); err != nil {
+		// 凭证已经抹掉了，供给者要的那件事已经成立。把这一步的失败记下来但仍然
+		// 报错给调用方：他会看到一个还在列表里的号，重试一次就干净了。
+		slog.Error("[SupplierOnboarding] credentials scrubbed but account row not removed",
+			"account_id", account.ID, "user_id", userID, "error", err)
+		return err
+	}
+
+	slog.Info("[SupplierOnboarding] supply account detached",
+		"account_id", account.ID, "user_id", userID, "supply_state", supplyStateOf(account))
+	return nil
 }
 
 // supplyStateOf 读账号的接入状态，读不到按 pending_review 算。

@@ -52,6 +52,9 @@ type supplierOnboardingRepoStub struct {
 
 	orphanIDs []int64
 	orphanErr error
+
+	scrubCalls [][2]int64
+	scrubErr   error
 }
 
 func (r *supplierOnboardingRepoStub) record(name string) {
@@ -136,6 +139,13 @@ func (r *supplierOnboardingRepoStub) ListAccountIDsWithUnavailableOwner(_ contex
 	return r.orphanIDs, nil
 }
 
+func (r *supplierOnboardingRepoStub) ScrubAccountCredentials(_ context.Context, accountID, userID int64) error {
+	r.calls = append(r.calls, "ScrubAccountCredentials")
+	r.record("ScrubAccountCredentials")
+	r.scrubCalls = append(r.scrubCalls, [2]int64{accountID, userID})
+	return r.scrubErr
+}
+
 func (r *supplierOnboardingRepoStub) FindAccountIDByUpstreamIdentity(_ context.Context, _ string, key SupplierIdentityKey, value string) (int64, error) {
 	r.calls = append(r.calls, "FindAccountIDByUpstreamIdentity")
 	r.lookupKeys = append(r.lookupKeys, key)
@@ -163,6 +173,9 @@ type supplierAccountStoreStub struct {
 	schedulableCalls  int
 	setSchedulableErr error
 	getErr            error
+
+	deletedIDs []int64
+	deleteErr  error
 }
 
 func newSupplierAccountStoreStub() *supplierAccountStoreStub {
@@ -245,8 +258,23 @@ func (s *supplierAccountStoreStub) UpdateExtra(_ context.Context, id int64, upda
 	return nil
 }
 
+// Delete 只记账，**不**把账号从 map 里拿掉。
+//
+// 刻意如此：真实实现是软删，行还在，只是查询看不见了。留着才能让测试在删除之后
+// 仍然读得到那一行，去断言凭证是不是真的被抹掉了——那正是解绑最要紧的一条性质。
+func (s *supplierAccountStoreStub) Delete(_ context.Context, id int64) error {
+	s.calls = append(s.calls, "Delete")
+	s.record("Delete")
+	if s.deleteErr != nil {
+		return s.deleteErr
+	}
+	s.deletedIDs = append(s.deletedIDs, id)
+	return nil
+}
+
 func (s *supplierAccountStoreStub) SetSchedulable(_ context.Context, id int64, schedulable bool) error {
 	s.calls = append(s.calls, "SetSchedulable")
+	s.record("SetSchedulable")
 	s.schedulableCalls++
 	if s.setSchedulableErr != nil {
 		return s.setSchedulableErr
@@ -987,6 +1015,94 @@ func TestResumeAccountRejectsNonRetiredAccount(t *testing.T) {
 			assert.NotContains(t, store.calls, "UpdateExtra")
 		})
 	}
+}
+
+// ============================================================================
+// 解绑
+// ============================================================================
+
+// 解绑的三步必须按「停调度 → 抹凭证 → 摘号」的顺序发生。
+//
+// 顺序不是风格问题，两处颠倒各有各的后果：
+//   - 抹凭证排在停调度之前，中间失败会留下一个还在接单、却已经没有凭证的号；
+//   - 摘号排在抹凭证之前，软删之后那条带 `deleted_at IS NULL` 的 UPDATE 就再也
+//     匹配不上，凭证会永久留在一行没人再看的记录里——正是这个功能要消灭的东西。
+func TestDetachAccountStopsScrubsThenRemovesInThatOrder(t *testing.T) {
+	var seq []string
+	store := newSupplierAccountStoreStub()
+	store.seq = &seq
+	store.accounts[100] = &Account{
+		ID: 100, Schedulable: true,
+		Extra: map[string]any{SupplyStateExtraKey: SupplyStateActive},
+	}
+	repo := &supplierOnboardingRepoStub{ownerByAccount: map[int64]int64{100: 7}, seq: &seq}
+	svc := newOnboardingService(t, repo, store, &supplierOAuthStub{}, enabledSupplyPoolJSON())
+
+	require.NoError(t, svc.DetachAccount(context.Background(), 7, 100))
+
+	assert.Equal(t, []string{"SetSchedulable", "ScrubAccountCredentials", "Delete"}, seq)
+	assert.False(t, store.schedulableSets[100])
+	assert.Equal(t, []int64{100}, store.deletedIDs)
+}
+
+// 抹凭证时必须把归属人一起传下去。
+//
+// 仓储那条 UPDATE 的 WHERE 里带着 owner_user_id，传错人等于抹不掉（或者更糟，
+// 抹掉别人的）。这个断言守的是参数，不是行为——因为传错了不会有任何症状。
+func TestDetachAccountScrubsScopedToOwner(t *testing.T) {
+	store := newSupplierAccountStoreStub()
+	store.accounts[100] = &Account{ID: 100}
+	repo := &supplierOnboardingRepoStub{ownerByAccount: map[int64]int64{100: 7}}
+	svc := newOnboardingService(t, repo, store, &supplierOAuthStub{}, enabledSupplyPoolJSON())
+
+	require.NoError(t, svc.DetachAccount(context.Background(), 7, 100))
+	assert.Equal(t, [][2]int64{{100, 7}}, repo.scrubCalls)
+}
+
+// 别人的号一个字段都不许动——尤其不许抹凭证。
+func TestDetachAccountRejectsForeignAccount(t *testing.T) {
+	store := newSupplierAccountStoreStub()
+	store.accounts[100] = &Account{ID: 100, Schedulable: true}
+	repo := &supplierOnboardingRepoStub{ownerByAccount: map[int64]int64{100: 8}}
+	svc := newOnboardingService(t, repo, store, &supplierOAuthStub{}, enabledSupplyPoolJSON())
+
+	err := svc.DetachAccount(context.Background(), 7, 100)
+	assert.ErrorIs(t, err, ErrSupplierAccountNotFound)
+	assert.Empty(t, repo.scrubCalls, "不是你的号，凭证轮不到你抹")
+	assert.Empty(t, store.deletedIDs)
+	assert.Zero(t, store.schedulableCalls)
+}
+
+// 抹凭证失败就必须停下来，绝不能继续摘号。
+//
+// 继续走下去的后果是最坏的那一个：行被软删（谁也看不见了），凭证却还在里面，
+// 而供给者收到的是一句「已解绑」。
+func TestDetachAccountDoesNotRemoveAccountWhenScrubFails(t *testing.T) {
+	store := newSupplierAccountStoreStub()
+	store.accounts[100] = &Account{ID: 100, Schedulable: true}
+	repo := &supplierOnboardingRepoStub{
+		ownerByAccount: map[int64]int64{100: 7},
+		scrubErr:       errors.New("boom"),
+	}
+	svc := newOnboardingService(t, repo, store, &supplierOAuthStub{}, enabledSupplyPoolJSON())
+
+	err := svc.DetachAccount(context.Background(), 7, 100)
+	require.Error(t, err)
+	assert.Empty(t, store.deletedIDs, "凭证还在，号就不能消失")
+	assert.False(t, store.schedulableSets[100], "但停调度已经落地，不回滚")
+}
+
+// 摘号失败照样报错。凭证已经没了，但供给者的列表里还留着一行，他需要知道要重试。
+func TestDetachAccountReportsDeleteFailureAfterScrub(t *testing.T) {
+	store := newSupplierAccountStoreStub()
+	store.accounts[100] = &Account{ID: 100}
+	store.deleteErr = errors.New("boom")
+	repo := &supplierOnboardingRepoStub{ownerByAccount: map[int64]int64{100: 7}}
+	svc := newOnboardingService(t, repo, store, &supplierOAuthStub{}, enabledSupplyPoolJSON())
+
+	err := svc.DetachAccount(context.Background(), 7, 100)
+	require.Error(t, err)
+	assert.Len(t, repo.scrubCalls, 1, "凭证该抹的已经抹了")
 }
 
 // ============================================================================

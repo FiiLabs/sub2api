@@ -90,6 +90,11 @@ const (
 	SupplyDrainUntilExtraKey = "apexone_supply_drain_until"
 	// SupplyDrainFromExtraKey 进入排空之前的状态，用于取消下线时原样回退。
 	SupplyDrainFromExtraKey = "apexone_supply_drain_from"
+	// SupplyDetachedAtExtraKey 解绑时刻（RFC3339）。
+	//
+	// 写在已经被软删的行上，唯一的读者是人：出纠纷时要能回答「平台是什么时候
+	// 不再持有这份凭证的」。凭证本身那时已经被抹掉，这个时间戳是仅存的证据。
+	SupplyDetachedAtExtraKey = "apexone_supply_detached_at"
 )
 
 // 下线的两个通道。
@@ -197,6 +202,20 @@ type SupplierOnboardingRepository interface {
 	// 只返回「还在供货」的行（可调度，或接入状态尚未到终态），已经 retired 且不可调度的
 	// 不返回——否则每一轮扫描都会把同一批历史账号重扫一遍，扫描量随时间只增不减。
 	ListAccountIDsWithUnavailableOwner(ctx context.Context, limit int) ([]int64, error)
+	// ScrubAccountCredentials 抹掉一个供给账号的凭证，并把它标成已解绑。
+	//
+	// 这是解绑里**唯一不可逆、也唯一真正兑现了承诺的那一步**：上游没有公开的
+	// token 撤销端点（见 supplier_onboarding_service.go 的 DetachAccount 注释），
+	// 所以「平台不再持有可用凭证」只能靠平台自己把它删掉来保证，而不是靠一次
+	// 可能失败、也无法验证的远端调用。
+	//
+	// 必须是一条语句：读出来再写回去会在两次操作之间留下一个窗口，窗口里凭证还在。
+	// 归属条件写进 WHERE 而不是只依赖调用方先查一遍——调用方确实会先查（见
+	// getOwnedAccount），但那次查与这次写之间隔着一次网络往返，归属在那期间被
+	// 改掉时，抹的就会是别人的号。
+	//
+	// 账号不存在、不属于 userID、或已经被删，一律返回 ErrSupplierAccountNotFound。
+	ScrubAccountCredentials(ctx context.Context, accountID int64, userID int64) error
 	// FindAccountIDByUpstreamIdentity 按某个上游身份键查已存在的账号，用于拒绝重复提交。
 	// 返回 0 表示没有。key 只接受 SupplierIdentityKeys 里的值，实现按它选一条写死的
 	// 语句——键名绝不拼进 SQL。

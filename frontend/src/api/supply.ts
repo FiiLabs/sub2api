@@ -142,6 +142,28 @@ async function resumeAccount(id: number): Promise<SupplyAccount> {
   return data
 }
 
+/** 解绑的结果。带一个布尔而不是只回 success，理由见下面 detachAccount 的注释。 */
+export interface DetachAccountResult {
+  detached: boolean
+  /** 上游那边的授权还在，需要供给者自己去撤销 */
+  upstream_revoke_required: boolean
+}
+
+/**
+ * 彻底解绑一个号：平台停调度、抹掉凭证、把号摘掉。**不可撤销**。
+ *
+ * 与 pauseAccount 的区别是本质性的，界面上必须讲清楚：下线只是"不再派单"，
+ * 那份 refresh token 仍然在平台手里；解绑才是把凭证删掉。
+ *
+ * 返回的 upstream_revoke_required 目前恒为 true——Anthropic 没有公开可调用的
+ * 撤销端点，所以上游那边的授权记录只有供给者自己能在账号设置里清掉。
+ * 做成字段而不是在前端写死，是为了将来后端真能远端撤销时能一次性把提示关掉。
+ */
+async function detachAccount(id: number): Promise<DetachAccountResult> {
+  const { data } = await apiClient.delete<DetachAccountResult>(`/user/supply/accounts/${id}`)
+  return data
+}
+
 async function getWallet(): Promise<SupplyWallet> {
   const { data } = await apiClient.get<SupplyWallet>('/user/supply/wallet')
   return data
@@ -159,6 +181,7 @@ export const supplyAPI = {
   listAccounts,
   pauseAccount,
   resumeAccount,
+  detachAccount,
   getWallet,
   listLedger,
 }

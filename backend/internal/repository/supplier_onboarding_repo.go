@@ -206,6 +206,36 @@ LIMIT $1`,
 	domain.StatusActive,
 	service.SupplyStateExtraKey, service.SupplyStatePendingReview, service.SupplyStateRetired)
 
+// supplierAccountScrubCredentialsSQL 抹掉凭证并把行标成已解绑。
+//
+// `credentials = '{}'` 而不是 NULL：这一列在 ent 里是非空 JSON，写 NULL 会让任何
+// 还在读它的代码路径拿到一个 nil map 之外的东西（扫描期的 sql.Null 处理、
+// mapper 里的类型断言），空对象则处处都能安全地读成"没有凭证"。
+//
+// 三个 WHERE 条件里 `owner_user_id = $2` 是要紧的那个：它让这条语句在任何调用点上
+// 都只能抹掉调用者自己的号。上层已经查过归属了，这里再查一遍是因为两次之间隔着
+// 一次网络往返——归属在那期间变了，没有这个条件就会抹错人。
+//
+// schedulable 也在这里再压一次。上层已经先调过 SetSchedulable（那条路还会清调度
+// 快照、发事件，这条 SQL 做不到，所以不能省），这里只是保证「凭证没了但还标着
+// 可调度」这个状态一秒钟都不存在。
+//
+// 状态字面量与 extra 键名从 service 常量拼进来，同本文件其它语句。
+var supplierAccountScrubCredentialsSQL = fmt.Sprintf(`
+UPDATE accounts
+SET credentials = '{}'::jsonb,
+    extra = COALESCE(extra, '{}'::jsonb) || jsonb_build_object(
+        '%s', '%s',
+        '%s', to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+    ),
+    schedulable = FALSE,
+    updated_at = NOW()
+WHERE id = $1
+  AND owner_user_id = $2
+  AND deleted_at IS NULL`,
+	service.SupplyStateExtraKey, service.SupplyStateRetired,
+	service.SupplyDetachedAtExtraKey)
+
 // 按上游身份键找已存在的账号。每个键一条写死的语句，**键名不拼进 SQL**。
 //
 // 为什么不写成一条 `credentials->>$2 = $3` 的通用语句：那样键名就成了运行期数据，
@@ -247,6 +277,24 @@ func (r *supplierOnboardingRepository) SetAccountOwner(ctx context.Context, acco
 	}
 	if affected == 0 {
 		return fmt.Errorf("account %d is missing or already owned", accountID)
+	}
+	return nil
+}
+
+func (r *supplierOnboardingRepository) ScrubAccountCredentials(ctx context.Context, accountID int64, userID int64) error {
+	result, err := r.client.ExecContext(ctx, supplierAccountScrubCredentialsSQL, accountID, userID)
+	if err != nil {
+		return fmt.Errorf("scrub supply account credentials: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		// 驱动不报行数——语句本身已经成功了，不能倒过来当成没抹掉。
+		return nil
+	}
+	if affected == 0 {
+		// 号不存在、不是他的、或已经被删。三种情况对调用方是同一个回答，
+		// 理由同 ErrSupplierAccountNotFound 本身。
+		return service.ErrSupplierAccountNotFound
 	}
 	return nil
 }

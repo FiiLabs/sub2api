@@ -6,13 +6,14 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { get, post } = vi.hoisted(() => ({
+const { get, post, del } = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
+  del: vi.fn(),
 }))
 
 vi.mock('@/api/client', () => ({
-  apiClient: { get, post },
+  apiClient: { get, post, delete: del },
 }))
 
 import { supplyAPI } from '@/api/supply'
@@ -22,8 +23,10 @@ describe('supply api', () => {
   beforeEach(() => {
     get.mockReset()
     post.mockReset()
+    del.mockReset()
     get.mockResolvedValue({ data: {} })
     post.mockResolvedValue({ data: {} })
+    del.mockResolvedValue({ data: { detached: true, upstream_revoke_required: true } })
   })
 
   it('sends the pause mode explicitly', async () => {
@@ -43,6 +46,27 @@ describe('supply api', () => {
     await supplyAPI.resumeAccount(7)
 
     expect(post).toHaveBeenCalledWith('/user/supply/accounts/7/resume')
+  })
+
+  it('detaches with DELETE on the account itself, not a verb sub-path', async () => {
+    // 解绑不是 pause 那样的状态变更，它把资源本身摘掉了。用 DELETE /accounts/:id
+    // 而不是 POST /accounts/:id/detach，是为了让「这一步没有回头路」在路由层就成立：
+    // 没有一个对称的 POST 能把它撤回来。
+    await supplyAPI.detachAccount(42)
+
+    expect(del).toHaveBeenCalledWith('/user/supply/accounts/42')
+    expect(post).not.toHaveBeenCalled()
+  })
+
+  it('passes the upstream-revoke flag through instead of hard-coding it', async () => {
+    // 后端将来真能远端撤销时，这个提示要能一次性关掉。前端写死 true 会让那天
+    // 的改动变成"再找一遍所有提示文案"。
+    del.mockResolvedValue({ data: { detached: true, upstream_revoke_required: false } })
+
+    await expect(supplyAPI.detachAccount(7)).resolves.toEqual({
+      detached: true,
+      upstream_revoke_required: false,
+    })
   })
 
   it('never sends a user id — ownership comes from the JWT', async () => {

@@ -238,6 +238,41 @@ func (h *SupplierHandler) ResumeAccount(c *gin.Context) {
 	})
 }
 
+// DetachAccount 彻底解绑一个供给账号：停调度、抹掉凭证、摘掉号。
+// DELETE /api/v1/user/supply/accounts/:id
+//
+// 不走 mutateAccount：那个壳做完动作会回读账号视图，而这里账号已经不在了，
+// 回读只会把一次成功的解绑变成 404。改回一句确认。
+//
+// 响应里带 upstream_revoke_hint 而不是只回 success：平台这边的凭证没了，但供给者
+// 在上游那边的授权记录还在（Anthropic 没有可调用的撤销端点，见 service 侧注释）。
+// 不把这句话说出来，他会以为解绑等于上游也撤销了。
+func (h *SupplierHandler) DetachAccount(c *gin.Context) {
+	userID, ok := h.currentUserID(c)
+	if !ok {
+		return
+	}
+	if h.onboardingService == nil {
+		response.ErrorFrom(c, service.ErrSupplierAccountNotFound)
+		return
+	}
+	accountID, ok := h.accountIDParam(c)
+	if !ok {
+		return
+	}
+
+	if err := h.onboardingService.DetachAccount(c.Request.Context(), userID, accountID); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{
+		"detached": true,
+		// 前端按这个布尔决定要不要弹「还要去上游撤销」的提示。做成字段而不是让前端
+		// 写死，是为了将来上游真的有了撤销端点、后端接上之后，能一次性把提示关掉。
+		"upstream_revoke_required": true,
+	})
+}
+
 // GetWallet 读当前供给者的赚取钱包。
 // GET /api/v1/user/supply/wallet
 //

@@ -293,6 +293,17 @@
                           {{ mutatingId === account.id ? t('supply.accounts.pausing') : t('supply.accounts.pauseNow') }}
                         </button>
                       </template>
+                      <!-- 解绑对所有状态都在场，而且不随状态变化。
+                           「撤回自己的授权」不该有任何一个状态是够不着的——包括
+                           已经下线的号，那正是最该把凭证收回去的时候。 -->
+                      <button
+                        class="btn btn-danger btn-sm"
+                        :disabled="mutatingId === account.id"
+                        :data-testid="`supply-detach-${account.id}`"
+                        @click="detachAccount(account)"
+                      >
+                        {{ mutatingId === account.id ? t('supply.accounts.detaching') : t('supply.accounts.detach') }}
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -573,6 +584,31 @@ async function resumeAccount(account: SupplyAccount): Promise<void> {
     appStore.showSuccess(wasDraining ? t('supply.accounts.pauseCancelled') : t('supply.accounts.resumed'))
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, t('supply.error.resumeFailed')))
+  } finally {
+    mutatingId.value = null
+  }
+}
+
+/**
+ * 解绑。与下线是两件事，确认文案必须把差别摆出来：
+ * 下线只是不再派单，凭证还在平台手里；解绑才是把凭证删掉，而且不可撤销。
+ *
+ * 成功之后额外弹一条 warning：平台这边的凭证没了，但上游那边的授权记录还在，
+ * 只有供给者自己能去清。不说这句话，他会以为解绑等于上游也撤销了。
+ */
+async function detachAccount(account: SupplyAccount): Promise<void> {
+  if (!window.confirm(t('supply.accounts.detachConfirm', { name: account.name }))) return
+  mutatingId.value = account.id
+  try {
+    const result = await supplyAPI.detachAccount(account.id)
+    // 号已经被摘掉了，不能像 pause/resume 那样替换——它不在列表里了。
+    accounts.value = accounts.value.filter(item => item.id !== account.id)
+    appStore.showSuccess(t('supply.accounts.detached'))
+    if (result.upstream_revoke_required) {
+      appStore.showWarning(t('supply.accounts.detachUpstreamHint'), 10000)
+    }
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('supply.error.detachFailed')))
   } finally {
     mutatingId.value = null
   }

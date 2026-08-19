@@ -73,6 +73,17 @@ export default {
       pauseConfirm: '下线后这个号立即停止接新单，进入排空期，期间你还可以取消。已产生的收益不受影响。确定要下线吗？',
       pauseNowConfirm: '立即下线会直接进入终态，不能取消；要再上线需要重新走一遍观察期。已经在传输中的请求仍会跑完。确定吗？',
       paused: '已下线',
+      detach: '解绑',
+      detaching: '正在解绑…',
+      // 确认文案的全部工作是把「下线」和「解绑」的差别摆出来：前者凭证还在平台手里，
+      // 后者才是把它删掉。含糊过去会让想彻底退出的人以为点了下线就够了。
+      detachConfirm:
+        '解绑「{name}」会立即停止接单，并把平台保存的这个号的授权凭证彻底删除，之后平台再也无法使用它。此操作不可撤销。已产生的收益不受影响，仍可正常提取。确定要解绑吗？',
+      detached: '已解绑，平台不再持有这个号的凭证',
+      // 上游那边的授权记录还在——Anthropic 没有可供平台调用的撤销接口。
+      // 不说这句话，用户会以为解绑等于上游也一并撤销了。
+      detachUpstreamHint:
+        '平台这边的凭证已经删除。如需在 Anthropic 一侧一并撤销授权，请前往 claude.ai 的账号设置里移除对应的 Claude Code 授权。',
       draining: '已停止接新单，进入排空期',
       pauseCancelled: '已取消下线，这个号继续接单',
       resumed: '已重新挂回，将重新进入观察期',
@@ -129,6 +140,7 @@ export default {
       completeFailed: '接入失败',
       pauseFailed: '下线失败',
       resumeFailed: '挂回失败',
+      detachFailed: '解绑失败',
       codeRequired: '请先填写授权码'
     }
   },

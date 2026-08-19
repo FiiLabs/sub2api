@@ -324,6 +324,140 @@ func TestSupplierOnboarding_ListsAccountsWhoseOwnerIsGone(t *testing.T) {
 	require.NotContains(t, ids, firstParty.ID, "自营号没有归属人，不归这条闸管")
 }
 
+// ---------------------------------------------------------------------------
+// 解绑：抹掉凭证
+// ---------------------------------------------------------------------------
+
+// readAccountRow 读回一行账号的凭证 / extra / 可调度性，用来验证 UPDATE 真的落了地。
+//
+// 走 raw SQL 而不是 ent 的 GetByID：这个测试要看的是**列里现在是什么**，
+// 经过 mapper 之后 `credentials = '{}'` 和 `credentials IS NULL` 会长得一模一样。
+func readAccountRow(t *testing.T, ctx context.Context, client *dbent.Client, accountID int64) (creds, extra string, schedulable bool) {
+	t.Helper()
+	rows, err := client.QueryContext(ctx,
+		"SELECT credentials::text, extra::text, schedulable FROM accounts WHERE id = $1", accountID)
+	require.NoError(t, err)
+	defer func() { _ = rows.Close() }()
+	require.True(t, rows.Next(), "account %d should still exist", accountID)
+	require.NoError(t, rows.Scan(&creds, &extra, &schedulable))
+	require.NoError(t, rows.Err())
+	return creds, extra, schedulable
+}
+
+// 抹凭证这一条 UPDATE 必须一次做完四件事，缺一件都留下一个可用的口子。
+//
+// 为什么必须在真库上测：整条语句的正确性全在 Postgres 才有的语义上——
+// `'{}'::jsonb` 的转型、`extra || jsonb_build_object(...)` 的合并（而不是覆盖，
+// 观察期那几个键得留着给人事后看）、`to_char(... AT TIME ZONE 'UTC')` 的时间格式。
+// mock 里这些只是一个字符串，写错了照样"通过"。
+func TestSupplierOnboarding_ScrubClearsCredentialsAndMarksDetached(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewSupplierOnboardingRepository(client)
+
+	ownerID := mustCreateSupplier(t, client, "detach-owner")
+	stamp := time.Now().UnixNano()
+	account := mustCreateAccount(t, client, &service.Account{
+		Name: fmt.Sprintf("detach-acct-%d", stamp),
+		Credentials: map[string]any{
+			"access_token":  "at-secret",
+			"refresh_token": "rt-secret",
+			"account_uuid":  fmt.Sprintf("detach-uuid-%d", stamp),
+			"email_address": fmt.Sprintf("detach-%d@example.com", stamp),
+		},
+		Extra: map[string]any{
+			service.SupplyStateExtraKey:       service.SupplyStateActive,
+			service.SupplyProbePassesExtraKey: 3,
+		},
+	})
+	require.NoError(t, repo.SetAccountOwner(txCtx, account.ID, ownerID))
+	setAccountSchedulable(t, client, account.ID, true)
+
+	require.NoError(t, repo.ScrubAccountCredentials(txCtx, account.ID, ownerID))
+
+	creds, extra, schedulable := readAccountRow(t, txCtx, client, account.ID)
+	require.Equal(t, "{}", creds, "凭证必须整个消失，不是「清掉几个字段」")
+	require.NotContains(t, creds, "rt-secret")
+	require.False(t, schedulable, "凭证没了却还标着可调度，一秒钟都不能存在")
+	require.Contains(t, extra, service.SupplyStateRetired)
+	require.Contains(t, extra, service.SupplyDetachedAtExtraKey)
+	// 合并而不是覆盖：观察期留下的痕迹要留着给人事后看。
+	require.Contains(t, extra, service.SupplyProbePassesExtraKey)
+}
+
+// 抹凭证只能抹自己的号。
+//
+// 这条 WHERE 是防 TOCTOU 的最后一道：上层查过归属，但那次查与这次写之间隔着
+// 一次网络往返。没有它，归属在那期间被改掉就会抹错人的凭证。
+func TestSupplierOnboarding_ScrubRefusesForeignAndDeletedAccounts(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewSupplierOnboardingRepository(client)
+
+	ownerID := mustCreateSupplier(t, client, "detach-mine")
+	strangerID := mustCreateSupplier(t, client, "detach-stranger")
+	stamp := time.Now().UnixNano()
+	account := mustCreateAccount(t, client, &service.Account{
+		Name:        fmt.Sprintf("detach-guard-%d", stamp),
+		Credentials: map[string]any{"refresh_token": "rt-secret"},
+	})
+	require.NoError(t, repo.SetAccountOwner(txCtx, account.ID, ownerID))
+
+	err := repo.ScrubAccountCredentials(txCtx, account.ID, strangerID)
+	require.ErrorIs(t, err, service.ErrSupplierAccountNotFound)
+	creds, _, _ := readAccountRow(t, txCtx, client, account.ID)
+	require.Contains(t, creds, "rt-secret", "别人的凭证一个字节都不该被动到")
+
+	// 已经软删的行也拒绝：那条路上凭证早该被抹过了，再抹一次说明调用方的顺序反了。
+	_, execErr := client.ExecContext(txCtx,
+		"UPDATE accounts SET deleted_at = NOW() WHERE id = $1", account.ID)
+	require.NoError(t, execErr)
+	require.ErrorIs(t, repo.ScrubAccountCredentials(txCtx, account.ID, ownerID),
+		service.ErrSupplierAccountNotFound)
+}
+
+// 解绑之后，同一份上游订阅必须能重新挂回来。
+//
+// 这条性质是两件事叠出来的，两件都容易在实现时漏掉：查重语句带 `deleted_at IS NULL`
+// （所以软删的行不再占着身份），以及凭证被抹掉（身份键本身也没了）。任一件缺失，
+// 供给者一旦解绑就会被永久挡在门外，且错误信息是「这个号已经连过了」——
+// 一个既说不通又无法自助解决的死局。
+func TestSupplierOnboarding_DetachedSubscriptionCanBeConnectedAgain(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewSupplierOnboardingRepository(client)
+
+	ownerID := mustCreateSupplier(t, client, "detach-rebind")
+	stamp := time.Now().UnixNano()
+	accountUUID := fmt.Sprintf("rebind-uuid-%d", stamp)
+	account := mustCreateAccount(t, client, &service.Account{
+		Name:        fmt.Sprintf("rebind-acct-%d", stamp),
+		Credentials: map[string]any{"account_uuid": accountUUID},
+	})
+	require.NoError(t, repo.SetAccountOwner(txCtx, account.ID, ownerID))
+
+	found, err := repo.FindAccountIDByUpstreamIdentity(txCtx,
+		service.PlatformAnthropic, service.SupplierIdentityAccountUUID, accountUUID)
+	require.NoError(t, err)
+	require.Equal(t, account.ID, found, "挂着的时候当然占着这个身份")
+
+	require.NoError(t, repo.ScrubAccountCredentials(txCtx, account.ID, ownerID))
+	_, execErr := client.ExecContext(txCtx,
+		"UPDATE accounts SET deleted_at = NOW() WHERE id = $1", account.ID)
+	require.NoError(t, execErr)
+
+	found, err = repo.FindAccountIDByUpstreamIdentity(txCtx,
+		service.PlatformAnthropic, service.SupplierIdentityAccountUUID, accountUUID)
+	require.NoError(t, err)
+	require.Zero(t, found, "解绑之后必须能重新挂上来")
+}
+
 // 同一个上游订阅不能被挂两次——不论第二次是谁提交的。
 // 这条是「一号两卖」的唯一拦截点：两边都会按同一份额度计分成。
 func TestSupplierOnboarding_UpstreamUUIDLookupIgnoresOwnerAndSchedulable(t *testing.T) {

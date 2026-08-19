@@ -79,6 +79,18 @@ export default {
       pauseNowConfirm:
         'Taking it offline now is final and cannot be cancelled; putting the account back means going through review again. Requests already streaming still finish. Continue?',
       paused: 'Taken offline',
+      detach: 'Disconnect',
+      detaching: 'Disconnecting…',
+      // The whole job of this copy is to spell out how disconnecting differs from
+      // taking offline: the latter leaves the credential with us, only this deletes it.
+      // Glossing over that lets someone who wants out believe "take offline" was enough.
+      detachConfirm:
+        'Disconnecting "{name}" stops it from taking requests immediately and permanently deletes the authorization credential we hold for it, after which the platform can no longer use the account. This cannot be undone. Earnings already accrued are unaffected and remain withdrawable. Disconnect it?',
+      detached: 'Disconnected — the platform no longer holds a credential for this account',
+      // The grant on the upstream side survives — Anthropic publishes no revoke endpoint
+      // for the platform to call. Without this line people assume disconnecting revoked it.
+      detachUpstreamHint:
+        'The credential on our side is deleted. To revoke the grant on Anthropic’s side as well, go to your claude.ai account settings and remove the Claude Code authorization.',
       draining: 'Stopped taking new requests — draining',
       pauseCancelled: 'Offline cancelled — the account keeps serving',
       resumed: 'Put back — it re-enters review',
@@ -135,6 +147,7 @@ export default {
       completeFailed: 'Failed to connect',
       pauseFailed: 'Failed to take offline',
       resumeFailed: 'Failed to put back',
+      detachFailed: 'Failed to disconnect',
       codeRequired: 'Enter the authorization code first'
     }
   },

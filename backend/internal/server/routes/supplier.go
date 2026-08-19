@@ -50,6 +50,10 @@ func RegisterSupplierRoutes(
 		supply.GET("/accounts/:id", h.Supplier.GetAccount)
 		supply.POST("/accounts/:id/pause", h.Supplier.PauseAccount)
 		supply.POST("/accounts/:id/resume", h.Supplier.ResumeAccount)
+		// 解绑是不可逆的（凭证被抹掉，号被摘掉），但**不**套 Heavy 限流：
+		// 撤回自己的授权是供给者最该畅通无阻的一个动作，把它排在限流后面，
+		// 等于在他最想退出的时候让他退不出去。它本身也不打上游、不消耗任何配额。
+		supply.DELETE("/accounts/:id", h.Supplier.DetachAccount)
 	}
 }
 

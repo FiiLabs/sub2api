@@ -135,7 +135,7 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 
 **门开得很窄，是防误配不是防滥用**。只有 `supply_pool_settings.supply_group_id` 显式指定的那**一个**分组会溢出，判据用的是 `resolveGatewayGroup` **解析后**的分组（在失败路径上才解析，热路径零成本）而不是 API key 上的原始 id——claude-code 降级会在选号前换掉分组，那种情况下耗尽的是降级分组不是供给池。另外：只在硬耗尽（`ErrNoAvailableAccounts`）时溢出，「有号但都忙」返回的等待计划不触发（那是拥挤不是缺货）；只重试一次不成链；溢出池也空时**返回原始错误**，因为请求打的是消费者自己的分组，报一个指向自营池的错误会把排查的人引到错误的池子上。
 
-### 3.3 自助接入的六条边界（改动前先读）
+### 3.3 自助接入的七条边界（改动前先读）
 
 **新号一定不可调度，而且靠两条独立理由**。`CompleteOAuth` 建号时显式写 `Schedulable: false`（不靠「`AccountService.Create` 恰好不设这个字段」的零值——`adminServiceImpl.CreateAccount` 那条路径就显式设了 `true`，靠零值等于把安全性押在上游不改），并且**先不绑分组**。建号到写归属之间有一个窗口，窗口里这个号没有主人；若此时它能被调度，产生的用量会按自营账号计——供给者干了活拿不到钱，且事后无从追认（`usage_log` 不回溯归属）。顺序 `Create → SetAccountOwner → BindGroups` 由单测钉死。
 
@@ -154,6 +154,8 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 - **`org_uuid` 刻意不在键里**。团队组织下多个席位共享同一个 org，拿它查重会把合法供给误判成重复——这类误报是静默挡供给，比漏判更难发现。
 
 邮箱比对走 `LOWER(...) = LOWER(...)`：上游把 `Foo@x.com` 与 `foo@x.com` 当同一个账号，按字节比等于「改一下大小写就能把同一份订阅再挂一遍」。键名**绝不拼进 SQL**——`supplierIdentitySQL` 用 switch 把键映射到两条写死的语句，未知键返回空串→报错，于是「加了键但忘了写语句」是响的，而不是一道永远放行的闸。
+
+**解绑必须真的把凭证删掉，而顺序是「停调度 → 抹凭证 → 摘号」**。下线（§3.5）只是不再派单，那份 refresh token 仍然躺在 `accounts.credentials` 里——供给者没有任何办法把授权收回去，整套东西只能靠「相信平台不会用」立着，这对一个双边市场不成立。`DetachAccount` 因此是唯一不可逆的一刀：`SetSchedulable(false)` → `ScrubAccountCredentials`（`credentials = '{}'::jsonb`，同时把 `apexone_supply_state` 写成 `retired` 并记一个 `apexone_supply_detached_at`）→ `accountRepo.Delete`。**2 在 3 之前是强制的**：抹凭证的 `WHERE` 带 `deleted_at IS NULL`，一旦先软删，那条语句此后永远匹配不到，token 就留在一行看不见的记录里长期存在；这条顺序由单测钉死。三件事刻意不做：**不调上游撤销**（Anthropic 没有公开的 revoke 端点，往一个猜出来的 URL 发 POST 只会得到必然失败的请求、一串「撤销失败」日志噪音，以及"平台试过了"的假象——接口回一个 `upstream_revoke_required: true`，由界面明说要供给者自己去 claude.ai 清，将来后端真能远端撤销时把这个布尔翻掉即可）、**不动钱包**（已入账的是债，与 §3.6「注销用户仍可能是债主」同源）、**不清 `owner_user_id`**（留在软删行上，是"这号曾经是谁的"的唯一证据）。抹凭证的 SQL 另带 `owner_user_id = $2`，虽然 `getOwnedAccount` 已经查过一次——两次往返之间那个 TOCTOU 窗口，代价只是 WHERE 里多一个条件。解绑后**同一份订阅可以再挂回来**：两条查重 SQL 都带 `deleted_at IS NULL`，且身份键就存在被抹掉的 `credentials` 里，所以不会出现"退出后再也进不来、还收到一句莫名其妙的『已经连过了』"，这条由真库测试钉死。路由是 `DELETE /accounts/:id` 而**不**套 Heavy 限流：撤回自己的授权是供给者最该畅通无阻的动作，它也不打上游、不耗任何配额。
 
 **只要 `user:inference` scope**。走 setup-token 而非完整 OAuth scope：平台需要的只是替供给者转发推理请求，完整 scope 还附带读 profile、建 API key、列会话——供给者把订阅挂上来不等于把账号交出来。`code_verifier` 明文入库是可接受的：PKCE verifier 单独无用（必须配一次性授权码），行 15 分钟过期、一次性消费，相对内存方案的差别只是「进程内存」换成「数据库」，在本仓凭证本来就明文存 jsonb 的现状下不是新增短板。要收紧应当连同 `accounts.credentials` 一起做应用层加密，那是独立的一刀。
 
