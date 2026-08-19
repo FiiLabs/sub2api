@@ -236,6 +236,94 @@ func TestSupplierOnboarding_ListsAreScopedByOwnerAndState(t *testing.T) {
 	require.NotContains(t, pending, mine1.ID)
 }
 
+// setUserStatus / softDeleteUser 直接改库，因为要造的正是「上游代码路径造不出来的状态」。
+//
+// 用 raw SQL 而不是 ent builder：这条闸要防的就是本仓的销号是**软删**这件事，
+// 走 ent 的 Delete 会被 soft-delete mixin 拦成同样的 UPDATE，测试反而看不清自己在造什么。
+func setUserStatus(t *testing.T, client *dbent.Client, userID int64, status string) {
+	t.Helper()
+	_, err := client.ExecContext(context.Background(),
+		"UPDATE users SET status = $1 WHERE id = $2", status, userID)
+	require.NoError(t, err)
+}
+
+func softDeleteUser(t *testing.T, client *dbent.Client, userID int64) {
+	t.Helper()
+	_, err := client.ExecContext(context.Background(),
+		"UPDATE users SET deleted_at = NOW() WHERE id = $1", userID)
+	require.NoError(t, err)
+}
+
+func setAccountSchedulable(t *testing.T, client *dbent.Client, accountID int64, schedulable bool) {
+	t.Helper()
+	_, err := client.ExecContext(context.Background(),
+		"UPDATE accounts SET schedulable = $1 WHERE id = $2", schedulable, accountID)
+	require.NoError(t, err)
+}
+
+// 归属人已经不在了，号却还在供货——这一条查询是发现它们的唯一途径。
+//
+// 为什么必须在真库上测：
+//
+//   - 销号是软删，`accounts.owner_user_id` 上的 `ON DELETE SET NULL` 因此**永不触发**。
+//     这正是这个 bug 的成因，而它只在真库的外键语义下才成立——mock 里没有外键，
+//     "级联会不会触发"这个问题根本提不出来。
+//   - `u.status <> 'active'` 与 `u.deleted_at IS NOT NULL` 是两个独立的失效来源，
+//     漏掉任何一个都是静默放行。
+//   - 那个 OR 分支（已 retired 但仍 schedulable）是最危险的一类号：状态写着"已下线"，
+//     实际还在接单。它必须被扫到，而这依赖 jsonb 取值与布尔列的组合求值。
+func TestSupplierOnboarding_ListsAccountsWhoseOwnerIsGone(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewSupplierOnboardingRepository(client)
+
+	stamp := time.Now().UnixNano()
+	healthy := mustCreateSupplier(t, client, "orphan-healthy")
+	disabled := mustCreateSupplier(t, client, "orphan-disabled")
+	deleted := mustCreateSupplier(t, client, "orphan-deleted")
+
+	newAccount := func(tag, state string) *service.Account {
+		return mustCreateAccount(t, client, &service.Account{
+			Name:  fmt.Sprintf("%s-%d", tag, stamp),
+			Extra: map[string]any{service.SupplyStateExtraKey: state},
+		})
+	}
+
+	okAccount := newAccount("owner-ok", service.SupplyStateActive)
+	disabledAccount := newAccount("owner-disabled", service.SupplyStateActive)
+	deletedAccount := newAccount("owner-deleted", service.SupplyStatePendingReview)
+	// 已经收摊的号：状态终态且不可调度，没有任何事情要做，不该每轮都被重扫。
+	settledAccount := newAccount("owner-disabled-settled", service.SupplyStateRetired)
+	// 最危险的一类：状态写着已下线，schedulable 却还是真——它此刻在接单。
+	lyingAccount := newAccount("owner-disabled-still-serving", service.SupplyStateRetired)
+	// 自营号：没有归属人，与这条闸无关。
+	firstParty := newAccount("first-party", service.SupplyStateActive)
+
+	require.NoError(t, repo.SetAccountOwner(txCtx, okAccount.ID, healthy))
+	require.NoError(t, repo.SetAccountOwner(txCtx, disabledAccount.ID, disabled))
+	require.NoError(t, repo.SetAccountOwner(txCtx, deletedAccount.ID, deleted))
+	require.NoError(t, repo.SetAccountOwner(txCtx, settledAccount.ID, disabled))
+	require.NoError(t, repo.SetAccountOwner(txCtx, lyingAccount.ID, disabled))
+
+	setAccountSchedulable(t, client, settledAccount.ID, false)
+	setUserStatus(t, client, disabled, service.StatusDisabled)
+	softDeleteUser(t, client, deleted)
+
+	ids, err := repo.ListAccountIDsWithUnavailableOwner(txCtx, 100)
+	require.NoError(t, err)
+
+	require.Contains(t, ids, disabledAccount.ID, "被停用的人的号必须被扫到")
+	require.Contains(t, ids, deletedAccount.ID,
+		"注销是软删，owner_user_id 的 ON DELETE SET NULL 永不触发——这条查询是唯一的发现途径")
+	require.Contains(t, ids, lyingAccount.ID,
+		"状态写着 retired 但仍可调度的号是最危险的一类：它在接单")
+	require.NotContains(t, ids, okAccount.ID)
+	require.NotContains(t, ids, settledAccount.ID, "已经停稳的号不该每轮重扫")
+	require.NotContains(t, ids, firstParty.ID, "自营号没有归属人，不归这条闸管")
+}
+
 // 同一个上游订阅不能被挂两次——不论第二次是谁提交的。
 // 这条是「一号两卖」的唯一拦截点：两边都会按同一份额度计分成。
 func TestSupplierOnboarding_UpstreamUUIDLookupIgnoresOwnerAndSchedulable(t *testing.T) {

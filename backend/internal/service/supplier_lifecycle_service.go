@@ -68,9 +68,10 @@ type supplierLifecycleAccountStore interface {
 	SetSchedulable(ctx context.Context, id int64, schedulable bool) error
 }
 
-// supplierLifecycleStateLister 按接入状态列账号。
+// supplierLifecycleStateLister 按接入状态列账号，外加一条按归属人可用性的扫描。
 type supplierLifecycleStateLister interface {
 	ListAccountIDsBySupplyState(ctx context.Context, state string, limit int) ([]int64, error)
+	ListAccountIDsWithUnavailableOwner(ctx context.Context, limit int) ([]int64, error)
 }
 
 // supplierLifecycleProbationReader 读观察期参数。
@@ -199,8 +200,81 @@ func (s *SupplierLifecycleService) runOnce() {
 	runCtx, cancel := context.WithTimeout(context.Background(), supplierLifecycleRunTimeout)
 	defer cancel()
 
+	// 顺序有意义：孤儿扫描排在最前。它是一道安全闸（把不该再供货的号停掉），
+	// 而后两步是推进器（可能把号推进 active、开启调度）。反过来的话，同一轮里
+	// 刚被停掉的号可能又被对齐规则推回池子——两条规则打架，且症状取决于扫描顺序。
+	s.sweepUnavailableOwners(runCtx)
 	s.sweepDraining(runCtx)
 	s.sweepPendingReview(runCtx)
+}
+
+// ============================================================================
+// 归属人失效
+// ============================================================================
+
+// sweepUnavailableOwners 把「主人已经不在了」的供给号停下来。
+//
+// # 为什么必须有这一步
+//
+// 用户注销走的是软删（`user_repo.deleteUser` 清掉认证身份后走 mixin 的软删），
+// 所以 `accounts.owner_user_id` 上那条 `ON DELETE SET NULL` 一次也不会触发；
+// 用户被停用更是完全不碰 accounts。两种情况下账号行**一个字节都没变**：
+// 照常 schedulable、照常被调度、照常消耗那个人的上游订阅额度、照常给他的钱包
+// 记账——而他已经登不进来，既看不到也停不掉。
+//
+// 这条闸只解决「继续供货」这一半。已经产生的入账**不撤**：那是他已经交付过的
+// 服务，平台欠他的（§3.6 的名册也是按"注销用户仍可能是债主"设计的）。
+//
+// # 为什么是周期扫描而不是在封禁/注销那一刻同步做
+//
+// 同步做要侵入用户状态变更的每一条路径（管理员封禁、内容风控自动封禁、用户自助
+// 注销），那是三处上游合并热区，且每加一条新路径都得记得补一次。周期扫描是**一处**，
+// 并且对"漏改了某条路径"也免疫。代价是最长一个扫描周期（默认 5 分钟）的窗口——
+// 相对"永远不停"，这个窗口是可接受的；相对三处 core 侵入，它更便宜。
+//
+// # 停下来之后
+//
+// 走的是与排空到期同一个 retire()：先停调度再写终态。用户如果只是被临时停用，
+// 恢复后号停在 retired，需要他自己在供给页 Resume 一次——不自动放回去是有意的，
+// 一个被封过的人的号重新进池应当重走观察期。
+func (s *SupplierLifecycleService) sweepUnavailableOwners(ctx context.Context) {
+	ids, err := s.repo.ListAccountIDsWithUnavailableOwner(ctx, supplierLifecycleScanLimit)
+	if err != nil {
+		slog.Error("[SupplierLifecycle] failed to list accounts with unavailable owner", "error", err)
+		return
+	}
+	if len(ids) == 0 {
+		return
+	}
+	if len(ids) == supplierLifecycleScanLimit {
+		slog.Warn("[SupplierLifecycle] orphan scan hit the batch limit, remainder deferred to next run",
+			"limit", supplierLifecycleScanLimit)
+	}
+
+	stopped := 0
+	for _, id := range ids {
+		if ctx.Err() != nil {
+			return
+		}
+		account, err := s.accountRepo.GetByID(ctx, id)
+		if err != nil || account == nil {
+			continue
+		}
+		if err := s.retire(ctx, account); err != nil {
+			slog.Warn("[SupplierLifecycle] failed to retire account with unavailable owner",
+				"account_id", id, "error", err)
+			continue
+		}
+		stopped++
+		// 每个号单独一条 Info：这是一次「平台单方面把别人的号停了」的动作，
+		// 事后有人问起时，聚合计数回答不了「到底停的是哪几个」。
+		slog.Info("[SupplierLifecycle] retired supply account whose owner is no longer available",
+			"account_id", id, "name", account.Name)
+	}
+	if stopped > 0 {
+		slog.Warn("[SupplierLifecycle] supply accounts stopped because their owner was deleted or disabled",
+			"count", stopped)
+	}
 }
 
 // ============================================================================

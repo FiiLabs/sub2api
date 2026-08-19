@@ -430,8 +430,12 @@ func TestSupplierThawLeaderLock_AdvisoryLockNoStampedeOnSimultaneousStart(t *tes
 // 两个任务的锁互不干扰
 // ============================================================================
 
-// lifecycleScanRepo 只实现生命周期任务这一轮会调到的那个方法，并且永远返回空列表——
+// lifecycleScanRepo 只实现生命周期任务这一轮会调到的方法，并且永远返回空列表——
 // 这个测试要证明的是「它跑了」，不是它扫出了什么。
+//
+// 「会调到的」是一份必须跟着 runOnce 走的清单：漏掉一个方法，内嵌的 nil 接口会 panic，
+// 而 runOnce 自带 recover——那一轮会静默地在第一个 sweep 就结束，本测试于是变成
+// 「锁拿到了但什么都没跑」，症状是一个与锁毫无关系的计数为零。
 type lifecycleScanRepo struct {
 	service.SupplierOnboardingRepository
 
@@ -445,6 +449,10 @@ func (r *lifecycleScanRepo) ListAccountIDsBySupplyState(_ context.Context, state
 		r.scans++
 		r.mu.Unlock()
 	}
+	return nil, nil
+}
+
+func (r *lifecycleScanRepo) ListAccountIDsWithUnavailableOwner(_ context.Context, _ int) ([]int64, error) {
 	return nil, nil
 }
 

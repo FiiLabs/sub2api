@@ -160,6 +160,59 @@ func TestSweepDrainingSurvivesListError(t *testing.T) {
 }
 
 // ============================================================================
+// 归属人失效
+// ============================================================================
+//
+// 「谁进这个名单」由 SQL 决定（repository 层，对着真库测），这里测的是拿到名单之后
+// 的动作：必须**停调度**，而且必须停在推进器之前跑。
+
+func TestSweepUnavailableOwnersRetiresAccount(t *testing.T) {
+	store := newSupplierAccountStoreStub()
+	store.accounts[100] = &Account{ID: 100, Name: "orphan", Schedulable: true, Extra: map[string]any{
+		SupplyStateExtraKey: SupplyStateActive,
+	}}
+	repo := &supplierOnboardingRepoStub{orphanIDs: []int64{100}}
+	svc := newLifecycleService(repo, store, autoPromoteSettings(), nil)
+
+	svc.sweepUnavailableOwners(context.Background())
+
+	// 停调度是这条闸的**全部意义**：状态写成什么样都只是给人看的，
+	// 真正让那个人的订阅不再被消耗的只有这一个布尔量。
+	require.Contains(t, store.schedulableSets, int64(100))
+	assert.False(t, store.schedulableSets[100])
+	assert.Equal(t, SupplyStateRetired, store.extraUpdates[100][SupplyStateExtraKey])
+}
+
+// 已经产生的入账不在这条路径上——它是欠这个人的债，不是要清理的垃圾。
+// 断言方式：整条 sweep 不碰任何钱包接口（本服务根本没有钱包依赖，
+// 所以这里真正钉住的是「别有人日后往里加一个」）。
+func TestSweepUnavailableOwnersSurvivesListError(t *testing.T) {
+	store := newSupplierAccountStoreStub()
+	repo := &supplierOnboardingRepoStub{orphanErr: errors.New("db down")}
+	svc := newLifecycleService(repo, store, autoPromoteSettings(), nil)
+
+	assert.NotPanics(t, func() { svc.sweepUnavailableOwners(context.Background()) })
+	assert.Empty(t, store.calls, "读不到名单时一个号都不该被动")
+}
+
+// 顺序性质：孤儿扫描必须排在推进器之前。
+//
+// 反过来的话，同一轮里 sweepPendingReview 的「对齐」规则会把一个刚被停掉的号
+// 当成"管理员手工放行"（它此刻 schedulable=false，不会被对齐）——真正的危险是
+// 另一半：一个 owner 已失效但仍 schedulable 的号，会先被对齐规则推成 active，
+// 再被孤儿扫描停掉，白白多一次状态翻转，且中间那一瞬它是"正式入池"的。
+func TestRunOnceSweepsUnavailableOwnersFirst(t *testing.T) {
+	store := newSupplierAccountStoreStub()
+	repo := &supplierOnboardingRepoStub{}
+	svc := newLifecycleService(repo, store, autoPromoteSettings(), nil)
+
+	svc.runOnce()
+
+	require.GreaterOrEqual(t, len(repo.calls), 3)
+	assert.Equal(t, "ListAccountIDsWithUnavailableOwner", repo.calls[0])
+}
+
+// ============================================================================
 // 状态对齐（管理员手工放行）
 // ============================================================================
 

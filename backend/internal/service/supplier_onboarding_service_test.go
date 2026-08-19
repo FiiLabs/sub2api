@@ -49,6 +49,9 @@ type supplierOnboardingRepoStub struct {
 
 	idsByState map[string][]int64
 	stateErr   error
+
+	orphanIDs []int64
+	orphanErr error
 }
 
 func (r *supplierOnboardingRepoStub) record(name string) {
@@ -123,6 +126,14 @@ func (r *supplierOnboardingRepoStub) ListAccountIDsBySupplyState(_ context.Conte
 		return nil, r.stateErr
 	}
 	return r.idsByState[state], nil
+}
+
+func (r *supplierOnboardingRepoStub) ListAccountIDsWithUnavailableOwner(_ context.Context, _ int) ([]int64, error) {
+	r.calls = append(r.calls, "ListAccountIDsWithUnavailableOwner")
+	if r.orphanErr != nil {
+		return nil, r.orphanErr
+	}
+	return r.orphanIDs, nil
 }
 
 func (r *supplierOnboardingRepoStub) FindAccountIDByUpstreamIdentity(_ context.Context, _ string, key SupplierIdentityKey, value string) (int64, error) {

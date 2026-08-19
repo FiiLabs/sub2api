@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
@@ -175,6 +176,36 @@ WHERE deleted_at IS NULL
 ORDER BY id
 LIMIT $2`, service.SupplyStateExtraKey, service.SupplyStatePendingReview)
 
+// supplierAccountListOrphanedSQL 列出「归属人已经不可用、号却还在供货」的账号。
+//
+// 不可用的两种形态都必须查，而且都不体现在 accounts 行上：
+//   - `u.deleted_at IS NOT NULL`：用户注销。本仓的销号是**软删**（user_repo.deleteUser
+//     只清认证身份再走 mixin 的软删），所以 accounts.owner_user_id 上那条
+//     `ON DELETE SET NULL` 一次也不会触发——这正是"注销后号还在跑"的成因。
+//   - `u.status <> 'active'`：用户被停用（含内容风控自动封禁）。
+//
+// 最后一个条件是**降噪**，不是判据：已经 retired 且不可调度的号无事可做，再返回它们
+// 只会让每一轮扫描重复处理同一批历史行。两个条件用 OR 而不是 AND——一个
+// state=retired 却仍然 schedulable 的号是最危险的那种（它在接单），必须被扫到。
+//
+// 状态字面量与 extra 键名从 service 常量拼进来，理由同 supplierAccountListByStateSQL：
+// 漂移了不会报错，只会让这条闸静默失效。拼的全是包内常量，不是外部输入。
+var supplierAccountListOrphanedSQL = fmt.Sprintf(`
+SELECT a.id
+FROM accounts a
+JOIN users u ON u.id = a.owner_user_id
+WHERE a.deleted_at IS NULL
+  AND a.owner_user_id IS NOT NULL
+  AND (u.deleted_at IS NOT NULL OR u.status <> '%s')
+  AND (
+        a.schedulable = TRUE
+        OR COALESCE(NULLIF(a.extra->>'%s', ''), '%s') <> '%s'
+      )
+ORDER BY a.id
+LIMIT $1`,
+	domain.StatusActive,
+	service.SupplyStateExtraKey, service.SupplyStatePendingReview, service.SupplyStateRetired)
+
 // 按上游身份键找已存在的账号。每个键一条写死的语句，**键名不拼进 SQL**。
 //
 // 为什么不写成一条 `credentials->>$2 = $3` 的通用语句：那样键名就成了运行期数据，
@@ -276,6 +307,27 @@ func (r *supplierOnboardingRepository) ListAccountIDsBySupplyState(ctx context.C
 		var id int64
 		if err := rows.Scan(&id); err != nil {
 			return nil, fmt.Errorf("scan supply state account id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+func (r *supplierOnboardingRepository) ListAccountIDsWithUnavailableOwner(ctx context.Context, limit int) ([]int64, error) {
+	if limit <= 0 {
+		limit = supplierOnboardingStateScanDefaultLimit
+	}
+	rows, err := r.client.QueryContext(ctx, supplierAccountListOrphanedSQL, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list accounts with unavailable owner: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan orphaned account id: %w", err)
 		}
 		ids = append(ids, id)
 	}

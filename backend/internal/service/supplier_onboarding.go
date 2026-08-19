@@ -187,6 +187,16 @@ type SupplierOnboardingRepository interface {
 	// 这条流水线碰到——它会改 schedulable，把管理员手工停用的自营号推回池子里
 	// 是一次静默的、谁也没同意过的变更。
 	ListAccountIDsBySupplyState(ctx context.Context, state string, limit int) ([]int64, error)
+	// ListAccountIDsWithUnavailableOwner 列出「归属人已经不可用、号却还在供货」的账号 id。
+	//
+	// 不可用 = 用户被注销（软删）或被停用。这两种情况下 accounts 行**一点变化都没有**：
+	// owner_user_id 上的 ON DELETE SET NULL 永远不会触发（销号是软删，外键看不见），
+	// 账号照常可调度、照常被派单。结果是一个已经离开平台的人的订阅额度在继续被消耗，
+	// 而他既管不到也停不下。这条查询是唯一发现它们的途径。
+	//
+	// 只返回「还在供货」的行（可调度，或接入状态尚未到终态），已经 retired 且不可调度的
+	// 不返回——否则每一轮扫描都会把同一批历史账号重扫一遍，扫描量随时间只增不减。
+	ListAccountIDsWithUnavailableOwner(ctx context.Context, limit int) ([]int64, error)
 	// FindAccountIDByUpstreamIdentity 按某个上游身份键查已存在的账号，用于拒绝重复提交。
 	// 返回 0 表示没有。key 只接受 SupplierIdentityKeys 里的值，实现按它选一条写死的
 	// 语句——键名绝不拼进 SQL。

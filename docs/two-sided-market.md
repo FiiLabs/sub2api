@@ -135,9 +135,11 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 
 **门开得很窄，是防误配不是防滥用**。只有 `supply_pool_settings.supply_group_id` 显式指定的那**一个**分组会溢出，判据用的是 `resolveGatewayGroup` **解析后**的分组（在失败路径上才解析，热路径零成本）而不是 API key 上的原始 id——claude-code 降级会在选号前换掉分组，那种情况下耗尽的是降级分组不是供给池。另外：只在硬耗尽（`ErrNoAvailableAccounts`）时溢出，「有号但都忙」返回的等待计划不触发（那是拥挤不是缺货）；只重试一次不成链；溢出池也空时**返回原始错误**，因为请求打的是消费者自己的分组，报一个指向自营池的错误会把排查的人引到错误的池子上。
 
-### 3.3 自助接入的五条边界（改动前先读）
+### 3.3 自助接入的六条边界（改动前先读）
 
 **新号一定不可调度，而且靠两条独立理由**。`CompleteOAuth` 建号时显式写 `Schedulable: false`（不靠「`AccountService.Create` 恰好不设这个字段」的零值——`adminServiceImpl.CreateAccount` 那条路径就显式设了 `true`，靠零值等于把安全性押在上游不改），并且**先不绑分组**。建号到写归属之间有一个窗口，窗口里这个号没有主人；若此时它能被调度，产生的用量会按自营账号计——供给者干了活拿不到钱，且事后无从追认（`usage_log` 不回溯归属）。顺序 `Create → SetAccountOwner → BindGroups` 由单测钉死。
+
+**归属人失效的号必须停下来，而且只能靠周期扫描发现**。用户注销走的是软删（`user_repo.deleteUser` 清掉认证身份后走 mixin 的软删），所以 `accounts.owner_user_id` 上那条 `ON DELETE SET NULL` 一次也不会触发；用户被停用更是完全不碰 accounts。两种情况下账号行一个字节都没变——照常可调度、照常消耗那个人的上游订阅额度，而他已经登不进来。`SupplierLifecycleService.sweepUnavailableOwners` 是唯一的发现途径，判据两条独立（`u.deleted_at IS NOT NULL` **或** `u.status <> 'active'`），漏掉任一条都是静默放行。三条边界：**只停供货，不撤已入账的钱**（那是已交付服务的债，与 §3.6「注销用户仍可能是债主」同源）；**排在其余两个 sweep 之前**（它是闸，后两个是推进器，反过来会让同一轮里刚停掉的号被对齐规则推回池子）；**已 retired 且不可调度的行不返回**（降噪），但 `retired` 却仍 `schedulable` 的行必须返回——那是"状态写着已下线、实际还在接单"的一类，是这条闸真正要抓的。恢复后不自动放回，供给者需自己 Resume 重走观察期。
 
 **`pending_review → active` 只能由后台任务发生，而且默认关着**（原文写的是「本切片没有任何东西做这件事」，#9 落地后改成这条）。放行者是 `SupplierLifecycleService`，判据三条**同时**成立：`supply_probation_settings.enabled` 为真、连续探测成功数达标、`probation_since + 最短观察时长` 已过。默认配置里第一条就是假的——起步形态是「照常探测、照常记录、不自动放行」，运营看几天数据再打开。`ResumeAccount` 仍然**只**把状态改回 `pending_review`、绝不触碰 `schedulable`——否则供给者点一下就能绕过观察期把号推进池子。
 
