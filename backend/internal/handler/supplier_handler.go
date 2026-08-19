@@ -19,14 +19,24 @@ import (
 type SupplierHandler struct {
 	onboardingService *service.SupplierOnboardingService
 	creditService     *service.SupplierCreditService
+
+	// Admin 是管理端运营视图的入口，挂在这里只是为了不动 AdminHandlers 那三处
+	// 合并热区（理由见 supplier_admin_handler.go 顶部）。它是一个**独立类型**：
+	// 本结构体上没有任何管理端方法，也就不可能把全站流水误挂到 /user/supply 下。
+	Admin *SupplierAdminHandler
 }
 
 // NewSupplierHandler 构造供给者接入 handler。
 func NewSupplierHandler(
 	onboardingService *service.SupplierOnboardingService,
 	creditService *service.SupplierCreditService,
+	adminService *service.SupplierAdminService,
 ) *SupplierHandler {
-	return &SupplierHandler{onboardingService: onboardingService, creditService: creditService}
+	return &SupplierHandler{
+		onboardingService: onboardingService,
+		creditService:     creditService,
+		Admin:             NewSupplierAdminHandler(adminService),
+	}
 }
 
 // currentUserID 取当前登录用户，取不到就直接把 401 写回去。

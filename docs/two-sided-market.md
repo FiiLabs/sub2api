@@ -94,6 +94,8 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 | 管理端配置 HTTP | `internal/handler/admin/setting_handler_supplier.go` | — | `GET/PUT /api/v1/admin/settings/{supplier-settlement,supply-pool,supply-probation}`，三组配置各自一对端点。方法挂在**既有**的 `*SettingHandler` 上（它已经持有 `settingService`），因此 wire 零改动；路由挂进既有的 `registerSettingsRoutes`（见 core touch #8） |
 | 供给侧前端 | `frontend/src/api/supply.ts`、`stores/supply.ts`、`views/user/SupplyView.vue`、`i18n/locales/{zh,en}/supply.ts` | — | 接入页与仪表盘合一页：钱包四格 + 两步授权 + 我的订阅表 + 收益流水分页；下线两条通道（两套确认文案）、`draining` 徽章与排空截止时间、观察期进度（探测次数 / `eligible_at` 用「不早于」语气 / 探测失败原因）。见 §3.4、§3.5 |
 | 管理端前端 | `frontend/src/api/admin/supplyMarket.ts`、`views/admin/SupplyMarketView.vue` | — | 单起一页而不是往 `SettingsView.vue`（近九千行、上游最痛的合并热区）里加三个 section；三组配置各自一个保存按钮，审计日志才分得清谁改了什么。池卡片里配额输入框与「今日已溢出 N 次 / 被拦 M 次」挨着显示——单看配额说明不了任何事 |
+| 管理端运营视图 | `internal/service/supplier_admin.go`（类型+接口）、`supplier_admin_service.go`（夹取+白名单）、`internal/repository/supplier_admin_repo.go`（SQL）、`internal/handler/supplier_admin_handler.go` | — | `GET /api/v1/admin/supply/{overview,suppliers,accounts,ledger}`，回答运营的四个问题：谁挂了几个号 / 这个月要付多少 / 谁的号在被封 / 哪些卡在观察期。**整层只读**，core 侵入一行（见 core touch #9）。见 §3.6 |
+| 运营视图前端 | `frontend/src/api/admin/supplyMarket.ts`（新增只读那一组）、`views/admin/SupplyOperationsView.vue`、`i18n/locales/{zh,en}/supply.ts` 的 `supplyOps` 命名空间 | — | 与配置页 `SupplyMarketView.vue` **分开一页**：那页改参数、这页只看数，合成一页会让人一边翻名册一边动了分成比例。看板四格 + 状态桶（点一下就把账号表筛过去）+ 名册 + 账号明细 + 全站流水 |
 
 **结算参数现在有人填了，但默认是关的**。`GetSupplierSettlementSettings` 读那个 JSON key，`ToBillingParams()` 在总开关关闭时返回全零值——也就是计费里「什么都不做」的那一支。配置行不存在（当前生产状态）、JSON 损坏、数据库读失败，一律回退到关闭：这是**刻意的 fail-closed**，与本包其他网关行为设置的 fail-open 相反。网关设置读不到时放行请求最多少一层加工；结算参数读不到时按猜测值给钱，错的是账。打开开关要管理员在「双边市场」页显式保存一次（`PUT /api/v1/admin/settings/supplier-settlement`）。
 
@@ -175,6 +177,18 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 
 **这一组参数越界时 clamp 而不是报错，与结算参数刻意相反**。理由是错的方向不同：结算参数填错是**算错钱**，必须当场拒绝让人改对；观察期参数填错最多是「观察久一点/短一点」，而拒绝保存会让运营在一个半配好的状态里卡着。代价是运营可能没注意到自己填的 1 分钟变成了 5——所以 `PUT` 返回 clamp 后的值，前端**必须**回填（`SupplyMarketView.vue` 的 `saveProbation` 里那段回填不是可选的），页面上另挂一句 `clampNotice` 说明这个行为。
 
+### 3.6 管理端运营视图的五条边界（改动前先读）
+
+**整层只读，而且这是个决定不是遗漏**。管理端能写的只有 §3.1 那三组设置。改账号归属、改余额、手工放行观察期都不在这一刀里——它们会动钱和归属，各自需要审计与复核路径；混进一个"看板"接口里，迟早会被当成看板随手点。前端的 `adminSupplyMarketAPI` 里因此没有对应的 `update*`，并有一条单测钉住写方法的清单不许变长。
+
+**常量必须 `fmt.Sprintf` 进 SQL，不许重打一遍**。状态字面量（`pending_review` / `active` / ...）和 jsonb 键名（`apexone_supply_state` 等）全部来自 `service` 包常量。理由是漂移在这里**完全静默**：后端改了状态名而 SQL 里还写着旧的，看板不会报错，只会把一批账号算进错误的桶，或让它们从扫描里整个消失。同理状态缺失一律兜底成 `pending_review`（`COALESCE(NULLIF(extra->>'...',''), 'pending_review')`），与 `supplier_onboarding_repo.go` 的扫号口径一份。
+
+**调用方传的键一个字节都不进 SQL 文本**。排序键（`owed`/`history`/`accounts`/`recent`）经 `supplierRosterOrderBy` 的 switch 映射到写死的 `ORDER BY` 片段，未知值返回 `""` → service 层报 `SUPPLY_ADMIN_INVALID_SORT`，**不静默回落到默认排序**——一个悄悄回落的白名单会让"前端改了键名、后端没跟上"永远没人发现。排序片段全部以 `, u.id ASC` 收尾，否则同值行在翻页间会换位，翻两页看到同一个人。这与身份键（§3.3）是同一条规则，也是同一个理由：它紧挨着一张带余额的表。
+
+**"供给者"只有一个定义，而且是并集**。看板顶部的人数与名册的分页总数取自同一段 `supplyRosterUserSetSQL`：有过供给账号的人 **∪** 钱包四个数任一不为零的人。两处各写一份的下场是运营看到"37 个供给者"却只翻得出 31 行。取并集而不是只看账号，是因为"号全删了但还欠着钱"的人必须留在名册上——把他藏起来，那笔待付负债会在对账时凭空冒出来。同理名册 join `users` 时**不加** `deleted_at IS NULL`：注销用户仍可能是债主。
+
+**管理端流水的过滤器是独立类型，刻意不与供给者侧共用**。`SupplyAdminLedgerFilter.UserID == 0` 表示"看全站"，而供给者侧的同名字段 `<= 0` 必须拒绝。把两者合并成一个类型，供给者侧任何一处漏传 user_id 的 bug 就会从"查不到"升级成"看到所有人的账"。
+
 ## 4. Core Touch 台账
 
 core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APEXONE-EXT:` 可 grep 标记 + 详尽注释 + 单测。下表随实现逐行填。
@@ -197,6 +211,7 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 | 8 | `backend/internal/server/routes/admin.go` | `registerSettingsRoutes` 末尾 | 追加六行路由 + 一行 `// APEXONE-EXT:` 注释 | 挂进既有 settings group 而不是自起一个 admin group：那个 group 上有 adminAuth + 面板限流 + 审计 + `AdminComplianceGuard` 四层中间件，复制一份等着它日后与上游漂移，而漂移掉的是合规相关的那几层。handler 方法挂在既有的 `*SettingHandler` 上，因此 wire、`AdminHandlers`、`ProvideAdminHandlers` 三处热区一处没动 | **已做** |
 | 7 | `backend/internal/service/gateway_scheduling.go` | :97 函数签名 | **仅函数改名**：`SelectAccountWithLoadAwareness` → `selectAccountInPoolWithLoadAwareness`，函数体一字未改。导出名归新文件 `gateway_supply_overflow.go` 里的同名包装函数 | 交接件说的「零 core 溢出」不成立（见 §2）。耗尽有十几个 return 点，逐个插判断等于把一条新规则摊成十几处侵入；改名 + 外层包装是**一处**。合并冲突面小到只有一行签名，且上游若改了函数体，冲突会照常落在函数体上而不被包装掩盖 | **已做** |
 | 7a | — （**未覆盖面，记账用**） | `openai_codex_models_handler.go:44`、`gateway_handler.go:2058` | 这两处走的是 `SelectAccountForModel`，不经包装函数，因此**不溢出** | 首版切片的供给池只面向 Claude Code 形态消费，这两条路径不在范围内。若日后供给池扩到 codex 形态，需在此处补同样的包装 | 已知缺口 |
+| 9 | `backend/internal/server/routes/admin.go` | `registerSettingsRoutes(admin, h)` 之后 | 加 `registerSupplyMarketRoutes(admin, h)` 一行 + 一行 `// APEXONE-EXT:` 注释；函数体定义在 `routes/supplier.go` | 管理端运营视图的四个只读路由。挂进既有 admin group（adminAuth + 面板限流 + 审计 + `AdminComplianceGuard` 四层中间件），理由同 #8。handler **不进 `AdminHandlers`** 而是挂在既有的 `Handlers.Supplier` 下（`h.Supplier.Admin`）——`AdminHandlers` 结构体、`ProvideAdminHandlers` 形参表、`handler/wire.go` 是三处上游合并热区，每加一个管理端 handler 就要各留一行。用户侧与管理侧刻意是**两个类型**：路由挂错时是编译期的事，而不是把一个全站流水接口挂到了 `/user/supply` 下面 | **已做** |
 
 ## 5. 结算不变量（实现必须守住）
 
@@ -264,7 +279,10 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 | 225 | `supplier_credit_repo_integration_test.go`（+3） | 追回只动冻结区、`history_credit` 不变；追回幂等靠 `(action, request_id)` 部分唯一索引；**追回后再跑解冻搬不动那笔钱**——clawback 与 thaw 两条写路径唯一会打架的地方 |
 | 226 + 224 | `supplier_onboarding_repo_integration_test.go`（9 例，新文件） | 会话一次性领取（`UPDATE ... WHERE consumed_at IS NULL RETURNING` 的行锁语义）；拿别人 session_id 领不走且**失败的领取不会把会话标记成已消费**（否则是一条免费的拒绝服务）；过期判定用数据库时钟；已消费的会话不被过期清理带走；`owner_user_id` 写一次即定、不能从 A 改成 B；按状态扫号时**状态缺失兜底成 `pending_review`**（拼接 SQL 与 service 常量的契约，漂移了是静默失效）；上游 uuid 查重不看归属也不看 `schedulable`；**邮箱查重大小写不敏感**（`LOWER()` 比对真的走得通，不是靠 sqlmock 认字符串）；未知身份键是报错而非静默放行 |
 | 227 | `supply_overflow_repo_integration_test.go`（5 例，新文件） | **并发下不超发**：60 个 goroutine 抢 10 次配额，放行数必须恰好 10。这是那条 `ON CONFLICT DO UPDATE ... WHERE` 存在的全部理由，写成"先 SELECT 再 UPDATE"在这个测试里必挂。另有配额跨日重置、被拒次数单独计、不限量时照常计数 |
+| —（无新迁移） | `supplier_admin_repo_integration_test.go`（7 例，新文件） | 运营视图全是跨表聚合，sqlmock 只会把写好的 SQL 原样还回来，连 `COUNT(*) FILTER (...)` 是不是合法都不知道。真库证的是：自营账号（`owner_user_id IS NULL`）一个都没混进任何一个数字；jsonb 状态缺失兜底进 `pending_review`；看板人数恒等于名册分页总数，且**号全删了但钱包还有余额的人仍在名册里**；四个排序键的 `ORDER BY` 片段都真的合法、翻页不重不漏；未知排序键报错；健康度/状态/归属三个筛子各自成立且观察期字段真的从 jsonb 里解得出来；流水窗口用的是数据库时钟（`NOW() - make_interval(days => $1)` 的参数类型推断只有真库能证），把行挪到 60 天前它就从 30 天窗口里消失、把窗口拉到 90 天它又回来 |
 
 并发那一例刻意**不走 `testEntTx`**：那个 harness 是一个会回滚的单事务，会把所有写串行化，正好掩盖掉要测的东西。它用 `integrationEntClient` 直连并自行清理。
+
+运营视图那一组反过来必须走 `testEntTx`，但断言一律是**先取基线、再比增量**：那几个查询是全站聚合，写死绝对值等于假设整个库里只有这一个测试的数据，那个假设迟早被下一个测试文件打破。
 
 **仍未验证的**（不在真库能力范围内，需要活的上游）：真实 OAuth 授权码兑换、多实例选主（`SupplierThawService` / 观察期任务的 leader lock 只有单进程假锁测试）。

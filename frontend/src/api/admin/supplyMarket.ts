@@ -78,6 +78,168 @@ export type SupplyProbationPayload = Omit<
   | 'drain_window_minutes_max'
 >
 
+// ============================ 运营视图（只读） ============================
+//
+// 下面这一组对应 /admin/supply/*，全部是 GET。这一刀刻意不给管理端任何改动供给侧
+// 数据的能力：改归属、改余额、手工放行观察期都是会动钱的写操作，需要各自的审计
+// 路径，混进看板里迟早会被当成看板随手点。前端这里没有对应的 post/put 不是遗漏。
+
+/** 一个钱包（或一批钱包合计）的四个数。 */
+export interface SupplyWalletBalance {
+  /** 已解冻，随时可被消费或提现 */
+  available: number
+  /** 冻结中；冻结窗内发生拒付还能追回 */
+  frozen: number
+  /** 累计入账，只增不减 */
+  history: number
+  /** 累计已被消费掉的 */
+  spent: number
+}
+
+export interface SupplyWalletTotals extends SupplyWalletBalance {
+  /** 有钱包行的供给者数（含余额为零的） */
+  wallets: number
+}
+
+/** 供给账号按状态的分布。字段固定，不是 map——多一个状态该编译不过，而不是画一个没翻译的格子。 */
+export interface SupplyAccountCounts {
+  total: number
+  pending_review: number
+  active: number
+  draining: number
+  retired: number
+  /** 上游健康状态不是 active 的。与接入状态正交：一个 active 的号也可能是坏的。 */
+  unhealthy: number
+  /** 此刻真的在接单的号。与 active 不相等是正常的。 */
+  schedulable: number
+}
+
+/** 最近一个窗口内的流水合计，按动作分开。 */
+export interface SupplyLedgerWindow {
+  days: number
+  accrued: number
+  clawed: number
+  /** 钱包内部搬运（frozen → available）。**不要**和 accrued 相加，那是同一笔钱数两遍。 */
+  thawed: number
+  spent: number
+  withdrawn: number
+}
+
+export interface SupplyMarketOverview {
+  suppliers: number
+  accounts: SupplyAccountCounts
+  wallet: SupplyWalletTotals
+  window: SupplyLedgerWindow
+}
+
+/** 名册排序键。取值必须在这个联合里——后端对未知键报 400，不会静默回落。 */
+export type SupplierRosterSort = 'owed' | 'history' | 'accounts' | 'recent'
+
+export const SUPPLIER_ROSTER_SORTS: SupplierRosterSort[] = ['owed', 'history', 'accounts', 'recent']
+
+export interface SupplierRosterEntry {
+  user_id: number
+  email: string
+  username?: string
+  /** 用户自身状态。被封的用户仍然可能有余额待付，所以照常显示。 */
+  user_status: string
+  accounts: SupplyAccountCounts
+  wallet: SupplyWalletBalance
+  /** 空 = 从未赚到过钱（挂了号没被调度到，或一直卡在观察期）——本身就是线索。 */
+  last_accrual_at?: string | null
+}
+
+export interface SupplyAccountAdminView {
+  id: number
+  name: string
+  platform: string
+  owner_user_id: number
+  owner_email?: string
+  supply_state: string
+  status: string
+  error_message?: string
+  schedulable: boolean
+  email_address?: string
+  last_used_at?: string | null
+  created_at: string
+  probation_since?: string | null
+  probe_passes: number
+  probe_error?: string
+  drain_until?: string | null
+}
+
+export type SupplyAccountHealth = '' | 'healthy' | 'unhealthy'
+
+export interface SupplyAdminLedgerEntry {
+  id: number
+  user_id: number
+  user_email?: string
+  action: string
+  amount: number
+  request_id?: string
+  account_id?: number
+  source_user_id?: number
+  basis_amount?: number
+  share_ratio?: number
+  frozen_until?: string
+  available_after?: number
+  frozen_after?: number
+  history_after?: number
+  remark?: string
+  created_at: string
+}
+
+export interface SupplyAdminPage<T> {
+  items: T[]
+  total: number
+  page: number
+  page_size: number
+  pages: number
+}
+
+async function getOverview(windowDays?: number): Promise<SupplyMarketOverview> {
+  const { data } = await apiClient.get<SupplyMarketOverview>('/admin/supply/overview', {
+    params: windowDays ? { window_days: windowDays } : undefined,
+  })
+  return data
+}
+
+async function listSuppliers(
+  params: { page?: number; page_size?: number; keyword?: string; sort?: SupplierRosterSort } = {}
+): Promise<SupplyAdminPage<SupplierRosterEntry>> {
+  const { data } = await apiClient.get<SupplyAdminPage<SupplierRosterEntry>>('/admin/supply/suppliers', { params })
+  return data
+}
+
+async function listAccounts(
+  params: {
+    page?: number
+    page_size?: number
+    state?: string
+    health?: SupplyAccountHealth
+    owner_user_id?: number
+  } = {}
+): Promise<SupplyAdminPage<SupplyAccountAdminView>> {
+  const { data } = await apiClient.get<SupplyAdminPage<SupplyAccountAdminView>>('/admin/supply/accounts', { params })
+  return data
+}
+
+async function listLedger(
+  params: {
+    page?: number
+    page_size?: number
+    user_id?: number
+    action?: string
+    account_id?: number
+    request_id?: string
+    start_at?: string
+    end_at?: string
+  } = {}
+): Promise<SupplyAdminPage<SupplyAdminLedgerEntry>> {
+  const { data } = await apiClient.get<SupplyAdminPage<SupplyAdminLedgerEntry>>('/admin/supply/ledger', { params })
+  return data
+}
+
 async function getSettlementSettings(): Promise<SupplierSettlementSettings> {
   const { data } = await apiClient.get<SupplierSettlementSettings>('/admin/settings/supplier-settlement')
   return data
@@ -117,6 +279,10 @@ async function updateProbationSettings(
 }
 
 export const adminSupplyMarketAPI = {
+  getOverview,
+  listSuppliers,
+  listAccounts,
+  listLedger,
   getSettlementSettings,
   updateSettlementSettings,
   getPoolSettings,

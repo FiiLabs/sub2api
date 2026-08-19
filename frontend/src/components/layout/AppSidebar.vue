@@ -808,6 +808,8 @@ const adminNavItems = computed((): NavItem[] => {
     // APEXONE-EXT: 双边市场——管理端配置入口。刻意不挂 featureFlag：
     // 管理员必须先能进这一页才能把功能打开。
     { path: '/admin/supply-market', label: t('supplyAdmin.navLabel'), icon: DollarIcon, hideInSimpleMode: true },
+    // 运营视图与配置页分开挂：一个是每天看的，一个是配好就不再碰的。
+    { path: '/admin/supply-ops', label: t('supplyOps.navLabel'), icon: DollarIcon, hideInSimpleMode: true },
     { path: '/admin/redeem', label: t('nav.redeemCodes'), icon: TicketIcon, hideInSimpleMode: true },
     { path: '/admin/promo-codes', label: t('nav.promoCodes'), icon: GiftIcon, hideInSimpleMode: true },
     {

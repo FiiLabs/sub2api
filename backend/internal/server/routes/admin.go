@@ -70,6 +70,9 @@ func RegisterAdminRoutes(
 		// 系统设置
 		registerSettingsRoutes(admin, h)
 
+		// APEXONE-EXT: 双边市场——供给侧运营视图（只读，定义在 routes/supplier.go）
+		registerSupplyMarketRoutes(admin, h)
+
 		// 数据管理
 		registerDataManagementRoutes(admin, h, stepUpAuth)
 

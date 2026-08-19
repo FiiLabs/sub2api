@@ -621,6 +621,19 @@ const routes: RouteRecordRaw[] = [
       descriptionKey: 'supplyAdmin.description'
     }
   },
+  // APEXONE-EXT: 双边市场——管理端运营视图（只读）
+  {
+    path: '/admin/supply-ops',
+    name: 'AdminSupplyOperations',
+    component: () => import('@/views/admin/SupplyOperationsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Supply Operations',
+      titleKey: 'supplyOps.title',
+      descriptionKey: 'supplyOps.description'
+    }
+  },
   {
     path: '/admin/risk-control',
     name: 'AdminRiskControl',

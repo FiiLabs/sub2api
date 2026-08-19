@@ -20,7 +20,7 @@ function collectKeys(node: unknown, prefix = ''): string[] {
 
 describe('supply locale modules', () => {
   it('has identical key sets in zh and en', () => {
-    for (const ns of ['supply', 'supplyAdmin'] as const) {
+    for (const ns of ['supply', 'supplyAdmin', 'supplyOps'] as const) {
       const zhKeys = collectKeys(zh[ns]).sort()
       const enKeys = collectKeys(en[ns]).sort()
       expect({ ns, keys: enKeys }).toEqual({ ns, keys: zhKeys })
@@ -35,6 +35,7 @@ describe('supply locale modules', () => {
       expect(locale.nav.settings).toBeTruthy()
       expect(locale.supply.navLabel).toBeTruthy()
       expect(locale.supplyAdmin.navLabel).toBeTruthy()
+      expect(locale.supplyOps.navLabel).toBeTruthy()
     }
   })
 })

@@ -196,5 +196,99 @@ export default {
       loadFailed: '加载配置失败',
       saveFailed: '保存失败'
     }
+  },
+
+  // APEXONE-EXT: 运营视图（只读）。与 supplyAdmin（配置页）分开：那一页改参数，
+  // 这一页只看数，两组文案的语气也不同——这里全是陈述，没有一句"将会生效"。
+  supplyOps: {
+    navLabel: '供给运营',
+    title: '供给运营',
+    description: '看供给侧此刻的状态：要付多少、谁在接单、谁的号坏了、谁卡在观察期。整页只读。',
+    search: '查询',
+    loading: '加载中…',
+    empty: '没有符合条件的数据。',
+
+    window: {
+      label: '统计窗口',
+      days: '最近 {days} 天'
+    },
+
+    overview: {
+      owed: '待付负债',
+      owedBreakdown: '可用 {available} · 冻结 {frozen}',
+      suppliers: '供给者',
+      wallets: '其中 {count} 人有钱包记录',
+      accounts: '供给账号',
+      accountsBreakdown: '已上线 {active} · 正在接单 {schedulable}',
+      accrued: '近 {days} 天入账',
+      windowBreakdown: '追回 {clawed} · 供给者消费 {spent}',
+      unhealthy: '账号异常',
+      thawHint: '本窗口解冻搬运 {thawed}，提现 {withdrawn}。解冻是钱包内部把冻结额挪进可用额，不要和入账相加——那是同一笔钱数两遍。首版没有提现路径，这个数不为零意味着有人手工插过流水。'
+    },
+
+    roster: {
+      title: '供给者名册',
+      description: '名下有过供给账号、或钱包里有过余额的人。已注销但仍欠着钱的人也在这里——把他藏起来只会让这笔钱在对账时凭空冒出来。',
+      keywordPlaceholder: '邮箱 / 用户名',
+      supplier: '供给者',
+      accounts: '账号数',
+      accountsHint: '在线 {active} · 观察期 {pending} · 异常 {unhealthy}',
+      owed: '待付',
+      history: '累计入账',
+      lastAccrual: '最后入账',
+      neverAccrued: '从未入账',
+      actions: '操作',
+      viewAccounts: '看他的号',
+      viewLedger: '看他的账',
+      sort: {
+        owed: '按待付排序',
+        history: '按累计入账排序',
+        accounts: '按账号数排序',
+        recent: '按最后入账排序'
+      }
+    },
+
+    accounts: {
+      title: '供给账号',
+      description: '只含有归属人的号，自营账号不在这里。',
+      account: '账号',
+      owner: '归属人',
+      state: '接入状态',
+      health: '上游健康',
+      lastUsedAt: '最近使用',
+      never: '从未使用',
+      anyState: '全部状态',
+      anyHealth: '全部健康度',
+      healthy: '正常',
+      unhealthy: '异常',
+      schedulable: '正在接单',
+      notSchedulable: '不接单',
+      probationSince: '观察期起点 {time}',
+      probePasses: '已连续通过 {passes} 次探测',
+      probeError: '探测失败：{reason}',
+      drainUntil: '排空至 {time}',
+      ownerFilter: '只看 #{id} 的号'
+    },
+
+    ledger: {
+      title: '全站流水',
+      description: '所有供给者的钱包流水。对账时手上通常只有一个 request_id，可以直接精确检索。',
+      time: '时间',
+      user: '收款人',
+      action: '类型',
+      amount: '金额',
+      basis: '计费基数',
+      requestId: '请求 ID',
+      anyAction: '全部类型',
+      requestIdPlaceholder: '按 request_id 精确匹配',
+      userFilter: '只看 #{id}'
+    },
+
+    error: {
+      overviewFailed: '加载看板失败',
+      rosterFailed: '加载名册失败',
+      accountsFailed: '加载账号失败',
+      ledgerFailed: '加载流水失败'
+    }
   }
 }

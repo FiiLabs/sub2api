@@ -215,5 +215,99 @@ export default {
       loadFailed: 'Failed to load settings',
       saveFailed: 'Failed to save'
     }
+  },
+
+  // APEXONE-EXT: read-only operations view. Kept apart from supplyAdmin (the
+  // settings page): that one changes parameters, this one only reports numbers.
+  supplyOps: {
+    navLabel: 'Supply ops',
+    title: 'Supply operations',
+    description: 'What the supply side looks like right now: what is owed, who is serving, whose accounts are broken, what is stuck in review. Read-only.',
+    search: 'Search',
+    loading: 'Loading…',
+    empty: 'Nothing matches.',
+
+    window: {
+      label: 'Window',
+      days: 'Last {days} days'
+    },
+
+    overview: {
+      owed: 'Owed to suppliers',
+      owedBreakdown: 'Available {available} · Frozen {frozen}',
+      suppliers: 'Suppliers',
+      wallets: '{count} of them have a wallet record',
+      accounts: 'Supply accounts',
+      accountsBreakdown: 'Active {active} · Serving {schedulable}',
+      accrued: 'Accrued in {days} days',
+      windowBreakdown: 'Clawed back {clawed} · Spent by suppliers {spent}',
+      unhealthy: 'Unhealthy accounts',
+      thawHint: 'Thawed {thawed} and withdrew {withdrawn} in this window. Thawing only moves frozen balance into available — do not add it to accruals, that counts the same money twice. There is no withdrawal path in this release, so a non-zero figure means someone inserted ledger rows by hand.'
+    },
+
+    roster: {
+      title: 'Supplier roster',
+      description: 'Everyone who has had a supply account or a wallet balance. Deleted users who are still owed money stay listed — hiding them only makes the liability reappear at reconciliation time.',
+      keywordPlaceholder: 'Email / username',
+      supplier: 'Supplier',
+      accounts: 'Accounts',
+      accountsHint: 'Active {active} · In review {pending} · Unhealthy {unhealthy}',
+      owed: 'Owed',
+      history: 'Lifetime accrued',
+      lastAccrual: 'Last accrual',
+      neverAccrued: 'Never accrued',
+      actions: 'Actions',
+      viewAccounts: 'Their accounts',
+      viewLedger: 'Their ledger',
+      sort: {
+        owed: 'Sort by owed',
+        history: 'Sort by lifetime accrued',
+        accounts: 'Sort by account count',
+        recent: 'Sort by last accrual'
+      }
+    },
+
+    accounts: {
+      title: 'Supply accounts',
+      description: 'Only accounts with an owner. First-party accounts are not listed here.',
+      account: 'Account',
+      owner: 'Owner',
+      state: 'Supply state',
+      health: 'Upstream health',
+      lastUsedAt: 'Last used',
+      never: 'Never used',
+      anyState: 'Any state',
+      anyHealth: 'Any health',
+      healthy: 'Healthy',
+      unhealthy: 'Unhealthy',
+      schedulable: 'Serving traffic',
+      notSchedulable: 'Not serving',
+      probationSince: 'In review since {time}',
+      probePasses: '{passes} consecutive probe successes',
+      probeError: 'Probe failed: {reason}',
+      drainUntil: 'Draining until {time}',
+      ownerFilter: 'Owner #{id} only'
+    },
+
+    ledger: {
+      title: 'Site-wide ledger',
+      description: 'Wallet ledger across all suppliers. Reconciliation usually starts from a single request_id, so it can be matched exactly.',
+      time: 'Time',
+      user: 'Payee',
+      action: 'Action',
+      amount: 'Amount',
+      basis: 'Basis',
+      requestId: 'Request ID',
+      anyAction: 'Any action',
+      requestIdPlaceholder: 'Exact request_id',
+      userFilter: 'User #{id} only'
+    },
+
+    error: {
+      overviewFailed: 'Failed to load the dashboard',
+      rosterFailed: 'Failed to load the roster',
+      accountsFailed: 'Failed to load accounts',
+      ledgerFailed: 'Failed to load the ledger'
+    }
   }
 }

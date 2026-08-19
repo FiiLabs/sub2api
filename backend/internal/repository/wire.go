@@ -108,6 +108,8 @@ var ProviderSet = wire.NewSet(
 	NewSupplierOnboardingRepository,
 	// APEXONE-EXT: 双边市场——溢出日配额计数。
 	NewSupplyOverflowCounter,
+	// APEXONE-EXT: 双边市场——管理端运营视图仓储。
+	NewSupplierAdminRepository,
 	NewUserPlatformQuotaRepository,     // T14: user × platform quota
 	NewUserPlatformQuotaServiceAdapter, // T14: adapter → service.UserPlatformQuotaRepository
 

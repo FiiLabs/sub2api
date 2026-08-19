@@ -869,6 +869,8 @@ var ProviderSet = wire.NewSet(
 	// APEXONE-EXT: 双边市场——供给者自助接入 + 观察期/排空推进任务。
 	NewSupplierOnboardingService,
 	ProvideSupplierLifecycleService,
+	// APEXONE-EXT: 双边市场——管理端运营视图服务（只读聚合）。
+	NewSupplierAdminService,
 	ProvidePaymentConfigService,
 	ProvidePaymentService,
 	ProvidePaymentOrderExpiryService,

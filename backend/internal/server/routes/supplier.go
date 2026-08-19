@@ -52,3 +52,25 @@ func RegisterSupplierRoutes(
 		supply.POST("/accounts/:id/resume", h.Supplier.ResumeAccount)
 	}
 }
+
+// registerSupplyMarketRoutes 注册管理端供给侧运营视图（只读）。
+//
+// 由 routes/admin.go 的管理组调用，一行。定义放在这个文件而不是 admin.go 里，
+// 理由与整个文件一样：admin.go 是上游合并热区，那边只留调用的那一行。
+//
+// 传进来的 admin 组已经带着 adminAuth + 面板限流 + 审计 + AdminComplianceGuard
+// 四层中间件——这四层就是这些接口的全部鉴权，handler 里不再查一遍。
+// 全部是 GET：这一刀不给管理端任何改动供给侧数据的能力（见 supplier_admin.go 顶部）。
+func registerSupplyMarketRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	if h == nil || h.Supplier == nil || h.Supplier.Admin == nil {
+		return
+	}
+
+	supply := admin.Group("/supply")
+	{
+		supply.GET("/overview", h.Supplier.Admin.GetOverview)
+		supply.GET("/suppliers", h.Supplier.Admin.ListSuppliers)
+		supply.GET("/accounts", h.Supplier.Admin.ListAccounts)
+		supply.GET("/ledger", h.Supplier.Admin.ListLedger)
+	}
+}
