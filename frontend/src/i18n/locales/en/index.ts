@@ -7,6 +7,8 @@ import admin from './admin'
 import misc from './misc'
 import proof from './proof'
 import home from './home'
+// APEXONE-EXT: 双边市场文案（纯新增模块，未改动上游任何一个命名空间）
+import supply from './supply'
 
 export default {
   ...landing,
@@ -18,4 +20,5 @@ export default {
   ...misc,
   ...proof,
   ...home,
+  ...supply,
 }

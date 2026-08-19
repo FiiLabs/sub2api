@@ -261,6 +261,21 @@ const routes: RouteRecordRaw[] = [
       descriptionKey: 'redeem.description'
     }
   },
+  // APEXONE-EXT: 双边市场——供给者自助页。没有 requiresAdmin：供给者就是普通用户，
+  // 只是他名下多了几个账号。功能没开时页面自己渲染一段说明（后端 status 说了算），
+  // 不在路由守卫里拦——守卫拦了就只能跳走，用户不知道发生了什么。
+  {
+    path: '/supply',
+    name: 'Supply',
+    component: () => import('@/views/user/SupplyView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Share Subscription',
+      titleKey: 'supply.title',
+      descriptionKey: 'supply.description'
+    }
+  },
   {
     path: '/affiliate',
     name: 'Affiliate',
@@ -591,6 +606,19 @@ const routes: RouteRecordRaw[] = [
       title: 'System Settings',
       titleKey: 'admin.settings.title',
       descriptionKey: 'admin.settings.description'
+    }
+  },
+  // APEXONE-EXT: 双边市场——管理端配置页
+  {
+    path: '/admin/supply-market',
+    name: 'AdminSupplyMarket',
+    component: () => import('@/views/admin/SupplyMarketView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Two-sided Market',
+      titleKey: 'supplyAdmin.title',
+      descriptionKey: 'supplyAdmin.description'
     }
   },
   {

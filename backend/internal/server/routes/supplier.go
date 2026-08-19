@@ -43,6 +43,9 @@ func RegisterSupplierRoutes(
 		supply.POST("/oauth/start", panelRateLimiter.Heavy(), h.Supplier.StartOAuth)
 		supply.POST("/oauth/complete", panelRateLimiter.Heavy(), h.Supplier.CompleteOAuth)
 
+		supply.GET("/wallet", h.Supplier.GetWallet)
+		supply.GET("/ledger", h.Supplier.ListLedger)
+
 		supply.GET("/accounts", h.Supplier.ListAccounts)
 		supply.GET("/accounts/:id", h.Supplier.GetAccount)
 		supply.POST("/accounts/:id/pause", h.Supplier.PauseAccount)

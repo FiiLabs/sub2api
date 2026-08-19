@@ -570,6 +570,13 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		adminSettings.PUT("/web-search-emulation", h.Admin.Setting.UpdateWebSearchEmulationConfig)
 		adminSettings.POST("/web-search-emulation/test", h.Admin.Setting.TestWebSearchEmulation)
 		adminSettings.POST("/web-search-emulation/reset-usage", h.Admin.Setting.ResetWebSearchUsage)
+		// APEXONE-EXT: 双边市场——结算参数与供给池路由（实现见 handler/admin/setting_handler_supplier.go）。
+		// 挂在这个 group 里而不是自己另起一个：admin group 上有 adminAuth + 面板限流 +
+		// 审计 + AdminComplianceGuard 四层中间件，复制一份等着它日后与上游漂移。
+		adminSettings.GET("/supplier-settlement", h.Admin.Setting.GetSupplierSettlementSettings)
+		adminSettings.PUT("/supplier-settlement", h.Admin.Setting.UpdateSupplierSettlementSettings)
+		adminSettings.GET("/supply-pool", h.Admin.Setting.GetSupplyPoolSettings)
+		adminSettings.PUT("/supply-pool", h.Admin.Setting.UpdateSupplyPoolSettings)
 	}
 }
 

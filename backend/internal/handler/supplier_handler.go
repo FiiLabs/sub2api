@@ -15,14 +15,18 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// SupplierHandler 处理供给者自助接入请求。
+// SupplierHandler 处理供给者自助接入与收益查询请求。
 type SupplierHandler struct {
 	onboardingService *service.SupplierOnboardingService
+	creditService     *service.SupplierCreditService
 }
 
 // NewSupplierHandler 构造供给者接入 handler。
-func NewSupplierHandler(onboardingService *service.SupplierOnboardingService) *SupplierHandler {
-	return &SupplierHandler{onboardingService: onboardingService}
+func NewSupplierHandler(
+	onboardingService *service.SupplierOnboardingService,
+	creditService *service.SupplierCreditService,
+) *SupplierHandler {
+	return &SupplierHandler{onboardingService: onboardingService, creditService: creditService}
 }
 
 // currentUserID 取当前登录用户，取不到就直接把 401 写回去。
@@ -37,6 +41,18 @@ func (h *SupplierHandler) currentUserID(c *gin.Context) (int64, bool) {
 	return subject.UserID, true
 }
 
+// SupplierStatusResponse 是供给侧的功能开关快照。
+//
+// 两个开关分开报，因为它们真的可以处于不同状态：接入开着而结算没开，
+// 意味着「可以挂号，但现在挂了不算钱」——前端必须能把这句话讲给用户，
+// 而不是笼统显示一个「功能可用」。
+type SupplierStatusResponse struct {
+	// Enabled 自助接入是否开放（供给池分组是否配好）。
+	Enabled bool `json:"enabled"`
+	// SettlementEnabled 结算是否开启（挂上来的号产生的用量是否入账）。
+	SettlementEnabled bool `json:"settlement_enabled"`
+}
+
 // GetStatus 返回自助接入是否开放。
 // GET /api/v1/user/supply/status
 //
@@ -46,11 +62,14 @@ func (h *SupplierHandler) GetStatus(c *gin.Context) {
 	if _, ok := h.currentUserID(c); !ok {
 		return
 	}
-	if h.onboardingService == nil {
-		response.Success(c, gin.H{"enabled": false})
-		return
+	resp := SupplierStatusResponse{}
+	if h.onboardingService != nil {
+		resp.Enabled = h.onboardingService.IsEnabled(c.Request.Context())
 	}
-	response.Success(c, gin.H{"enabled": h.onboardingService.IsEnabled(c.Request.Context())})
+	if h.creditService != nil {
+		resp.SettlementEnabled = h.creditService.IsEnabled(c.Request.Context())
+	}
+	response.Success(c, resp)
 }
 
 // SupplierStartOAuthResponse 是发起授权的响应。
@@ -194,6 +213,65 @@ func (h *SupplierHandler) ResumeAccount(c *gin.Context) {
 	h.mutateAccount(c, func(ctx *gin.Context, userID, accountID int64) error {
 		return h.onboardingService.ResumeAccount(ctx.Request.Context(), userID, accountID)
 	})
+}
+
+// GetWallet 读当前供给者的赚取钱包。
+// GET /api/v1/user/supply/wallet
+//
+// 结算关闭时也照常返回（多半是一个全零的钱包）：关掉开关不该让已经攒下的余额
+// 从页面上消失——那看起来像钱丢了。要不要在界面上强调「当前未在计费」由前端
+// 按 status.settlement_enabled 决定。
+func (h *SupplierHandler) GetWallet(c *gin.Context) {
+	userID, ok := h.currentUserID(c)
+	if !ok {
+		return
+	}
+	if h.creditService == nil {
+		response.ErrorFrom(c, service.ErrSupplierOnboardingDisabled)
+		return
+	}
+
+	wallet, err := h.creditService.GetWallet(c.Request.Context(), userID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, wallet)
+}
+
+// ListLedger 分页读当前供给者的钱包流水。
+// GET /api/v1/user/supply/ledger?page=&page_size=&action=
+//
+// 过滤条件里**没有** user_id：它只能来自 JWT。account_id 之类的过滤先不做——
+// 首版仪表盘要的是一条时间线，加过滤器不如加分页有用。
+func (h *SupplierHandler) ListLedger(c *gin.Context) {
+	userID, ok := h.currentUserID(c)
+	if !ok {
+		return
+	}
+	if h.creditService == nil {
+		response.ErrorFrom(c, service.ErrSupplierOnboardingDisabled)
+		return
+	}
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	// 越界值交给 service 侧夹回去（那里有唯一的一份上下限），这里只负责别把
+	// 解析失败的 0 当成用户的意图。
+	entries, total, err := h.creditService.ListLedger(c.Request.Context(), service.SupplierCreditLedgerFilter{
+		UserID:   userID,
+		Action:   c.Query("action"),
+		Page:     page,
+		PageSize: pageSize,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if entries == nil {
+		entries = []service.SupplierCreditLedgerEntry{}
+	}
+	response.Paginated(c, entries, total, page, pageSize)
 }
 
 // mutateAccount 把「取用户 → 取账号 id → 执行 → 回读最新视图」这套壳收在一处。
