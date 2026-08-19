@@ -240,3 +240,23 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
   - `frontend/src/api/__tests__/admin.system.rollback.spec.ts` — 取 fork（`UPDATE_REQUEST_TIMEOUT_MS` 常量仍在且等于上游内联的 `15*60*1000`）
   - `backend/internal/payment/provider/stripe_test.go` — add/add union（fork 的 crypto 支付测试 + 上游的 refund 幂等键测试，import 合并）
 - 验证：`go build ./...` 通过；`go test -tags unit ./...` 全绿（exit 0）；`make -C backend generate` 通过，产生一处上游自身的 ent 注释 drift（`ent/group.go` 的 `long_context_pricing_enabled` 注释），已单独提交
+
+## 8. 真库验证实录（2026-08-19）
+
+在此之前，五个新迁移**一次都没在真 Postgres 上跑过**——本仓的 sqlmock 测试只验语句形状，验不了列名是否存在、索引谓词是否可推断、并发下的行锁语义。这一轮把它们全部跑通。
+
+**环境**：`go test -tags integration`，testcontainers 起 `postgres:18.1-alpine3.23` + `redis:8.4-alpine`（TestMain 里 `ApplyMigrations` 失败会直接 `os.Exit(1)`，所以"测试跑起来了"本身就是迁移全部成功的证明）。
+
+**结果**：迁移 `224` / `224a_notx` / `225` / `226` / `227` 全部成功应用；`internal/repository`、`internal/server/routes`、`internal/middleware` 三个带 integration 标签的包全绿。
+
+本轮补上的集成测试（此前是空白）：
+
+| 迁移 | 文件 | 只有真库能证的性质 |
+|---|---|---|
+| 225 | `supplier_credit_repo_integration_test.go`（+3） | 追回只动冻结区、`history_credit` 不变；追回幂等靠 `(action, request_id)` 部分唯一索引；**追回后再跑解冻搬不动那笔钱**——clawback 与 thaw 两条写路径唯一会打架的地方 |
+| 226 + 224 | `supplier_onboarding_repo_integration_test.go`（7 例，新文件） | 会话一次性领取（`UPDATE ... WHERE consumed_at IS NULL RETURNING` 的行锁语义）；拿别人 session_id 领不走且**失败的领取不会把会话标记成已消费**（否则是一条免费的拒绝服务）；过期判定用数据库时钟；已消费的会话不被过期清理带走；`owner_user_id` 写一次即定、不能从 A 改成 B；按状态扫号时**状态缺失兜底成 `pending_review`**（拼接 SQL 与 service 常量的契约，漂移了是静默失效）；上游 uuid 查重不看归属也不看 `schedulable` |
+| 227 | `supply_overflow_repo_integration_test.go`（5 例，新文件） | **并发下不超发**：60 个 goroutine 抢 10 次配额，放行数必须恰好 10。这是那条 `ON CONFLICT DO UPDATE ... WHERE` 存在的全部理由，写成"先 SELECT 再 UPDATE"在这个测试里必挂。另有配额跨日重置、被拒次数单独计、不限量时照常计数 |
+
+并发那一例刻意**不走 `testEntTx`**：那个 harness 是一个会回滚的单事务，会把所有写串行化，正好掩盖掉要测的东西。它用 `integrationEntClient` 直连并自行清理。
+
+**仍未验证的**（不在真库能力范围内，需要活的上游）：真实 OAuth 授权码兑换、多实例选主（`SupplierThawService` / 观察期任务的 leader lock 只有单进程假锁测试）。
