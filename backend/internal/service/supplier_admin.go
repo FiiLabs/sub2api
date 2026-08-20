@@ -74,8 +74,17 @@ type SupplyLedgerWindow struct {
 	Thawed float64 `json:"thawed"`
 	// Spent 本窗口供给者用钱包抵扣掉的。
 	Spent float64 `json:"spent"`
-	// Withdrawn 本窗口提现（首版没有提现路径，恒为 0；留着是为了「有人手工插了流水」能被看见）。
+	// Withdrawn 本窗口提现申请扣走的（申请即扣款，见 supplier_withdrawal.go 顶部）。
+	//
+	// 注意它是**申请额**，不是已打款额：一张 pending 的单子也计在里面。想知道真的
+	// 打出去多少，看提现队列里 paid 的那些。
 	Withdrawn float64 `json:"withdrawn"`
+	// WithdrawReverted 本窗口被拒绝/被撤回退回可用区的。
+	//
+	// 与 Withdrawn 分开报而不是相减：净额（Withdrawn - WithdrawReverted）只能回答
+	// 「钱少了多少」，回答不了「有多少单被拒了」。后者是一个需要有人去看一眼的信号——
+	// 大量退回意味着渠道配置或审核标准出了问题。
+	WithdrawReverted float64 `json:"withdraw_reverted"`
 }
 
 // SupplyMarketOverview 是运营看板顶部的一屏。

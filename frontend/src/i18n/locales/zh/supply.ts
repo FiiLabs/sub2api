@@ -148,7 +148,56 @@ export default {
       thaw: '解冻',
       clawback: '追回',
       withdraw: '提现',
+      // 与 withdraw 分开说而不是合成一句"提现"：一笔退回在账单上必须
+      // 一眼看得出是退回来的钱，否则它读起来像一笔来路不明的收入。
+      withdraw_revert: '提现退回',
       unknown: '其他'
+    },
+
+    // 提现。三句话必须写在用户看得见的地方，因为它们都是会被误解的：
+    //   1. 申请的那一刻钱就扣了，不是审批时才扣；
+    //   2. 低于起提额会被拒绝，不会被夹到起提额；
+    //   3.「开着但没配渠道」是平台的问题，不是他填错了。
+    withdrawal: {
+      title: '提现',
+      closedTitle: '提现暂未开放',
+      closedBody: '平台还没有开放提现。余额不会消失，等开放后可以一次性申请。',
+      channelsMissingTitle: '提现渠道维护中',
+      channelsMissingBody: '提现已开启，但平台还没有配好收款渠道。这是平台侧的配置问题，请联系管理员，不用重复尝试。',
+      deductHint: '提交申请时金额会立刻从可用余额中扣除，而不是等审核通过才扣。审核未通过或你自己撤回时，这笔钱会原路退回可用余额。',
+      pendingCount: '待处理 {count} / {max} 张',
+      amountLabel: '提现金额（起提 {min}）',
+      useAll: '全部可用余额（{amount}）',
+      channelLabel: '收款渠道',
+      channelPlaceholder: '请选择收款渠道',
+      accountLabel: '收款账号',
+      accountPlaceholder: '填写对应渠道的收款账号',
+      accountHint: '请仔细核对：打款按这里填的账号进行，填错导致的损失无法追回。',
+      noteLabel: '备注（选填）',
+      notePlaceholder: '需要让运营知道的信息',
+      submit: '提交提现申请',
+      submitting: '提交中…',
+      submitted: '申请已提交，金额已从可用余额中扣除。',
+      empty: '还没有提现记录。',
+      createdAt: '申请时间',
+      amount: '金额',
+      channel: '收款方式',
+      status: '状态',
+      reviewNote: '处理说明',
+      actions: '操作',
+      externalRef: '打款凭证：{ref}',
+      cancel: '撤回',
+      cancelling: '撤回中…',
+      cancelConfirm: '确定要撤回这张 {amount} 的提现申请吗？撤回后金额会退回可用余额。',
+      cancelled: '已撤回，金额已退回可用余额。',
+
+      state: {
+        pending: '待处理',
+        paid: '已打款',
+        rejected: '已拒绝',
+        canceled: '已撤回',
+        unknown: '未知'
+      }
     },
 
     error: {
@@ -159,14 +208,19 @@ export default {
       resumeFailed: '挂回失败',
       detachFailed: '解绑失败',
       acceptFailed: '同意协议失败',
-      codeRequired: '请先填写授权码'
+      codeRequired: '请先填写授权码',
+      withdrawalAmountInvalid: '请填写一个大于 0 的提现金额',
+      withdrawalChannelRequired: '请选择收款渠道',
+      withdrawalAccountRequired: '请填写收款账号',
+      withdrawalFailed: '提交提现申请失败',
+      withdrawalCancelFailed: '撤回提现申请失败'
     }
   },
 
   supplyAdmin: {
     navLabel: '双边市场',
     title: '双边市场',
-    description: '配置供给者分成与供给池路由。两组配置分开保存。',
+    description: '配置供给者分成、供给池路由、观察期、协议与提现。每组分开保存。',
 
     settlement: {
       title: '结算参数',
@@ -242,6 +296,31 @@ export default {
       saved: '协议已保存'
     },
 
+    // 提现参数。这一组的每一句提示都在描述"配错了会怎样"，因为它的失效方式
+    // 是静默的：开着但没配渠道，面板一切正常，供给者点提现被硬拒。
+    withdrawal: {
+      title: '提现',
+      description: '决定供给者能不能把余额取走、最少取多少、打到哪些渠道。',
+      openNotice: '提现已开放。供给者提交申请时金额立刻从可用余额扣除，等待你在「供给运营」页处理。',
+      closedNotice: '提现关闭中。供给者的余额照常累积，只是取不走。',
+      noChannelNotice: '提现开着，但一个收款渠道都没配——供给者会看到一个点不动的入口。要么补上渠道，要么直接关掉开关。',
+      enabled: '开启提现',
+      enabledHint: '关闭后余额照常累积，只是不能申请提现。已提交的单子不受影响。',
+      minAmount: '起提金额',
+      minAmountHint: '低于这个数的申请会被**拒绝**，不会被夹到起提额。上限 {max}。',
+      maxPending: '每人未决单上限',
+      maxPendingHint: '同一个人同时挂着的待处理单子数。上限 {max}。',
+      channels: '收款渠道',
+      channelsPlaceholder: '一行一个，例如：\nUSDT-TRC20\n支付宝\n银行卡',
+      channelsHint: '一行一个，最多 {max} 个、每个不超过 {len} 字。供给者提交时按**完全相等**匹配（只忽略首尾空格），所以 USDT 和 usdt 是两个不同的渠道，改名等于把老渠道下线。',
+      notice: '给供给者的说明',
+      noticePlaceholder: '到账时效、手续费、需要提供的信息……',
+      noticeHint: '显示在供给者的提现表单上，纯文本，最多 {max} 字。',
+      rejectNotice: '越界的参数会被直接拒绝而不是夹回：起提额被悄悄夹到上限，结果是所有人都提不了钱，而面板上看不出任何异常。',
+      save: '保存提现参数',
+      saved: '提现参数已保存'
+    },
+
     error: {
       loadFailed: '加载配置失败',
       saveFailed: '保存失败'
@@ -273,7 +352,7 @@ export default {
       accrued: '近 {days} 天入账',
       windowBreakdown: '追回 {clawed} · 供给者消费 {spent}',
       unhealthy: '账号异常',
-      thawHint: '本窗口解冻搬运 {thawed}，提现 {withdrawn}。解冻是钱包内部把冻结额挪进可用额，不要和入账相加——那是同一笔钱数两遍。首版没有提现路径，这个数不为零意味着有人手工插过流水。'
+      thawHint: '本窗口解冻搬运 {thawed}，提现申请 {withdrawn}，退回 {reverted}。解冻是钱包内部把冻结额挪进可用额，不要和入账相加——那是同一笔钱数两遍。提现是**申请时**扣的，所以 {withdrawn} 是申请额不是已打款额；退回来的（拒绝/撤回）单独记在 {reverted}，两个数不要相减看净额——退回的笔数本身就是渠道配错或审核标准有问题的信号。'
     },
 
     roster: {
@@ -334,11 +413,36 @@ export default {
       userFilter: '只看 #{id}'
     },
 
+    // 提现审批：这一页唯一的写路径。文案的语气与其余几块不同——
+    // 那几块是陈述，这里每一句都在描述一个不可撤销的动作。
+    withdrawals: {
+      title: '提现审批',
+      description: '钱在供给者提交申请时就已经从可用余额扣走了，这里只推进单子的状态。打款后不可撤销；拒绝会把钱退回他的可用余额。',
+      anyStatus: '全部状态',
+      userFilter: '只看 #{id}',
+      requestedAt: '申请时间',
+      user: '供给者',
+      amount: '金额',
+      payout: '收款方式',
+      status: '状态',
+      actions: '操作',
+      markPaid: '标记已打款',
+      markPaidConfirm: '确认已经向 {account} 打款 {amount}？这一步没有撤销，标记后金额不会退回。',
+      externalRefPrompt: '填写打款凭证 / 交易号（没有可留空，但纠纷时这是双方唯一的共同凭据）',
+      markedPaid: '已标记为已打款。',
+      reject: '拒绝',
+      rejectPrompt: '拒绝这张 {amount} 的申请。请填写理由——它会原样显示给供给者，是他唯一能拿到的解释：',
+      rejected: '已拒绝，金额已退回供给者的可用余额。'
+    },
+
     error: {
       overviewFailed: '加载看板失败',
       rosterFailed: '加载名册失败',
       accountsFailed: '加载账号失败',
-      ledgerFailed: '加载流水失败'
+      ledgerFailed: '加载流水失败',
+      withdrawalsFailed: '加载提现单失败',
+      withdrawalResolveFailed: '处理提现单失败',
+      rejectNoteRequired: '拒绝必须填写理由'
     }
   }
 }

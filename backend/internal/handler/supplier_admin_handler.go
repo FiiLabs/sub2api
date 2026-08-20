@@ -26,14 +26,23 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// SupplierAdminHandler 处理管理端的供给侧只读查询。
+// SupplierAdminHandler 处理管理端的供给侧运营视图。
+//
+// 提现审批（supplier_withdrawal_handler.go）是这个类型上**唯一**的写入口，
+// 也是本文件顶部「全部只读」那条自律的唯一例外——一笔提现如果没有人能点"已打款"，
+// 供给者的钱就永远停在一张单子上。例外的边界写在 routes/supplier.go 的
+// registerSupplyMarketRoutes 上：写路由只有那三条，且都只改提现单的状态。
 type SupplierAdminHandler struct {
-	adminService *service.SupplierAdminService
+	adminService      *service.SupplierAdminService
+	withdrawalService *service.SupplierWithdrawalService
 }
 
 // NewSupplierAdminHandler 构造运营视图 handler。
-func NewSupplierAdminHandler(adminService *service.SupplierAdminService) *SupplierAdminHandler {
-	return &SupplierAdminHandler{adminService: adminService}
+func NewSupplierAdminHandler(
+	adminService *service.SupplierAdminService,
+	withdrawalService *service.SupplierWithdrawalService,
+) *SupplierAdminHandler {
+	return &SupplierAdminHandler{adminService: adminService, withdrawalService: withdrawalService}
 }
 
 // supplyAdminPaging 解析分页参数。越界值交给 service 侧夹回去（那里有唯一的一份上下限）。

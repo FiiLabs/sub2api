@@ -90,6 +90,219 @@
           </div>
         </div>
 
+        <!-- ===================== 提现 ===================== -->
+        <!--
+          放在收益卡片正下方，紧挨着"可用余额"那个数：提现回答的就是"这个数怎么变成钱"。
+          隔着接入和账号表格才出现，会让人以为它属于别的功能。
+
+          整块在提现没开时**不隐藏**，而是显示一句为什么。隐藏等于让供给者对着一个
+          只增不减的余额自己猜，而"暂未开放"和"渠道维护中"是两句不同的话（见下）。
+        -->
+        <div class="card p-6" data-testid="supply-withdrawal-card">
+          <div class="flex items-center justify-between">
+            <h3 class="text-base font-semibold text-gray-900 dark:text-white">
+              {{ t('supply.withdrawal.title') }}
+            </h3>
+            <p v-if="withdrawalOptions" class="text-xs text-gray-400 dark:text-dark-500">
+              {{
+                t('supply.withdrawal.pendingCount', {
+                  count: withdrawalOptions.pending_count,
+                  max: withdrawalOptions.max_pending,
+                })
+              }}
+            </p>
+          </div>
+
+          <!-- 三种关闭原因三句话：
+               1. enabled=false        → 平台还没开提现
+               2. enabled 但没配渠道   → 开了但配漏了，是**平台的**问题，不是他的
+               运营看到的和供给者看到的是同一件事，所以第 2 句不能写成"暂未开放"。 -->
+          <div
+            v-if="withdrawalOptions && !withdrawalOptions.available"
+            class="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-900"
+            data-testid="supply-withdrawal-unavailable"
+          >
+            <p class="text-sm font-medium text-gray-800 dark:text-gray-100">
+              {{
+                withdrawalOptions.enabled
+                  ? t('supply.withdrawal.channelsMissingTitle')
+                  : t('supply.withdrawal.closedTitle')
+              }}
+            </p>
+            <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">
+              {{
+                withdrawalOptions.enabled
+                  ? t('supply.withdrawal.channelsMissingBody')
+                  : t('supply.withdrawal.closedBody')
+              }}
+            </p>
+          </div>
+
+          <template v-else-if="withdrawalOptions">
+            <!-- 「申请即扣款」写在表单最上面，不是提交后的 toast 里：
+                 供给者以为申请只是排队，然后发现余额少了一块，那是一次支持工单。 -->
+            <p class="mt-3 text-sm text-gray-500 dark:text-dark-400">
+              {{ t('supply.withdrawal.deductHint') }}
+            </p>
+            <p v-if="withdrawalOptions.notice" class="mt-2 whitespace-pre-wrap text-sm text-gray-500 dark:text-dark-400">
+              {{ withdrawalOptions.notice }}
+            </p>
+
+            <div class="mt-4 grid gap-4 sm:grid-cols-2">
+              <div>
+                <label class="input-label" for="withdrawal-amount">
+                  {{ t('supply.withdrawal.amountLabel', { min: formatCurrency(withdrawalOptions.min_amount) }) }}
+                </label>
+                <input
+                  id="withdrawal-amount"
+                  v-model="withdrawalForm.amount"
+                  class="input"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  data-testid="supply-withdrawal-amount"
+                />
+                <button
+                  class="mt-1 text-xs text-primary-600 hover:underline dark:text-primary-400"
+                  type="button"
+                  data-testid="supply-withdrawal-all"
+                  @click="fillMaxAmount"
+                >
+                  {{ t('supply.withdrawal.useAll', { amount: formatCurrency(withdrawalOptions.available_credit) }) }}
+                </button>
+              </div>
+
+              <div>
+                <label class="input-label" for="withdrawal-channel">{{ t('supply.withdrawal.channelLabel') }}</label>
+                <!-- 渠道是 select 而不是自由输入：后端按**完全相等**校验白名单
+                     （只 trim 首尾空白），手打的 "usdt" 会被拒，而那个错误看起来
+                     像系统在刁难人。 -->
+                <select
+                  id="withdrawal-channel"
+                  v-model="withdrawalForm.payout_channel"
+                  class="input"
+                  data-testid="supply-withdrawal-channel"
+                >
+                  <option value="" disabled>{{ t('supply.withdrawal.channelPlaceholder') }}</option>
+                  <option v-for="channel in withdrawalOptions.channels" :key="channel" :value="channel">
+                    {{ channel }}
+                  </option>
+                </select>
+              </div>
+
+              <div class="sm:col-span-2">
+                <label class="input-label" for="withdrawal-account">{{ t('supply.withdrawal.accountLabel') }}</label>
+                <input
+                  id="withdrawal-account"
+                  v-model="withdrawalForm.payout_account"
+                  class="input"
+                  type="text"
+                  autocomplete="off"
+                  :placeholder="t('supply.withdrawal.accountPlaceholder')"
+                  data-testid="supply-withdrawal-account"
+                />
+                <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">
+                  {{ t('supply.withdrawal.accountHint') }}
+                </p>
+              </div>
+
+              <div class="sm:col-span-2">
+                <label class="input-label" for="withdrawal-note">{{ t('supply.withdrawal.noteLabel') }}</label>
+                <input
+                  id="withdrawal-note"
+                  v-model="withdrawalForm.user_note"
+                  class="input"
+                  type="text"
+                  :placeholder="t('supply.withdrawal.notePlaceholder')"
+                />
+              </div>
+            </div>
+
+            <button
+              class="btn btn-primary mt-4"
+              :disabled="submittingWithdrawal"
+              data-testid="supply-withdrawal-submit"
+              @click="submitWithdrawal"
+            >
+              <Icon name="dollar" size="sm" />
+              <span>
+                {{ submittingWithdrawal ? t('supply.withdrawal.submitting') : t('supply.withdrawal.submit') }}
+              </span>
+            </button>
+          </template>
+
+          <!-- 单据列表。即使一条都没有也留着表头之外的那句空文案，
+               因为"我上次申请过没有"是这一块最常被问的问题。 -->
+          <div class="mt-6 border-t border-gray-100 pt-4 dark:border-dark-800">
+            <p v-if="withdrawals.length === 0" class="text-sm text-gray-500 dark:text-dark-400">
+              {{ t('supply.withdrawal.empty') }}
+            </p>
+            <div v-else class="overflow-x-auto">
+              <table class="min-w-full text-sm">
+                <thead>
+                  <tr class="border-b border-gray-200 text-left text-xs uppercase text-gray-500 dark:border-dark-700 dark:text-dark-400">
+                    <th class="px-3 py-2">{{ t('supply.withdrawal.createdAt') }}</th>
+                    <th class="px-3 py-2 text-right">{{ t('supply.withdrawal.amount') }}</th>
+                    <th class="px-3 py-2">{{ t('supply.withdrawal.channel') }}</th>
+                    <th class="px-3 py-2">{{ t('supply.withdrawal.status') }}</th>
+                    <th class="px-3 py-2">{{ t('supply.withdrawal.reviewNote') }}</th>
+                    <th class="px-3 py-2 text-right">{{ t('supply.withdrawal.actions') }}</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 dark:divide-dark-800">
+                  <tr v-for="item in withdrawals" :key="item.id" :data-testid="`supply-withdrawal-${item.id}`">
+                    <td class="px-3 py-3 text-gray-500 dark:text-dark-400">{{ formatDateTime(item.created_at) }}</td>
+                    <td class="px-3 py-3 text-right font-medium text-gray-900 dark:text-white">
+                      {{ formatCurrency(item.amount) }}
+                    </td>
+                    <td class="px-3 py-3 text-gray-700 dark:text-gray-300">
+                      <p>{{ item.payout_channel }}</p>
+                      <p class="text-xs text-gray-400 dark:text-dark-500">{{ item.payout_account }}</p>
+                    </td>
+                    <td class="px-3 py-3">
+                      <span
+                        class="rounded-full px-2 py-0.5 text-xs font-medium"
+                        :class="withdrawalBadgeClass(item.status)"
+                      >
+                        {{ withdrawalStatusLabel(item.status) }}
+                      </span>
+                    </td>
+                    <td class="px-3 py-3 text-xs text-gray-500 dark:text-dark-400">
+                      <!-- 被拒时 review_note 是他唯一能拿到的解释，
+                           打款后 external_ref 是他对账的锚点。两个都要显示。 -->
+                      <p v-if="item.review_note" class="max-w-xs">{{ item.review_note }}</p>
+                      <p v-if="item.external_ref" class="max-w-xs">
+                        {{ t('supply.withdrawal.externalRef', { ref: item.external_ref }) }}
+                      </p>
+                      <span v-if="!item.review_note && !item.external_ref">-</span>
+                    </td>
+                    <td class="px-3 py-3 text-right">
+                      <!-- 撤回只对 pending 在场。终态单子上放一个灰按钮，
+                           只会让人反复去点它。 -->
+                      <button
+                        v-if="item.status === 'pending'"
+                        class="btn btn-secondary btn-sm"
+                        :disabled="cancellingWithdrawalId === item.id"
+                        :data-testid="`supply-withdrawal-cancel-${item.id}`"
+                        @click="cancelWithdrawal(item)"
+                      >
+                        {{
+                          cancellingWithdrawalId === item.id
+                            ? t('supply.withdrawal.cancelling')
+                            : t('supply.withdrawal.cancel')
+                        }}
+                      </button>
+                      <span v-else class="text-xs text-gray-400 dark:text-dark-500">
+                        {{ item.resolved_at ? formatDateTime(item.resolved_at) : '-' }}
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
         <!-- ===================== 接入 ===================== -->
         <div class="card p-6">
           <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('supply.connect.title') }}</h3>
@@ -455,7 +668,7 @@ import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { supplyAPI, type SupplyAccount, type SupplyAgreement, type SupplyLedgerEntry, type SupplyPauseMode, type SupplyStatus, type SupplyWallet, type StartOAuthResponse } from '@/api/supply'
+import { supplyAPI, type SupplyAccount, type SupplyAgreement, type SupplyLedgerEntry, type SupplyPauseMode, type SupplyStatus, type SupplyWallet, type SupplyWithdrawal, type SupplyWithdrawalOptions, type StartOAuthResponse } from '@/api/supply'
 import { useAppStore } from '@/stores/app'
 import { useSupplyStore } from '@/stores/supply'
 import { useClipboard } from '@/composables/useClipboard'
@@ -468,6 +681,9 @@ const supplyStore = useSupplyStore()
 const { copyToClipboard } = useClipboard()
 
 const LEDGER_PAGE_SIZE = 20
+// 提现单不分页：一个人的单子就那么几张，翻页控件比它要翻的内容还大。
+// 真有人攒到超过这个数，看到的是最近 20 张——倒序，最该被关心的那张在最上面。
+const WITHDRAWAL_PAGE_SIZE = 20
 
 const loading = ref(true)
 const refreshing = ref(false)
@@ -492,6 +708,17 @@ const pendingAuth = ref<StartOAuthResponse | null>(null)
 const authCode = ref('')
 const accountName = ref('')
 
+// 初值是 null 而不是一份「关着」的默认值：两者在界面上是不同的东西——
+// null 表示还没问过（那块什么都不画），一份 available=false 的 options 表示
+// 问过了、答案是没开（那块要显示为什么）。
+const withdrawalOptions = ref<SupplyWithdrawalOptions | null>(null)
+const withdrawals = ref<SupplyWithdrawal[]>([])
+const submittingWithdrawal = ref(false)
+const cancellingWithdrawalId = ref<number | null>(null)
+// amount 存字符串：input[type=number] 清空时 v-model 会给出空串，
+// 用 number 类型接会变成 NaN，而 NaN 传到后端就是一个 400。
+const withdrawalForm = ref({ amount: '', payout_channel: '', payout_account: '', user_note: '' })
+
 function stateLabel(state: string): string {
   const known = ['pending_review', 'active', 'draining', 'retired']
   return known.includes(state) ? t(`supply.state.${state}`) : t('supply.state.unknown')
@@ -514,8 +741,30 @@ function stateBadgeClass(state: string): string {
 }
 
 function actionLabel(action: string): string {
-  const known = ['accrue', 'spend', 'thaw', 'clawback', 'withdraw']
+  // withdraw_revert 必须在这张表里：它是流水上唯一一条"钱回来了"的记录，
+  // 落到 unknown（"其他"）会让一次退款在账单上读起来像一笔来路不明的收入。
+  const known = ['accrue', 'spend', 'thaw', 'clawback', 'withdraw', 'withdraw_revert']
   return known.includes(action) ? t(`supply.action.${action}`) : t('supply.action.unknown')
+}
+
+function withdrawalStatusLabel(status: string): string {
+  const known = ['pending', 'paid', 'rejected', 'canceled']
+  return known.includes(status) ? t(`supply.withdrawal.state.${status}`) : t('supply.withdrawal.state.unknown')
+}
+
+function withdrawalBadgeClass(status: string): string {
+  switch (status) {
+    case 'paid':
+      return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+    case 'rejected':
+      // 被拒是要他做点什么（多半是改收款账号），用红色而不是灰色。
+      return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+    case 'canceled':
+      return 'bg-gray-100 text-gray-600 dark:bg-dark-800 dark:text-dark-300'
+    default:
+      // pending 及任何未知状态都按"还挂着"呈现——保守的那一边。
+      return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+  }
 }
 
 async function loadStatus(): Promise<void> {
@@ -573,9 +822,97 @@ async function loadAgreement(): Promise<void> {
   }
 }
 
-/** 并发拉四份数据。任一份失败只影响它自己那一块，不该让整页空着。 */
+async function loadWithdrawals(): Promise<void> {
+  try {
+    const [options, page] = await Promise.all([
+      supplyAPI.getWithdrawalOptions(),
+      supplyAPI.listWithdrawals({ page: 1, page_size: WITHDRAWAL_PAGE_SIZE }),
+    ])
+    withdrawalOptions.value = options
+    withdrawals.value = page?.items ?? []
+    // 渠道只剩一个时替他选上。让人在一个只有一项的下拉框里点一下，
+    // 是纯粹的仪式——但仍然要保留他改的余地，所以只在还没选时填。
+    if (!withdrawalForm.value.payout_channel && options.channels.length === 1) {
+      withdrawalForm.value.payout_channel = options.channels[0]
+    }
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('supply.error.loadFailed')))
+  }
+}
+
+/** 并发拉五份数据。任一份失败只影响它自己那一块，不该让整页空着。 */
 async function loadAll(): Promise<void> {
-  await Promise.all([loadAgreement(), loadWallet(), loadAccounts(), loadLedger(1)])
+  await Promise.all([loadAgreement(), loadWallet(), loadAccounts(), loadLedger(1), loadWithdrawals()])
+}
+
+/**
+ * 把可用余额填进金额框。
+ *
+ * 不做成"全部提现"直接提交：这个数是**读这一刻**的快照，中间他自己发起的请求
+ * 会把余额扣下去，提交时再撞一个"余额不足"。填进输入框让他自己按一下提交，
+ * 那一步之间的时间差就成了他的选择，而不是一个看起来像 bug 的失败。
+ */
+function fillMaxAmount(): void {
+  if (!withdrawalOptions.value) return
+  withdrawalForm.value.amount = String(withdrawalOptions.value.available_credit)
+}
+
+/**
+ * 提交申请。
+ *
+ * 三道本地校验只挡"一定错"的输入（空、非数、非正）。起提额、余额、未决单上限
+ * 全部交给后端——那三个判据在提交的这一刻可能已经和页面上显示的不一样了，
+ * 前端拦一遍只是把同一句话说两遍，还多一份会过期的规则。
+ */
+async function submitWithdrawal(): Promise<void> {
+  const amount = Number(withdrawalForm.value.amount)
+  if (!withdrawalForm.value.amount.trim() || Number.isNaN(amount) || amount <= 0) {
+    appStore.showError(t('supply.error.withdrawalAmountInvalid'))
+    return
+  }
+  if (!withdrawalForm.value.payout_channel) {
+    appStore.showError(t('supply.error.withdrawalChannelRequired'))
+    return
+  }
+  if (!withdrawalForm.value.payout_account.trim()) {
+    appStore.showError(t('supply.error.withdrawalAccountRequired'))
+    return
+  }
+
+  submittingWithdrawal.value = true
+  try {
+    await supplyAPI.requestWithdrawal({
+      amount,
+      payout_channel: withdrawalForm.value.payout_channel,
+      payout_account: withdrawalForm.value.payout_account.trim(),
+      user_note: withdrawalForm.value.user_note.trim() || undefined,
+    })
+    appStore.showSuccess(t('supply.withdrawal.submitted'))
+    withdrawalForm.value.amount = ''
+    withdrawalForm.value.user_note = ''
+    // 钱在这一刻已经出了可用区，钱包和流水都必须跟着重拉——
+    // 只刷单据列表会让余额停在旧数上，看起来像申请没生效。
+    await Promise.all([loadWithdrawals(), loadWallet(), loadLedger(1)])
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('supply.error.withdrawalFailed')))
+  } finally {
+    submittingWithdrawal.value = false
+  }
+}
+
+/** 撤回。钱退回可用区，所以和提交一样要连钱包和流水一起刷。 */
+async function cancelWithdrawal(item: SupplyWithdrawal): Promise<void> {
+  if (!window.confirm(t('supply.withdrawal.cancelConfirm', { amount: formatCurrency(item.amount) }))) return
+  cancellingWithdrawalId.value = item.id
+  try {
+    await supplyAPI.cancelWithdrawal(item.id)
+    appStore.showSuccess(t('supply.withdrawal.cancelled'))
+    await Promise.all([loadWithdrawals(), loadWallet(), loadLedger(1)])
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('supply.error.withdrawalCancelFailed')))
+  } finally {
+    cancellingWithdrawalId.value = null
+  }
 }
 
 /**

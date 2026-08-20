@@ -351,3 +351,95 @@ func (h *SettingHandler) UpdateSupplyAgreementSettings(c *gin.Context) {
 	response.Success(c, newSupplyAgreementSettingsResponse(
 		h.settingService.GetSupplyAgreementSettings(c.Request.Context())))
 }
+
+// SupplyWithdrawalSettingsResponse 是提现参数的对外形态。
+type SupplyWithdrawalSettingsResponse struct {
+	Enabled    bool     `json:"enabled"`
+	MinAmount  float64  `json:"min_amount"`
+	MaxPending int      `json:"max_pending"`
+	Channels   []string `json:"channels"`
+	Notice     string   `json:"notice"`
+
+	// Available = 开着 **且** 至少配了一个渠道。开关开着却一个渠道都没配是一种
+	// 静默失效：面板显示"已开启"，供给者点提现却被硬拒。把这个布尔一起下发，
+	// 运营在设置页就能看见自己配漏了，而不是等供给者来报。
+	Available bool `json:"available"`
+
+	// 边界值随配置下发，理由同结算参数的 *_max。
+	MinAmountMax  float64 `json:"min_amount_max"`
+	MaxPendingCap int     `json:"max_pending_cap"`
+	ChannelsMax   int     `json:"channels_max"`
+	ChannelMaxLen int     `json:"channel_max_len"`
+	NoticeMaxLen  int     `json:"notice_max_len"`
+}
+
+func newSupplyWithdrawalSettingsResponse(s *service.SupplyWithdrawalSettings) SupplyWithdrawalSettingsResponse {
+	resp := SupplyWithdrawalSettingsResponse{
+		MinAmountMax:  service.SupplyWithdrawalMinAmountMax,
+		MaxPendingCap: service.SupplyWithdrawalMaxPendingCap,
+		ChannelsMax:   service.SupplyWithdrawalChannelsMax,
+		ChannelMaxLen: service.SupplyWithdrawalChannelMaxLen,
+		NoticeMaxLen:  service.SupplyWithdrawalNoticeMaxLen,
+		Channels:      []string{},
+	}
+	if s == nil {
+		return resp
+	}
+	resp.Enabled = s.Enabled
+	resp.MinAmount = s.MinAmount
+	resp.MaxPending = s.MaxPending
+	if len(s.Channels) > 0 {
+		resp.Channels = append([]string(nil), s.Channels...)
+	}
+	resp.Notice = s.Notice
+	resp.Available = s.Available()
+	return resp
+}
+
+// GetSupplyWithdrawalSettings 读提现参数
+// GET /api/v1/admin/settings/supply-withdrawal
+func (h *SettingHandler) GetSupplyWithdrawalSettings(c *gin.Context) {
+	settings := h.settingService.GetSupplyWithdrawalSettings(c.Request.Context())
+	response.Success(c, newSupplyWithdrawalSettingsResponse(settings))
+}
+
+// UpdateSupplyWithdrawalSettingsRequest 更新提现参数请求。
+//
+// Channels 用 []string 而不是指针：一个不传 channels 的请求就是把渠道清空，
+// 而清空渠道 = 关掉提现入口，这是一个运营应当能一步做到的动作。
+type UpdateSupplyWithdrawalSettingsRequest struct {
+	Enabled    bool     `json:"enabled"`
+	MinAmount  float64  `json:"min_amount"`
+	MaxPending int      `json:"max_pending"`
+	Channels   []string `json:"channels"`
+	Notice     string   `json:"notice"`
+}
+
+// UpdateSupplyWithdrawalSettings 写提现参数
+// PUT /api/v1/admin/settings/supply-withdrawal
+//
+// 与协议那组一样，越界值在 service 侧**拒绝**而不是夹回：起提额被悄悄夹到上限，
+// 结果是所有人都提不了钱，而面板上看不出任何异常。开着却不给一个渠道同样被拒——
+// 那个组合唯一的效果是让供给者点一个必定失败的按钮。
+func (h *SettingHandler) UpdateSupplyWithdrawalSettings(c *gin.Context) {
+	var req UpdateSupplyWithdrawalSettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	settings := &service.SupplyWithdrawalSettings{
+		Enabled:    req.Enabled,
+		MinAmount:  req.MinAmount,
+		MaxPending: req.MaxPending,
+		Channels:   req.Channels,
+		Notice:     req.Notice,
+	}
+	if err := h.settingService.SetSupplyWithdrawalSettings(c.Request.Context(), settings); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.Success(c, newSupplyWithdrawalSettingsResponse(
+		h.settingService.GetSupplyWithdrawalSettings(c.Request.Context())))
+}

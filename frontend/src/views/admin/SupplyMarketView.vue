@@ -4,8 +4,9 @@
   单起一页而不是往 SettingsView.vue 里加两个 section：那个文件已经近九千行，
   是上游合并最痛的一处。独立页只需要在路由表和侧边栏各加一条。
 
-  两组配置各自一个保存按钮，与后端两对端点一一对应：改分成比例和改兜底池
-  是两件不同的事，共用一次提交会让审计日志分不清谁改了什么。
+  五组配置各自一个保存按钮，与后端五对端点一一对应：改分成比例、改兜底池、
+  改观察期、改协议、改提现参数是五件不同的事，共用一次提交会让审计日志
+  分不清谁改了什么。
 -->
 <template>
   <AppLayout>
@@ -396,6 +397,146 @@
             </button>
           </div>
         </div>
+
+        <!-- ===================== 提现 ===================== -->
+        <div class="card space-y-4 p-6">
+          <div>
+            <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('supplyAdmin.withdrawal.title') }}</h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.withdrawal.description') }}</p>
+          </div>
+
+          <!-- 「开着但一个渠道都没配」是一种静默失效：面板显示已开启，供给者点提现
+               被硬拒。后端把 available 算好下发，就是为了让这个状态在这里被看见，
+               而不是等供给者来报。 -->
+          <div
+            class="rounded-lg border p-3"
+            :class="
+              withdrawalForm.enabled && withdrawalForm.channels.length === 0
+                ? 'border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-900/20'
+                : withdrawalForm.enabled
+                  ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-900/20'
+                  : 'border-gray-200 bg-gray-50 dark:border-dark-700 dark:bg-dark-900'
+            "
+            data-testid="supply-withdrawal-status"
+          >
+            <p
+              class="text-xs"
+              :class="
+                withdrawalForm.enabled && withdrawalForm.channels.length === 0
+                  ? 'text-red-700 dark:text-red-300'
+                  : withdrawalForm.enabled
+                    ? 'text-emerald-700 dark:text-emerald-300'
+                    : 'text-gray-600 dark:text-gray-300'
+              "
+            >
+              {{
+                withdrawalForm.enabled && withdrawalForm.channels.length === 0
+                  ? t('supplyAdmin.withdrawal.noChannelNotice')
+                  : withdrawalForm.enabled
+                    ? t('supplyAdmin.withdrawal.openNotice')
+                    : t('supplyAdmin.withdrawal.closedNotice')
+              }}
+            </p>
+          </div>
+
+          <div class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700">
+            <div>
+              <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.withdrawal.enabled') }}</p>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.withdrawal.enabledHint') }}</p>
+            </div>
+            <Toggle v-model="withdrawalForm.enabled" data-testid="supply-withdrawal-enabled" />
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('supplyAdmin.withdrawal.minAmount') }}
+              </label>
+              <input
+                v-model.number="withdrawalForm.min_amount"
+                type="number"
+                min="0"
+                step="0.01"
+                :max="withdrawalBounds.min_amount_max"
+                class="input"
+                data-testid="supply-withdrawal-min-amount"
+              />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('supplyAdmin.withdrawal.minAmountHint', { max: withdrawalBounds.min_amount_max }) }}
+              </p>
+            </div>
+
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('supplyAdmin.withdrawal.maxPending') }}
+              </label>
+              <input
+                v-model.number="withdrawalForm.max_pending"
+                type="number"
+                min="1"
+                :max="withdrawalBounds.max_pending_cap"
+                class="input"
+                data-testid="supply-withdrawal-max-pending"
+              />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('supplyAdmin.withdrawal.maxPendingHint', { max: withdrawalBounds.max_pending_cap }) }}
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+              {{ t('supplyAdmin.withdrawal.channels') }}
+            </label>
+            <!-- 一行一个渠道，而不是逗号分隔：渠道名里可能有逗号（"银行卡（境内，储蓄）"），
+                 而换行不会。存的是**原样字符串**，供给者提交时按完全相等匹配。 -->
+            <textarea
+              v-model="withdrawalChannelsText"
+              class="input min-h-[6rem] font-mono text-xs"
+              :placeholder="t('supplyAdmin.withdrawal.channelsPlaceholder')"
+              data-testid="supply-withdrawal-channels"
+            ></textarea>
+            <p class="mt-1 text-xs text-amber-600 dark:text-amber-400">
+              {{
+                t('supplyAdmin.withdrawal.channelsHint', {
+                  max: withdrawalBounds.channels_max,
+                  len: withdrawalBounds.channel_max_len,
+                })
+              }}
+            </p>
+          </div>
+
+          <div>
+            <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+              {{ t('supplyAdmin.withdrawal.notice') }}
+            </label>
+            <textarea
+              v-model="withdrawalForm.notice"
+              class="input min-h-[5rem]"
+              :maxlength="withdrawalBounds.notice_max_len"
+              :placeholder="t('supplyAdmin.withdrawal.noticePlaceholder')"
+              data-testid="supply-withdrawal-notice"
+            ></textarea>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('supplyAdmin.withdrawal.noticeHint', { max: withdrawalBounds.notice_max_len }) }}
+            </p>
+          </div>
+
+          <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-900">
+            <p class="text-xs text-gray-600 dark:text-gray-300">{{ t('supplyAdmin.withdrawal.rejectNotice') }}</p>
+          </div>
+
+          <div class="flex justify-end">
+            <button
+              class="btn btn-primary"
+              :disabled="savingWithdrawal"
+              data-testid="supply-withdrawal-save"
+              @click="saveWithdrawal"
+            >
+              {{ t('supplyAdmin.withdrawal.save') }}
+            </button>
+          </div>
+        </div>
       </template>
     </div>
   </AppLayout>
@@ -414,6 +555,8 @@ import {
   type SupplyProbationSettings,
   type SupplyAgreementPayload,
   type SupplyAgreementSettings,
+  type SupplyWithdrawalPayload,
+  type SupplyWithdrawalSettings,
 } from '@/api/admin/supplyMarket'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
@@ -426,6 +569,7 @@ const savingSettlement = ref(false)
 const savingPool = ref(false)
 const savingProbation = ref(false)
 const savingAgreement = ref(false)
+const savingWithdrawal = ref(false)
 
 const settlementForm = reactive({
   enabled: false,
@@ -490,6 +634,41 @@ const agreementBounds = reactive({
 // 用表单里的版本号算，而不是记住后端上次返回的 published：运营清空版本号的那一刻
 // 就该看到"接入会停"的警示，而不是等保存完才看到。
 const agreementPublished = computed(() => agreementForm.version.trim() !== '')
+
+// 提现默认关着。这个默认值是刻意的：一个还没定好打款流程的部署，
+// 不该先把提现按钮点亮，然后让第一个申请的人去当试验品。
+const withdrawalForm = reactive<SupplyWithdrawalPayload>({
+  enabled: false,
+  min_amount: 100,
+  max_pending: 3,
+  channels: [],
+  notice: '',
+})
+
+const withdrawalBounds = reactive({
+  min_amount_max: 1000000,
+  max_pending_cap: 20,
+  channels_max: 20,
+  channel_max_len: 64,
+  notice_max_len: 1000,
+})
+
+/**
+ * 渠道列表的文本形态：一行一个。
+ *
+ * 用换行而不是逗号分隔，是因为渠道名里真的会有逗号（"银行卡（境内，储蓄）"），
+ * 而换行不会。getter 里不做 trim/过滤——那会让运营正在敲的空行当场消失，
+ * 光标跳走；清理留到 setter，也就是真正要存的那一刻。
+ */
+const withdrawalChannelsText = computed({
+  get: () => withdrawalForm.channels.join('\n'),
+  set: (value: string) => {
+    withdrawalForm.channels = value
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line !== '')
+  },
+})
 
 async function loadSettlement(): Promise<void> {
   const settings = await adminSupplyMarketAPI.getSettlementSettings()
@@ -653,9 +832,55 @@ async function saveProbation(): Promise<void> {
   }
 }
 
+async function loadWithdrawal(): Promise<void> {
+  const settings = await adminSupplyMarketAPI.getWithdrawalSettings()
+  applyWithdrawal(settings)
+}
+
+function applyWithdrawal(settings: SupplyWithdrawalSettings): void {
+  withdrawalForm.enabled = settings.enabled
+  withdrawalForm.min_amount = settings.min_amount
+  withdrawalForm.max_pending = settings.max_pending
+  withdrawalForm.channels = [...(settings.channels ?? [])]
+  withdrawalForm.notice = settings.notice ?? ''
+  if (settings.min_amount_max > 0) withdrawalBounds.min_amount_max = settings.min_amount_max
+  if (settings.max_pending_cap > 0) withdrawalBounds.max_pending_cap = settings.max_pending_cap
+  if (settings.channels_max > 0) withdrawalBounds.channels_max = settings.channels_max
+  if (settings.channel_max_len > 0) withdrawalBounds.channel_max_len = settings.channel_max_len
+  if (settings.notice_max_len > 0) withdrawalBounds.notice_max_len = settings.notice_max_len
+}
+
+/**
+ * 保存提现参数。
+ *
+ * 与协议那一组同脾气：后端对越界值**报错**而不是夹回，所以错误必须原样弹给运营。
+ * 起提额被悄悄夹到上限的后果是所有人都提不了钱，而面板上看不出任何异常。
+ *
+ * 「开着却不给渠道」也会被后端拒——那个组合唯一的效果是让供给者点一个必定失败的
+ * 按钮。想关掉入口就关 enabled，不要靠清空渠道来间接关。
+ */
+async function saveWithdrawal(): Promise<void> {
+  savingWithdrawal.value = true
+  try {
+    const saved = await adminSupplyMarketAPI.updateWithdrawalSettings({
+      enabled: withdrawalForm.enabled,
+      min_amount: withdrawalForm.min_amount,
+      max_pending: withdrawalForm.max_pending,
+      channels: withdrawalForm.channels,
+      notice: withdrawalForm.notice,
+    })
+    applyWithdrawal(saved)
+    appStore.showSuccess(t('supplyAdmin.withdrawal.saved'))
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('supplyAdmin.error.saveFailed')))
+  } finally {
+    savingWithdrawal.value = false
+  }
+}
+
 onMounted(async () => {
   try {
-    await Promise.all([loadSettlement(), loadPool(), loadProbation(), loadAgreement()])
+    await Promise.all([loadSettlement(), loadPool(), loadProbation(), loadAgreement(), loadWithdrawal()])
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, t('supplyAdmin.error.loadFailed')))
   } finally {

@@ -84,6 +84,43 @@ describe('supply api', () => {
     expect(post).toHaveBeenCalledWith('/user/supply/agreement/accept', { version: 'v2' })
   })
 
+  it('reads the withdrawal form prerequisites in one call', async () => {
+    // 余额、渠道、未决单数必须来自同一时刻。拆成三个请求会画出
+    //「余额 100、渠道空着、按钮还亮着」这种自相矛盾的界面。
+    await supplyAPI.getWithdrawalOptions()
+
+    expect(get).toHaveBeenCalledWith('/user/supply/withdrawals/options')
+    expect(get).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends the withdrawal amount as a number, not a string', async () => {
+    // 后端的 amount 是 *float64 且不带 binding:"required"：0 会被明确拒成
+    //「金额必须为正」，而不是当成"没填"。前端把它转成字符串会让那道校验失效。
+    await supplyAPI.requestWithdrawal({
+      amount: 50,
+      payout_channel: 'USDT',
+      payout_account: 'T-addr',
+      user_note: 'x',
+    })
+
+    expect(post).toHaveBeenCalledWith('/user/supply/withdrawals', {
+      amount: 50,
+      payout_channel: 'USDT',
+      payout_account: 'T-addr',
+      user_note: 'x',
+    })
+    expect(typeof post.mock.calls[0][1].amount).toBe('number')
+  })
+
+  it('cancels a withdrawal with POST, not DELETE', async () => {
+    // 单子不会消失，它变成 canceled 留在列表里——那行记录本身是对账凭据。
+    // 用 DELETE 会让「撤回等于删掉」这个错误理解在路由层就成立。
+    await supplyAPI.cancelWithdrawal(9)
+
+    expect(post).toHaveBeenCalledWith('/user/supply/withdrawals/9/cancel')
+    expect(del).not.toHaveBeenCalled()
+  })
+
   it('never sends a user id — ownership comes from the JWT', async () => {
     await supplyAPI.listAccounts()
 
@@ -216,15 +253,70 @@ describe('admin supply ops api (read-only)', () => {
     expect(get).toHaveBeenCalledWith('/admin/supply/overview', { params: undefined })
   })
 
-  it('exposes no write path for the ops view', () => {
-    // 这一刀刻意不给管理端改供给侧数据的能力。多出来的任何一个 update* 都该
+  it('exposes no write path for the ops view beyond settings and withdrawal review', () => {
+    // 这一刀刻意不给管理端改供给侧数据的能力。多出来的任何一个写方法都该
     // 先经过一次设计讨论，而不是顺手加在这个 API 对象上。
-    const writers = Object.keys(adminSupplyMarketAPI).filter((key) => /^(update|create|delete)/.test(key))
+    //
+    // markWithdrawalPaid / rejectWithdrawal 是**唯一**动业务数据（而非配置）的两个：
+    // 一张已经扣了钱的单子必须有人能推进它。它们进这份名单是一次明确的决定，
+    // 不是这条规则松了口子——别的写方法仍然要先讨论。
+    const writers = Object.keys(adminSupplyMarketAPI).filter((key) =>
+      /^(update|create|delete|mark|reject|approve)/.test(key)
+    )
     expect(writers.sort()).toEqual([
+      'markWithdrawalPaid',
+      'rejectWithdrawal',
       'updateAgreementSettings',
       'updatePoolSettings',
       'updateProbationSettings',
       'updateSettlementSettings',
+      'updateWithdrawalSettings',
     ])
+  })
+
+  it('lists withdrawals through the same read path as the rest of the board', async () => {
+    await adminSupplyMarketAPI.listWithdrawals({ status: 'pending', page: 2 })
+
+    expect(get).toHaveBeenCalledWith('/admin/supply/withdrawals', {
+      params: { status: 'pending', page: 2 },
+    })
+  })
+})
+
+// 提现审批是管理端唯一动业务数据的写路径，所以单开一个 describe：上面那个
+// describe 的名字里写着 read-only，把两个 POST 塞进去会让那句话变成假的。
+describe('admin withdrawal review (the one write path)', () => {
+  beforeEach(() => {
+    post.mockReset()
+    post.mockResolvedValue({ data: { id: 12, status: 'paid' } })
+  })
+
+  it('rejects a withdrawal with a reason in the body', async () => {
+    // note 后端强制必填：一个没有理由的拒绝，对供给者来说和系统故障没有区别。
+    await adminSupplyMarketAPI.rejectWithdrawal(12, '收款账号与实名不符')
+
+    expect(post).toHaveBeenCalledWith('/admin/supply/withdrawals/12/reject', {
+      note: '收款账号与实名不符',
+    })
+  })
+
+  it('marks paid with an empty body when no proof is given', async () => {
+    // 不是每种渠道都有交易号。缺省成 {} 而不是 undefined，是为了让后端那边
+    //「body 绑定失败当成空 body」的兜底不必被前端依赖。
+    await adminSupplyMarketAPI.markWithdrawalPaid(12)
+
+    expect(post).toHaveBeenCalledWith('/admin/supply/withdrawals/12/paid', {})
+  })
+
+  it('never routes payment through the reject endpoint', async () => {
+    // 两个动作的退款语义正好相反（拒绝退钱、打款不退），路径写错一个字
+    // 就是凭空发一笔钱出去。
+    await adminSupplyMarketAPI.markWithdrawalPaid(12, { external_ref: 'tx-1' })
+
+    expect(post).toHaveBeenCalledWith('/admin/supply/withdrawals/12/paid', { external_ref: 'tx-1' })
+    expect(post).not.toHaveBeenCalledWith(
+      expect.stringContaining('/reject'),
+      expect.anything()
+    )
   })
 })

@@ -51,6 +51,17 @@ func RegisterSupplierRoutes(
 		supply.GET("/wallet", h.Supplier.GetWallet)
 		supply.GET("/ledger", h.Supplier.ListLedger)
 
+		// 提现。options 与列表是纯读；申请**当场从可用区扣钱**，所以单独套一层
+		// 重限流——它是供给侧唯一一个会动余额的写接口。
+		//
+		// 撤回刻意**不**套 Heavy，理由与 DELETE /accounts/:id 一字不差：把钱拿回来
+		// 这个动作排在限流后面，等于在他最急着要回钱的时候让他要不回来。
+		// 它也只改一行状态，不打上游、不消耗任何配额。
+		supply.GET("/withdrawals/options", h.Supplier.GetWithdrawalOptions)
+		supply.GET("/withdrawals", h.Supplier.ListWithdrawals)
+		supply.POST("/withdrawals", panelRateLimiter.Heavy(), h.Supplier.RequestWithdrawal)
+		supply.POST("/withdrawals/:id/cancel", h.Supplier.CancelWithdrawal)
+
 		supply.GET("/accounts", h.Supplier.ListAccounts)
 		supply.GET("/accounts/:id", h.Supplier.GetAccount)
 		supply.POST("/accounts/:id/pause", h.Supplier.PauseAccount)
@@ -69,7 +80,12 @@ func RegisterSupplierRoutes(
 //
 // 传进来的 admin 组已经带着 adminAuth + 面板限流 + 审计 + AdminComplianceGuard
 // 四层中间件——这四层就是这些接口的全部鉴权，handler 里不再查一遍。
-// 全部是 GET：这一刀不给管理端任何改动供给侧数据的能力（见 supplier_admin.go 顶部）。
+//
+// 除提现审批外全部是 GET：这一刀不给管理端任何改动供给侧数据的能力
+// （见 supplier_admin.go 顶部）。提现的两条 POST 是**唯一**的例外，因为一张
+// 已经扣了钱的单子必须有人能推进它——没有这两条，供给者的钱会永远停在 pending。
+// 例外的范围被刻意收死：它们只改提现单的状态与退款，碰不到账号、分成或钱包余额
+// 之外的任何东西；且都走上面那四层中间件，审批动作全部进审计日志。
 func registerSupplyMarketRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	if h == nil || h.Supplier == nil || h.Supplier.Admin == nil {
 		return
@@ -81,5 +97,9 @@ func registerSupplyMarketRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		supply.GET("/suppliers", h.Supplier.Admin.ListSuppliers)
 		supply.GET("/accounts", h.Supplier.Admin.ListAccounts)
 		supply.GET("/ledger", h.Supplier.Admin.ListLedger)
+
+		supply.GET("/withdrawals", h.Supplier.Admin.ListWithdrawals)
+		supply.POST("/withdrawals/:id/paid", h.Supplier.Admin.MarkWithdrawalPaid)
+		supply.POST("/withdrawals/:id/reject", h.Supplier.Admin.RejectWithdrawal)
 	}
 }

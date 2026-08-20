@@ -99,11 +99,56 @@ export type SupplyAgreementPayload = Omit<
   'published' | 'version_max_len' | 'url_max_len' | 'body_max_len'
 >
 
-// ============================ 运营视图（只读） ============================
+export interface SupplyWithdrawalSettings {
+  /** 总开关。默认关着——一个还没定好打款流程的平台不该先把提现按钮点亮。 */
+  enabled: boolean
+  /** 起提额。低于它的申请后端**拒绝**，不夹回。 */
+  min_amount: number
+  /** 每人同时挂着的未决单上限。 */
+  max_pending: number
+  /**
+   * 收款渠道白名单。**大小写敏感**：供给者提交的渠道要与这里的字符串完全相等
+   * （只 trim 首尾空白），所以 "USDT" 和 "usdt" 是两个渠道。
+   */
+  channels: string[]
+  /** 给供给者看的说明（到账时效、手续费等），纯文本。 */
+  notice: string
+
+  /**
+   * enabled **且** channels 非空。开着却一个渠道都没配是一种静默失效：
+   * 面板显示"已开启"，供给者点提现被硬拒。有了这个布尔，运营在设置页就能看见
+   * 自己配漏了，而不是等人来报。
+   */
+  available: boolean
+
+  /** 后端下发的边界值，前端不要另抄一份。 */
+  min_amount_max: number
+  max_pending_cap: number
+  channels_max: number
+  channel_max_len: number
+  notice_max_len: number
+}
+
+export type SupplyWithdrawalPayload = Omit<
+  SupplyWithdrawalSettings,
+  | 'available'
+  | 'min_amount_max'
+  | 'max_pending_cap'
+  | 'channels_max'
+  | 'channel_max_len'
+  | 'notice_max_len'
+>
+
+// ======================= 运营视图（只读，提现审批除外） =======================
 //
-// 下面这一组对应 /admin/supply/*，全部是 GET。这一刀刻意不给管理端任何改动供给侧
-// 数据的能力：改归属、改余额、手工放行观察期都是会动钱的写操作，需要各自的审计
-// 路径，混进看板里迟早会被当成看板随手点。前端这里没有对应的 post/put 不是遗漏。
+// 下面这一组对应 /admin/supply/*，除提现审批外全部是 GET。这一刀刻意不给管理端
+// 改动供给侧数据的能力：改归属、改余额、手工放行观察期都是会动钱的写操作，需要
+// 各自的审计路径，混进看板里迟早会被当成看板随手点。前端这里没有对应的 post/put
+// 不是遗漏。
+//
+// **唯一的例外是提现审批**（markWithdrawalPaid / rejectWithdrawal）。它存在是因为
+// 一张已经扣了钱的单子必须有人能推进它——不给这个能力，那笔钱就永远挂着。这个例外
+// 只改单子状态与退款，不碰账号、归属、观察期。
 
 /** 一个钱包（或一批钱包合计）的四个数。 */
 export interface SupplyWalletBalance {
@@ -143,7 +188,15 @@ export interface SupplyLedgerWindow {
   /** 钱包内部搬运（frozen → available）。**不要**和 accrued 相加，那是同一笔钱数两遍。 */
   thawed: number
   spent: number
+  /** 本窗口**申请**走的（申请即扣款），不是已打款额。 */
   withdrawn: number
+  /**
+   * 本窗口被拒绝/被撤回退回可用区的。
+   *
+   * 与 withdrawn 分开报而不是相减：净额只回答"钱少了多少"，而退回的**笔数**
+   * 才是"渠道配错了"或"审核标准有问题"的信号。
+   */
+  withdraw_reverted: number
 }
 
 export interface SupplyMarketOverview {
@@ -209,6 +262,37 @@ export interface SupplyAdminLedgerEntry {
   remark?: string
   created_at: string
 }
+
+/**
+ * 管理端看到的提现单。比供给者那份多两个字段：user_id 和 reviewer_id。
+ * 审批队列必须能看见是谁的单、上一次是谁处理的。
+ */
+export interface SupplyWithdrawalAdminView {
+  id: number
+  user_id: number
+  amount: number
+  status: string
+  payout_channel: string
+  payout_account: string
+  user_note?: string
+  ledger_id?: number
+  reviewer_id?: number
+  review_note?: string
+  external_ref?: string
+  created_at: string
+  updated_at: string
+  resolved_at?: string | null
+}
+
+/** 提现单状态。传给后端的值必须在这个联合里——未知状态后端报 400，不会静默"不筛"。 */
+export type SupplyWithdrawalStatus = 'pending' | 'paid' | 'rejected' | 'canceled'
+
+export const SUPPLY_WITHDRAWAL_STATUSES: SupplyWithdrawalStatus[] = [
+  'pending',
+  'paid',
+  'rejected',
+  'canceled',
+]
 
 export interface SupplyAdminPage<T> {
   items: T[]
@@ -317,6 +401,68 @@ async function updateAgreementSettings(
   return data
 }
 
+async function getWithdrawalSettings(): Promise<SupplyWithdrawalSettings> {
+  const { data } = await apiClient.get<SupplyWithdrawalSettings>('/admin/settings/supply-withdrawal')
+  return data
+}
+
+/**
+ * 写提现参数。越界值后端**拒绝**而不是夹回（同协议那组），错误要原样弹出去。
+ *
+ * 开着却不给渠道也会被拒：那个组合唯一的效果是让供给者点一个必定失败的按钮。
+ * 想关掉入口就把 enabled 设成 false，不要靠清空 channels 来间接关。
+ */
+async function updateWithdrawalSettings(
+  payload: SupplyWithdrawalPayload
+): Promise<SupplyWithdrawalSettings> {
+  const { data } = await apiClient.put<SupplyWithdrawalSettings>('/admin/settings/supply-withdrawal', payload)
+  return data
+}
+
+async function listWithdrawals(
+  params: {
+    page?: number
+    page_size?: number
+    status?: SupplyWithdrawalStatus | ''
+    user_id?: number
+  } = {}
+): Promise<SupplyAdminPage<SupplyWithdrawalAdminView>> {
+  const { data } = await apiClient.get<SupplyAdminPage<SupplyWithdrawalAdminView>>(
+    '/admin/supply/withdrawals',
+    { params }
+  )
+  return data
+}
+
+/**
+ * 标记已打款。**不退款**——钱在申请那一刻就出可用区了，这一步只是记账收尾。
+ *
+ * external_ref 是打款凭证/交易号，可空（不是每种渠道都有）。留空的代价是纠纷
+ * 时双方没有共同锚点，所以界面上该劝一句，但不该拦。
+ */
+async function markWithdrawalPaid(
+  id: number,
+  payload: { external_ref?: string; note?: string } = {}
+): Promise<SupplyWithdrawalAdminView> {
+  const { data } = await apiClient.post<SupplyWithdrawalAdminView>(
+    `/admin/supply/withdrawals/${id}/paid`,
+    payload
+  )
+  return data
+}
+
+/**
+ * 拒绝一张单子，钱退回可用区。note 必填，后端强制——
+ * 一个没有理由的拒绝，对供给者来说和系统故障没有区别。
+ */
+async function rejectWithdrawal(id: number, note: string): Promise<SupplyWithdrawalAdminView> {
+  const { data } = await apiClient.post<SupplyWithdrawalAdminView>(
+    `/admin/supply/withdrawals/${id}/reject`,
+    { note }
+  )
+  return data
+}
+
 export const adminSupplyMarketAPI = {
   getOverview,
   listSuppliers,
@@ -330,6 +476,11 @@ export const adminSupplyMarketAPI = {
   updateProbationSettings,
   getAgreementSettings,
   updateAgreementSettings,
+  getWithdrawalSettings,
+  updateWithdrawalSettings,
+  listWithdrawals,
+  markWithdrawalPaid,
+  rejectWithdrawal,
 }
 
 export default adminSupplyMarketAPI

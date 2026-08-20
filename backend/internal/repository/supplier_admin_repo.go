@@ -200,6 +200,8 @@ func scanSupplyLedgerWindow(ctx context.Context, client *dbent.Client, windowDay
 			window.Spent = amount
 		case service.SupplierCreditActionWithdraw:
 			window.Withdrawn = amount
+		case service.SupplierCreditActionWithdrawRevert:
+			window.WithdrawReverted = amount
 		}
 	}
 	return rows.Err()

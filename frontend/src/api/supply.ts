@@ -120,6 +120,62 @@ export interface SupplyAgreement {
   accepted_version?: string
 }
 
+/**
+ * 一张提现单。
+ *
+ * 相对后端的领域对象少两个字段：user_id（就是他自己）和 reviewer_id（处理人是谁
+ * 与钱到不到账无关）。review_note 和 external_ref 反过来**必须**留着：
+ * 前者是被拒时他唯一能拿到的解释，后者是对账时双方共同的锚点。
+ */
+export interface SupplyWithdrawal {
+  id: number
+  amount: number
+  /** pending | paid | rejected | canceled。只有 pending 能撤回。 */
+  status: string
+  payout_channel: string
+  payout_account: string
+  user_note?: string
+  /** 申请时那条 withdraw 流水的 id，用来把这张单子和账单页对上 */
+  ledger_id?: number
+  review_note?: string
+  external_ref?: string
+  created_at: string
+  updated_at: string
+  resolved_at?: string | null
+}
+
+export interface SupplyWithdrawalPage {
+  items: SupplyWithdrawal[]
+  total: number
+  page: number
+  page_size: number
+  pages: number
+}
+
+/**
+ * 申请表单需要的一切，一次拿全。
+ *
+ * 拆成三个接口拼是错的：这几个数必须来自同一时刻，否则会画出「余额 100、渠道
+ * 列表空着、按钮还亮着」这种自相矛盾的界面。
+ */
+export interface SupplyWithdrawalOptions {
+  /** 此刻真能提（开关开着**且**配了渠道）。按钮只看这一个布尔。 */
+  available: boolean
+  /**
+   * 总开关。与 available 分开报，是为了让「开着但没配渠道」也能说清楚：
+   * enabled && !available 时文案该是"渠道维护中"，而不是"暂未开放"。
+   */
+  enabled: boolean
+  min_amount: number
+  max_pending: number
+  channels: string[]
+  notice: string
+  /** 此刻可提余额（钱包可用区，不含冻结） */
+  available_credit: number
+  /** 已挂着的未决单数，达到 max_pending 就提不了了 */
+  pending_count: number
+}
+
 export interface StartOAuthResponse {
   auth_url: string
   session_id: string
@@ -217,6 +273,51 @@ async function listLedger(params: { page?: number; page_size?: number; action?: 
   return data
 }
 
+/**
+ * 读申请表单的全部前提。提现没开时也照常成功返回（available=false + notice）——
+ * 这个接口的用途就是解释「为什么现在提不了」，让它报错等于什么都不解释。
+ */
+async function getWithdrawalOptions(): Promise<SupplyWithdrawalOptions> {
+  const { data } = await apiClient.get<SupplyWithdrawalOptions>('/user/supply/withdrawals/options')
+  return data
+}
+
+/**
+ * 提交一笔提现申请。
+ *
+ * **提交的这一刻钱就从可用区扣走了**，不是审批时才扣。界面文案必须按这个说，
+ * 否则供给者会以为申请只是"排个队"，然后发现余额少了一块。
+ *
+ * 低于起提额的金额后端**拒绝**而不是夹到起提额，所以这里的错误要原样弹出去。
+ */
+async function requestWithdrawal(payload: {
+  amount: number
+  payout_channel: string
+  payout_account: string
+  user_note?: string
+}): Promise<SupplyWithdrawal> {
+  const { data } = await apiClient.post<SupplyWithdrawal>('/user/supply/withdrawals', payload)
+  return data
+}
+
+async function listWithdrawals(
+  params: { page?: number; page_size?: number } = {}
+): Promise<SupplyWithdrawalPage> {
+  const { data } = await apiClient.get<SupplyWithdrawalPage>('/user/supply/withdrawals', { params })
+  return data
+}
+
+/**
+ * 撤回自己的未决单，钱退回可用区。
+ *
+ * 是 POST 不是 DELETE：单子不会消失，它变成 canceled 留在列表里。撤回是一次
+ * 状态推进，不是一次删除——那行记录本身是对账凭据。
+ */
+async function cancelWithdrawal(id: number): Promise<SupplyWithdrawal> {
+  const { data } = await apiClient.post<SupplyWithdrawal>(`/user/supply/withdrawals/${id}/cancel`)
+  return data
+}
+
 export const supplyAPI = {
   getStatus,
   getAgreement,
@@ -229,6 +330,10 @@ export const supplyAPI = {
   detachAccount,
   getWallet,
   listLedger,
+  getWithdrawalOptions,
+  requestWithdrawal,
+  listWithdrawals,
+  cancelWithdrawal,
 }
 
 export default supplyAPI

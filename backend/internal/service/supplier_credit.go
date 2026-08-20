@@ -32,6 +32,12 @@ const (
 	SupplierCreditActionThaw     = "thaw"
 	SupplierCreditActionClawback = "clawback"
 	SupplierCreditActionWithdraw = "withdraw"
+	// SupplierCreditActionWithdrawRevert 提现被拒绝/被撤回时把钱退回可用区。
+	//
+	// 刻意不做成「把那条 withdraw 流水删掉」：流水是追加式的，删一行等于让
+	// 「我的钱去哪了」这个问题在某些时刻没有答案。一进一出两条记录，
+	// 供给者看到的是一段完整的经过，而不是一次莫名其妙的余额波动。
+	SupplierCreditActionWithdrawRevert = "withdraw_revert"
 )
 
 // SupplierCreditSummary 是供给者钱包的余额快照。

@@ -155,7 +155,56 @@ export default {
       thaw: 'Unfreeze',
       clawback: 'Clawback',
       withdraw: 'Withdrawal',
+      // Kept separate from `withdraw` on purpose: a refund has to read as money
+      // coming back, not as income from nowhere.
+      withdraw_revert: 'Withdrawal refund',
       unknown: 'Other'
+    },
+
+    // Withdrawals. Three things must be visible on screen, because all three
+    // get misread: (1) the money leaves when you submit, not when it is
+    // approved; (2) an amount below the minimum is rejected, not rounded up;
+    // (3) "enabled but no channel" is the platform's misconfiguration.
+    withdrawal: {
+      title: 'Withdraw',
+      closedTitle: 'Withdrawals are not open yet',
+      closedBody: 'This platform has not opened withdrawals. Your balance is not going anywhere — you can withdraw it once they do.',
+      channelsMissingTitle: 'Payout channels are being set up',
+      channelsMissingBody: 'Withdrawals are enabled, but no payout channel has been configured yet. This is a platform-side configuration issue — contact an administrator instead of retrying.',
+      deductHint: 'The amount leaves your available balance the moment you submit, not when the request is approved. If it is rejected or you cancel it, the money returns to your available balance.',
+      pendingCount: '{count} / {max} pending',
+      amountLabel: 'Amount (minimum {min})',
+      useAll: 'All available ({amount})',
+      channelLabel: 'Payout channel',
+      channelPlaceholder: 'Select a payout channel',
+      accountLabel: 'Payout account',
+      accountPlaceholder: 'Your account for the selected channel',
+      accountHint: 'Double-check this: payment goes to exactly what you enter here, and a wrong account cannot be recovered.',
+      noteLabel: 'Note (optional)',
+      notePlaceholder: 'Anything the operator should know',
+      submit: 'Submit withdrawal request',
+      submitting: 'Submitting…',
+      submitted: 'Request submitted. The amount has been deducted from your available balance.',
+      empty: 'No withdrawal requests yet.',
+      createdAt: 'Requested',
+      amount: 'Amount',
+      channel: 'Payout',
+      status: 'Status',
+      reviewNote: 'Review note',
+      actions: 'Actions',
+      externalRef: 'Payment reference: {ref}',
+      cancel: 'Cancel',
+      cancelling: 'Cancelling…',
+      cancelConfirm: 'Cancel this {amount} withdrawal request? The amount returns to your available balance.',
+      cancelled: 'Cancelled. The amount is back in your available balance.',
+
+      state: {
+        pending: 'Pending',
+        paid: 'Paid',
+        rejected: 'Rejected',
+        canceled: 'Cancelled',
+        unknown: 'Unknown'
+      }
     },
 
     error: {
@@ -166,14 +215,19 @@ export default {
       resumeFailed: 'Failed to put back',
       detachFailed: 'Failed to disconnect',
       acceptFailed: 'Failed to accept the agreement',
-      codeRequired:'Enter the authorization code first'
+      codeRequired:'Enter the authorization code first',
+      withdrawalAmountInvalid: 'Enter a withdrawal amount greater than 0',
+      withdrawalChannelRequired: 'Select a payout channel',
+      withdrawalAccountRequired: 'Enter your payout account',
+      withdrawalFailed: 'Failed to submit the withdrawal request',
+      withdrawalCancelFailed: 'Failed to cancel the withdrawal request'
     }
   },
 
   supplyAdmin: {
     navLabel: 'Two-sided market',
     title: 'Two-sided market',
-    description: 'Configure supplier revenue share and supply-pool routing. The two save separately.',
+    description: 'Configure supplier revenue share, supply-pool routing, probation, agreement and withdrawals. Each group saves separately.',
 
     settlement: {
       title: 'Settlement',
@@ -262,6 +316,33 @@ export default {
       saved: 'Agreement saved'
     },
 
+    // Withdrawal parameters. Every hint here describes what goes wrong when the
+    // value is wrong, because this group fails silently: enabled with no channel
+    // configured looks perfectly healthy on the dashboard and hard-rejects every
+    // supplier who tries.
+    withdrawal: {
+      title: 'Withdrawals',
+      description: 'Decides whether suppliers can take their balance out, the minimum, and which payout channels exist.',
+      openNotice: 'Withdrawals are open. The amount leaves the supplier\'s available balance the moment they submit, and waits for you on the Supply Operations page.',
+      closedNotice: 'Withdrawals are closed. Balances keep accruing; they just cannot be taken out.',
+      noChannelNotice: 'Withdrawals are enabled but no payout channel is configured — suppliers see an entry point that cannot be used. Either add a channel or turn the switch off.',
+      enabled: 'Enable withdrawals',
+      enabledHint: 'When off, balances keep accruing but no new request can be submitted. Requests already in flight are unaffected.',
+      minAmount: 'Minimum amount',
+      minAmountHint: 'A request below this is **rejected**, not rounded up to it. Max {max}.',
+      maxPending: 'Pending requests per supplier',
+      maxPendingHint: 'How many unresolved requests one supplier may hold at once. Max {max}.',
+      channels: 'Payout channels',
+      channelsPlaceholder: 'One per line, e.g.\nUSDT-TRC20\nPayPal\nBank transfer',
+      channelsHint: 'One per line, at most {max} entries of {len} characters each. Submissions are matched **exactly** (only surrounding whitespace is trimmed), so USDT and usdt are two different channels and renaming one retires it.',
+      notice: 'Notice shown to suppliers',
+      noticePlaceholder: 'Processing time, fees, what information you need…',
+      noticeHint: 'Displayed on the supplier withdrawal form. Plain text, at most {max} characters.',
+      rejectNotice: 'Out-of-range values are rejected outright rather than clamped: a minimum silently clamped to the cap would lock everyone out of their money with nothing visibly wrong on this page.',
+      save: 'Save withdrawal settings',
+      saved: 'Withdrawal settings saved'
+    },
+
     error: {
       loadFailed: 'Failed to load settings',
       saveFailed: 'Failed to save'
@@ -293,7 +374,7 @@ export default {
       accrued: 'Accrued in {days} days',
       windowBreakdown: 'Clawed back {clawed} · Spent by suppliers {spent}',
       unhealthy: 'Unhealthy accounts',
-      thawHint: 'Thawed {thawed} and withdrew {withdrawn} in this window. Thawing only moves frozen balance into available — do not add it to accruals, that counts the same money twice. There is no withdrawal path in this release, so a non-zero figure means someone inserted ledger rows by hand.'
+      thawHint: 'Thawed {thawed}, requested {withdrawn} and refunded {reverted} in this window. Thawing only moves frozen balance into available — do not add it to accruals, that counts the same money twice. Withdrawals are deducted **when requested**, so {withdrawn} is the requested amount, not what has been paid out; rejections and cancellations are reported separately as {reverted}. Do not net the two — the number of refunds is itself the signal that a channel is misconfigured or that review standards are off.'
     },
 
     roster: {
@@ -354,11 +435,36 @@ export default {
       userFilter: 'User #{id} only'
     },
 
+    // Withdrawal review: the only write path on this page. The tone differs
+    // from the rest — every line here describes an irreversible action.
+    withdrawals: {
+      title: 'Withdrawal review',
+      description: 'The money already left the supplier\'s available balance when they submitted; this only moves the request forward. Marking paid cannot be undone. Rejecting returns the amount to their available balance.',
+      anyStatus: 'Any status',
+      userFilter: 'Only #{id}',
+      requestedAt: 'Requested',
+      user: 'Supplier',
+      amount: 'Amount',
+      payout: 'Payout',
+      status: 'Status',
+      actions: 'Actions',
+      markPaid: 'Mark paid',
+      markPaidConfirm: 'Confirm you have paid {amount} to {account}? There is no undo — the amount will not be returned.',
+      externalRefPrompt: 'Payment reference / transaction id (may be left empty, but it is the only shared record if this is ever disputed)',
+      markedPaid: 'Marked as paid.',
+      reject: 'Reject',
+      rejectPrompt: 'Reject this {amount} request. Enter a reason — it is shown to the supplier verbatim and is the only explanation they get:',
+      rejected: 'Rejected. The amount is back in the supplier\'s available balance.'
+    },
+
     error: {
       overviewFailed: 'Failed to load the dashboard',
       rosterFailed: 'Failed to load the roster',
       accountsFailed: 'Failed to load accounts',
-      ledgerFailed: 'Failed to load the ledger'
+      ledgerFailed: 'Failed to load the ledger',
+      withdrawalsFailed: 'Failed to load withdrawal requests',
+      withdrawalResolveFailed: 'Failed to resolve the withdrawal request',
+      rejectNoteRequired: 'A rejection needs a reason'
     }
   }
 }

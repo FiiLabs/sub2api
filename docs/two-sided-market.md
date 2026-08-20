@@ -30,9 +30,9 @@
 
 打通「一个供给账号进池 → 被消费 → 供给者赚到冻结积分 → 到期释放 → 可当消费花」这条端到端链路。
 
-**在范围**：`account.owner_user_id`、赚取钱包 ledger、内联结算 accrue、thaw 释放、供给池/自营池配置与溢出、供给者自助 OAuth 接入、供给者仪表盘、下线双通道与观察期。
+**在范围**：`account.owner_user_id`、赚取钱包 ledger、内联结算 accrue、thaw 释放、供给池/自营池配置与溢出、供给者自助 OAuth 接入、供给者仪表盘、下线双通道与观察期、解绑与令牌吊销、供给者协议、**提现（申请 → 人工打款 → `withdraw` 流水）**。
 
-**出范围（后续刀次）**：新供给者保底 floor（ticket 14 A/B）、积分提现（ticket 14 C，**显式未决**）、封禁率报表与平台熔断、自动代理池、拟人化时段节流、订阅档位识别、User 信誉分、连接级 draining、API key 型供给。
+**出范围（后续刀次）**：新供给者保底 floor（ticket 14 A/B）、自动打款（提现的打款动作是人工的，平台不接支付通道出金）、封禁率报表与平台熔断、自动代理池、拟人化时段节流、订阅档位识别、User 信誉分、连接级 draining、API key 型供给。
 
 ## 2. 与设计交接件的实测偏差
 
@@ -96,6 +96,10 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 | 管理端前端 | `frontend/src/api/admin/supplyMarket.ts`、`views/admin/SupplyMarketView.vue` | — | 单起一页而不是往 `SettingsView.vue`（近九千行、上游最痛的合并热区）里加三个 section；三组配置各自一个保存按钮，审计日志才分得清谁改了什么。池卡片里配额输入框与「今日已溢出 N 次 / 被拦 M 次」挨着显示——单看配额说明不了任何事 |
 | 管理端运营视图 | `internal/service/supplier_admin.go`（类型+接口）、`supplier_admin_service.go`（夹取+白名单）、`internal/repository/supplier_admin_repo.go`（SQL）、`internal/handler/supplier_admin_handler.go` | — | `GET /api/v1/admin/supply/{overview,suppliers,accounts,ledger}`，回答运营的四个问题：谁挂了几个号 / 这个月要付多少 / 谁的号在被封 / 哪些卡在观察期。**整层只读**，core 侵入一行（见 core touch #9）。见 §3.6 |
 | 运营视图前端 | `frontend/src/api/admin/supplyMarket.ts`（新增只读那一组）、`views/admin/SupplyOperationsView.vue`、`i18n/locales/{zh,en}/supply.ts` 的 `supplyOps` 命名空间 | — | 与配置页 `SupplyMarketView.vue` **分开一页**：那页改参数、这页只看数，合成一页会让人一边翻名册一边动了分成比例。看板四格 + 状态桶（点一下就把账号表筛过去）+ 名册 + 账号明细 + 全站流水 |
+| 提现（供给者侧） | `internal/service/supplier_withdrawal.go`（类型+接口）、`supplier_withdrawal_service.go`（编排）、`internal/repository/supplier_withdrawal_repo.go`（SQL） | `229` | `supplier_withdrawals` 单据表。**申请即扣款**：提交那一刻金额就从可用余额扣走并落一条 `withdraw` 流水，审批只推进状态。见 §3.7 |
+| 提现参数配置 | `internal/service/setting_supply_withdrawal.go` | — | 第五个 JSON settings key `supply_withdrawal_settings`（开关 / 起提额 / 每人未决单上限 / 收款渠道白名单 / 给供给者的说明）。越界**报错不 clamp**，与结算参数同侧、与观察期参数相反，理由见 §3.7 |
+| 提现 HTTP | `internal/handler/supplier_withdrawal_handler.go`、`internal/handler/admin/setting_handler_supplier.go`、`internal/server/routes/supplier.go` | — | 供给者侧四条（`options` / 列表 / 申请 / 撤回，申请那条额外挂 `panelRateLimiter.Heavy()`）；管理端三条（列表 / 标记已打款 / 拒绝），方法挂在 `*SupplierAdminHandler` 上；设置一对挂在既有 `*SettingHandler` 上。返回视图剥掉 `user_id`/`reviewer_id` |
+| 提现前端 | `frontend/src/api/supply.ts`、`api/admin/supplyMarket.ts`、`views/user/SupplyView.vue`、`views/admin/SupplyOperationsView.vue`、`views/admin/SupplyMarketView.vue` | — | 供给者侧一张提现卡（在收益与接入之间）+ 申请记录表；运营页在看板下方加一段审批队列——**这是运营页唯一的写路径**，§3.6 的"整层只读"因此改成"只读 + 这一个例外"；配置页第五张卡 |
 
 **结算参数现在有人填了，但默认是关的**。`GetSupplierSettlementSettings` 读那个 JSON key，`ToBillingParams()` 在总开关关闭时返回全零值——也就是计费里「什么都不做」的那一支。配置行不存在（当前生产状态）、JSON 损坏、数据库读失败，一律回退到关闭：这是**刻意的 fail-closed**，与本包其他网关行为设置的 fail-open 相反。网关设置读不到时放行请求最多少一层加工；结算参数读不到时按猜测值给钱，错的是账。打开开关要管理员在「双边市场」页显式保存一次（`PUT /api/v1/admin/settings/supplier-settlement`）。
 
@@ -187,7 +191,7 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 
 ### 3.6 管理端运营视图的五条边界（改动前先读）
 
-**整层只读，而且这是个决定不是遗漏**。管理端能写的只有 §3.1 那三组设置。改账号归属、改余额、手工放行观察期都不在这一刀里——它们会动钱和归属，各自需要审计与复核路径；混进一个"看板"接口里，迟早会被当成看板随手点。前端的 `adminSupplyMarketAPI` 里因此没有对应的 `update*`，并有一条单测钉住写方法的清单不许变长。
+**整层只读，唯一的例外是提现审批，而这两件事都是决定不是遗漏**。管理端能写的只有 §3.1 那五组设置，加上提现单的「标记已打款 / 拒绝」。改账号归属、改余额、手工放行观察期都不在这一刀里——它们会动钱和归属，各自需要审计与复核路径；混进一个"看板"接口里，迟早会被当成看板随手点。提现审批之所以能进来，是因为**一张已经扣了钱的单子必须有人能推进它**：钱在申请时就离开了可用余额，没有审批入口就等于把供给者的钱冻在一个谁也动不了的中间态。它也只改状态和退款，不碰归属、不碰账号、不碰任何余额之外的东西。前端的 `adminSupplyMarketAPI` 有一条单测钉住写方法的**完整清单**（不是"必须为空"），加一个写方法就必须先改这条断言——这正是让人停下来想一下的地方。
 
 **常量必须 `fmt.Sprintf` 进 SQL，不许重打一遍**。状态字面量（`pending_review` / `active` / ...）和 jsonb 键名（`apexone_supply_state` 等）全部来自 `service` 包常量。理由是漂移在这里**完全静默**：后端改了状态名而 SQL 里还写着旧的，看板不会报错，只会把一批账号算进错误的桶，或让它们从扫描里整个消失。同理状态缺失一律兜底成 `pending_review`（`COALESCE(NULLIF(extra->>'...',''), 'pending_review')`），与 `supplier_onboarding_repo.go` 的扫号口径一份。
 
@@ -198,6 +202,22 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 **管理端流水的过滤器是独立类型，刻意不与供给者侧共用**。`SupplyAdminLedgerFilter.UserID == 0` 表示"看全站"，而供给者侧的同名字段 `<= 0` 必须拒绝。把两者合并成一个类型，供给者侧任何一处漏传 user_id 的 bug 就会从"查不到"升级成"看到所有人的账"。
 
 **流水行的类型两边共用，但消费者身份只有管理端看得到**。`SupplyAdminLedgerEntry` 内嵌 `SupplierCreditLedgerEntry`（理由见该类型注释：两份结构体迟早有一份忘了跟着加金额字段）。共用带来的代价是 `source_user_id` 会顺着供给者侧的读路径出网——翻页拉一遍就是一份"谁在用我的号"的 user_id 序列。因此 `SupplierCreditService.ListLedger` 返回前统一走一次 `stripConsumerIdentity`：**抹在 service 而不是 handler**，因为这一层就是"供给者视角"的边界，日后再挂一个读流水的 handler 不会重新漏。管理端保留该字段——追一笔拒付必须能定位到消费者。两条路径的差别仅此一个函数，由 `supplier_credit_service_test.go` 钉住（同时断言序列化后的 JSON 里**没有这个键名**：只断言字段为 nil 的话，`omitempty` 被删掉会变成一个 `"source_user_id": null`，键名本身已经在告诉供给者这个维度存在）。
+
+### 3.7 提现的七条边界（改动前先读）
+
+**申请即扣款，不是审批时才扣**。提交的那一刻金额就从 `available_credit` 扣走并落一条 `withdraw` 流水，单据只是"这笔钱要打到哪儿"的凭证。反过来做（审批时才扣）会留下一个人人可用的套利窗口：挂满未决单，然后在审批之前把同一笔余额花掉，运营批的每一张都是超发。代价是这句话必须写在供给者看得见的地方——余额在他点下按钮的瞬间就少了一块，不解释就是一次客服工单。UI 上三处都说了：表单上方的 `deductHint`、提交成功的 toast、撤回确认框。
+
+**退款走一条独立的 `withdraw_revert` 流水，绝不改原来那条**。追加式流水的意义就是任何一行落盘后不再变；把 `withdraw` 抹掉或改金额，供给者账上会凭空少一段历史，出纠纷时没法回放。因此拒绝与撤回都是「插一条反向流水 + 加回余额」，`withdraw` 与 `withdraw_revert` 两个数在管理端看板上**分开显示、永不轧差**——退回的笔数本身就是信号：它说明渠道配错了或者审核标准在漂。
+
+**退款有两道闸，缺一道都会双倍退钱**。第一道是状态更新的 `WHERE status = 'pending'`（并发下只有一个请求能把单子推离 pending）；第二道是流水表 `(action, request_id)` 上的部分唯一索引，`request_id` 取 `withdraw_revert:<单号>`。只有第一道时，一个能直接改库的人（或将来某个补状态的运维脚本）把状态改回 pending 就能再退一次；只有第二道时，并发的两个拒绝请求都会去插同一条流水，一个成功一个撞索引——退款金额是对的，但另一个请求拿到的是一个数据库错误而不是"这单已经处理过了"。所以 `refundSupplierWithdrawal` 里 `if !inserted { return nil }` 那一支不是防御性冗余，它是第二道闸的**正常返回路径**，已被专门的测试钉住（把状态篡改回 pending 后再退一次，余额必须纹丝不动）。
+
+**参数越界报错，不 clamp**。与结算参数同侧、与观察期参数（§3.5）相反。理由是这一组的失效是静默的：起提额被悄悄夹到上限，结果是全站没有一个人提得出钱，而管理端页面上一切正常——运营只会收到零星的"提现按钮点不动"，查上一星期。观察期参数夹错最多是观察久一点，性质完全不同。
+
+**渠道按完全相等匹配，只 trim 首尾空格**。不做大小写归一、不做模糊匹配：`USDT` 和 `usdt` 是两个渠道，改名等价于把老渠道下线。这看着不友好，但另一边更糟——归一化之后运营在白名单里写的字符串和打款系统里的渠道标识对不上，而**错的是一笔已经打出去的钱**。因此渠道改名必须当成一次下线来做，管理端那张卡片上写明了这一点。前端把渠道列表按**换行**分隔编辑而不是逗号：渠道名里出现逗号是完全合法的（"银行卡, 仅限境内"）。
+
+**「开着但没配渠道」必须能被两边分别看见**。这是这一组最容易出现的坏状态：开关打开了、渠道白名单是空的，于是每一次申请都被硬拒。供给者侧因此把"平台没开提现"和"开了但渠道在维护"画成两段不同的文案——后者明说是平台侧配置问题、不要重试；管理端那张卡片在这个状态下把 banner 画成红色。`options` 接口的 `available` 是**两个条件的与**（开着 且 有渠道），前端不自己拼这个判断。
+
+**返回视图剥掉 `user_id` 与 `reviewer_id`，但保留 `review_note` 与 `external_ref`**。前两个是身份，出网就是一份 id 序列（同 §3.6 的 `source_user_id`）；后两个是供给者必须看到的：一张被拒的单子不给理由，等于让他重新提交一次同样被拒的单。`external_ref`（打款凭证号）是他去自己的收款渠道对账的唯一抓手。剥离做在 handler 的 `supplierWithdrawalView` 上——与 §3.6 那处做在 service 层不同，因为提现单类型本来就只有供给者侧和管理端两个消费者，且管理端走的是另一个 handler，没有"日后再挂一个 handler 会重新漏"的面。
 
 ## 4. Core Touch 台账
 
@@ -218,10 +238,10 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 | 5c | `backend/internal/service/wire.go` + `backend/cmd/server/wire.go` | ProviderSet / `provideCleanup` 形参 + 停机步骤 | 加 `ProvideSupplierLifecycleService` 注册；`provideCleanup` 加一个形参与一个 `Stop()` 步骤；`wire_gen.go` 重新生成（+9 行），`wire_gen_test.go` 同步补一个 `nil` | 与 #5a 一模一样的理由：provider 里调了 `Start()`，没有消费者引用 wire 就会把它整个剪掉，观察期任务永远不启动。两个后台任务因此都必须出现在 `provideCleanup` 的形参里 | **已做** |
 | 5d | `backend/internal/service/wire.go` + `backend/internal/repository/wire.go` | `ProvideSettingService` 形参 / ProviderSet | `ProvideSettingService` 多一个 `SupplyOverflowCounter` 形参并在里面调 `SetSupplyOverflowCounter`；repository ProviderSet 注册 `NewSupplyOverflowCounter`；`wire_gen.go` 重新生成（+1 行） | 计数器是进程级单例（包级 `atomic.Value`），刻意**不**加在 `SettingService`/`GatewayService` 的结构体上——那两个文件是每轮 upstream sync 的合并热区，为一个扩展字段每次都要解一遍冲突。代价是需要一个注入点，而 `ProvideSettingService` 是 `SettingService` 唯一的构造处，读用量的方法也挂在它上面 | **已做** |
 | 5e | `backend/internal/service/wire.go` + `backend/internal/service/payment_refund.go` | ProviderSet；`markRefundOk` 与 `finalizePendingRefundSuccess` 各一行 | `NewSupplierCreditService` 换成 `ProvideSupplierCreditService`（内部调 `SetSupplierClawbackHandler`）；退款两处收敛点各插一行 `clawbackSupplierCreditOnRefund`。逻辑全在新文件 `supplier_clawback.go`；`wire_gen.go` 重新生成（1 行） | 追回入口同 #5d 做成进程级单例，不往 `PaymentService` 上加字段（合并热区）。**但不能照 #5a/#5c 那样单起一个 provider**：没有消费者引用它 wire 会整个剪掉——所以挂在 `SupplierCreditService` 的构造里，那个结果被 `SupplierHandler` 消费，必定被构造。退款侧那一行是 best-effort 且**在事务外**：事务内报错会把整个退款事务置为 aborted，吞掉错误也救不回来 | **已做** |
-| 8 | `backend/internal/server/routes/admin.go` | `registerSettingsRoutes` 末尾 | 追加八行路由 + 一行 `// APEXONE-EXT:` 注释（结算 / 供给池 / 观察期 / 供给者协议各一对 GET+PUT） | 挂进既有 settings group 而不是自起一个 admin group：那个 group 上有 adminAuth + 面板限流 + 审计 + `AdminComplianceGuard` 四层中间件，复制一份等着它日后与上游漂移，而漂移掉的是合规相关的那几层。handler 方法挂在既有的 `*SettingHandler` 上，因此 wire、`AdminHandlers`、`ProvideAdminHandlers` 三处热区一处没动 | **已做** |
+| 8 | `backend/internal/server/routes/admin.go` | `registerSettingsRoutes` 末尾 | 追加十行路由 + 一行 `// APEXONE-EXT:` 注释（结算 / 供给池 / 观察期 / 供给者协议 / 提现各一对 GET+PUT） | 挂进既有 settings group 而不是自起一个 admin group：那个 group 上有 adminAuth + 面板限流 + 审计 + `AdminComplianceGuard` 四层中间件，复制一份等着它日后与上游漂移，而漂移掉的是合规相关的那几层。handler 方法挂在既有的 `*SettingHandler` 上，因此 wire、`AdminHandlers`、`ProvideAdminHandlers` 三处热区一处没动 | **已做** |
 | 7 | `backend/internal/service/gateway_scheduling.go` | :97 函数签名 | **仅函数改名**：`SelectAccountWithLoadAwareness` → `selectAccountInPoolWithLoadAwareness`，函数体一字未改。导出名归新文件 `gateway_supply_overflow.go` 里的同名包装函数 | 交接件说的「零 core 溢出」不成立（见 §2）。耗尽有十几个 return 点，逐个插判断等于把一条新规则摊成十几处侵入；改名 + 外层包装是**一处**。合并冲突面小到只有一行签名，且上游若改了函数体，冲突会照常落在函数体上而不被包装掩盖 | **已做** |
 | 7a | — （**未覆盖面，记账用**） | `openai_codex_models_handler.go:44`、`gateway_handler.go:2058` | 这两处走的是 `SelectAccountForModel`，不经包装函数，因此**不溢出** | 首版切片的供给池只面向 Claude Code 形态消费，这两条路径不在范围内。若日后供给池扩到 codex 形态，需在此处补同样的包装 | 已知缺口 |
-| 9 | `backend/internal/server/routes/admin.go` | `registerSettingsRoutes(admin, h)` 之后 | 加 `registerSupplyMarketRoutes(admin, h)` 一行 + 一行 `// APEXONE-EXT:` 注释；函数体定义在 `routes/supplier.go` | 管理端运营视图的四个只读路由。挂进既有 admin group（adminAuth + 面板限流 + 审计 + `AdminComplianceGuard` 四层中间件），理由同 #8。handler **不进 `AdminHandlers`** 而是挂在既有的 `Handlers.Supplier` 下（`h.Supplier.Admin`）——`AdminHandlers` 结构体、`ProvideAdminHandlers` 形参表、`handler/wire.go` 是三处上游合并热区，每加一个管理端 handler 就要各留一行。用户侧与管理侧刻意是**两个类型**：路由挂错时是编译期的事，而不是把一个全站流水接口挂到了 `/user/supply` 下面 | **已做** |
+| 9 | `backend/internal/server/routes/admin.go` | `registerSettingsRoutes(admin, h)` 之后 | 加 `registerSupplyMarketRoutes(admin, h)` 一行 + 一行 `// APEXONE-EXT:` 注释；函数体定义在 `routes/supplier.go` | 管理端运营视图的七条路由（四条只读 + 提现审批那三条：列表 / 标记已打款 / 拒绝）。写路径为什么能进这一层见 §3.6 首段。挂进既有 admin group（adminAuth + 面板限流 + 审计 + `AdminComplianceGuard` 四层中间件），理由同 #8。handler **不进 `AdminHandlers`** 而是挂在既有的 `Handlers.Supplier` 下（`h.Supplier.Admin`）——`AdminHandlers` 结构体、`ProvideAdminHandlers` 形参表、`handler/wire.go` 是三处上游合并热区，每加一个管理端 handler 就要各留一行。用户侧与管理侧刻意是**两个类型**：路由挂错时是编译期的事，而不是把一个全站流水接口挂到了 `/user/supply` 下面 | **已做** |
 
 ## 5. 结算不变量（实现必须守住）
 
@@ -234,9 +254,9 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 
 前四个已经是**真实可配的**了，落在 settings key `supplier_settlement_settings` 里（见 §3.1）；表里的「拟定默认」就是 `DefaultSupplierSettlementSettings()` 的值，且总开关 `enabled` 默认 `false`。
 
-第二个 key `supply_pool_settings`（`enabled` / `supply_group_id` / `overflow_group_id` / `daily_overflow_limit`）同样默认关，装的是路由而不是钱。第三个 key `supply_probation_settings`（见 §3.5）装的是准入与下线时序，`enabled` 同样默认关。**刻意分成三个 key**：这三组配置因完全不同的原因变动（动分成比例 / 动兜底池 / 动准入门槛），合成一个会让三次意图完全不同的修改共用一条审计记录。
+第二个 key `supply_pool_settings`（`enabled` / `supply_group_id` / `overflow_group_id` / `daily_overflow_limit`）同样默认关，装的是路由而不是钱。第三个 key `supply_probation_settings`（见 §3.5）装的是准入与下线时序，`enabled` 同样默认关。第四个 key `supply_agreement_settings` 装协议文本与版本号，版本留空 = 自助接入整条关着（见 §3.3）。第五个 key `supply_withdrawal_settings`（见 §3.7）装提现开关、起提额、每人未决单上限、收款渠道白名单与说明文本，`enabled` 同样默认关、渠道白名单默认为空。**刻意分成五个 key**：这几组配置因完全不同的原因变动（动分成比例 / 动兜底池 / 动准入门槛 / 改协议 / 换收款渠道），合成一个会让几次意图完全不同的修改共用一条审计记录。
 
-三个 key 都已有管理端 API 与界面（`/admin/supply-market` 页，三张卡各自一个保存按钮）。
+五个 key 都已有管理端 API 与界面（`/admin/supply-market` 页，五张卡各自一个保存按钮）。**四个总开关默认全关，这是上线策略而不是待办**：代码随版本先进生产，管理员逐个打开。但「提现开着 + 渠道白名单为空」是一个必须避开的中间态，它在两边的表现见 §3.7。
 
 | 参数 | 拟定默认 | 说明 |
 |---|---|---|

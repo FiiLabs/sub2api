@@ -5,8 +5,13 @@
   **观测**（这个月要付多少、谁的号在被封）。两者的读者、打开频率和风险都不一样，
   合成一页会让人一边翻名册一边不小心动了分成比例。
 
-  整页没有一个写操作，对应后端四个 GET。改归属、改余额、手工放行观察期都不在
-  这一刀里——那些会动钱，需要各自的审计路径（见 service/supplier_admin.go 顶部）。
+  除提现审批外，整页没有写操作。改归属、改余额、手工放行观察期都不在这一刀里——
+  那些会动钱，需要各自的审计路径（见 service/supplier_admin.go 顶部）。
+
+  提现审批是**唯一**的例外，而且是一个明确的决定而非松了口子：一张已经扣了钱的
+  单子必须有人能推进它，不给这个能力那笔钱就永远挂在供给者名下。例外只到
+  「改单子状态 + 退款」为止，两个动作都走 /admin/supply/withdrawals/:id/*，
+  与其余四个 GET 一样过全部管理端中间件（含审计）。
 -->
 <template>
   <AppLayout>
@@ -114,11 +119,147 @@
               t('supplyOps.overview.thawHint', {
                 thawed: formatCurrency(overview.window.thawed),
                 withdrawn: formatCurrency(overview.window.withdrawn),
+                reverted: formatCurrency(overview.window.withdraw_reverted),
               })
             }}
           </p>
         </div>
       </template>
+
+      <!-- ===================== 提现审批 =====================
+           放在看板正下方、名册之前：这是整页**唯一**一件运营打开它要动手做的事，
+           其余三块都是查。排在名册后面，会让一张挂了三天没人处理的单子被埋在
+           两屏滚动之下。
+
+           这一块也是整页唯一的写路径，与页头那句"整页只读"是明确的例外关系：
+           一张已经扣了钱的单子必须有人能推进它，不给这个能力那笔钱就永远挂着。
+           例外只到"改单子状态 + 退款"为止，不碰账号、归属、观察期。 -->
+      <div class="card space-y-4 p-6" data-testid="supply-ops-withdrawals">
+        <div class="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 class="text-base font-semibold text-gray-900 dark:text-white">
+              {{ t('supplyOps.withdrawals.title') }}
+            </h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              {{ t('supplyOps.withdrawals.description') }}
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <!-- 默认筛 pending：一屏历史单据里找待处理的那几张，是这一块最常见
+                 也最没必要的一次操作。想看历史随时能切。 -->
+            <select
+              v-model="withdrawalStatus"
+              class="input w-auto"
+              data-testid="supply-ops-withdrawal-status"
+              @change="reloadWithdrawals()"
+            >
+              <option value="">{{ t('supplyOps.withdrawals.anyStatus') }}</option>
+              <option v-for="state in SUPPLY_WITHDRAWAL_STATUSES" :key="state" :value="state">
+                {{ t(`supply.withdrawal.state.${state}`) }}
+              </option>
+            </select>
+            <button
+              v-if="withdrawalUserId"
+              class="btn btn-secondary btn-sm"
+              data-testid="supply-ops-withdrawal-user-clear"
+              @click="clearWithdrawalUser()"
+            >
+              {{ t('supplyOps.withdrawals.userFilter', { id: withdrawalUserId }) }} ✕
+            </button>
+            <button class="btn btn-secondary btn-sm" data-testid="supply-ops-withdrawal-search" @click="reloadWithdrawals()">
+              {{ t('supplyOps.search') }}
+            </button>
+          </div>
+        </div>
+
+        <div v-if="withdrawalsLoading" class="py-8 text-center text-sm text-gray-400">{{ t('supplyOps.loading') }}</div>
+        <p v-else-if="!withdrawals.length" class="py-8 text-center text-sm text-gray-400">{{ t('supplyOps.empty') }}</p>
+        <div v-else class="overflow-x-auto">
+          <table class="min-w-full text-left text-sm">
+            <thead class="text-xs uppercase text-gray-400 dark:text-dark-500">
+              <tr>
+                <th class="px-3 py-2">{{ t('supplyOps.withdrawals.requestedAt') }}</th>
+                <th class="px-3 py-2">{{ t('supplyOps.withdrawals.user') }}</th>
+                <th class="px-3 py-2 text-right">{{ t('supplyOps.withdrawals.amount') }}</th>
+                <th class="px-3 py-2">{{ t('supplyOps.withdrawals.payout') }}</th>
+                <th class="px-3 py-2">{{ t('supplyOps.withdrawals.status') }}</th>
+                <th class="px-3 py-2 text-right">{{ t('supplyOps.withdrawals.actions') }}</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100 dark:divide-dark-800">
+              <tr v-for="item in withdrawals" :key="item.id" :data-testid="`supply-ops-withdrawal-${item.id}`">
+                <td class="px-3 py-3 text-gray-500 dark:text-dark-400">{{ formatDateTime(item.created_at) }}</td>
+                <td class="px-3 py-3">
+                  <button
+                    class="text-primary-600 hover:underline dark:text-primary-400"
+                    @click="focusWithdrawalUser(item.user_id)"
+                  >
+                    #{{ item.user_id }}
+                  </button>
+                </td>
+                <td class="px-3 py-3 text-right font-medium text-gray-900 dark:text-white">
+                  {{ formatCurrency(item.amount) }}
+                </td>
+                <td class="px-3 py-3">
+                  <p class="text-gray-700 dark:text-gray-300">{{ item.payout_channel }}</p>
+                  <!-- 收款账号用等宽字体：打款时要照着它一个字符一个字符核对，
+                       比例字体下 l/1/I 分不开。 -->
+                  <p class="font-mono text-xs text-gray-500 dark:text-dark-400">{{ item.payout_account }}</p>
+                  <p v-if="item.user_note" class="mt-1 max-w-xs text-xs text-gray-400 dark:text-dark-500">
+                    {{ item.user_note }}
+                  </p>
+                </td>
+                <td class="px-3 py-3">
+                  <span
+                    class="rounded-full px-2 py-0.5 text-xs font-medium"
+                    :class="withdrawalBadgeClass(item.status)"
+                  >
+                    {{ t(`supply.withdrawal.state.${item.status}`) }}
+                  </span>
+                  <p v-if="item.review_note" class="mt-1 max-w-xs text-xs text-gray-400 dark:text-dark-500">
+                    {{ item.review_note }}
+                  </p>
+                  <p v-if="item.external_ref" class="mt-1 max-w-xs font-mono text-xs text-gray-400 dark:text-dark-500">
+                    {{ item.external_ref }}
+                  </p>
+                </td>
+                <td class="px-3 py-3 text-right">
+                  <div v-if="item.status === 'pending'" class="flex flex-wrap justify-end gap-2">
+                    <button
+                      class="btn btn-primary btn-sm"
+                      :disabled="resolvingWithdrawalId === item.id"
+                      :data-testid="`supply-ops-withdrawal-paid-${item.id}`"
+                      @click="markPaid(item)"
+                    >
+                      {{ t('supplyOps.withdrawals.markPaid') }}
+                    </button>
+                    <button
+                      class="btn btn-danger btn-sm"
+                      :disabled="resolvingWithdrawalId === item.id"
+                      :data-testid="`supply-ops-withdrawal-reject-${item.id}`"
+                      @click="rejectWithdrawal(item)"
+                    >
+                      {{ t('supplyOps.withdrawals.reject') }}
+                    </button>
+                  </div>
+                  <span v-else class="text-xs text-gray-400 dark:text-dark-500">
+                    {{ item.resolved_at ? formatDateTime(item.resolved_at) : '-' }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <Pagination
+          v-if="withdrawalTotal > 0"
+          :total="withdrawalTotal"
+          :page="withdrawalPage"
+          :page-size="PAGE_SIZE"
+          :show-page-size-selector="false"
+          @update:page="goWithdrawals"
+        />
+      </div>
 
       <!-- ===================== 名册 ===================== -->
       <div class="card space-y-4 p-6">
@@ -418,12 +559,15 @@ import Pagination from '@/components/common/Pagination.vue'
 import {
   adminSupplyMarketAPI,
   SUPPLIER_ROSTER_SORTS,
+  SUPPLY_WITHDRAWAL_STATUSES,
   type SupplierRosterEntry,
   type SupplierRosterSort,
   type SupplyAccountAdminView,
   type SupplyAccountHealth,
   type SupplyAdminLedgerEntry,
   type SupplyMarketOverview,
+  type SupplyWithdrawalAdminView,
+  type SupplyWithdrawalStatus,
 } from '@/api/admin/supplyMarket'
 import { useAppStore } from '@/stores/app'
 import { formatCurrency, formatDateTime } from '@/utils/format'
@@ -460,6 +604,15 @@ const accountHealth = ref<SupplyAccountHealth>('')
 const accountOwnerId = ref(0)
 const accountPage = ref(1)
 const accountTotal = ref(0)
+
+// 默认筛 pending：运营打开这一页要做的事就是处理待付的单子。
+const withdrawals = ref<SupplyWithdrawalAdminView[]>([])
+const withdrawalsLoading = ref(true)
+const withdrawalStatus = ref<SupplyWithdrawalStatus | ''>('pending')
+const withdrawalUserId = ref(0)
+const withdrawalPage = ref(1)
+const withdrawalTotal = ref(0)
+const resolvingWithdrawalId = ref<number | null>(null)
 
 const ledger = ref<SupplyAdminLedgerEntry[]>([])
 const ledgerLoading = ref(true)
@@ -562,6 +715,96 @@ async function loadLedger(): Promise<void> {
   }
 }
 
+async function loadWithdrawals(): Promise<void> {
+  withdrawalsLoading.value = true
+  try {
+    const page = await adminSupplyMarketAPI.listWithdrawals({
+      page: withdrawalPage.value,
+      page_size: PAGE_SIZE,
+      status: withdrawalStatus.value || undefined,
+      user_id: withdrawalUserId.value || undefined,
+    })
+    withdrawals.value = page.items ?? []
+    withdrawalTotal.value = page.total ?? 0
+  } catch (error) {
+    reportError(error, 'supplyOps.error.withdrawalsFailed')
+  } finally {
+    withdrawalsLoading.value = false
+  }
+}
+
+/**
+ * 标记已打款。**不退款**——钱在申请那一刻就出了可用区，这一步只是记账收尾。
+ *
+ * 确认框里带上金额和收款账号，因为这一步之后没有对称的撤销动作：点错行的代价
+ * 是一笔本该被拒的钱被记成已付。凭证走 prompt 而不是一个模态表单，是因为这一版
+ * 的审批量小到不值得为它做一个组件——但凭证本身不能省成"以后再补"，
+ * 那是纠纷时双方唯一的共同锚点。
+ */
+async function markPaid(item: SupplyWithdrawalAdminView): Promise<void> {
+  if (
+    !window.confirm(
+      t('supplyOps.withdrawals.markPaidConfirm', {
+        amount: formatCurrency(item.amount),
+        account: item.payout_account,
+      })
+    )
+  ) {
+    return
+  }
+  // prompt 取消（null）与留空（''）是两回事：前者是"我再想想"，要中止；
+  // 后者是"这个渠道没有交易号"，照常提交。
+  const externalRef = window.prompt(t('supplyOps.withdrawals.externalRefPrompt'), '')
+  if (externalRef === null) return
+
+  resolvingWithdrawalId.value = item.id
+  try {
+    await adminSupplyMarketAPI.markWithdrawalPaid(item.id, { external_ref: externalRef.trim() })
+    appStore.showSuccess(t('supplyOps.withdrawals.markedPaid'))
+    // 看板上的提现数跟着变，所以两块一起刷。
+    await Promise.all([loadWithdrawals(), loadOverview()])
+  } catch (error) {
+    reportError(error, 'supplyOps.error.withdrawalResolveFailed')
+  } finally {
+    resolvingWithdrawalId.value = null
+  }
+}
+
+/** 拒绝并退款。理由必填——一个没有理由的拒绝，对供给者来说和系统故障没有区别。 */
+async function rejectWithdrawal(item: SupplyWithdrawalAdminView): Promise<void> {
+  const note = window.prompt(t('supplyOps.withdrawals.rejectPrompt', { amount: formatCurrency(item.amount) }), '')
+  if (note === null) return
+  if (!note.trim()) {
+    appStore.showError(t('supplyOps.error.rejectNoteRequired'))
+    return
+  }
+
+  resolvingWithdrawalId.value = item.id
+  try {
+    await adminSupplyMarketAPI.rejectWithdrawal(item.id, note.trim())
+    appStore.showSuccess(t('supplyOps.withdrawals.rejected'))
+    await Promise.all([loadWithdrawals(), loadOverview()])
+  } catch (error) {
+    reportError(error, 'supplyOps.error.withdrawalResolveFailed')
+  } finally {
+    resolvingWithdrawalId.value = null
+  }
+}
+
+function withdrawalBadgeClass(status: string): string {
+  switch (status) {
+    case 'paid':
+      return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+    case 'rejected':
+      return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+    case 'canceled':
+      return 'bg-gray-100 text-gray-600 dark:bg-dark-800 dark:text-dark-300'
+    default:
+      // pending 及未知状态都按"还挂着"呈现——保守的那一边。
+      return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+  }
+}
+
 // 改筛选条件一律回到第一页：留在第 7 页翻一个只有 2 页的结果集，界面上是一片空白，
 // 读起来像「没有数据」。
 function reloadRoster(): void {
@@ -592,6 +835,33 @@ function goAccounts(page: number): void {
 function goLedger(page: number): void {
   ledgerPage.value = page
   void loadLedger()
+}
+
+function reloadWithdrawals(): void {
+  withdrawalPage.value = 1
+  void loadWithdrawals()
+}
+
+function goWithdrawals(page: number): void {
+  withdrawalPage.value = page
+  void loadWithdrawals()
+}
+
+/**
+ * 从审批队列跳到某个供给者。
+ *
+ * 顺手把状态筛选清掉：点一个人的目的是"这个人的单子都长什么样"，
+ * 留着 pending 会让他刚被拒的那张单子消失，看起来像点错了。
+ */
+function focusWithdrawalUser(userID: number): void {
+  withdrawalUserId.value = userID
+  withdrawalStatus.value = ''
+  reloadWithdrawals()
+}
+
+function clearWithdrawalUser(): void {
+  withdrawalUserId.value = 0
+  reloadWithdrawals()
 }
 
 /** 看板上的状态桶点一下就把账号表筛到那个状态——「哪些卡在观察期」是一次点击的事。 */
@@ -631,6 +901,7 @@ function clearLedgerUser(): void {
 
 onMounted(() => {
   void loadOverview()
+  void loadWithdrawals()
   void loadRoster()
   void loadAccounts()
   void loadLedger()
