@@ -115,11 +115,29 @@ export interface SupplyWithdrawalSettings {
   notice: string
 
   /**
+   * 新申请到达时通知谁。**空 = 没有任何人会被告知有单要处理**——后台不会自己
+   * 弹出来，而供给者的钱在提交那一刻就已经离开可用余额了。
+   *
+   * 与配额告警的收件人是两份配置：收钱的是财务，收告警的是运维，合成一份会训练
+   * 两边都去过滤这类邮件。
+   *
+   * 格式错误后端**报错**而不是静默丢弃（渠道则是静默清洗）：渠道少一个供给者
+   * 立刻就看得见，收件人少一个没有任何可见症状。
+   */
+  notify_emails: string[]
+
+  /**
    * enabled **且** channels 非空。开着却一个渠道都没配是一种静默失效：
    * 面板显示"已开启"，供给者点提现被硬拒。有了这个布尔，运营在设置页就能看见
    * 自己配漏了，而不是等人来报。
    */
   available: boolean
+
+  /**
+   * enabled **且** notify_emails 非空。与 available 同理，指向另一个静默失效：
+   * 提现开着、渠道也配了，但申请进来时没有人被通知。
+   */
+  notify_configured: boolean
 
   /** 后端下发的边界值，前端不要另抄一份。 */
   min_amount_max: number
@@ -127,16 +145,21 @@ export interface SupplyWithdrawalSettings {
   channels_max: number
   channel_max_len: number
   notice_max_len: number
+  notify_emails_max: number
+  notify_email_max_len: number
 }
 
 export type SupplyWithdrawalPayload = Omit<
   SupplyWithdrawalSettings,
   | 'available'
+  | 'notify_configured'
   | 'min_amount_max'
   | 'max_pending_cap'
   | 'channels_max'
   | 'channel_max_len'
   | 'notice_max_len'
+  | 'notify_emails_max'
+  | 'notify_email_max_len'
 >
 
 // ======================= 运营视图（只读，提现审批除外） =======================

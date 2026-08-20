@@ -326,6 +326,7 @@ export default {
       openNotice: 'Withdrawals are open. The amount leaves the supplier\'s available balance the moment they submit, and waits for you on the Supply Operations page.',
       closedNotice: 'Withdrawals are closed. Balances keep accruing; they just cannot be taken out.',
       noChannelNotice: 'Withdrawals are enabled but no payout channel is configured — suppliers see an entry point that cannot be used. Either add a channel or turn the switch off.',
+      noNotifyNotice: 'Withdrawals are enabled and channels are set, but nobody is notified when a request arrives — the admin panel does not surface it on its own, and the supplier\'s money has already left their balance. Add recipients below.',
       enabled: 'Enable withdrawals',
       enabledHint: 'When off, balances keep accruing but no new request can be submitted. Requests already in flight are unaffected.',
       minAmount: 'Minimum amount',
@@ -335,6 +336,10 @@ export default {
       channels: 'Payout channels',
       channelsPlaceholder: 'One per line, e.g.\nUSDT-TRC20\nPayPal\nBank transfer',
       channelsHint: 'One per line, at most {max} entries of {len} characters each. Submissions are matched **exactly** (only surrounding whitespace is trimmed), so USDT and usdt are two different channels and renaming one retires it.',
+      notifyEmails: 'New-request recipients',
+      // A bare @ is vue-i18n linked-message syntax; it must be escaped as {'@'}.
+      notifyEmailsPlaceholder: "finance{'@'}example.com\nops{'@'}example.com",
+      notifyEmailsHint: 'One per line, at most {max} addresses of {len} characters each. Empty means nobody is told a request is waiting. Kept separate from quota-alert recipients: finance handles payouts, ops handles alerts. A malformed address **fails the save** and names itself, rather than being dropped silently.',
       notice: 'Notice shown to suppliers',
       noticePlaceholder: 'Processing time, fees, what information you need…',
       noticeHint: 'Displayed on the supplier withdrawal form. Plain text, at most {max} characters.',

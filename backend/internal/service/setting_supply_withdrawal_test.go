@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -277,4 +278,94 @@ func TestSetSupplyWithdrawalPersistsAndInvalidatesCache(t *testing.T) {
 	repo.value = repo.setValue
 	reread := svc.GetSupplyWithdrawalSettings(context.Background())
 	assert.True(t, reread.Available(), "写完必须让缓存失效，否则面板显示的是旧配置")
+}
+
+// ============================================================================
+// 运营收件人（notify_emails）
+// ============================================================================
+
+// 收件人格式错必须**报错**而不是被静默丢掉。这一条与渠道的"静默清洗"刻意相反：
+// 渠道少一个，供给者立刻在下拉框里看得见；收件人少一个没有任何可见症状，
+// 管理员会看到「已保存」然后一直等一封永远不会来的信。
+func TestSetSupplyWithdrawalRejectsBadNotifyEmails(t *testing.T) {
+	cases := []struct {
+		name  string
+		email string
+	}{
+		{"没有 @", "13800138000"},
+		{"@ 在开头", "@example.com"},
+		{"@ 在结尾", "ops@"},
+		{"两个 @", "ops@@example.com"},
+		{"带空格", "ops @example.com"},
+		{"超长", strings.Repeat("x", SupplyWithdrawalNotifyEmailMaxLen) + "@example.com"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &supplyWithdrawalSettingRepoStub{}
+			err := newWithdrawalSettingService(t, repo).SetSupplyWithdrawalSettings(
+				context.Background(),
+				&SupplyWithdrawalSettings{MaxPending: 1, NotifyEmails: []string{tc.email}},
+			)
+			require.Error(t, err)
+			assert.Empty(t, repo.setKey, "收件人填错就不该写库")
+		})
+	}
+}
+
+func TestSetSupplyWithdrawalRejectsTooManyNotifyEmails(t *testing.T) {
+	emails := make([]string, 0, SupplyWithdrawalNotifyEmailsMax+1)
+	for i := 0; i <= SupplyWithdrawalNotifyEmailsMax; i++ {
+		emails = append(emails, fmt.Sprintf("ops%d@example.com", i))
+	}
+	repo := &supplyWithdrawalSettingRepoStub{}
+	err := newWithdrawalSettingService(t, repo).SetSupplyWithdrawalSettings(
+		context.Background(),
+		&SupplyWithdrawalSettings{MaxPending: 1, NotifyEmails: emails},
+	)
+	require.Error(t, err)
+	assert.Empty(t, repo.setKey)
+}
+
+// 合法收件人在保存时按小写去重、保留原始大小写。去重是必要的：同一个人被写进去
+// 两次就会收到两封一模一样的信，第二封只会训练他把这个发件人拖进垃圾箱。
+func TestSetSupplyWithdrawalDeduplicatesNotifyEmails(t *testing.T) {
+	repo := &supplyWithdrawalSettingRepoStub{}
+	err := newWithdrawalSettingService(t, repo).SetSupplyWithdrawalSettings(
+		context.Background(),
+		&SupplyWithdrawalSettings{
+			MaxPending:   1,
+			NotifyEmails: []string{"  Ops@Example.com ", "ops@example.com", "finance@example.com"},
+		},
+	)
+	require.NoError(t, err)
+
+	var saved SupplyWithdrawalSettings
+	require.NoError(t, json.Unmarshal([]byte(repo.setValue), &saved))
+	assert.Equal(t, []string{"Ops@Example.com", "finance@example.com"}, saved.NotifyEmails)
+}
+
+// 读路径必须容错：库里被手工塞进垃圾时，通知少发几封是可以接受的，
+// 而让 GetSupplyWithdrawalSettings 报错会让整个提现功能跟着不可用。
+func TestGetSupplyWithdrawalSanitizesNotifyEmails(t *testing.T) {
+	repo := &supplyWithdrawalSettingRepoStub{
+		value: `{"enabled":false,"max_pending":1,"notify_emails":["ok@example.com","  ","not-an-email","ok@example.com"]}`,
+	}
+	settings := newWithdrawalSettingService(t, repo).GetSupplyWithdrawalSettings(context.Background())
+	assert.Equal(t, []string{"ok@example.com"}, settings.NotifyEmails)
+}
+
+// 深拷贝必须覆盖 notify_emails，否则调用方改一下自己拿到的那份列表，
+// 进程内缓存里所有后续读者都跟着变。
+func TestGetSupplyWithdrawalCopiesNotifyEmails(t *testing.T) {
+	repo := &supplyWithdrawalSettingRepoStub{
+		value: `{"enabled":false,"max_pending":1,"notify_emails":["ops@example.com"]}`,
+	}
+	svc := newWithdrawalSettingService(t, repo)
+
+	first := svc.GetSupplyWithdrawalSettings(context.Background())
+	require.Len(t, first.NotifyEmails, 1)
+	first.NotifyEmails[0] = "attacker@example.com"
+
+	second := svc.GetSupplyWithdrawalSettings(context.Background())
+	assert.Equal(t, []string{"ops@example.com"}, second.NotifyEmails, "缓存里的列表被调用方改掉了")
 }

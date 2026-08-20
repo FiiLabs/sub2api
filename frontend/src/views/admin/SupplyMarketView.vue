@@ -405,38 +405,12 @@
             <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.withdrawal.description') }}</p>
           </div>
 
-          <!-- 「开着但一个渠道都没配」是一种静默失效：面板显示已开启，供给者点提现
-               被硬拒。后端把 available 算好下发，就是为了让这个状态在这里被看见，
-               而不是等供给者来报。 -->
-          <div
-            class="rounded-lg border p-3"
-            :class="
-              withdrawalForm.enabled && withdrawalForm.channels.length === 0
-                ? 'border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-900/20'
-                : withdrawalForm.enabled
-                  ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-900/20'
-                  : 'border-gray-200 bg-gray-50 dark:border-dark-700 dark:bg-dark-900'
-            "
-            data-testid="supply-withdrawal-status"
-          >
-            <p
-              class="text-xs"
-              :class="
-                withdrawalForm.enabled && withdrawalForm.channels.length === 0
-                  ? 'text-red-700 dark:text-red-300'
-                  : withdrawalForm.enabled
-                    ? 'text-emerald-700 dark:text-emerald-300'
-                    : 'text-gray-600 dark:text-gray-300'
-              "
-            >
-              {{
-                withdrawalForm.enabled && withdrawalForm.channels.length === 0
-                  ? t('supplyAdmin.withdrawal.noChannelNotice')
-                  : withdrawalForm.enabled
-                    ? t('supplyAdmin.withdrawal.openNotice')
-                    : t('supplyAdmin.withdrawal.closedNotice')
-              }}
-            </p>
+          <!-- 提现有两种静默失效，都在这块横幅里说出来（见 withdrawalStatus）：
+               开着但没配渠道（供给者被硬拒），开着但没配收件人（申请进来没人知道）。
+               后端把 available / notify_configured 算好下发，就是为了让这两个状态
+               在这里被看见，而不是等供给者来报。 -->
+          <div class="rounded-lg border p-3" :class="withdrawalStatus.box" data-testid="supply-withdrawal-status">
+            <p class="text-xs" :class="withdrawalStatus.text">{{ t(withdrawalStatus.message) }}</p>
           </div>
 
           <div class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700">
@@ -501,6 +475,28 @@
                 t('supplyAdmin.withdrawal.channelsHint', {
                   max: withdrawalBounds.channels_max,
                   len: withdrawalBounds.channel_max_len,
+                })
+              }}
+            </p>
+          </div>
+
+          <div>
+            <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+              {{ t('supplyAdmin.withdrawal.notifyEmails') }}
+            </label>
+            <!-- 同样一行一个。填错格式后端会**报错**而不是悄悄丢掉：悄悄丢掉的话
+                 运营会看到"已保存"，然后一直等一封永远不会来的信。 -->
+            <textarea
+              v-model="withdrawalNotifyEmailsText"
+              class="input min-h-[5rem] font-mono text-xs"
+              :placeholder="t('supplyAdmin.withdrawal.notifyEmailsPlaceholder')"
+              data-testid="supply-withdrawal-notify-emails"
+            ></textarea>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{
+                t('supplyAdmin.withdrawal.notifyEmailsHint', {
+                  max: withdrawalBounds.notify_emails_max,
+                  len: withdrawalBounds.notify_email_max_len,
                 })
               }}
             </p>
@@ -643,6 +639,7 @@ const withdrawalForm = reactive<SupplyWithdrawalPayload>({
   max_pending: 3,
   channels: [],
   notice: '',
+  notify_emails: [],
 })
 
 const withdrawalBounds = reactive({
@@ -651,6 +648,8 @@ const withdrawalBounds = reactive({
   channels_max: 20,
   channel_max_len: 64,
   notice_max_len: 1000,
+  notify_emails_max: 10,
+  notify_email_max_len: 254,
 })
 
 /**
@@ -668,6 +667,56 @@ const withdrawalChannelsText = computed({
       .map(line => line.trim())
       .filter(line => line !== '')
   },
+})
+
+/** 运营收件人的文本形态。同 withdrawalChannelsText：一行一个，清理留到 setter。 */
+const withdrawalNotifyEmailsText = computed({
+  get: () => withdrawalForm.notify_emails.join('\n'),
+  set: (value: string) => {
+    withdrawalForm.notify_emails = value
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line !== '')
+  },
+})
+
+/**
+ * 提现卡片顶部横幅的四个状态，按严重程度排序。
+ *
+ * 抽成 computed 而不是在模板里套四层三元：这块横幅要在 box/text/message 三处
+ * 复述同一个判断，内联的话改一个状态得同步改三份，而漏掉一份的症状是「颜色是
+ * 绿的但文案在报警」——比没有横幅更糟。
+ *
+ * noChannel 排在 noNotify 前面：前者供给者点提现当场被拒，后者功能还能用，
+ * 只是没人被叫过来。两个都中时先说更硬的那个。
+ */
+const withdrawalStatus = computed(() => {
+  if (!withdrawalForm.enabled) {
+    return {
+      box: 'border-gray-200 bg-gray-50 dark:border-dark-700 dark:bg-dark-900',
+      text: 'text-gray-600 dark:text-gray-300',
+      message: 'supplyAdmin.withdrawal.closedNotice',
+    }
+  }
+  if (withdrawalForm.channels.length === 0) {
+    return {
+      box: 'border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-900/20',
+      text: 'text-red-700 dark:text-red-300',
+      message: 'supplyAdmin.withdrawal.noChannelNotice',
+    }
+  }
+  if (withdrawalForm.notify_emails.length === 0) {
+    return {
+      box: 'border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-900/20',
+      text: 'text-amber-700 dark:text-amber-300',
+      message: 'supplyAdmin.withdrawal.noNotifyNotice',
+    }
+  }
+  return {
+    box: 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-900/20',
+    text: 'text-emerald-700 dark:text-emerald-300',
+    message: 'supplyAdmin.withdrawal.openNotice',
+  }
 })
 
 async function loadSettlement(): Promise<void> {
@@ -843,11 +892,14 @@ function applyWithdrawal(settings: SupplyWithdrawalSettings): void {
   withdrawalForm.max_pending = settings.max_pending
   withdrawalForm.channels = [...(settings.channels ?? [])]
   withdrawalForm.notice = settings.notice ?? ''
+  withdrawalForm.notify_emails = [...(settings.notify_emails ?? [])]
   if (settings.min_amount_max > 0) withdrawalBounds.min_amount_max = settings.min_amount_max
   if (settings.max_pending_cap > 0) withdrawalBounds.max_pending_cap = settings.max_pending_cap
   if (settings.channels_max > 0) withdrawalBounds.channels_max = settings.channels_max
   if (settings.channel_max_len > 0) withdrawalBounds.channel_max_len = settings.channel_max_len
   if (settings.notice_max_len > 0) withdrawalBounds.notice_max_len = settings.notice_max_len
+  if (settings.notify_emails_max > 0) withdrawalBounds.notify_emails_max = settings.notify_emails_max
+  if (settings.notify_email_max_len > 0) withdrawalBounds.notify_email_max_len = settings.notify_email_max_len
 }
 
 /**
@@ -868,6 +920,7 @@ async function saveWithdrawal(): Promise<void> {
       max_pending: withdrawalForm.max_pending,
       channels: withdrawalForm.channels,
       notice: withdrawalForm.notice,
+      notify_emails: withdrawalForm.notify_emails,
     })
     applyWithdrawal(saved)
     appStore.showSuccess(t('supplyAdmin.withdrawal.saved'))

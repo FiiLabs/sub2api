@@ -52,6 +52,13 @@ const (
 	SupplyWithdrawalChannelMaxLen = 64
 	// SupplyWithdrawalNoticeMaxLen 告知文案长度上限。
 	SupplyWithdrawalNoticeMaxLen = 2000
+	// SupplyWithdrawalNotifyEmailsMax 提现通知最多发给几个运营邮箱。
+	//
+	// 设上限不是怕发信贵，是怕这个字段变成一份全公司通讯录：收件人一多，
+	// 每个人都会假设"另一个人会处理"，于是没有人处理。
+	SupplyWithdrawalNotifyEmailsMax = 10
+	// SupplyWithdrawalNotifyEmailMaxLen 单个邮箱长度上限（RFC 5321 的 254）。
+	SupplyWithdrawalNotifyEmailMaxLen = 254
 )
 
 // SupplyWithdrawalSettings 是提现的全部可配内容。
@@ -67,6 +74,15 @@ type SupplyWithdrawalSettings struct {
 	Channels []string `json:"channels"`
 	// Notice 打款时效、手续费、工作日等告知，展示在申请表单上。按纯文本渲染。
 	Notice string `json:"notice"`
+	// NotifyEmails 新申请到达时通知谁。空 = 不通知任何人。
+	//
+	// **这个字段为空是一个真实的坏状态**，而不是"没配就是不想要"：提现开着、
+	// 供给者的钱在提交那一刻已经扣走，而没有一个人会被告知有单要处理。运营下次
+	// 打开后台可能是三天后。因此管理端在「开着提现 + 这里为空」时要画出来。
+	//
+	// 与账号配额告警的收件人（SettingKeyAccountQuotaNotifyEmails）刻意分开：
+	// 收提现单的是财务，收配额告警的是运维，合成一份的下场是两边都开始过滤邮件。
+	NotifyEmails []string `json:"notify_emails"`
 }
 
 // DefaultSupplyWithdrawalSettings 返回「关闭」状态的默认配置。
@@ -74,10 +90,11 @@ type SupplyWithdrawalSettings struct {
 // 与结算总开关同一个上线策略：代码先进生产，由管理员显式打开。
 func DefaultSupplyWithdrawalSettings() *SupplyWithdrawalSettings {
 	return &SupplyWithdrawalSettings{
-		Enabled:    false,
-		MinAmount:  0,
-		MaxPending: SupplyWithdrawalMaxPendingDefault,
-		Channels:   []string{},
+		Enabled:      false,
+		MinAmount:    0,
+		MaxPending:   SupplyWithdrawalMaxPendingDefault,
+		Channels:     []string{},
+		NotifyEmails: []string{},
 	}
 }
 
@@ -125,6 +142,42 @@ func sanitizeWithdrawalChannels(raw []string) []string {
 	return out
 }
 
+// sanitizeWithdrawalNotifyEmails 清洗运营收件人：去空白、丢空串、丢超长、
+// 丢明显不是邮箱的、按小写去重、截断数量。
+//
+// 格式只查一件事：有且仅有一个 `@`，且两侧都非空。这个门槛刻意定得低——
+// 严格的邮箱正则会挡掉合法的地址（带 + 号的、非 ASCII 域名的），而这里的收件人
+// 是管理员自己填的，真正要防的是「把手机号填进来了」这种一眼可见的错。
+func sanitizeWithdrawalNotifyEmails(raw []string) []string {
+	out := make([]string, 0, len(raw))
+	seen := make(map[string]struct{}, len(raw))
+	for _, item := range raw {
+		trimmed := strings.TrimSpace(item)
+		if trimmed == "" || len(trimmed) > SupplyWithdrawalNotifyEmailMaxLen || !looksLikeEmail(trimmed) {
+			continue
+		}
+		lower := strings.ToLower(trimmed)
+		if _, dup := seen[lower]; dup {
+			continue
+		}
+		seen[lower] = struct{}{}
+		out = append(out, trimmed)
+		if len(out) >= SupplyWithdrawalNotifyEmailsMax {
+			break
+		}
+	}
+	return out
+}
+
+// looksLikeEmail 见 sanitizeWithdrawalNotifyEmails 的注释：故意宽松。
+func looksLikeEmail(s string) bool {
+	at := strings.IndexByte(s, '@')
+	if at <= 0 || at != strings.LastIndexByte(s, '@') || at == len(s)-1 {
+		return false
+	}
+	return !strings.ContainsAny(s, " \t\r\n")
+}
+
 // sanitize 读路径的容错。数值 clamp、列表清洗、文案截断，都不报错。
 func (s *SupplyWithdrawalSettings) sanitize() {
 	if s == nil {
@@ -143,6 +196,7 @@ func (s *SupplyWithdrawalSettings) sanitize() {
 		s.MaxPending = SupplyWithdrawalMaxPendingCap
 	}
 	s.Channels = sanitizeWithdrawalChannels(s.Channels)
+	s.NotifyEmails = sanitizeWithdrawalNotifyEmails(s.NotifyEmails)
 	s.Notice = strings.TrimSpace(s.Notice)
 	if len(s.Notice) > SupplyWithdrawalNoticeMaxLen {
 		s.Notice = s.Notice[:SupplyWithdrawalNoticeMaxLen]
@@ -181,9 +235,28 @@ func (s *SupplyWithdrawalSettings) validate() error {
 	if len(s.Notice) > SupplyWithdrawalNoticeMaxLen {
 		return fmt.Errorf("withdrawal notice must be at most %d characters", SupplyWithdrawalNoticeMaxLen)
 	}
+	if len(s.NotifyEmails) > SupplyWithdrawalNotifyEmailsMax {
+		return fmt.Errorf("at most %d notification emails are allowed", SupplyWithdrawalNotifyEmailsMax)
+	}
+	// 收件人格式**报错而不是静默丢弃**：悄悄丢掉一个填错的邮箱，管理员会看到
+	// 「已保存」然后一直等一封永远不会来的信。渠道那边可以静默清洗，是因为
+	// 渠道少一个供给者立刻就看得见；少一个收件人没有任何可见症状。
+	for _, item := range s.NotifyEmails {
+		trimmed := strings.TrimSpace(item)
+		if trimmed == "" {
+			continue
+		}
+		if len(trimmed) > SupplyWithdrawalNotifyEmailMaxLen {
+			return fmt.Errorf("notification email must be at most %d characters", SupplyWithdrawalNotifyEmailMaxLen)
+		}
+		if !looksLikeEmail(trimmed) {
+			return fmt.Errorf("%q is not a valid notification email", trimmed)
+		}
+	}
 	// 清洗**在校验之后**，于是「填了三个空白渠道」不会被静默当成没填：
 	// 上面几条越界该报的都报了，这里只做去空白/去重这类不改变意图的整理。
 	s.Channels = sanitizeWithdrawalChannels(s.Channels)
+	s.NotifyEmails = sanitizeWithdrawalNotifyEmails(s.NotifyEmails)
 	s.Notice = strings.TrimSpace(s.Notice)
 	// 开着开关却一个渠道都没有，是一个只会在供给者点下申请时才暴露的错。
 	if s.Enabled && len(s.Channels) == 0 {
@@ -314,5 +387,6 @@ func cloneSupplyWithdrawalSettings(settings *SupplyWithdrawalSettings) *SupplyWi
 	}
 	clone := *settings
 	clone.Channels = append([]string(nil), settings.Channels...)
+	clone.NotifyEmails = append([]string(nil), settings.NotifyEmails...)
 	return &clone
 }

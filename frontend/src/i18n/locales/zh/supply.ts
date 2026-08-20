@@ -304,6 +304,7 @@ export default {
       openNotice: '提现已开放。供给者提交申请时金额立刻从可用余额扣除，等待你在「供给运营」页处理。',
       closedNotice: '提现关闭中。供给者的余额照常累积，只是取不走。',
       noChannelNotice: '提现开着，但一个收款渠道都没配——供给者会看到一个点不动的入口。要么补上渠道，要么直接关掉开关。',
+      noNotifyNotice: '提现开着，渠道也配了，但没有任何人会收到新申请的通知——后台不会自己弹出来，而供给者的钱在提交那一刻就已经扣了。请在下面填上收件人。',
       enabled: '开启提现',
       enabledHint: '关闭后余额照常累积，只是不能申请提现。已提交的单子不受影响。',
       minAmount: '起提金额',
@@ -313,6 +314,11 @@ export default {
       channels: '收款渠道',
       channelsPlaceholder: '一行一个，例如：\nUSDT-TRC20\n支付宝\n银行卡',
       channelsHint: '一行一个，最多 {max} 个、每个不超过 {len} 字。供给者提交时按**完全相等**匹配（只忽略首尾空格），所以 USDT 和 usdt 是两个不同的渠道，改名等于把老渠道下线。',
+      notifyEmails: '新申请通知收件人',
+      // vue-i18n 把裸 @ 当 linked-message 语法，必须用 {'@'} 转义，否则整个
+      // locale 编译失败（localesMessageCompile.spec.ts 会拦下来）。
+      notifyEmailsPlaceholder: "finance{'@'}example.com\nops{'@'}example.com",
+      notifyEmailsHint: '一行一个，最多 {max} 个、每个不超过 {len} 字。留空 = 没有任何人知道有单要处理。与配额告警的收件人是两份配置：收钱的是财务，收告警的是运维。格式填错会**保存失败**并告诉你是哪一个，不会被悄悄丢掉。',
       notice: '给供给者的说明',
       noticePlaceholder: '到账时效、手续费、需要提供的信息……',
       noticeHint: '显示在供给者的提现表单上，纯文本，最多 {max} 字。',

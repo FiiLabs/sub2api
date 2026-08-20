@@ -360,6 +360,10 @@ type SupplyWithdrawalSettingsResponse struct {
 	Channels   []string `json:"channels"`
 	Notice     string   `json:"notice"`
 
+	// NotifyEmails 新申请到达时通知谁。见 service.SupplyWithdrawalSettings 的
+	// 同名字段：这个列表为空 + 提现开着，是一个真实的坏状态。
+	NotifyEmails []string `json:"notify_emails"`
+
 	// Available = 开着 **且** 至少配了一个渠道。开关开着却一个渠道都没配是一种
 	// 静默失效：面板显示"已开启"，供给者点提现却被硬拒。把这个布尔一起下发，
 	// 运营在设置页就能看见自己配漏了，而不是等供给者来报。
@@ -371,6 +375,13 @@ type SupplyWithdrawalSettingsResponse struct {
 	ChannelsMax   int     `json:"channels_max"`
 	ChannelMaxLen int     `json:"channel_max_len"`
 	NoticeMaxLen  int     `json:"notice_max_len"`
+
+	NotifyEmailsMax   int `json:"notify_emails_max"`
+	NotifyEmailMaxLen int `json:"notify_email_max_len"`
+
+	// NotifyConfigured 开着提现 **且** 至少配了一个收件人。与 Available 同一个
+	// 用途：把一个只在运行期才会暴露的坏状态提前搬到设置页上。
+	NotifyConfigured bool `json:"notify_configured"`
 }
 
 func newSupplyWithdrawalSettingsResponse(s *service.SupplyWithdrawalSettings) SupplyWithdrawalSettingsResponse {
@@ -381,6 +392,10 @@ func newSupplyWithdrawalSettingsResponse(s *service.SupplyWithdrawalSettings) Su
 		ChannelMaxLen: service.SupplyWithdrawalChannelMaxLen,
 		NoticeMaxLen:  service.SupplyWithdrawalNoticeMaxLen,
 		Channels:      []string{},
+
+		NotifyEmailsMax:   service.SupplyWithdrawalNotifyEmailsMax,
+		NotifyEmailMaxLen: service.SupplyWithdrawalNotifyEmailMaxLen,
+		NotifyEmails:      []string{},
 	}
 	if s == nil {
 		return resp
@@ -391,8 +406,12 @@ func newSupplyWithdrawalSettingsResponse(s *service.SupplyWithdrawalSettings) Su
 	if len(s.Channels) > 0 {
 		resp.Channels = append([]string(nil), s.Channels...)
 	}
+	if len(s.NotifyEmails) > 0 {
+		resp.NotifyEmails = append([]string(nil), s.NotifyEmails...)
+	}
 	resp.Notice = s.Notice
 	resp.Available = s.Available()
+	resp.NotifyConfigured = s.Enabled && len(s.NotifyEmails) > 0
 	return resp
 }
 
@@ -413,6 +432,8 @@ type UpdateSupplyWithdrawalSettingsRequest struct {
 	MaxPending int      `json:"max_pending"`
 	Channels   []string `json:"channels"`
 	Notice     string   `json:"notice"`
+	// NotifyEmails 同理：不传等于清空收件人。
+	NotifyEmails []string `json:"notify_emails"`
 }
 
 // UpdateSupplyWithdrawalSettings 写提现参数
@@ -429,11 +450,12 @@ func (h *SettingHandler) UpdateSupplyWithdrawalSettings(c *gin.Context) {
 	}
 
 	settings := &service.SupplyWithdrawalSettings{
-		Enabled:    req.Enabled,
-		MinAmount:  req.MinAmount,
-		MaxPending: req.MaxPending,
-		Channels:   req.Channels,
-		Notice:     req.Notice,
+		Enabled:      req.Enabled,
+		MinAmount:    req.MinAmount,
+		MaxPending:   req.MaxPending,
+		Channels:     req.Channels,
+		Notice:       req.Notice,
+		NotifyEmails: req.NotifyEmails,
 	}
 	if err := h.settingService.SetSupplyWithdrawalSettings(c.Request.Context(), settings); err != nil {
 		response.BadRequest(c, err.Error())

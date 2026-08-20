@@ -34,20 +34,54 @@ type supplierWithdrawalWalletReader interface {
 	EnsureWallet(ctx context.Context, userID int64) (*SupplierCreditSummary, error)
 }
 
+// supplierWithdrawalNotifierPort 是通知出口。做成接口而不是直接持有
+// *SupplierWithdrawalNotifier，是为了让测试能在不碰 SMTP 的前提下断言
+// 「哪一步该发信、哪一步不该发」——尤其是撤回**不该**发信这一条，只有
+// 能观察到"没调用"才钉得住。
+type supplierWithdrawalNotifierPort interface {
+	NotifyRequested(w *SupplierWithdrawal)
+	NotifyResolved(w *SupplierWithdrawal)
+}
+
 // SupplierWithdrawalService 是提现的应用服务。
 type SupplierWithdrawalService struct {
 	repo     SupplierWithdrawalRepository
 	wallet   supplierWithdrawalWalletReader
 	settings supplierWithdrawalSettingsReader
+	notifier supplierWithdrawalNotifierPort
 }
 
 // NewSupplierWithdrawalService 构造提现服务。
+//
+// notifier 允许为 nil：通知不可用绝不能让提现不可用。调用点因此一律走
+// s.notify*，那几个方法自己做 nil 判断。
 func NewSupplierWithdrawalService(
 	repo SupplierWithdrawalRepository,
 	creditRepo SupplierCreditRepository,
 	settingService *SettingService,
+	notifier *SupplierWithdrawalNotifier,
 ) *SupplierWithdrawalService {
-	return &SupplierWithdrawalService{repo: repo, wallet: creditRepo, settings: settingService}
+	s := &SupplierWithdrawalService{repo: repo, wallet: creditRepo, settings: settingService}
+	// 显式判 nil 再赋值：一个装着 nil 指针的非 nil 接口会让下面的 nil 判断失效，
+	// 于是"通知没配"变成一次空指针 panic，而 panic 的位置在提现主路径上。
+	if notifier != nil {
+		s.notifier = notifier
+	}
+	return s
+}
+
+func (s *SupplierWithdrawalService) notifyRequested(w *SupplierWithdrawal) {
+	if s == nil || s.notifier == nil || w == nil {
+		return
+	}
+	s.notifier.NotifyRequested(w)
+}
+
+func (s *SupplierWithdrawalService) notifyResolved(w *SupplierWithdrawal) {
+	if s == nil || s.notifier == nil || w == nil {
+		return
+	}
+	s.notifier.NotifyResolved(w)
 }
 
 func (s *SupplierWithdrawalService) ready() bool {
@@ -163,7 +197,7 @@ func (s *SupplierWithdrawalService) Request(ctx context.Context, userID int64, r
 		return nil, ErrSupplierWithdrawalBelowMinimum
 	}
 
-	return s.repo.Create(ctx, SupplierWithdrawalCreateParams{
+	created, err := s.repo.Create(ctx, SupplierWithdrawalCreateParams{
 		UserID:        userID,
 		Amount:        req.Amount,
 		PayoutChannel: strings.TrimSpace(req.PayoutChannel),
@@ -171,6 +205,14 @@ func (s *SupplierWithdrawalService) Request(ctx context.Context, userID int64, r
 		UserNote:      note,
 		MaxPending:    settings.MaxPending,
 	})
+	if err != nil {
+		return nil, err
+	}
+	// 通知在落库**之后**：钱已经扣了、单子已经在了，这封信才是真的。
+	// 反过来（先发信后落库）会在 Create 撞上未决单上限时发出一封关于不存在的
+	// 单子的邮件。
+	s.notifyRequested(created)
+	return created, nil
 }
 
 // Cancel 供给者撤回自己的未决单，钱退回可用区。
@@ -241,7 +283,7 @@ func (s *SupplierWithdrawalService) MarkPaid(ctx context.Context, id int64, revi
 	if len([]rune(strings.TrimSpace(note))) > SupplierWithdrawalNoteMaxLen {
 		return nil, infraerrors.BadRequest("SUPPLIER_WITHDRAWAL_NOTE_TOO_LONG", "note is too long")
 	}
-	return s.repo.Resolve(ctx, SupplierWithdrawalResolveParams{
+	resolved, err := s.repo.Resolve(ctx, SupplierWithdrawalResolveParams{
 		ID:          id,
 		Status:      SupplierWithdrawalStatusPaid,
 		ReviewerID:  reviewerID,
@@ -249,6 +291,11 @@ func (s *SupplierWithdrawalService) MarkPaid(ctx context.Context, id int64, revi
 		ReviewNote:  note,
 		ExternalRef: externalRef,
 	})
+	if err != nil {
+		return nil, err
+	}
+	s.notifyResolved(resolved)
+	return resolved, nil
 }
 
 // Reject 拒绝一张单子，钱退回可用区。
@@ -266,13 +313,18 @@ func (s *SupplierWithdrawalService) Reject(ctx context.Context, id int64, review
 	if len([]rune(trimmed)) > SupplierWithdrawalNoteMaxLen {
 		return nil, infraerrors.BadRequest("SUPPLIER_WITHDRAWAL_NOTE_TOO_LONG", "note is too long")
 	}
-	return s.repo.Resolve(ctx, SupplierWithdrawalResolveParams{
+	resolved, err := s.repo.Resolve(ctx, SupplierWithdrawalResolveParams{
 		ID:         id,
 		Status:     SupplierWithdrawalStatusRejected,
 		ReviewerID: reviewerID,
 		Refund:     true,
 		ReviewNote: trimmed,
 	})
+	if err != nil {
+		return nil, err
+	}
+	s.notifyResolved(resolved)
+	return resolved, nil
 }
 
 // isKnownWithdrawalStatus 状态白名单。

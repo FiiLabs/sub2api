@@ -31,24 +31,39 @@ type supplierWithdrawalRepoStub struct {
 	pendingErr error
 	createErr  error
 	resolveErr error
+
+	// createRowOnErr 让 Create 在报错的同时也返回一行。真实仓储里「半个结果 +
+	// 一个错误」的形状很常见，而只有这个形状能区分「先看 err 再通知」和
+	// 「先通知再看 err」：createErr 单独用时 created 是 nil，通知会被
+	// notifyRequested 的 nil 守卫挡住，于是调用顺序错了也测不出来。
+	createRowOnErr  bool
+	resolveRowOnErr bool
 }
 
 func (s *supplierWithdrawalRepoStub) Create(_ context.Context, params SupplierWithdrawalCreateParams) (*SupplierWithdrawal, error) {
 	s.calls++
 	s.createParams = params
+	row := &SupplierWithdrawal{ID: 1, UserID: params.UserID, Amount: params.Amount, Status: SupplierWithdrawalStatusPending}
 	if s.createErr != nil {
+		if s.createRowOnErr {
+			return row, s.createErr
+		}
 		return nil, s.createErr
 	}
-	return &SupplierWithdrawal{ID: 1, UserID: params.UserID, Amount: params.Amount, Status: SupplierWithdrawalStatusPending}, nil
+	return row, nil
 }
 
 func (s *supplierWithdrawalRepoStub) Resolve(_ context.Context, params SupplierWithdrawalResolveParams) (*SupplierWithdrawal, error) {
 	s.calls++
 	s.resolveParams = params
+	row := &SupplierWithdrawal{ID: params.ID, Status: params.Status}
 	if s.resolveErr != nil {
+		if s.resolveRowOnErr {
+			return row, s.resolveErr
+		}
 		return nil, s.resolveErr
 	}
-	return &SupplierWithdrawal{ID: params.ID, Status: params.Status}, nil
+	return row, nil
 }
 
 func (s *supplierWithdrawalRepoStub) List(_ context.Context, filter SupplierWithdrawalFilter) ([]SupplierWithdrawal, int64, error) {
@@ -500,4 +515,169 @@ func TestWithdrawalServicePropagatesRepoErrors(t *testing.T) {
 			MarkPaid(context.Background(), 42, nil, "", "")
 		require.ErrorIs(t, err, ErrSupplierWithdrawalNotPending)
 	})
+}
+
+// ============================================================================
+// 通知：哪一步该发信、哪一步不该
+//
+// 「不该发」的两条比「该发」更值得测：撤回补一封信只是噪音，而失败的操作发信
+// 是在告诉供给者一件没有发生的事——他会以为钱已经扣了，然后来问为什么余额没变。
+// 这两条只有能观察到"没调用"才钉得住，所以通知出口做成了接口。
+// ============================================================================
+
+type withdrawalNotifierSpy struct {
+	requested []SupplierWithdrawal
+	resolved  []SupplierWithdrawal
+}
+
+func (s *withdrawalNotifierSpy) NotifyRequested(w *SupplierWithdrawal) {
+	if w != nil {
+		s.requested = append(s.requested, *w)
+	}
+}
+
+func (s *withdrawalNotifierSpy) NotifyResolved(w *SupplierWithdrawal) {
+	if w != nil {
+		s.resolved = append(s.resolved, *w)
+	}
+}
+
+func newWithdrawalServiceWithNotifier(
+	repo SupplierWithdrawalRepository,
+	settings *SupplyWithdrawalSettings,
+) (*SupplierWithdrawalService, *withdrawalNotifierSpy) {
+	spy := &withdrawalNotifierSpy{}
+	svc := newWithdrawalService(repo, settings, &supplierWithdrawalWalletStub{available: 1000})
+	svc.notifier = spy
+	return svc, spy
+}
+
+func TestWithdrawalRequestNotifies(t *testing.T) {
+	repo := &supplierWithdrawalRepoStub{}
+	svc, spy := newWithdrawalServiceWithNotifier(repo, openWithdrawalSettings())
+
+	_, err := svc.Request(context.Background(), 7, SupplierWithdrawalRequest{
+		Amount: 100, PayoutChannel: "USDT", PayoutAccount: "T-addr",
+	})
+	require.NoError(t, err)
+	require.Len(t, spy.requested, 1, "新申请必须通知：运营不被叫过来，这张单可以躺三天")
+	assert.Equal(t, int64(7), spy.requested[0].UserID)
+	assert.Empty(t, spy.resolved)
+}
+
+// 申请失败不发信。发了就是在告诉供给者一件没有发生的事。
+func TestWithdrawalRequestDoesNotNotifyOnFailure(t *testing.T) {
+	cases := []struct {
+		name string
+		repo *supplierWithdrawalRepoStub
+		req  SupplierWithdrawalRequest
+	}{
+		{
+			name: "落库失败（撞未决单上限）",
+			repo: &supplierWithdrawalRepoStub{createErr: ErrSupplierWithdrawalTooManyPending},
+			req:  SupplierWithdrawalRequest{Amount: 100, PayoutChannel: "USDT", PayoutAccount: "T-addr"},
+		},
+		{
+			name: "校验没过（低于起提额）",
+			repo: &supplierWithdrawalRepoStub{},
+			req:  SupplierWithdrawalRequest{Amount: 1, PayoutChannel: "USDT", PayoutAccount: "T-addr"},
+		},
+		{
+			// 落库失败但仓储仍然回了一行。这一例钉的是**调用顺序**：通知必须在
+			// err 检查之后，否则就会发出一封关于一张并不存在的单子的邮件，而
+			// 供给者会以为自己的余额被扣了。
+			name: "落库失败但返回了半个结果",
+			repo: &supplierWithdrawalRepoStub{createErr: ErrSupplierWithdrawalTooManyPending, createRowOnErr: true},
+			req:  SupplierWithdrawalRequest{Amount: 100, PayoutChannel: "USDT", PayoutAccount: "T-addr"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, spy := newWithdrawalServiceWithNotifier(tc.repo, openWithdrawalSettings())
+			_, err := svc.Request(context.Background(), 7, tc.req)
+			require.Error(t, err)
+			assert.Empty(t, spy.requested, "失败的申请不该发出任何通知")
+		})
+	}
+}
+
+func TestWithdrawalMarkPaidAndRejectNotify(t *testing.T) {
+	cases := []struct {
+		name   string
+		invoke func(*SupplierWithdrawalService) error
+		status string
+	}{
+		{
+			name: "已打款",
+			invoke: func(svc *SupplierWithdrawalService) error {
+				_, err := svc.MarkPaid(context.Background(), 3, nil, "TX-1", "")
+				return err
+			},
+			status: SupplierWithdrawalStatusPaid,
+		},
+		{
+			name: "被拒绝",
+			invoke: func(svc *SupplierWithdrawalService) error {
+				_, err := svc.Reject(context.Background(), 3, nil, "收款账号无效")
+				return err
+			},
+			status: SupplierWithdrawalStatusRejected,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, spy := newWithdrawalServiceWithNotifier(&supplierWithdrawalRepoStub{}, openWithdrawalSettings())
+			require.NoError(t, tc.invoke(svc))
+			require.Len(t, spy.resolved, 1)
+			assert.Equal(t, tc.status, spy.resolved[0].Status)
+		})
+	}
+}
+
+// 撤回是供给者自己刚点的按钮，界面上已经有确认框和 toast。再补一封邮件只是噪音，
+// 而噪音的代价是他开始忽略这个发件人——包括下一封"你的提现被拒了"。
+func TestWithdrawalCancelDoesNotNotify(t *testing.T) {
+	svc, spy := newWithdrawalServiceWithNotifier(&supplierWithdrawalRepoStub{}, openWithdrawalSettings())
+	_, err := svc.Cancel(context.Background(), 7, 3)
+	require.NoError(t, err)
+	assert.Empty(t, spy.resolved, "撤回不该发信")
+	assert.Empty(t, spy.requested)
+}
+
+// 审批失败（单子已经不是 pending 了）同样不发信。
+func TestWithdrawalResolveDoesNotNotifyOnFailure(t *testing.T) {
+	// resolveRowOnErr：见 createRowOnErr 的注释。没有这一行的话，resolved 是
+	// nil，拦住通知的是 notifyResolved 的 nil 守卫而不是这里要钉的 err 检查顺序。
+	repo := &supplierWithdrawalRepoStub{resolveErr: ErrSupplierWithdrawalNotPending, resolveRowOnErr: true}
+	svc, spy := newWithdrawalServiceWithNotifier(repo, openWithdrawalSettings())
+
+	_, err := svc.MarkPaid(context.Background(), 3, nil, "", "")
+	require.Error(t, err)
+	assert.Empty(t, spy.resolved, "一笔没成功的打款不该告诉供给者钱已经到账")
+}
+
+// 没配通知时提现必须照常工作。这条看着像废话，但它挡住的是一个真实的写法：
+// 把 notifier 直接塞进结构体而不判 nil，于是"没配邮件"变成提现主路径上的
+// 一次空指针 panic。
+func TestWithdrawalWorksWithoutNotifier(t *testing.T) {
+	svc := newWithdrawalService(&supplierWithdrawalRepoStub{}, openWithdrawalSettings(), &supplierWithdrawalWalletStub{available: 1000})
+	require.True(t, svc.notifier == nil) //nolint:testifylint // 见 TestNewWithdrawalServiceKeepsNilNotifierNil
+
+	_, err := svc.Request(context.Background(), 7, SupplierWithdrawalRequest{
+		Amount: 100, PayoutChannel: "USDT", PayoutAccount: "T-addr",
+	})
+	assert.NoError(t, err)
+
+	_, err = svc.MarkPaid(context.Background(), 3, nil, "", "")
+	assert.NoError(t, err)
+}
+
+// 构造函数收到一个 nil 的 *SupplierWithdrawalNotifier 时，字段必须仍是 nil 接口。
+// 直接赋值的话会得到一个"非 nil 接口装着 nil 指针"，上面那条 nil 判断就失效了。
+func TestNewWithdrawalServiceKeepsNilNotifierNil(t *testing.T) {
+	svc := NewSupplierWithdrawalService(&supplierWithdrawalRepoStub{}, nil, nil, nil)
+	// 用 == nil 而不是 assert.Nil：testify 的 Nil 会对"接口里装着一个 nil 指针"
+	// 也返回 true，而那恰好就是这条测试要拦的东西——它会把自己要测的 bug 判成通过。
+	// 生产代码里的 `s.notifier == nil` 用的是这里这个语义。
+	assert.True(t, svc.notifier == nil, "typed-nil 接口会让所有 nil 判断失效") //nolint:testifylint
 }

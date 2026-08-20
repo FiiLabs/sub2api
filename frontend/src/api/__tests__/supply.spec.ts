@@ -202,6 +202,55 @@ describe('admin supply market api', () => {
     })
   })
 
+  it('writes the withdrawal notify recipients, never the derived notify_configured', async () => {
+    // notify_emails 是配置，notify_configured 是后端由 enabled + 收件人算出来的
+    // 只读结论。把后者 PUT 回去，管理员就在声称"通知已配好"——而那件事只由
+    // 收件人列表是否为空决定。同理 available 与那两个 *_max。
+    const put = vi.fn().mockResolvedValue({ data: {} })
+    const client = (await import('@/api/client')).apiClient as unknown as Record<string, unknown>
+    client.put = put
+
+    await adminSupplyMarketAPI.updateWithdrawalSettings({
+      enabled: true,
+      min_amount: 100,
+      max_pending: 3,
+      channels: ['USDT'],
+      notice: '',
+      notify_emails: ['finance@example.com'],
+    })
+
+    expect(put).toHaveBeenCalledWith('/admin/settings/supply-withdrawal', {
+      enabled: true,
+      min_amount: 100,
+      max_pending: 3,
+      channels: ['USDT'],
+      notice: '',
+      notify_emails: ['finance@example.com'],
+    })
+  })
+
+  it('keeps an empty recipient list in the payload — it means "notify nobody"', async () => {
+    // 与 daily_overflow_limit: 0 同理，但后果更重：被过滤掉的话后端当成"没填"
+    // 而保留旧收件人，于是管理员以为自己把通知关了，信还在发给已经离职的人。
+    const put = vi.fn().mockResolvedValue({ data: {} })
+    const client = (await import('@/api/client')).apiClient as unknown as Record<string, unknown>
+    client.put = put
+
+    await adminSupplyMarketAPI.updateWithdrawalSettings({
+      enabled: false,
+      min_amount: 100,
+      max_pending: 3,
+      channels: [],
+      notice: '',
+      notify_emails: [],
+    })
+
+    expect(put).toHaveBeenCalledWith(
+      '/admin/settings/supply-withdrawal',
+      expect.objectContaining({ notify_emails: [] })
+    )
+  })
+
   it('keeps 0 in the payload — it means unlimited, not "unset"', async () => {
     // 0 被过滤掉的话后端会当成「没填」而保留旧配额，管理员点了保存却发现限制还在。
     const put = vi.fn().mockResolvedValue({ data: {} })
