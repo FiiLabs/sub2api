@@ -872,7 +872,7 @@ var ProviderSet = wire.NewSet(
 	// APEXONE-EXT: 双边市场——管理端运营视图服务（只读聚合）。
 	NewSupplierAdminService,
 	// APEXONE-EXT: 双边市场——提现（申请扣款 / 人工打款 / 拒绝退款）及其邮件通知。
-	NewSupplierWithdrawalNotifier,
+	ProvideSupplierWithdrawalNotifier,
 	NewSupplierWithdrawalService,
 	ProvidePaymentConfigService,
 	ProvidePaymentService,
@@ -930,6 +930,25 @@ func ProvidePaymentOrderExpiryService(paymentSvc *PaymentService, lockCache Lead
 func ProvideSupplierCreditService(repo SupplierCreditRepository, settingService *SettingService) *SupplierCreditService {
 	SetSupplierClawbackHandler(NewSupplierClawbackService(repo))
 	return NewSupplierCreditService(repo, settingService)
+}
+
+// APEXONE-EXT: ProvideSupplierWithdrawalNotifier 构造提现通知器，并顺手装配拒付通知器。
+//
+// 两者共用同一个收件人列表（supply_withdrawal_settings.notify_emails，理由见
+// payment_dispute_notify.go 文件头），也共用同一个发信通道，所以它们的依赖完全一样。
+// 挂在这里而不是给拒付通知器单起一个 provider：那个 provider 没有任何消费者
+// （拒付通知是通过进程级单例被 PaymentService 找到的），wire 会把它整个剪掉，
+// 于是线上第一次拒付时没有任何人收到信——与 ProvideSupplierCreditService 里
+// 那段注释说的是同一个坑。
+func ProvideSupplierWithdrawalNotifier(
+	emailService *EmailService,
+	userRepo UserRepository,
+	settingService *SettingService,
+) *SupplierWithdrawalNotifier {
+	if emailService != nil && settingService != nil {
+		SetPaymentDisputeNotifier(NewPaymentDisputeNotifier(emailService, settingService))
+	}
+	return NewSupplierWithdrawalNotifier(emailService, userRepo, settingService)
 }
 
 // APEXONE-EXT: ProvideSupplierThawService 创建并启动供给冻结额释放任务。

@@ -63,6 +63,21 @@ func ProvideSchedulerCache(rdb *redis.Client, cfg *config.Config) service.Schedu
 	return newSchedulerCacheWithChunkSizes(rdb, mgetChunkSize, writeChunkSize)
 }
 
+// APEXONE-EXT: ProvideSupplierCreditRepository 构造赚取钱包仓储，并顺手把争议台账
+// 装配进 service 层的进程级单例。
+//
+// 争议台账（payment_disputes）的消费者是 PaymentService，但 service 不能 import
+// repository（方向反了），所以它只能走单例注入。而单例注入的东西没有 wire 意义上的
+// 消费者——单给它起一个 provider 会被剪掉，剪掉的表现是线上第一次拒付时
+// store == nil，副作用一件不做、只留一条日志。挂在一个「一定会被构造」的宿主上是
+// 目前唯一可靠的办法，与 service.ProvideSupplierCreditService 挂追回入口同理。
+//
+// 选赚取钱包仓储做宿主，是因为拒付追回改的正是它管的那张表。
+func ProvideSupplierCreditRepository(client *ent.Client) service.SupplierCreditRepository {
+	service.SetPaymentDisputeStore(NewPaymentDisputeRepository(client))
+	return NewSupplierCreditRepository(client)
+}
+
 // ProviderSet is the Wire provider set for all repositories
 var ProviderSet = wire.NewSet(
 	NewUserRepository,
@@ -102,8 +117,8 @@ var ProviderSet = wire.NewSet(
 	NewChannelMonitorRequestTemplateRepository,
 	NewContentModerationRepository,
 	NewAffiliateRepository,
-	// APEXONE-EXT: 双边市场——供给者赚取钱包仓储。
-	NewSupplierCreditRepository,
+	// APEXONE-EXT: 双边市场——供给者赚取钱包仓储（顺带装配争议台账单例）。
+	ProvideSupplierCreditRepository,
 	// APEXONE-EXT: 双边市场——供给者自助接入仓储。
 	NewSupplierOnboardingRepository,
 	// APEXONE-EXT: 双边市场——溢出日配额计数。

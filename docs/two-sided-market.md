@@ -103,6 +103,10 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 | 提现参数配置 | `internal/service/setting_supply_withdrawal.go` | — | 第五个 JSON settings key `supply_withdrawal_settings`（开关 / 起提额 / 每人未决单上限 / 收款渠道白名单 / 给供给者的说明 / **运营通知收件人**）。越界**报错不 clamp**，与结算参数同侧、与观察期参数相反，理由见 §3.7 |
 | 提现 HTTP | `internal/handler/supplier_withdrawal_handler.go`、`internal/handler/admin/setting_handler_supplier.go`、`internal/server/routes/supplier.go` | — | 供给者侧四条（`options` / 列表 / 申请 / 撤回，申请那条额外挂 `panelRateLimiter.Heavy()`）；管理端三条（列表 / 标记已打款 / 拒绝），方法挂在 `*SupplierAdminHandler` 上；设置一对挂在既有 `*SettingHandler` 上。返回视图剥掉 `user_id`/`reviewer_id` |
 | 提现前端 | `frontend/src/api/supply.ts`、`api/admin/supplyMarket.ts`、`views/user/SupplyView.vue`、`views/admin/SupplyOperationsView.vue`、`views/admin/SupplyMarketView.vue` | — | 供给者侧一张提现卡（在收益与接入之间）+ 申请记录表；运营页在看板下方加一段审批队列——**这是运营页唯一的写路径**，§3.6 的"整层只读"因此改成"只读 + 这一个例外"；配置页第五张卡 |
+| 争议台账 | `internal/service/payment_dispute.go`（类型+接口+编排）、`internal/repository/payment_dispute_repo.go`（SQL） | `231` | `payment_disputes`：拒付的唯一事实来源。`settled_at` 是"扣钱只跑一次"的闸，重复 upsert 碰不到它。见 §3.8 |
+| 争议事件解析 | `internal/payment/provider/stripe_dispute.go`、`internal/payment/dispute.go`（类型与 `DisputeAwareProvider` 接口） | — | 五种 `charge.dispute.*` 都认，**款项动没动只看 `status`**：四种 warning/prevented 是询证，返回 `(nil, nil)`；未知状态一律按"钱没动"。core 的 Stripe provider 一行未动（同包新文件） |
+| 争议 webhook 分派 | `internal/handler/payment_webhook_dispute.go` | — | 挂在既有 webhook 的 `notification == nil` 分支上，不新开路由（Stripe 一个 endpoint 收全部事件）。core 侵入两行，见 core touch #10 |
+| 争议通知 | `internal/service/payment_dispute_notify.go` | — | 三种状态三封信，收件人复用 `supply_withdrawal_settings.notify_emails`。全程 best-effort、异步、不用请求 ctx。信里必须写清**收信人现在该做什么**——应诉窗只有几天 |
 
 **结算参数现在有人填了，但默认是关的**。`GetSupplierSettlementSettings` 读那个 JSON key，`ToBillingParams()` 在总开关关闭时返回全零值——也就是计费里「什么都不做」的那一支。配置行不存在（当前生产状态）、JSON 损坏、数据库读失败，一律回退到关闭：这是**刻意的 fail-closed**，与本包其他网关行为设置的 fail-open 相反。网关设置读不到时放行请求最多少一层加工；结算参数读不到时按猜测值给钱，错的是账。打开开关要管理员在「双边市场」页显式保存一次（`PUT /api/v1/admin/settings/supplier-settlement`）。
 
@@ -226,6 +230,24 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 
 **返回视图剥掉 `user_id` 与 `reviewer_id`，但保留 `review_note` 与 `external_ref`**。前两个是身份，出网就是一份 id 序列（同 §3.6 的 `source_user_id`）；后两个是供给者必须看到的：一张被拒的单子不给理由，等于让他重新提交一次同样被拒的单。`external_ref`（打款凭证号）是他去自己的收款渠道对账的唯一抓手。剥离做在 handler 的 `supplierWithdrawalView` 上——与 §3.6 那处做在 service 层不同，因为提现单类型本来就只有供给者侧和管理端两个消费者，且管理端走的是另一个 handler，没有"日后再挂一个 handler 会重新漏"的面。
 
+### 3.8 拒付／争议的八条边界（改动前先读）
+
+**这是不变量 2 的另一半，而且是更重要的那一半**。§3.1 末段那条 clawback 挂在**我们主动发起的退款**上；这一节挂在**别人替我们发起的退款**上——持卡人绕过平台直接找发卡行撤销交易。区别在于后者不产生任何 `payment_intent` 事件、我们不发起任何请求，在 `payment_disputes` 这张表出现之前，`charge.dispute.*` 走到 provider 那个 switch 里命中 `return nil, nil`，webhook 回 200，然后**什么都不发生**。拒付是这套系统里唯一一件平台会真的赔钱的事，它此前在库里没有任何痕迹。
+
+**副作用只挂在 `open` 上，不等 `closed`**。Stripe 在创建争议的同时就把款项从我们账上扣走；等争议关闭要 60–90 天，那时冻结区里对应的分成早已解冻、甚至已经提现出去。「等结果出来再说」听起来稳妥，实际是保证追不回来。代价是判我们赢时会出现一次"多扣了"——那由下一条处理。
+
+**赢了不自动回补，这是刻意的**。争议判赢时钱回到我们账上，但已经扣掉的消费者余额与已经追回的供给分成**不自动还回去**。回补消费者余额是一行加法；回补供给者的分成不是——追回撤销的是一条条带各自冻结到期时间的入账，「重新入账」是一条全新的写路径，跑两遍就是凭空造钱。而只补消费者、不补供给者，等于让干活的那一方独自承担一次判错，比两边都不补更糟。所以胜诉那封信里必须原样写着「系统不会自动回补」并把两个该补的数字摆出来，由人去补。这条是 §6 里的待定策略。
+
+**"款项动没动"只看 `status`，与事件名无关**。五种 `charge.dispute.*` 带的是同一个 Dispute 对象，钱在谁手里完全写在 `status` 里。四种 warning/prevented 是**询证**：Stripe 通知我们有人在问，款项一分没动，必须返回 `(nil, nil)`。把询证认成拒付，运营看到的现象是「有人问了一句，供给者的钱就没了」。将来 Stripe 新增的任何状态一律默认按"钱没动"处理——漏一次追回可以事后补，凭空收走供给者的钱不能。
+
+**幂等闸在库里，不在代码里**。`payment_disputes.settled_at` 非空 = 两个副作用已经跑过。UPSERT 的 `ON CONFLICT` 子句里**完全没有** `settled_at` 与四个结算金额，`ClaimForSettlement` 是一条 `UPDATE ... WHERE settled_at IS NULL RETURNING id`。这两件事合起来才成立：同一个争议 Stripe 会推五次，其中 `closed` 那次几乎必然发生在结算之后，upsert 若能把闸门推回去，这笔拒付就会被扣第二遍。ON CONFLICT 里另外几条 `COALESCE`/`CASE` 防的是同一类事的另一个方向——后到的推送字段未必更全（`payment_intent` 展开与否在不同事件里不一样），直接 `EXCLUDED` 覆盖会让一条本来对上了订单的记录在几十天后变成对不上。`basis_amount` 结算后冻住，因为那时它已经是对账凭据而不是一个待定的估算。这一组全部由真库测试反证过（见 §8）。
+
+**对不上订单的争议照样落库，而且是最该有人看的一类**。同一个 Stripe 账户被多套环境（预发／另一个部署）共用时，webhook 会推来别人的争议；那种情况下 `order_id` 为 NULL，行仍然要写，日志用 WARN 而不是 ERROR（它未必是故障），邮件里明说「系统没有对任何余额或分成做过改动」并把人指到支付后台去认领。这张表因此**刻意没有外键**。
+
+**订阅订单的拒付走人工**。余额订单要扣回的是一个数，订阅订单要撤的是天数——那件事需要 `GetActiveSubscription` + `ExtendSubscription`/`Revoke` 一整套，且有「订阅已经过期撤不动」的分支。在一条不能失败、不能重试、不能回滚的 webhook 上跑那套，失败时没有任何补救路径。所以只扣余额订单，订阅订单的处置写在给运营的邮件里。
+
+**失败不让 webhook 报错**。返回 error 会让 handler 回 500，Stripe 于是重投；而重投打到的是同一个已经 claim 过的争议，副作用不会再跑一遍（`settled_at` 挡着），重投唯一的效果是刷日志。所以这条路径上的错误一律记 ERROR 后咽掉，webhook 照常回 200——真正需要人介入的信息在日志和运营邮件里，不在 HTTP 状态码里。同理**通知不能成为新的失败方式**：`PaymentDisputeNotifier` 没装配时静默返回，与追回单例同样的理由。但**台账没装配时仍然留一条 ERROR 日志**，那是「拒付发生过」的唯一痕迹。
+
 ## 4. Core Touch 台账
 
 core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APEXONE-EXT:` 可 grep 标记 + 详尽注释 + 单测。下表随实现逐行填。
@@ -249,12 +271,14 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 | 8 | `backend/internal/server/routes/admin.go` | `registerSettingsRoutes` 末尾 | 追加十二行路由 + 一行 `// APEXONE-EXT:` 注释（结算 / 供给池 / 观察期 / 供给者协议 / 提现 / 接入上限各一对 GET+PUT） | 挂进既有 settings group 而不是自起一个 admin group：那个 group 上有 adminAuth + 面板限流 + 审计 + `AdminComplianceGuard` 四层中间件，复制一份等着它日后与上游漂移，而漂移掉的是合规相关的那几层。handler 方法挂在既有的 `*SettingHandler` 上，因此 wire、`AdminHandlers`、`ProvideAdminHandlers` 三处热区一处没动 | **已做** |
 | 7 | `backend/internal/service/gateway_scheduling.go` | :97 函数签名 | **仅函数改名**：`SelectAccountWithLoadAwareness` → `selectAccountInPoolWithLoadAwareness`，函数体一字未改。导出名归新文件 `gateway_supply_overflow.go` 里的同名包装函数 | 交接件说的「零 core 溢出」不成立（见 §2）。耗尽有十几个 return 点，逐个插判断等于把一条新规则摊成十几处侵入；改名 + 外层包装是**一处**。合并冲突面小到只有一行签名，且上游若改了函数体，冲突会照常落在函数体上而不被包装掩盖 | **已做** |
 | 7a | — （**未覆盖面，记账用**） | `openai_codex_models_handler.go:44`、`gateway_handler.go:2058` | 这两处走的是 `SelectAccountForModel`，不经包装函数，因此**不溢出** | 首版切片的供给池只面向 Claude Code 形态消费，这两条路径不在范围内。若日后供给池扩到 codex 形态，需在此处补同样的包装 | 已知缺口 |
+| 5g | `backend/internal/repository/wire.go` + `backend/internal/service/wire.go` + `backend/cmd/server/wire_gen.go` | 两个 ProviderSet；`wire_gen.go` 两行 | `NewSupplierCreditRepository` → `ProvideSupplierCreditRepository`（内部调 `SetPaymentDisputeStore`）；`NewSupplierWithdrawalNotifier` → `ProvideSupplierWithdrawalNotifier`（内部调 `SetPaymentDisputeNotifier`） | 争议台账与通知器都是进程级单例，理由同 #5d/#5e（不往 `PaymentService` 上加字段）。**台账只能从 repository 那侧装配**：`repository` import `service`，反过来不成立。宿主选 `ProvideSupplierCreditRepository` 有两条理由：wire 保证会构造它（单例注入的东西没有消费者，独立 provider 会被剪掉 → 第一次真实拒付时 `store == nil`，见 #5a/#5c 那个坑），且追回写的正是它拥有的那张表。通知器同理挂在提现通知器上——两者共用同一份 `notify_emails` | **已做** |
+| 10 | `backend/internal/handler/payment_webhook_handler.go` | `handleNotify` 的 `notification == nil` 分支 | 插入两行：一行 `// APEXONE-EXT:` 注释 + 一行 `h.handleDisputeNotify(...)`。逻辑全在新文件 `payment_webhook_dispute.go` | 争议事件挂在既有 webhook 上而不是新开路由：Stripe 后台一个 endpoint 收全部事件类型，分流要运营在后台再配一个 endpoint 并勾对事件类型——那是一件不做也不报错、做错了也不报错的运维动作，而它错了的表现是「拒付静默地不被处理」，与上线前一模一样。挂的位置是 `notification == nil`，那个分支的含义正是「验签通过但不是我们认识的支付事件」，因此**支付主链路一行不动**，认得的支付事件根本走不到这里。同步执行而非 goroutine：Stripe 超时 20 秒，而这条路径通常几十毫秒；异步会让失败日志与本次推送对不上号 | **已做** |
 | 9 | `backend/internal/server/routes/admin.go` | `registerSettingsRoutes(admin, h)` 之后 | 加 `registerSupplyMarketRoutes(admin, h)` 一行 + 一行 `// APEXONE-EXT:` 注释；函数体定义在 `routes/supplier.go` | 管理端运营视图的七条路由（四条只读 + 提现审批那三条：列表 / 标记已打款 / 拒绝）。写路径为什么能进这一层见 §3.6 首段。挂进既有 admin group（adminAuth + 面板限流 + 审计 + `AdminComplianceGuard` 四层中间件），理由同 #8。handler **不进 `AdminHandlers`** 而是挂在既有的 `Handlers.Supplier` 下（`h.Supplier.Admin`）——`AdminHandlers` 结构体、`ProvideAdminHandlers` 形参表、`handler/wire.go` 是三处上游合并热区，每加一个管理端 handler 就要各留一行。用户侧与管理侧刻意是**两个类型**：路由挂错时是编译期的事，而不是把一个全站流水接口挂到了 `/user/supply` 下面 | **已做** |
 
 ## 5. 结算不变量（实现必须守住）
 
 1. **消耗 === 入账**：failover 后只有产出被计费响应的账号入账（以 `usage_log.account_id` 为准）；失败/重试/无计费产出零入账。accrue 幂等键 = `usage_log.RequestID`。
-2. **冻结窗 ≥ 拒付窗**：使「已释放 = 拒付安全」。冻结期内拒付 → 从供给者冻结 earnings 追回（`SupplierCreditRepository.Clawback`，退款成功后触发）；释放后拒付平台自吃。冻结窗配小了不会报错，只会让追回**撤不满**——缺口体现为 `UncoveredBasis > 0` 与一条 `slog.Warn`，这是这条不变量在运营期唯一的可观测信号。
+2. **冻结窗 ≥ 拒付窗**：使「已释放 = 拒付安全」。冻结期内拒付 → 从供给者冻结 earnings 追回（`SupplierCreditRepository.Clawback`），**两个触发点走同一个入口**：我们主动发起的退款成功之后（§3.1 末段），以及持卡人发起的拒付（§3.8，`charge.dispute.created`）。释放后拒付平台自吃。冻结窗配小了不会报错，只会让追回**撤不满**——缺口体现为 `UncoveredBasis > 0`、一条 `slog.Warn`，以及 `payment_disputes.uncovered_basis` 里一个可以累计查询的数。这是这条不变量在运营期唯一的可观测信号，也是 §6 里 `freeze_hours` 该调到多少的唯一一手数据。
 3. **同一请求只扣一处**：赚取钱包或 `users.balance`，由 `applyUsageBillingEffects` 单点保证。
 4. **审计快照**：ledger 每条带快照，供给者可自行核对计量。
 
@@ -272,12 +296,13 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 | `share_ratio` | 0.70 | 供给者分成，基数 = 消费者实付（非官方价） |
 | `spend_from_wallet_first` | `false` | 与 `enabled` 分开是有意的：可以先只开入账让供给者攒着，等钱包侧观察稳了再打开消费出口 |
 | 供给池 `rate_multiplier` | 0.5 | 消费者价 = 0.5× 官方价。**不在这两个 key 里**，是分组自己的 `rate_multiplier` 字段，管理端分组页配 |
-| `freeze_hours` | `168`（7 天，**占位**） | 须 ≥ 支付通道拒付窗。7 天只是能跑通流程的占位值，**上线前必须按 Stripe/支付方实际拒付窗重设**（Stripe 争议窗远长于 7 天），否则不变量 2「已释放 = 拒付安全」不成立。代码侧只 clamp 到 90 天上限，拦不住「配小了」——这一条只能靠人 |
+| `freeze_hours` | `168`（7 天，**占位**）→ 建议上线前改 `720`（30 天） | 须 ≥ 支付通道拒付窗。7 天只是能跑通流程的占位值，**上线前必须按 Stripe/支付方实际拒付窗重设**，否则不变量 2「已释放 = 拒付安全」不成立。代码侧只 clamp 到 90 天上限（`SupplierFreezeHoursMax = 2160`），拦不住「配小了」——这一条只能靠人。**建议值 720（30 天）**：卡组织规则允许持卡人在结算后 120 天内发起争议，理论上"安全"要 2880 小时，但那意味着供给者干完活四个月才拿得到钱，没有人会来供货；实际拒付的绝大多数落在交易后一个月内。30 天是「追得回大部分 + 供给者还愿意来」的折中，而漏掉的那条尾巴不是无声的——它落在 `payment_disputes.uncovered_basis` 上。**上线一个月后按那一列的真实累计值再调**，而不是继续拍脑袋 |
 | 自营池 `rate_multiplier` | `1.0`（**占位**） | 需覆盖真实 API 成本 + 毛利，上线前重设 |
 | `daily_overflow_limit` | `0`（不限量，**待定**） | 溢出的日次数上限，在 `supply_pool_settings` 里。默认 0 = 不限量但照常计数——先跑几天看真实溢出量再定值，凭空拍一个上限会在供给正常波动时误伤。打开溢出后应尽快设成一个可预算的数：这是「按自营成本供货却按供给池价收费」这笔亏损的唯一硬上限 |
 | 观察期强度/时长 | `enabled=false`、60 分钟、连续 2 次、探测间隔 15 分钟、排空窗 10 分钟 | 已参数化，落在 `supply_probation_settings` 里。默认**不自动入池**：先让它探测、记录，运营看几天再打开。这些数字是能跑通流程的起步值，不是标定过的 |
 | 每人账号数上限 | `5` | 已参数化，落在 `supply_onboarding_settings.max_accounts_per_user`。0 = 不限。只是礼貌性护栏——换个用户就绕过了，见 §3.3 |
 | 每 IP 账号数上限 N | `0`（不限，**待定**） | 已参数化，落在 `supply_onboarding_settings.max_accounts_per_ip`。默认关是刻意的：CGNAT / 校园网 / 公司出口后面是成百上千个真实的人，凭空拍一个住宅户级小 N 会静默挡掉他们，而这类误伤没有人会来报障。应当先看几周真实 IP 分布，再配一个远大于「一户人家」的数，之后按 IP 封禁率收紧 |
+| 胜诉后是否回补 | **不回补**（当前实现） | 见 §3.8。判我们赢时消费者余额与供给者分成都不自动还回去，只发一封把两个数字摆好的信给运营，由人补。要把它自动化，缺的不是那行加法而是「重新入账」这条写路径——它必须自己是幂等的，否则一次重投就是凭空造钱。真实拒付量起来之前不值得为它新增一条能造钱的路径；`payment_disputes` 里 `status='won' AND settled_at IS NOT NULL` 的行数就是判断"值不值得"的读数 |
 
 ## 7. 上游合并检查单
 
@@ -319,14 +344,17 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 | 226 + 224 | `supplier_onboarding_repo_integration_test.go`（9 例，新文件） | 会话一次性领取（`UPDATE ... WHERE consumed_at IS NULL RETURNING` 的行锁语义）；拿别人 session_id 领不走且**失败的领取不会把会话标记成已消费**（否则是一条免费的拒绝服务）；过期判定用数据库时钟；已消费的会话不被过期清理带走；`owner_user_id` 写一次即定、不能从 A 改成 B；按状态扫号时**状态缺失兜底成 `pending_review`**（拼接 SQL 与 service 常量的契约，漂移了是静默失效）；上游 uuid 查重不看归属也不看 `schedulable`；**邮箱查重大小写不敏感**（`LOWER()` 比对真的走得通，不是靠 sqlmock 认字符串）；未知身份键是报错而非静默放行 |
 | 227 | `supply_overflow_repo_integration_test.go`（5 例，新文件） | **并发下不超发**：60 个 goroutine 抢 10 次配额，放行数必须恰好 10。这是那条 `ON CONFLICT DO UPDATE ... WHERE` 存在的全部理由，写成"先 SELECT 再 UPDATE"在这个测试里必挂。另有配额跨日重置、被拒次数单独计、不限量时照常计数 |
 | —（无迁移相关） | `supplier_leader_lock_integration_test.go`（5 例，新文件） | 多实例选主。此前只有两组单进程测试：service 侧一个内存假锁、repository 侧 miniredis，都答不出部署时真正关心的那个问题——**N 个实例同时起来，到底有几个跑了这一轮**。真后端证的是：真 Redis 下持锁期间后来者一个都进不来、释放后新实例立刻能进（不会永久饿死）、锁的 TTL 真的设上了、八个实例同时起跑只选出一个 leader 且**同时在跑的永远只有一个**；Redis 报错时真的退到了 Postgres advisory lock（去 `pg_locks` 里按 fnv 算出的 id 认那把锁，"裸跑"与"持锁"在这里才分得开）且释放时连会话一起收掉；解冻与生命周期用的是两把不同的锁。写法上从 `Start()` 打进去，走的是与生产完全一致的路径 |
+| 231（**2026-08-20 补**） | `payment_dispute_repo_integration_test.go`（9 例，新文件） | 这张表的全部保证都写在一条 UPSERT 的 `ON CONFLICT` 子句里，而 sqlmock 只会把那条 SQL 原样还回来。真库证的是：`ON CONFLICT (dispute_id)` 真的推断得到迁移 231 的唯一索引（推断不上不是降级而是报错，表现为"第二次推送整条 webhook 500"）；**结算之后再来的推送碰不到 `settled_at` 与四个结算金额**，也碰不到已冻住的 `basis_amount`——这是"一笔拒付只扣一遍钱"的最后一道保证；结算之前 `basis_amount` 仍可被修正；订单关联**只补不覆盖**（孤儿争议事后能被补上订单，已对上的不会被字段更少的推送打回孤儿）；`resolved_at` 只记第一次关闭；`ClaimForSettlement` 串行重放五次只有第一次拿到 true，**16 个 goroutine 同时抢也恰好只有一个赢**；空 `dispute_id` 在进库前就被三个方法各自拦下 |
 | —（无新迁移） | `supplier_admin_repo_integration_test.go`（7 例，新文件） | 运营视图全是跨表聚合，sqlmock 只会把写好的 SQL 原样还回来，连 `COUNT(*) FILTER (...)` 是不是合法都不知道。真库证的是：自营账号（`owner_user_id IS NULL`）一个都没混进任何一个数字；jsonb 状态缺失兜底进 `pending_review`；看板人数恒等于名册分页总数，且**号全删了但钱包还有余额的人仍在名册里**；四个排序键的 `ORDER BY` 片段都真的合法、翻页不重不漏；未知排序键报错；健康度/状态/归属三个筛子各自成立且观察期字段真的从 jsonb 里解得出来；流水窗口用的是数据库时钟（`NOW() - make_interval(days => $1)` 的参数类型推断只有真库能证），把行挪到 60 天前它就从 30 天窗口里消失、把窗口拉到 90 天它又回来 |
 
-并发那一例刻意**不走 `testEntTx`**：那个 harness 是一个会回滚的单事务，会把所有写串行化，正好掩盖掉要测的东西。它用 `integrationEntClient` 直连并自行清理。
+并发那两例（溢出配额、争议占坑）刻意**不走 `testEntTx`**：那个 harness 是一个会回滚的单事务，会把所有写串行化，正好掩盖掉要测的东西。它们用 `integrationEntClient` 直连并自行清理。
 
 运营视图那一组反过来必须走 `testEntTx`，但断言一律是**先取基线、再比增量**：那几个查询是全站聚合，写死绝对值等于假设整个库里只有这一个测试的数据，那个假设迟早被下一个测试文件打破。
 
 选主那一组两样都不用：它测的是跨进程互斥，任何事务隔离都会把它变成自说自话。它直连 `integrationDB` 与 `testRedis(t)`，用一个能把任务体卡住的仓储桩制造"一轮还没跑完"的窗口。文件放在 `internal/repository` 而不是 `internal/service`，因为判定逻辑在 service、锁实现在 repository，而 service 不能反向 import——**组装起来的样子**只有在 repository 里才看得见。
 
-这五例都用改坏实现的方式反证过确实会红：把 `SETNX` 换成 `SET`（互斥失效）、去掉"缓存报错退到数据库"那条分支（变成裸跑）、把 advisory lock 的 `db.Conn` 换成 `db.QueryRow`（连接还回池子后同会话可重入，互斥静默消失）——三种改法各自被对应的用例逮住。
+迁移 231 是 2026-08-20 才加进来的，它那一组按同样的规矩补齐（10 处 SQL 变异逐条反证：把 `settled_at` 塞进 `SET` 列表、去掉 `basis_amount` 的 `CASE`、把 `COALESCE` 换成裸 `EXCLUDED`、拿掉占坑的 `AND settled_at IS NULL`、把冲突键指到没有唯一索引的列上等，每一条都被对应用例逮住）。
+
+选主那五例都用改坏实现的方式反证过确实会红：把 `SETNX` 换成 `SET`（互斥失效）、去掉"缓存报错退到数据库"那条分支（变成裸跑）、把 advisory lock 的 `db.Conn` 换成 `db.QueryRow`（连接还回池子后同会话可重入，互斥静默消失）——三种改法各自被对应的用例逮住。
 
 **仍未验证的**（不在真库能力范围内，需要活的上游）：真实 OAuth 授权码兑换。

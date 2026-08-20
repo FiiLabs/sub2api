@@ -117,6 +117,8 @@ func (h *PaymentWebhookHandler) handleNotify(c *gin.Context, providerKey string)
 
 	// nil notification means irrelevant event (e.g. Stripe non-payment event); return success.
 	if notification == nil {
+		// APEXONE-EXT: 争议（拒付）事件正是从这里掉下去的，见 payment_webhook_dispute.go。
+		h.handleDisputeNotify(c.Request.Context(), providers, rawBody, headers)
 		writeSuccessResponse(c, resolvedProviderKey)
 		return
 	}
