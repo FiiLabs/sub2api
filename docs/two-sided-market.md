@@ -88,7 +88,7 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 | 溢出日配额与计数 | `internal/service/supply_overflow_budget.go`（闸门+接口）、`internal/repository/supply_overflow_repo.go`（SQL） | `227` | 溢出前先过日配额闸门：判定与计数是**同一条** `ON CONFLICT DO UPDATE ... WHERE` 语句，并发下不会超发；被拦下的次数单独计入 `denied_count`。计数不可用时 fail-closed（不溢出）。见 §3.2 |
 | 供给者自助接入 | `internal/service/supplier_onboarding.go`（类型+接口）、`supplier_onboarding_service.go`（编排）、`internal/repository/supplier_onboarding_repo.go`（SQL） | `226` | 持久化 OAuth 会话 + 建号 + 写归属 + 入池；见 §3.3 |
 | OAuth 协议层复用 | `internal/service/oauth_service_supplier.go` | — | 把 PKCE 生成与兑换从上游进程内的 `sessionStore` 解耦出来。同包新文件，**core 侵入为零**（`exchangeCodeForToken` 未导出，同包才调得到） |
-| 供给侧 HTTP | `internal/handler/supplier_handler.go`、`internal/server/routes/supplier.go` | — | `/api/v1/user/supply/*`：status / oauth 两步 / accounts 增删挂起 / wallet / ledger。中间件与用户面一字不差（JWT + BackendModeUserGuard + 面板限流 + 审计）；所有端点的用户 id **只**取自 JWT，没有一个接受 `user_id` 入参 |
+| 供给侧 HTTP | `internal/handler/supplier_handler.go`、`internal/server/routes/supplier.go` | — | `/api/v1/user/supply/*`：status / oauth 两步 / accounts 增删挂起 / wallet / ledger。中间件与用户面一字不差（JWT + BackendModeUserGuard + 面板限流 + 审计），这个"一字不差"由 `supplier_test.go` 逐字比对钉住（见 §9）；所有端点的用户 id **只**取自 JWT，没有一个接受 `user_id` 入参 |
 | 接入上限配置 | `internal/service/setting_supply_onboarding.go` | — | 第六个 JSON settings key `supply_onboarding_settings`（每人账号数上限 / 每来源 IP 账号数上限），缓存形态同上。两个字段都以 **0 = 不限** 为约定，越界 clamp 后照存（与观察期同侧）。刻意不折进 `supply_probation_settings`：那个 key 的 `enabled` 意思是「自动入池」，而上限必须在它关着时照样生效，见 §3.3 |
 | 接入来源记录 | `internal/repository/supplier_onboarding_repo.go`（三条 SQL）、`internal/service/supplier_onboarding_service.go`（`requireCapacity`） | `230` | `supplier_account_origins`：一个号是从哪个出口 IP 挂上来的。每 IP 上限的判据。**刻意无外键**——本仓销号是软删，`ON DELETE CASCADE` 永不触发，那条 COUNT 因此 `JOIN accounts` 排掉已删的号。见 §3.3 |
 | 观察期参数配置 | `internal/service/setting_supply_probation.go` | — | 第三个 JSON settings key `supply_probation_settings`（自动入池开关 / 最短观察时长 / 连续成功次数 / 探测间隔 / 探测模型 / 排空窗），缓存形态同上。与另外两组**刻意不同**：越界值 clamp 后照存而不是报错，见 §3.5 |
@@ -317,6 +317,8 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 7. 验证 `frontend/dist` → `backend/internal/web/dist` embed 同步
 8. 跑 `go build ./...`、`go test -tags unit ./...`、backend-ci
 
+第 4 步里有一处**不需要靠人眼盯**：`routes/user.go` 的中间件链一旦被上游改动（多一层合规闸、多一道封禁检查），`routes/supplier.go` 会安静地少那一层——不报错、不变红。`internal/server/routes/supplier_test.go` 里那条链清单把两个文件逐字比对，上游这么改的时候它会红，见 §9。
+
 ### v0.1.177 同步实录（2026-08-18）
 
 - 规模：719 files, +66,088 / −4,547；fork 侧 59 个自有提交
@@ -358,3 +360,40 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 选主那五例都用改坏实现的方式反证过确实会红：把 `SETNX` 换成 `SET`（互斥失效）、去掉"缓存报错退到数据库"那条分支（变成裸跑）、把 advisory lock 的 `db.Conn` 换成 `db.QueryRow`（连接还回池子后同会话可重入，互斥静默消失）——三种改法各自被对应的用例逮住。
 
 **仍未验证的**（不在真库能力范围内，需要活的上游）：真实 OAuth 授权码兑换。
+
+## 9. 路由装配的验证实录（2026-08-20）
+
+`internal/server/routes/` 此前对供给侧**零覆盖**。这一层出错的方式恰好是最安静的一类：路由挂错组、少一层中间件、新加的一条忘了跟着挂——三种都不会让任何 handler 报错，只会让一条本该要登录的接口不要登录，或者一条会动余额的写接口不进审计日志。
+
+`supplier_test.go`（不带 build tag，与 `internal/server/routes` 其余测试一致，`make test-unit` 与 `make test-integration` 两边都跑到）分两类断言：
+
+**行为类**——从 `router.Routes()` 反推，而不是照着 `supplier.go` 抄一遍路径清单。后者只能证明"我写的和我写的一样"，前者对将来新增的每一条路由自动生效，而"新加的一条忘了挂"正是要防的那种遗漏。三条：十五条用户路由每一条都真的走过 JWT 与审计（审计桩 abort 掉，于是依赖全空的 handler 一次也没被调用）；未登录时十五条一条不漏地 401；管理端七条挂在 admin 组下，未登录同样一条都进不去。
+
+**清单类**——三处只能从源码读，因为它们在装配测试里**观测不到**：
+
+| 钉住的东西 | 为什么行为测不出来 |
+|---|---|
+| 中间件链与 `RegisterUserRoutes` 逐字相同（含顺序） | `BackendModeUserGuard(nil)` 与 `panelRateLimiter.Global()` 拿到 nil 依赖时都直接 `c.Next()`，与"根本没挂"是同一个观测结果。顺序同理：审计必须**最后**，否则被前面几层挡下的请求会在审计日志里留下一条根本没发生的"某某访问了提现接口" |
+| Heavy 限流的挂载点恰好是 `oauth/start` / `oauth/complete` / `POST /withdrawals` | `Heavy()` 与 `Global()` 在没有 Redis 的测试里都放行，注册结果里分辨不出谁是谁。而这三条的**反面**（撤回提现、解绑账号、同意协议不套 Heavy）最容易被"顺手加一层更安全"改掉——那等于在供给者最急着把钱拿回来、最想撤回授权的时候让他做不到，测试因此把这三条也单独点名 |
+| 管理端的写路径只有提现审批那两条 POST | §3.6 那条边界（整层只读，唯一例外是提现审批）在后端唯一的落点。前端有一条同形状的断言钉住 API 客户端的写方法清单；两边都要求"加一条写接口先改断言"，也就是先停下来想一下这个写动作该不该出现在一个看板里 |
+
+加上三道判空（`h` / `h.Supplier` / `h.Supplier.Admin` 任一为 nil 时一条路由都不注册）：wire 装配失误时正确的表现是这些接口 404，不是一打就 502。管理端那半边直接调 `registerSupplyMarketRoutes` 而不走 `RegisterAdminRoutes`，因为后者在 `h.Admin` 为 nil 时会自己先崩（上游既有行为，每个 `registerXxxRoutes` 都直接读 `h.Admin.<字段>`），那样测的就成了上游的容错。
+
+### 9.1 「我是谁」只有一个来源
+
+路由挂对了，还剩另一半：handler 自己会不会认一个来自请求的身份。`internal/handler/supplier_identity_test.go` 只证这一件事。
+
+它单独成文，是因为这条性质失守时**没有任何症状**。多读一个 `user_id` 入参不会让任何测试变红、不会让任何请求报错，只会让一个人能把账号挂到别人名下、能查别人的流水、能把钱提到自己这里——三件事看起来都像功能正常工作。行为测试也覆盖不到：要发现它，得先想到去构造一个"带着 A 的 token、请求体里写 B"的请求，也就是得先怀疑这段代码。
+
+因此断言是**结构性**的——不检查某次调用的结果，检查这段代码里有没有第二条路径可以回答"我是谁"：
+
+- `*SupplierHandler` 上全部 16 个导出方法（= 15 条用户路由，`ListWithdrawals` 用户侧与管理侧同名分属两个类型）每一个都走 `h.currentUserID(c)` 或 `h.mutateAccount(...)`。收敛到一个入口，是让"取不到 id 时怎么办"这个决定只有一份——十六份实现里迟早有一份忘了在 `!ok` 时 return，于是它带着 `userID=0` 往下走。
+- `mutateAccount` 自己第一件事就是取 id。没有这条，上一条可以被"随便加个走 mutateAccount 的方法"绕过。
+- 用户侧一行都不从请求里读 `user_id`（query / form / param / json tag 四种写法各查一遍）。这是上一条的另一半：上面证的是"正确的来源被用了"，这条证的是"没有第二个来源"——一个方法完全可以既调 `currentUserID`、又在请求体里认一个 `user_id` 覆盖掉它。
+- 用户侧直接读 JWT 上下文的地方**恰好一处**。管理侧（`reviewerID` 之后那半边）不在此列：那里的 `user_id` 是筛子，是运营视图该有的东西，鉴权在路由组的 adminAuth 上。
+
+4 处变异反证：某个端点绕过 `currentUserID` 直接读 JWT 上下文 / 请求体结构里多一个 `user_id` 字段 / `mutateAccount` 先动账号再确定是谁 / 提现申请改从查询参数拿 `user_id`。
+
+### 9.2 变异清单
+
+路由层 12 处变异逐条反证：去掉审计层 / 把路由挂到未认证的 `v1` 组上 / `POST /withdrawals` 丢掉 Heavy / 给 `DELETE /accounts/:id` 套上 Heavy / 运营视图多一条写接口 / 少一条只读接口 / 去掉两道判空各一次 / 去掉后台模式闸 / 去掉面板限流 / 把审计挪到 JWT 之前 / **在 `user.go` 里给用户组加一层而供给侧不动**——每一条都被对应用例逮住。最后那条是这组测试存在的主要理由，它模拟的就是下一次同步上游时最可能发生的事。
