@@ -465,3 +465,96 @@ func (h *SettingHandler) UpdateSupplyWithdrawalSettings(c *gin.Context) {
 	response.Success(c, newSupplyWithdrawalSettingsResponse(
 		h.settingService.GetSupplyWithdrawalSettings(c.Request.Context())))
 }
+
+// SupplyOnboardingSettingsResponse 是接入数量上限的对外形态。
+type SupplyOnboardingSettingsResponse struct {
+	MaxAccountsPerUser int `json:"max_accounts_per_user"`
+	MaxAccountsPerIP   int `json:"max_accounts_per_ip"`
+
+	// 边界值随配置下发，理由同结算参数的 *_max。
+	MaxAccountsPerUserCap int `json:"max_accounts_per_user_cap"`
+	MaxAccountsPerIPCap   int `json:"max_accounts_per_ip_cap"`
+
+	// 两个「这道闸现在有没有在起作用」的布尔。
+	//
+	// 0 在这两项上表示「不限」，而一个显示成 0 的输入框看起来更像「没配」。前端
+	// 抄一遍 `> 0` 也能算出来，但那就把「0 是什么意思」这条规则复制到了第二处——
+	// 后端哪天改用 -1 表示不限，面板会在没有任何报错的情况下说反话。
+	UserCapEnabled bool `json:"user_cap_enabled"`
+	IPCapEnabled   bool `json:"ip_cap_enabled"`
+}
+
+func newSupplyOnboardingSettingsResponse(s *service.SupplyOnboardingSettings) SupplyOnboardingSettingsResponse {
+	resp := SupplyOnboardingSettingsResponse{
+		MaxAccountsPerUserCap: service.SupplyOnboardingMaxAccountsPerUserMax,
+		MaxAccountsPerIPCap:   service.SupplyOnboardingMaxAccountsPerIPMax,
+	}
+	if s == nil {
+		return resp
+	}
+	resp.MaxAccountsPerUser = s.MaxAccountsPerUser
+	resp.MaxAccountsPerIP = s.MaxAccountsPerIP
+	resp.UserCapEnabled = s.MaxAccountsPerUser > 0
+	resp.IPCapEnabled = s.MaxAccountsPerIP > 0
+	return resp
+}
+
+// GetSupplyOnboardingSettings 读接入数量上限
+// GET /api/v1/admin/settings/supply-onboarding
+func (h *SettingHandler) GetSupplyOnboardingSettings(c *gin.Context) {
+	settings := h.settingService.GetSupplyOnboardingSettings(c.Request.Context())
+	response.Success(c, newSupplyOnboardingSettingsResponse(settings))
+}
+
+// UpdateSupplyOnboardingSettingsRequest 更新接入数量上限请求。
+//
+// 两个字段都用指针，与供给池的 DailyOverflowLimit 同一个理由，而且这里更要紧：
+// 0 是「不限」这个有意义的取值，用值类型的话，任何漏传字段的旧前端都会把管理员
+// 配好的上限静默清成不限——一道消失了的闸不会报错，只会在事后从刷号数据里被看见。
+type UpdateSupplyOnboardingSettingsRequest struct {
+	MaxAccountsPerUser *int `json:"max_accounts_per_user"`
+	MaxAccountsPerIP   *int `json:"max_accounts_per_ip"`
+}
+
+// UpdateSupplyOnboardingSettings 写接入数量上限
+// PUT /api/v1/admin/settings/supply-onboarding
+//
+// 越界值在 service 侧夹回区间（与观察期参数一致），所以回读不只是习惯——它是运营
+// 看到自己填的 99999 变成 10000 的唯一途径。
+//
+// 漏传的字段沿用库里当前的值，不是清零。
+func (h *SettingHandler) UpdateSupplyOnboardingSettings(c *gin.Context) {
+	var req UpdateSupplyOnboardingSettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	ctx := c.Request.Context()
+	current := h.settingService.GetSupplyOnboardingSettings(ctx)
+	settings := &service.SupplyOnboardingSettings{
+		MaxAccountsPerUser: current.MaxAccountsPerUser,
+		MaxAccountsPerIP:   current.MaxAccountsPerIP,
+	}
+	if req.MaxAccountsPerUser != nil {
+		if *req.MaxAccountsPerUser < 0 {
+			response.BadRequest(c, "max_accounts_per_user cannot be negative")
+			return
+		}
+		settings.MaxAccountsPerUser = *req.MaxAccountsPerUser
+	}
+	if req.MaxAccountsPerIP != nil {
+		if *req.MaxAccountsPerIP < 0 {
+			response.BadRequest(c, "max_accounts_per_ip cannot be negative")
+			return
+		}
+		settings.MaxAccountsPerIP = *req.MaxAccountsPerIP
+	}
+	if err := h.settingService.SetSupplyOnboardingSettings(ctx, settings); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.Success(c, newSupplyOnboardingSettingsResponse(
+		h.settingService.GetSupplyOnboardingSettings(ctx)))
+}

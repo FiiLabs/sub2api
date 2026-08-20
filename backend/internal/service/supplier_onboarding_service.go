@@ -61,12 +61,14 @@ type supplierClaudeOAuth interface {
 	ExchangeSupplierCode(ctx context.Context, code string, auth *SupplierAuthorization) (*TokenInfo, error)
 }
 
-// supplierSettingsReader 读自助接入要用的三组配置：挂哪个分组，观察期多长，
-// 以及当前生效的供给者协议（见 supplier_agreement.go）。
+// supplierSettingsReader 读自助接入要用的四组配置：挂哪个分组，观察期多长，
+// 当前生效的供给者协议（见 supplier_agreement.go），以及接入的数量上限
+// （见 setting_supply_onboarding.go）。
 type supplierSettingsReader interface {
 	GetSupplyPoolSettings(ctx context.Context) *SupplyPoolSettings
 	GetSupplyProbationSettings(ctx context.Context) *SupplyProbationSettings
 	GetSupplyAgreementSettings(ctx context.Context) *SupplyAgreementSettings
+	GetSupplyOnboardingSettings(ctx context.Context) *SupplyOnboardingSettings
 }
 
 // supplierAccountStore 是自助接入用到的账号读写子集。
@@ -146,7 +148,10 @@ func (s *SupplierOnboardingService) probationSettings(ctx context.Context) *Supp
 }
 
 // StartOAuth 为 userID 发起一次授权，返回授权链接与会话句柄。
-func (s *SupplierOnboardingService) StartOAuth(ctx context.Context, userID int64) (*SupplierAuthorization, error) {
+//
+// clientIP 是发起方的出口地址，只用来判每 IP 上限。取不到（空串）时那道闸跳过，
+// 理由见 requireCapacity。
+func (s *SupplierOnboardingService) StartOAuth(ctx context.Context, userID int64, clientIP string) (*SupplierAuthorization, error) {
 	if s == nil || s.repo == nil || s.oauth == nil {
 		return nil, ErrSupplierOnboardingDisabled
 	}
@@ -160,6 +165,12 @@ func (s *SupplierOnboardingService) StartOAuth(ctx context.Context, userID int64
 	// 不拦的话，供给者会跑完一整遍上游授权之后才被告知"你还没同意协议"，
 	// 而那时他已经在 Anthropic 那边生成了一个 setup token。
 	if err := s.requireAgreement(ctx, userID); err != nil {
+		return nil, err
+	}
+	// 数量上限在这里同样只是体验（真正的那道也在 CompleteOAuth）。差别在于它比
+	// 协议门禁更值得前置：一个已经挂满的人走完整遍授权，末了被拒，手上还多出一个
+	// 他并不需要、也无从撤销的上游 setup token。
+	if err := s.requireCapacity(ctx, userID, clientIP); err != nil {
 		return nil, err
 	}
 
@@ -223,6 +234,12 @@ type CompleteOAuthInput struct {
 	Code      string
 	// Name 供给者给这个号起的备注名，可空。
 	Name string
+	// ClientIP 兑换方的出口地址。判每 IP 上限，并作为新账号的接入来源记下来。
+	//
+	// 取的是**兑换这一刻**的地址，而不是 StartOAuth 时那个（会话表里根本没存它）。
+	// 两者可以不同——授权链接在手机上打开、code 贴回电脑是很正常的操作——而对
+	// 「这个号是从哪挂上来的」这个问题，账号真正建出来的那一刻才是答案。
+	ClientIP string
 }
 
 // CompleteOAuth 兑换授权码并建出供给账号。
@@ -248,6 +265,16 @@ func (s *SupplierOnboardingService) CompleteOAuth(ctx context.Context, input *Co
 	// 手上那个授权码，得从头再授权一遍，而他被拒的原因（没同意协议）本来在第一行就
 	// 能判出来。
 	if err := s.requireAgreement(ctx, input.UserID); err != nil {
+		return nil, err
+	}
+	// 数量上限，**同样必须排在领会话之前**，理由与协议门禁一字不差：领取是一次性
+	// 消费，在它之后被拒的人会丢掉手上那个授权码，而"你已经挂满了"这件事在第一行
+	// 就能判出来。
+	//
+	// 这是不可绕过的那一道——StartOAuth 那道是体验。两道之间隔着一整段人类操作
+	// 时长（最长 15 分钟的会话有效期），期间他可能又挂上了一个号，也可能运营刚把
+	// 上限调低了。只有这一道是在建号之前紧挨着建号跑的。
+	if err := s.requireCapacity(ctx, input.UserID, input.ClientIP); err != nil {
 		return nil, err
 	}
 
@@ -307,6 +334,17 @@ func (s *SupplierOnboardingService) CompleteOAuth(ctx context.Context, input *Co
 		return nil, fmt.Errorf("set supply account owner: %w", err)
 	}
 
+	// 记接入来源。放在写归属之后：这一行说的是「这个**属于某人的**号从哪来」，
+	// 归属没写上时它没有意义。
+	//
+	// 失败不中断接入，只记日志。这不是随手兜底——号已经建出来、已经有主了，此刻
+	// 返回错误也不会撤销这两件事，只会让供给者看到一个"失败了"、实际却挂上了的号。
+	// 代价是每 IP 那道闸少数了这一个，日志里有据可查；收益是不会有半失败的接入。
+	if err := s.repo.RecordAccountOrigin(ctx, account.ID, input.UserID, strings.TrimSpace(input.ClientIP)); err != nil {
+		slog.Error("[SupplierOnboarding] failed to record account origin, per-IP limit will undercount",
+			"account_id", account.ID, "user_id", input.UserID, "error", err)
+	}
+
 	// 绑分组放在最后：绑上之后它就在供给池里了，只是还不可调度。
 	// 这一步失败不回滚——账号已经有主，删掉它等于替供给者做主销毁他的授权结果。
 	if err := s.accountRepo.BindGroups(ctx, account.ID, []int64{groupID}); err != nil {
@@ -316,6 +354,65 @@ func (s *SupplierOnboardingService) CompleteOAuth(ctx context.Context, input *Co
 	}
 
 	return newSupplierAccountView(account, s.probationSettings(ctx)), nil
+}
+
+// onboardingSettings 读接入数量上限；读不到返回默认值（每人 5 个、每 IP 不限）。
+//
+// 与 probationSettings 那个 nil 语义刻意相反：观察期参数算不出来就不显示，那是个
+// 展示问题；这里算不出来就没有闸，那是个准入问题。所以这个 getter 永远返回一份
+// 可用的配置——settings 服务缺失（依赖没接上）也一样，那种情况下让上限静默消失，
+// 会让一个装配错误变成一个安全洞。
+func (s *SupplierOnboardingService) onboardingSettings(ctx context.Context) *SupplyOnboardingSettings {
+	if s == nil || s.settings == nil {
+		return DefaultSupplyOnboardingSettings()
+	}
+	settings := s.settings.GetSupplyOnboardingSettings(ctx)
+	if settings == nil {
+		return DefaultSupplyOnboardingSettings()
+	}
+	return settings
+}
+
+// requireCapacity 判断「这个人、从这个网络，还能不能再挂一个号」。
+//
+// 两道闸各挡一件事，说明见 setting_supply_onboarding.go 头部。顺序是先人后网络：
+// 前者的拒绝理由他自己能纠正（解绑一个旧号），后者不能，先说能纠正的那个。
+//
+// 数出来的都是**当下还活着**的号，不是历史累计——解绑一个就腾出一个位置。
+//
+// # 为什么空 IP 是跳过而不是拒绝
+//
+// 拿不到客户端 IP 的成因是部署侧的（反向代理没配 X-Forwarded-For、trusted proxies
+// 没设对），不是用户侧的。在那种部署里拒绝所有人，等于让一个配置疏忽变成全站接入
+// 中断；而放行的代价只是这道本来就默认关着的闸暂时不生效。真要堵住这个口子，
+// 该做的是把代理配对，不是在这里立一道谁也过不去的门。
+func (s *SupplierOnboardingService) requireCapacity(ctx context.Context, userID int64, clientIP string) error {
+	if s == nil || s.repo == nil {
+		return ErrSupplierOnboardingDisabled
+	}
+	limits := s.onboardingSettings(ctx)
+
+	if limits.userCapEnabled() {
+		owned, err := s.repo.CountAccountsByOwner(ctx, userID)
+		if err != nil {
+			return fmt.Errorf("count owned supply accounts: %w", err)
+		}
+		if limits.userCapReached(owned) {
+			return ErrSupplierAccountLimitReached
+		}
+	}
+
+	clientIP = strings.TrimSpace(clientIP)
+	if limits.ipCapEnabled() && clientIP != "" {
+		fromIP, err := s.repo.CountAccountsByOriginIP(ctx, clientIP)
+		if err != nil {
+			return fmt.Errorf("count supply accounts by origin ip: %w", err)
+		}
+		if limits.ipCapReached(fromIP) {
+			return ErrSupplierNetworkLimitReached
+		}
+	}
+	return nil
 }
 
 // accountName 决定新号在管理端和供给者仪表盘里叫什么。

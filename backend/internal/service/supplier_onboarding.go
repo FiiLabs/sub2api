@@ -186,6 +186,12 @@ type SupplierOnboardingRepository interface {
 	GetAccountOwner(ctx context.Context, accountID int64) (int64, error)
 	// ListAccountIDsByOwner 列出某个供给者名下未删除的账号 id。
 	ListAccountIDsByOwner(ctx context.Context, userID int64) ([]int64, error)
+	// CountAccountsByOwner 数某个供给者名下未删除的账号有几个（每人上限那道闸）。
+	//
+	// 不复用 ListAccountIDsByOwner 再取 len：那条查询没有 LIMIT，而这道闸恰恰会在
+	// 「某人挂了异常多的号」时被触发——把最坏情况下最长的那个列表整个拉回内存，
+	// 只为了数一个数。COUNT 在数据库里做，这是它擅长的事。
+	CountAccountsByOwner(ctx context.Context, userID int64) (int, error)
 	// ListAccountIDsBySupplyState 列出处于某个接入状态的供给账号 id（观察期任务用）。
 	//
 	// 只扫 owner_user_id IS NOT NULL 的行：自营账号没有接入状态，也永远不该被
@@ -229,6 +235,22 @@ type SupplierOnboardingRepository interface {
 	// LatestAgreementAcceptance 查某人最近一次同意的记录；没有返回 (nil, nil)。
 	// 只用来在界面上区分「从没同意过」与「同意的是旧版」，不参与门禁判断。
 	LatestAgreementAcceptance(ctx context.Context, userID int64) (*SupplierAgreementAcceptance, error)
+
+	// RecordAccountOrigin 记一个新供给账号的接入来源 IP（迁移 230）。
+	//
+	// 幂等（account_id 是主键，冲突不覆盖）：重复调用保留第一次那行。一个账号只可能
+	// 被接入一次，第二次写进来的 IP 必然来自某条不该存在的路径，覆盖它等于把证据改掉。
+	//
+	// clientIP 为空时**不写行**：库里不该存在「来源未知」的记录，那种行会被按 IP 的
+	// COUNT 当成一个真实的来源聚在一起——反向代理没配好的部署里，那等于把所有人算成
+	// 同一个网络，一道闸瞬间变成全站封禁。
+	RecordAccountOrigin(ctx context.Context, accountID int64, userID int64, clientIP string) error
+	// CountAccountsByOriginIP 数某个来源 IP 上还活着的供给账号有几个（每 IP 上限那道闸）。
+	//
+	// 「还活着」= 对应的 accounts 行未被软删。来源表本身只增不删（它是取证材料），
+	// 所以这条查询必须 JOIN 回 accounts——否则一个正常换过几次号的供给者，
+	// 会被他自己早就解绑掉的历史记录顶到上限。
+	CountAccountsByOriginIP(ctx context.Context, clientIP string) (int, error)
 
 	// FindAccountIDByUpstreamIdentity 按某个上游身份键查已存在的账号，用于拒绝重复提交。
 	// 返回 0 表示没有。key 只接受 SupplierIdentityKeys 里的值，实现按它选一条写死的

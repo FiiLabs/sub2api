@@ -195,7 +195,7 @@ func TestStartOAuthRequiresAgreement(t *testing.T) {
 			}
 			svc := newAgreementService(t, repo, tc.agreementJSON)
 
-			_, err := svc.StartOAuth(context.Background(), 7)
+			_, err := svc.StartOAuth(context.Background(), 7, testClientIP)
 			assert.ErrorIs(t, err, tc.wantErr)
 			assert.Nil(t, repo.createdSession, "被协议挡住时不该写会话")
 		})
@@ -207,7 +207,7 @@ func TestStartOAuthPassesWhenAgreementAccepted(t *testing.T) {
 	repo.acceptAgreement(7, testAgreementVersion)
 	svc := newAgreementService(t, repo, publishedAgreementJSON())
 
-	_, err := svc.StartOAuth(context.Background(), 7)
+	_, err := svc.StartOAuth(context.Background(), 7, testClientIP)
 	require.NoError(t, err)
 	assert.NotNil(t, repo.createdSession)
 }

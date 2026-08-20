@@ -41,6 +41,20 @@ type supplierOnboardingRepoStub struct {
 
 	ownedIDs []int64
 	ownedErr error
+
+	// ownedCount / ownedCountErr 是每人上限那道闸读的数。
+	//
+	// 刻意**不**从 ownedIDs 推导：真实实现里那是两条不同的 SQL，让替身把它们绑成
+	// 一个数，就测不出「闸读错了来源」这类错误。默认 0 = 一个号都没挂。
+	ownedCount    int
+	ownedCountErr error
+
+	// countByIP 按 IP 索引已挂的号数，缺省的键返回 0。
+	countByIP     map[string]int
+	countByIPErr  error
+	countedIPs      []string
+	recordedOrigins []supplierOriginRecord
+	recordOriginErr error
 	// lookupIdentity 按 "键=值" 索引已存在的账号，例如 "account_uuid=uuid-1"。
 	// 拍平成一个 map 是为了让测试能一眼看出「哪个键上撞了」。
 	lookupIdentity map[string]int64
@@ -198,6 +212,39 @@ func (r *supplierOnboardingRepoStub) GetAccountOwner(_ context.Context, accountI
 func (r *supplierOnboardingRepoStub) ListAccountIDsByOwner(_ context.Context, _ int64) ([]int64, error) {
 	r.calls = append(r.calls, "ListAccountIDsByOwner")
 	return r.ownedIDs, r.ownedErr
+}
+
+// supplierOriginRecord 记下一次接入来源写入，字段顺序与仓储方法一致。
+type supplierOriginRecord struct {
+	accountID int64
+	userID    int64
+	clientIP  string
+}
+
+// 两个 COUNT 都不进 seq，与 FindAgreementAcceptance 同一个理由：那条流水记的是
+// 跨仓储的**写**顺序。它们相对于领会话的先后另有断言（看 r.calls）。
+func (r *supplierOnboardingRepoStub) CountAccountsByOwner(_ context.Context, _ int64) (int, error) {
+	r.calls = append(r.calls, "CountAccountsByOwner")
+	return r.ownedCount, r.ownedCountErr
+}
+
+func (r *supplierOnboardingRepoStub) CountAccountsByOriginIP(_ context.Context, clientIP string) (int, error) {
+	r.calls = append(r.calls, "CountAccountsByOriginIP")
+	r.countedIPs = append(r.countedIPs, clientIP)
+	if r.countByIPErr != nil {
+		return 0, r.countByIPErr
+	}
+	return r.countByIP[clientIP], nil
+}
+
+func (r *supplierOnboardingRepoStub) RecordAccountOrigin(_ context.Context, accountID, userID int64, clientIP string) error {
+	r.calls = append(r.calls, "RecordAccountOrigin")
+	r.record("RecordAccountOrigin")
+	if r.recordOriginErr != nil {
+		return r.recordOriginErr
+	}
+	r.recordedOrigins = append(r.recordedOrigins, supplierOriginRecord{accountID, userID, clientIP})
+	return nil
 }
 
 func (r *supplierOnboardingRepoStub) ListAccountIDsBySupplyState(_ context.Context, state string, _ int) ([]int64, error) {
@@ -416,6 +463,12 @@ func (s *supplierOAuthStub) ExchangeSupplierCode(_ context.Context, code string,
 
 const testOnboardingSupplyGroupID = int64(42)
 
+// testClientIP 是这些用例里"请求来自哪"的默认答案。
+//
+// 是一个非空值而不是 ""：空 IP 会让每 IP 那道闸整条跳过，用它当默认值等于让所有
+// 用例都在一条不具代表性的路径上跑。空 IP 自己有专门的用例。
+const testClientIP = "203.0.113.7"
+
 // newOnboardingService 组一个只带替身的服务。
 //
 // 直接构造结构体而不走 NewSupplierOnboardingService：构造函数吃的是具体类型
@@ -429,11 +482,30 @@ func newOnboardingService(
 	settingsJSON string,
 ) *SupplierOnboardingService {
 	t.Helper()
+	// 接入上限传空 = 走默认（每人 5 个、每 IP 不限）。默认值本身就是一道开着的闸，
+	// 所以这些用例里 repo.ownedCount 的默认 0 是有意义的前提，不是无关变量。
+	return newOnboardingServiceWithLimits(t, repo, store, oauth, settingsJSON, "")
+}
+
+// newOnboardingServiceWithLimits 同上，但显式指定接入上限那一份配置。
+//
+// 单开一个入口而不是给 newOnboardingService 加参数：上限只有那一组用例关心，
+// 让另外几十个调用点都跟着多写一个 "" 只会让它们更难读。
+func newOnboardingServiceWithLimits(
+	t *testing.T,
+	repo *supplierOnboardingRepoStub,
+	store *supplierAccountStoreStub,
+	oauth *supplierOAuthStub,
+	settingsJSON string,
+	onboardingJSON string,
+) *SupplierOnboardingService {
+	t.Helper()
 	// 默认场景是「协议已发布，且这个人已经同意」。协议门禁自己那一组用例会把
 	// 这两个前提逐个拆掉；其余用例测的是编排，不该每一个都先演一遍签字。
 	settingRepo := &supplyPoolSettingRepoStub{
-		value:          settingsJSON,
-		agreementValue: publishedAgreementJSON(),
+		value:           settingsJSON,
+		agreementValue:  publishedAgreementJSON(),
+		onboardingValue: onboardingJSON,
 	}
 	repo.agreementAcceptedByDefault = true
 	return &SupplierOnboardingService{
@@ -476,7 +548,7 @@ func TestSupplierOnboardingDisabledWhenSupplyPoolNotConfigured(t *testing.T) {
 
 			assert.False(t, svc.IsEnabled(context.Background()))
 
-			_, err := svc.StartOAuth(context.Background(), 7)
+			_, err := svc.StartOAuth(context.Background(), 7, testClientIP)
 			assert.ErrorIs(t, err, ErrSupplierOnboardingDisabled)
 
 			_, err = svc.CompleteOAuth(context.Background(), &CompleteOAuthInput{UserID: 7, SessionID: "s", Code: "c"})
@@ -500,7 +572,7 @@ func TestStartOAuthPersistsSessionWithOwner(t *testing.T) {
 	svc := newOnboardingService(t, repo, newSupplierAccountStoreStub(), oauth, enabledSupplyPoolJSON())
 
 	before := time.Now()
-	auth, err := svc.StartOAuth(context.Background(), 7)
+	auth, err := svc.StartOAuth(context.Background(), 7, testClientIP)
 	require.NoError(t, err)
 
 	assert.Equal(t, "https://claude.ai/oauth/authorize?state=st-1", auth.AuthURL)
@@ -523,7 +595,7 @@ func TestStartOAuthRequestsInferenceScopeOnly(t *testing.T) {
 	oauth := &supplierOAuthStub{}
 	svc := newOnboardingService(t, &supplierOnboardingRepoStub{}, newSupplierAccountStoreStub(), oauth, enabledSupplyPoolJSON())
 
-	_, err := svc.StartOAuth(context.Background(), 7)
+	_, err := svc.StartOAuth(context.Background(), 7, testClientIP)
 	require.NoError(t, err)
 	assert.Equal(t, "user:inference", oauth.requestScope)
 }
@@ -532,14 +604,14 @@ func TestStartOAuthRejectsTooManyPendingSessions(t *testing.T) {
 	repo := &supplierOnboardingRepoStub{pendingCount: supplierMaxPendingSessions}
 	svc := newOnboardingService(t, repo, newSupplierAccountStoreStub(), &supplierOAuthStub{}, enabledSupplyPoolJSON())
 
-	_, err := svc.StartOAuth(context.Background(), 7)
+	_, err := svc.StartOAuth(context.Background(), 7, testClientIP)
 	assert.ErrorIs(t, err, ErrSupplierOAuthTooManyPending)
 	assert.Nil(t, repo.createdSession, "超限时不该再写一条会话")
 }
 
 func TestStartOAuthRejectsAnonymousCaller(t *testing.T) {
 	svc := newOnboardingService(t, &supplierOnboardingRepoStub{}, newSupplierAccountStoreStub(), &supplierOAuthStub{}, enabledSupplyPoolJSON())
-	_, err := svc.StartOAuth(context.Background(), 0)
+	_, err := svc.StartOAuth(context.Background(), 0, testClientIP)
 	assert.ErrorIs(t, err, ErrSupplierOnboardingDisabled)
 }
 
@@ -547,7 +619,7 @@ func TestStartOAuthPropagatesSessionWriteError(t *testing.T) {
 	repo := &supplierOnboardingRepoStub{createErr: errors.New("db down")}
 	svc := newOnboardingService(t, repo, newSupplierAccountStoreStub(), &supplierOAuthStub{}, enabledSupplyPoolJSON())
 
-	_, err := svc.StartOAuth(context.Background(), 7)
+	_, err := svc.StartOAuth(context.Background(), 7, testClientIP)
 	assert.Error(t, err)
 }
 
@@ -610,17 +682,25 @@ func TestCompleteOAuthWritesOwnerBeforeBindingGroup(t *testing.T) {
 	store.seq = &seq
 	svc := newOnboardingService(t, repo, store, &supplierOAuthStub{}, enabledSupplyPoolJSON())
 
-	_, err := svc.CompleteOAuth(context.Background(), &CompleteOAuthInput{UserID: 7, SessionID: "sess-1", Code: "c"})
+	_, err := svc.CompleteOAuth(context.Background(), &CompleteOAuthInput{
+		UserID: 7, SessionID: "sess-1", Code: "c", ClientIP: testClientIP,
+	})
 	require.NoError(t, err)
 
-	// 号建出来 → 立刻写归属 → 最后才进池。中间那一段窗口里它既无主也不在池里，
-	// 而且不可调度，所以无论如何都服务不了请求。
-	assert.Equal(t, []string{"Create", "SetAccountOwner", "BindGroups"}, seq)
+	// 号建出来 → 立刻写归属 → 记来源 → 最后才进池。中间那一段窗口里它既无主也不
+	// 在池里，而且不可调度，所以无论如何都服务不了请求。
+	//
+	// 来源记在写归属**之后**：那一行说的是「这个属于某人的号从哪来」，归属没写上
+	// 时它没有意义。
+	assert.Equal(t, []string{"Create", "SetAccountOwner", "RecordAccountOrigin", "BindGroups"}, seq)
 
-	// 会话领取排在协议门禁之后、其余一切之前：门禁是一次纯读，被它挡住的人不该
-	// 丢掉手上的授权码；而领取一旦发生，兑换之前就已经确认了这个 code 是这个人的。
-	require.GreaterOrEqual(t, len(repo.calls), 2)
-	assert.Equal(t, []string{"FindAgreementAcceptance", "ClaimSession"}, repo.calls[:2])
+	// 两道纯读的门禁（协议、数量上限）排在领会话之前，领会话排在其余一切之前：
+	// 门禁挡住的人不该丢掉手上的授权码；而领取一旦发生，兑换之前就已经确认了
+	// 这个 code 是这个人的。
+	require.GreaterOrEqual(t, len(repo.calls), 3)
+	assert.Equal(t,
+		[]string{"FindAgreementAcceptance", "CountAccountsByOwner", "ClaimSession"},
+		repo.calls[:3])
 }
 
 func TestCompleteOAuthRejectsDuplicateUpstreamAccount(t *testing.T) {
@@ -1246,7 +1326,7 @@ func TestSupplierOnboardingServiceIsNilSafe(t *testing.T) {
 	var svc *SupplierOnboardingService
 	assert.False(t, svc.IsEnabled(context.Background()))
 
-	_, err := svc.StartOAuth(context.Background(), 7)
+	_, err := svc.StartOAuth(context.Background(), 7, testClientIP)
 	assert.ErrorIs(t, err, ErrSupplierOnboardingDisabled)
 
 	_, err = svc.CompleteOAuth(context.Background(), &CompleteOAuthInput{UserID: 7})

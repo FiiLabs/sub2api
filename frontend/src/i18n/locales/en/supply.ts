@@ -296,6 +296,26 @@ export default {
       saved: 'Review settings saved'
     },
 
+    // APEXONE-EXT: onboarding caps. The two gates get separate copy because they
+    // stop different things, and the operator needs to know how wide the second
+    // one's blast radius is before turning it on.
+    onboarding: {
+      title: 'Onboarding limits',
+      description: 'How many supply accounts one person, and one egress network, may connect. 0 means unlimited for both.',
+      maxPerUser: 'Max accounts per user',
+      maxPerUserHint:
+        'Counts currently connected accounts — detaching one frees a slot. This gate is only a polite guardrail: registering a second user bypasses it. Set 0 for unlimited. Max {max}.',
+      maxPerIp: 'Max accounts per source IP',
+      maxPerIpHint:
+        'Matched on the exact egress IP seen at connection time, summed across users. This is the gate with real friction: accounts are free, changing networks is not. Defaults to 0 (unlimited). Max {max}.',
+      ipWarning:
+        'This gate is on. Carrier-grade NAT, campus and office networks put hundreds of unrelated real users behind one address; anyone it blocks simply sees "cannot connect" and will not file a report. Look at your actual IP distribution first, then set a number far larger than one household.',
+      clampNotice:
+        'Out-of-range values in this group are clamped and saved (not rejected). After saving, the form shows what is actually stored.',
+      save: 'Save onboarding limits',
+      saved: 'Onboarding limits saved'
+    },
+
     // APEXONE-EXT: supplier agreement. Keep the tone narrow: this page decides
     // which version is published, not what the agreement says.
     agreement: {

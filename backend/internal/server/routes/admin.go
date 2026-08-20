@@ -586,6 +586,8 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		adminSettings.PUT("/supply-agreement", h.Admin.Setting.UpdateSupplyAgreementSettings)
 		adminSettings.GET("/supply-withdrawal", h.Admin.Setting.GetSupplyWithdrawalSettings)
 		adminSettings.PUT("/supply-withdrawal", h.Admin.Setting.UpdateSupplyWithdrawalSettings)
+		adminSettings.GET("/supply-onboarding", h.Admin.Setting.GetSupplyOnboardingSettings)
+		adminSettings.PUT("/supply-onboarding", h.Admin.Setting.UpdateSupplyOnboardingSettings)
 	}
 }
 

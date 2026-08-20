@@ -99,6 +99,39 @@ export type SupplyAgreementPayload = Omit<
   'published' | 'version_max_len' | 'url_max_len' | 'body_max_len'
 >
 
+export interface SupplyOnboardingSettings {
+  /**
+   * 一个人名下最多能有几个未解绑的供给账号。**0 = 不限**。
+   *
+   * 数的是当下的账号数而不是历史累计：解绑一个号就腾出一个位置。
+   */
+  max_accounts_per_user: number
+  /**
+   * 同一个接入来源 IP 上最多能有几个未解绑的供给账号。**0 = 不限**，且默认就是 0。
+   *
+   * 默认关着是有意的：运营商级 NAT、校园网、公司出口后面站着成百上千个真实的人，
+   * 一个偏小的默认值会把他们静默地挡在门外——而症状（"注册了但挂不上号"）
+   * 不会有人来报障，他们只会离开。
+   */
+  max_accounts_per_ip: number
+
+  /**
+   * 后端算好的「这道闸开着吗」。前端**不要**自己写 `> 0` 去判——0 在这两个字段上
+   * 是「不限」而不是「没填」，这个含义只应该有一个地方知道。
+   */
+  user_cap_enabled: boolean
+  ip_cap_enabled: boolean
+
+  /** 后端下发的边界值，前端不要另抄一份。 */
+  max_accounts_per_user_cap: number
+  max_accounts_per_ip_cap: number
+}
+
+export type SupplyOnboardingPayload = Omit<
+  SupplyOnboardingSettings,
+  'user_cap_enabled' | 'ip_cap_enabled' | 'max_accounts_per_user_cap' | 'max_accounts_per_ip_cap'
+>
+
 export interface SupplyWithdrawalSettings {
   /** 总开关。默认关着——一个还没定好打款流程的平台不该先把提现按钮点亮。 */
   enabled: boolean
@@ -406,6 +439,25 @@ async function updateProbationSettings(
   return data
 }
 
+async function getOnboardingSettings(): Promise<SupplyOnboardingSettings> {
+  const { data } = await apiClient.get<SupplyOnboardingSettings>('/admin/settings/supply-onboarding')
+  return data
+}
+
+/**
+ * 写接入上限。后端**夹回区间而不是报错**（与观察期参数同类），所以返回值一定要
+ * 写回表单——运营看到自己填的 500 变成 100 的唯一途径就是这次回读。
+ */
+async function updateOnboardingSettings(
+  payload: SupplyOnboardingPayload
+): Promise<SupplyOnboardingSettings> {
+  const { data } = await apiClient.put<SupplyOnboardingSettings>(
+    '/admin/settings/supply-onboarding',
+    payload
+  )
+  return data
+}
+
 async function getAgreementSettings(): Promise<SupplyAgreementSettings> {
   const { data } = await apiClient.get<SupplyAgreementSettings>('/admin/settings/supply-agreement')
   return data
@@ -497,6 +549,8 @@ export const adminSupplyMarketAPI = {
   updatePoolSettings,
   getProbationSettings,
   updateProbationSettings,
+  getOnboardingSettings,
+  updateOnboardingSettings,
   getAgreementSettings,
   updateAgreementSettings,
   getWithdrawalSettings,

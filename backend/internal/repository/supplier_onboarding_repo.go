@@ -1,9 +1,11 @@
 // APEXONE-EXT: 双边市场——供给者自助接入的 SQL 实现。
 //
-// 两类数据：
+// 三类数据：
 //  1. supplier_oauth_sessions（迁移 226）——扩展层新表，不进 ent schema。
 //  2. accounts.owner_user_id——ent 里有字段，但刻意没暴露到 service.Account 上，
 //     所以归属的读写都在这里用 raw SQL 完成（理由见 service/supplier_onboarding.go）。
+//  3. supplier_agreement_acceptances（228）与 supplier_account_origins（230）——
+//     两张追加式的证据表，同样是扩展层新表。
 package repository
 
 import (
@@ -161,6 +163,16 @@ SELECT id
 FROM accounts
 WHERE owner_user_id = $1 AND deleted_at IS NULL
 ORDER BY id DESC`
+
+// supplierAccountCountByOwnerSQL 数某人名下还活着的供给账号。
+//
+// 口径与 supplierAccountListByOwnerSQL 一字不差（同样的 WHERE），刻意如此：
+// 供给者仪表盘上看到的号数就是这道闸数出来的数。两者若不同口径，会出现
+// 「我明明只有 3 个号，它说我到 5 个上限了」这种他无法自查的拒绝。
+const supplierAccountCountByOwnerSQL = `
+SELECT COUNT(*)
+FROM accounts
+WHERE owner_user_id = $1 AND deleted_at IS NULL`
 
 // supplierAccountListByStateSQL 按接入状态列出供给账号。
 //
@@ -337,6 +349,36 @@ func (r *supplierOnboardingRepository) ListAccountIDsByOwner(ctx context.Context
 	return ids, rows.Err()
 }
 
+func (r *supplierOnboardingRepository) CountAccountsByOwner(ctx context.Context, userID int64) (int, error) {
+	if userID <= 0 {
+		// 0 会匹配不到任何行（owner_user_id 要么是正数要么是 NULL），但让它走一趟
+		// 数据库只会把一个调用方的 bug 变成一个看起来正常的 0。
+		return 0, fmt.Errorf("count accounts by owner requires a user id")
+	}
+	return r.countOne(ctx, supplierAccountCountByOwnerSQL, "count accounts by owner", userID)
+}
+
+// countOne 跑一条只回一个整数的查询。
+//
+// 抽出来是因为「没有行」这个分支在计数语句上必须返回 0 而不是错误——COUNT(*) 永远
+// 有一行，走到那个分支说明驱动层出了别的问题，但把它做成错误会让一道闸在数据库
+// 抖动时**拒绝所有人**。三个 COUNT 各写一遍这个判断，迟早写岔一个。
+func (r *supplierOnboardingRepository) countOne(ctx context.Context, query, what string, args ...any) (int, error) {
+	rows, err := r.client.QueryContext(ctx, query, args...)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", what, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var count int
+	if rows.Next() {
+		if err := rows.Scan(&count); err != nil {
+			return 0, fmt.Errorf("scan %s: %w", what, err)
+		}
+	}
+	return count, rows.Err()
+}
+
 func (r *supplierOnboardingRepository) ListAccountIDsBySupplyState(ctx context.Context, state string, limit int) ([]int64, error) {
 	if state == "" {
 		return nil, nil
@@ -468,6 +510,65 @@ func (r *supplierOnboardingRepository) queryAgreementAcceptance(ctx context.Cont
 		return nil, fmt.Errorf("scan supplier agreement acceptance: %w", err)
 	}
 	return &acceptance, rows.Err()
+}
+
+// ============================================================================
+// 接入来源（迁移 230）。每 IP 上限那道闸的数据。
+// ============================================================================
+
+// supplierAccountOriginInsertSQL 记一次接入来源。
+//
+// ON CONFLICT DO NOTHING 而不是 DO UPDATE：account_id 是主键，冲突意味着这个账号
+// 已经有一条来源记录了。保留第一次那行——这是取证材料，第二次写进来的值只能来自
+// 某条不该存在的重复路径，覆盖它等于把证据改掉。
+const supplierAccountOriginInsertSQL = `
+INSERT INTO supplier_account_origins (account_id, user_id, client_ip, created_at)
+VALUES ($1, $2, $3, NOW())
+ON CONFLICT (account_id) DO NOTHING`
+
+// supplierAccountCountByOriginIPSQL 数某个来源 IP 上还活着的供给账号。
+//
+// JOIN 回 accounts 并过滤 deleted_at 是这条语句的全部要点：来源表只增不删，
+// 不 JOIN 的话，一个正常换过几次号的供给者会被自己早就解绑的历史记录顶到上限，
+// 而他在仪表盘上只看得见现存的号，永远想不明白为什么挂不上。
+//
+// IP 比对是精确串比而不是网段：CIDR 归并要先决定用哪个前缀长度，而那个数字对
+// IPv4 和 IPv6、对家宽和运营商 NAT 全都不一样——猜错的方向是「一整个网段被当成
+// 一个来源」，也就是误伤。精确比对的漏是「换一个 IP 就绕过」，但那对攻击者是有
+// 成本的，而误伤对真实用户是没有申诉途径的。
+const supplierAccountCountByOriginIPSQL = `
+SELECT COUNT(*)
+FROM supplier_account_origins o
+JOIN accounts a ON a.id = o.account_id
+WHERE o.client_ip = $1 AND a.deleted_at IS NULL`
+
+func (r *supplierOnboardingRepository) RecordAccountOrigin(ctx context.Context, accountID int64, userID int64, clientIP string) error {
+	clientIP = strings.TrimSpace(clientIP)
+	if accountID <= 0 || userID <= 0 {
+		return fmt.Errorf("account origin requires an account and a user")
+	}
+	if clientIP == "" {
+		// 不是错误：拿不到真实 IP（反向代理没配好）不该让接入本身失败。
+		// 也**不写一行空 IP**——见 service 接口那里的说明，那种行会把所有人
+		// 聚成同一个来源。
+		return nil
+	}
+	_, err := r.client.ExecContext(ctx, supplierAccountOriginInsertSQL, accountID, userID, clientIP)
+	if err != nil {
+		return fmt.Errorf("record supply account origin: %w", err)
+	}
+	return nil
+}
+
+func (r *supplierOnboardingRepository) CountAccountsByOriginIP(ctx context.Context, clientIP string) (int, error) {
+	clientIP = strings.TrimSpace(clientIP)
+	if clientIP == "" {
+		// 空 IP 不是一个来源。返回 0 而不是查一遍——空串在来源表里永远查不到行
+		// （那一列 NOT NULL 且从不写空），但让它走一趟数据库会让「IP 拿不到」
+		// 这件事看起来像「这个来源很干净」。
+		return 0, nil
+	}
+	return r.countOne(ctx, supplierAccountCountByOriginIPSQL, "count accounts by origin ip", clientIP)
 }
 
 // supplierIdentitySQL 把身份键翻译成对应的那条语句。

@@ -168,7 +168,8 @@ func (h *SupplierHandler) StartOAuth(c *gin.Context) {
 		return
 	}
 
-	auth, err := h.onboardingService.StartOAuth(c.Request.Context(), userID)
+	// IP 在这一层取，理由同 AcceptAgreement：它是 HTTP 层的事实。
+	auth, err := h.onboardingService.StartOAuth(c.Request.Context(), userID, c.ClientIP())
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -209,6 +210,9 @@ func (h *SupplierHandler) CompleteOAuth(c *gin.Context) {
 		SessionID: req.SessionID,
 		Code:      req.Code,
 		Name:      req.Name,
+		// 刻意不从请求体读：来源 IP 是限额的判据，让客户端自己填等于让它自己
+		// 决定算在哪个网络头上——那道闸就不存在了。
+		ClientIP: c.ClientIP(),
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)

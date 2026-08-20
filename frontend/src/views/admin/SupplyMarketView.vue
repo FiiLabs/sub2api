@@ -300,6 +300,72 @@
           </div>
         </div>
 
+        <!-- ===================== 接入上限 ===================== -->
+        <div class="card space-y-4 p-6">
+          <div>
+            <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('supplyAdmin.onboarding.title') }}</h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.onboarding.description') }}</p>
+          </div>
+
+          <div class="space-y-4">
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('supplyAdmin.onboarding.maxPerUser') }}
+              </label>
+              <input
+                v-model.number="onboardingForm.max_accounts_per_user"
+                type="number"
+                step="1"
+                min="0"
+                :max="onboardingBounds.max_accounts_per_user_cap"
+                class="input"
+                data-testid="supply-onboarding-max-per-user"
+              />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('supplyAdmin.onboarding.maxPerUserHint', { max: onboardingBounds.max_accounts_per_user_cap }) }}
+              </p>
+            </div>
+
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('supplyAdmin.onboarding.maxPerIp') }}
+              </label>
+              <input
+                v-model.number="onboardingForm.max_accounts_per_ip"
+                type="number"
+                step="1"
+                min="0"
+                :max="onboardingBounds.max_accounts_per_ip_cap"
+                class="input"
+                data-testid="supply-onboarding-max-per-ip"
+              />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('supplyAdmin.onboarding.maxPerIpHint', { max: onboardingBounds.max_accounts_per_ip_cap }) }}
+              </p>
+            </div>
+
+            <!-- 每 IP 那道闸开着时才提示。这段警示不是可有可无的礼貌话：
+                 被它挡住的人看到的只是"挂不上号"，不会有人来报障。 -->
+            <div
+              v-if="onboardingForm.max_accounts_per_ip > 0"
+              class="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/40 dark:bg-amber-900/20"
+              data-testid="supply-onboarding-ip-warning"
+            >
+              <p class="text-xs text-amber-700 dark:text-amber-300">{{ t('supplyAdmin.onboarding.ipWarning') }}</p>
+            </div>
+
+            <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-900">
+              <p class="text-xs text-gray-600 dark:text-gray-300">{{ t('supplyAdmin.onboarding.clampNotice') }}</p>
+            </div>
+          </div>
+
+          <div class="flex justify-end">
+            <button class="btn btn-primary" :disabled="savingOnboarding" @click="saveOnboarding">
+              {{ t('supplyAdmin.onboarding.save') }}
+            </button>
+          </div>
+        </div>
+
         <!-- ===================== 供给者协议 ===================== -->
         <div class="card space-y-4 p-6">
           <div>
@@ -549,6 +615,8 @@ import {
   type SupplyPoolSettings,
   type SupplyProbationPayload,
   type SupplyProbationSettings,
+  type SupplyOnboardingPayload,
+  type SupplyOnboardingSettings,
   type SupplyAgreementPayload,
   type SupplyAgreementSettings,
   type SupplyWithdrawalPayload,
@@ -564,6 +632,7 @@ const loading = ref(true)
 const savingSettlement = ref(false)
 const savingPool = ref(false)
 const savingProbation = ref(false)
+const savingOnboarding = ref(false)
 const savingAgreement = ref(false)
 const savingWithdrawal = ref(false)
 
@@ -611,6 +680,19 @@ const probationBounds = reactive({
   probe_interval_minutes_min: 5,
   probe_interval_minutes_max: 60 * 24,
   drain_window_minutes_max: 60 * 24,
+})
+
+// 接入上限的兜底初值与后端 DefaultSupplyOnboardingSettings 对齐：每人 5 个、每 IP 不限。
+// 每 IP 那道默认是 0（关着）不是笔误——见 api 层那两段注释：这道闸开小了会静默地
+// 挡住整个 NAT 后面的人，该由运营看过真实 IP 分布之后再打开。
+const onboardingForm = reactive<SupplyOnboardingPayload>({
+  max_accounts_per_user: 5,
+  max_accounts_per_ip: 0,
+})
+
+const onboardingBounds = reactive({
+  max_accounts_per_user_cap: 100,
+  max_accounts_per_ip_cap: 10000,
 })
 
 // 协议默认是空的 = 尚未发布 = 自助接入被拒。这个默认值是刻意的：开源部署第一次
@@ -765,6 +847,44 @@ function applyProbationBounds(settings: SupplyProbationSettings): void {
   }
   if (settings.drain_window_minutes_max > 0) {
     probationBounds.drain_window_minutes_max = settings.drain_window_minutes_max
+  }
+}
+
+async function loadOnboarding(): Promise<void> {
+  const settings = await adminSupplyMarketAPI.getOnboardingSettings()
+  onboardingForm.max_accounts_per_user = settings.max_accounts_per_user
+  onboardingForm.max_accounts_per_ip = settings.max_accounts_per_ip
+  applyOnboardingBounds(settings)
+}
+
+function applyOnboardingBounds(settings: SupplyOnboardingSettings): void {
+  if (settings.max_accounts_per_user_cap > 0) {
+    onboardingBounds.max_accounts_per_user_cap = settings.max_accounts_per_user_cap
+  }
+  if (settings.max_accounts_per_ip_cap > 0) {
+    onboardingBounds.max_accounts_per_ip_cap = settings.max_accounts_per_ip_cap
+  }
+}
+
+/**
+ * 保存接入上限。后端**夹回区间而不是报错**（同观察期那一组），所以回填不是可选的：
+ * 不写回来，运营会以为自己填的 500 生效了，而库里存的是 100。
+ */
+async function saveOnboarding(): Promise<void> {
+  savingOnboarding.value = true
+  try {
+    const saved = await adminSupplyMarketAPI.updateOnboardingSettings({
+      max_accounts_per_user: onboardingForm.max_accounts_per_user,
+      max_accounts_per_ip: onboardingForm.max_accounts_per_ip,
+    })
+    onboardingForm.max_accounts_per_user = saved.max_accounts_per_user
+    onboardingForm.max_accounts_per_ip = saved.max_accounts_per_ip
+    applyOnboardingBounds(saved)
+    appStore.showSuccess(t('supplyAdmin.onboarding.saved'))
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('supplyAdmin.error.saveFailed')))
+  } finally {
+    savingOnboarding.value = false
   }
 }
 
@@ -933,7 +1053,14 @@ async function saveWithdrawal(): Promise<void> {
 
 onMounted(async () => {
   try {
-    await Promise.all([loadSettlement(), loadPool(), loadProbation(), loadAgreement(), loadWithdrawal()])
+    await Promise.all([
+      loadSettlement(),
+      loadPool(),
+      loadProbation(),
+      loadOnboarding(),
+      loadAgreement(),
+      loadWithdrawal(),
+    ])
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, t('supplyAdmin.error.loadFailed')))
   } finally {

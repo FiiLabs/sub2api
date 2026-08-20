@@ -162,6 +162,26 @@ describe('admin supply market api', () => {
     })
   })
 
+  it('reads and writes onboarding limits on their own endpoint', async () => {
+    const put = vi.fn().mockResolvedValue({ data: {} })
+    const client = (await import('@/api/client')).apiClient as unknown as Record<string, unknown>
+    client.put = put
+
+    await adminSupplyMarketAPI.getOnboardingSettings()
+    expect(get).toHaveBeenCalledWith('/admin/settings/supply-onboarding')
+
+    // 0 必须原样送出去。它在这两个字段上的意思是「不限」，不是「没填」——
+    // 一个把 0 当空值滤掉的写路径会让「关掉这道闸」这个操作静默失效。
+    await adminSupplyMarketAPI.updateOnboardingSettings({
+      max_accounts_per_user: 5,
+      max_accounts_per_ip: 0,
+    })
+    expect(put).toHaveBeenCalledWith('/admin/settings/supply-onboarding', {
+      max_accounts_per_user: 5,
+      max_accounts_per_ip: 0,
+    })
+  })
+
   it('writes the overflow cap but never writes back the usage readout', async () => {
     // 用量是后端算出来的只读数字。把它一起 PUT 回去，管理员保存一次配置就等于
     // 声称自己知道今天溢出了多少次——那是个会被后端忽略、却先污染了请求语义的字段。
@@ -316,6 +336,7 @@ describe('admin supply ops api (read-only)', () => {
       'markWithdrawalPaid',
       'rejectWithdrawal',
       'updateAgreementSettings',
+      'updateOnboardingSettings',
       'updatePoolSettings',
       'updateProbationSettings',
       'updateSettlementSettings',

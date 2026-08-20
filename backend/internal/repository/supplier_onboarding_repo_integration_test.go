@@ -666,3 +666,179 @@ func TestSupplierAgreement_AcceptanceWithoutEvidenceFieldsIsStillValid(t *testin
 	require.Empty(t, stored.IP)
 	require.Empty(t, stored.UserAgent)
 }
+
+// ============================================================================
+// 接入数量上限（迁移 230）
+// ============================================================================
+
+// softDeleteAccount 直接改库把号软删掉。
+//
+// 与 softDeleteUser 同一个理由：这两条 COUNT 要证的正是「解绑之后位置腾出来了」，
+// 而本仓的解绑就是软删。走 ent 的 Delete 会被 soft-delete mixin 转成同样的 UPDATE，
+// 但那样就看不出测试到底在造什么状态。
+func softDeleteAccount(t *testing.T, client *dbent.Client, accountID int64) {
+	t.Helper()
+	_, err := client.ExecContext(context.Background(),
+		"UPDATE accounts SET deleted_at = NOW() WHERE id = $1", accountID)
+	require.NoError(t, err)
+}
+
+// 每人上限数的是「当下还在的号」，不是历史累计。
+//
+// 为什么必须在真库上测：整条性质就落在 `deleted_at IS NULL` 这半行上，而本仓的
+// 解绑是软删——行还在表里。少了这半行，一个正常换号的供给者会在解绑几次之后
+// 永久地耗尽自己的额度，且他名下一个号都看不到。mock 里没有软删这回事。
+func TestSupplierOnboarding_OwnerCountExcludesDeletedAccounts(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewSupplierOnboardingRepository(client)
+
+	ownerID := mustCreateSupplier(t, client, "count-owner")
+	otherID := mustCreateSupplier(t, client, "count-other")
+	stamp := time.Now().UnixNano()
+
+	count, err := repo.CountAccountsByOwner(txCtx, ownerID)
+	require.NoError(t, err)
+	require.Zero(t, count, "一个号都没挂的人必须数出 0，而不是报「没有行」")
+
+	kept := mustCreateAccount(t, client, &service.Account{Name: fmt.Sprintf("kept-%d", stamp)})
+	gone := mustCreateAccount(t, client, &service.Account{Name: fmt.Sprintf("gone-%d", stamp)})
+	theirs := mustCreateAccount(t, client, &service.Account{Name: fmt.Sprintf("theirs-%d", stamp)})
+	orphan := mustCreateAccount(t, client, &service.Account{Name: fmt.Sprintf("orphan-%d", stamp)})
+	require.NoError(t, repo.SetAccountOwner(txCtx, kept.ID, ownerID))
+	require.NoError(t, repo.SetAccountOwner(txCtx, gone.ID, ownerID))
+	require.NoError(t, repo.SetAccountOwner(txCtx, theirs.ID, otherID))
+	_ = orphan // 自营号（owner_user_id IS NULL），不该算在任何人头上
+
+	count, err = repo.CountAccountsByOwner(txCtx, ownerID)
+	require.NoError(t, err)
+	require.Equal(t, 2, count)
+
+	softDeleteAccount(t, client, gone.ID)
+
+	count, err = repo.CountAccountsByOwner(txCtx, ownerID)
+	require.NoError(t, err)
+	require.Equal(t, 1, count, "解绑必须真的腾出一个位置")
+
+	count, err = repo.CountAccountsByOwner(txCtx, otherID)
+	require.NoError(t, err)
+	require.Equal(t, 1, count, "别人的号不该算进来")
+}
+
+// 接入来源写一次就定了：同一个号重复记不会把它在那个 IP 上数成两个。
+//
+// 为什么必须在真库上测：幂等整个落在 `ON CONFLICT (account_id) DO NOTHING` 上，
+// 而那依赖 account_id 真的是主键（迁移 230 建的）。约束写掉了在 mock 里静默通过，
+// 在这里会当场变成「同一个号数两次」——每 IP 那道闸于是会凭空提前拦人。
+func TestSupplierOnboarding_AccountOriginIsWriteOnce(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewSupplierOnboardingRepository(client)
+
+	ownerID := mustCreateSupplier(t, client, "origin-owner")
+	stamp := time.Now().UnixNano()
+	acct := mustCreateAccount(t, client, &service.Account{Name: fmt.Sprintf("origin-%d", stamp)})
+	require.NoError(t, repo.SetAccountOwner(txCtx, acct.ID, ownerID))
+
+	ip := fmt.Sprintf("198.51.100.%d", stamp%200+1)
+	require.NoError(t, repo.RecordAccountOrigin(txCtx, acct.ID, ownerID, ip))
+	require.NoError(t, repo.RecordAccountOrigin(txCtx, acct.ID, ownerID, ip))
+	// 换个 IP 再记一次也不该改写第一次的记录：那一行是「它当初从哪来」的证据，
+	// 不是一个会跟着人走的属性。
+	require.NoError(t, repo.RecordAccountOrigin(txCtx, acct.ID, ownerID, "203.0.113.200"))
+
+	count, err := repo.CountAccountsByOriginIP(txCtx, ip)
+	require.NoError(t, err)
+	require.Equal(t, 1, count)
+
+	count, err = repo.CountAccountsByOriginIP(txCtx, "203.0.113.200")
+	require.NoError(t, err)
+	require.Zero(t, count, "第一次写下的来源不该被后来的重复调用改掉")
+}
+
+// 每 IP 上限同样只数「还在的号」，且从没记过来源的 IP 数出 0 而不是报错。
+//
+// 后半句不是琐碎的：这两条 COUNT 一旦把「没有行」当成错误，requireCapacity 会
+// 把它当成「判不了闸」而拒绝——于是这道闸会拦下**每一个来自陌生 IP 的人**，
+// 也就是几乎所有人。
+func TestSupplierOnboarding_OriginIPCountExcludesDeletedAccounts(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewSupplierOnboardingRepository(client)
+
+	stamp := time.Now().UnixNano()
+	ip := fmt.Sprintf("192.0.2.%d", stamp%200+1)
+
+	count, err := repo.CountAccountsByOriginIP(txCtx, ip)
+	require.NoError(t, err)
+	require.Zero(t, count, "陌生 IP 必须数出 0，绝不能是错误")
+
+	// 同一个 IP 上的两个号分属两个人——每 IP 这道闸的意义就在于跨用户地数，
+	// 否则"再注册一个号"就能绕过。
+	alice := mustCreateSupplier(t, client, "origin-alice")
+	bob := mustCreateSupplier(t, client, "origin-bob")
+	a1 := mustCreateAccount(t, client, &service.Account{Name: fmt.Sprintf("a1-%d", stamp)})
+	b1 := mustCreateAccount(t, client, &service.Account{Name: fmt.Sprintf("b1-%d", stamp)})
+	require.NoError(t, repo.SetAccountOwner(txCtx, a1.ID, alice))
+	require.NoError(t, repo.SetAccountOwner(txCtx, b1.ID, bob))
+	require.NoError(t, repo.RecordAccountOrigin(txCtx, a1.ID, alice, ip))
+	require.NoError(t, repo.RecordAccountOrigin(txCtx, b1.ID, bob, ip))
+
+	count, err = repo.CountAccountsByOriginIP(txCtx, ip)
+	require.NoError(t, err)
+	require.Equal(t, 2, count)
+
+	softDeleteAccount(t, client, b1.ID)
+
+	// 号没了，origins 里那一行还在（迁移 230 刻意没建外键——软删让级联永不触发）。
+	// 这条 JOIN 就是为此存在的：不 JOIN 的话，一个 IP 上的额度会被历史上删掉的号
+	// 永久占着。
+	count, err = repo.CountAccountsByOriginIP(txCtx, ip)
+	require.NoError(t, err)
+	require.Equal(t, 1, count)
+}
+
+// 空 IP 数出 0 且不发查询。
+//
+// 拿 "" 当一个"网络"去数，会把所有取不到 IP 的请求归到同一个虚构来源里
+// 互相挤占额度——被拦下的会是一群彼此毫无关系的人，且无从自证。
+func TestSupplierOnboarding_OriginIPCountIgnoresEmptyIP(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewSupplierOnboardingRepository(client)
+
+	ownerID := mustCreateSupplier(t, client, "origin-empty")
+	stamp := time.Now().UnixNano()
+	acct := mustCreateAccount(t, client, &service.Account{Name: fmt.Sprintf("empty-%d", stamp)})
+	require.NoError(t, repo.SetAccountOwner(txCtx, acct.ID, ownerID))
+
+	// 空 IP 不写行：写进去的话，它会和别人的空 IP 记录挤在同一个键上。
+	require.NoError(t, repo.RecordAccountOrigin(txCtx, acct.ID, ownerID, "   "))
+
+	// 直接查表，不经过 CountAccountsByOriginIP：那个方法对空 IP 是短路返回 0 的，
+	// 拿它来证「没写行」等于用一个短路证明另一个短路。
+	rows, err := client.QueryContext(context.Background(),
+		"SELECT COUNT(*) FROM supplier_account_origins WHERE account_id = $1", acct.ID)
+	require.NoError(t, err)
+	var rowsForAccount int
+	require.True(t, rows.Next())
+	require.NoError(t, rows.Scan(&rowsForAccount))
+	require.NoError(t, rows.Close())
+	require.Zero(t, rowsForAccount, "拿不到 IP 时不该留下一行空来源")
+
+	count, err := repo.CountAccountsByOriginIP(txCtx, "")
+	require.NoError(t, err)
+	require.Zero(t, count)
+
+	count, err = repo.CountAccountsByOriginIP(txCtx, "   ")
+	require.NoError(t, err)
+	require.Zero(t, count)
+}
