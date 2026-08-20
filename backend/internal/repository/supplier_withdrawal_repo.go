@@ -23,11 +23,20 @@ import (
 
 type supplierWithdrawalRepository struct {
 	client *dbent.Client
+	cipher payoutAccountCipher
 }
 
 // NewSupplierWithdrawalRepository 构造提现仓储。
-func NewSupplierWithdrawalRepository(client *dbent.Client) service.SupplierWithdrawalRepository {
-	return &supplierWithdrawalRepository{client: client}
+//
+// 加密器在**仓储**这一层而不是 service：收款账号在 service 与 handler 里一路都是
+// 明文（运营要拿它去打款，供给者要在页面上认出自己填的是哪张卡），
+// 只有落库的那一瞬间需要变成密文。把加解密放在这个边界上，
+// 上面所有代码都不必知道这件事，也就不存在"某条新加的读路径忘了解密"。
+func NewSupplierWithdrawalRepository(client *dbent.Client, encryptor service.SecretEncryptor) service.SupplierWithdrawalRepository {
+	return &supplierWithdrawalRepository{
+		client: client,
+		cipher: payoutAccountCipher{encryptor: encryptor},
+	}
 }
 
 // ============================================================================
@@ -168,11 +177,20 @@ func (r *supplierWithdrawalRepository) Create(ctx context.Context, params servic
 		}
 
 		// 3. 建单。先建单才有单号，而单号是扣款流水的幂等键。
-		withdrawal, err := scanSupplierWithdrawalRow(txCtx, txClient, supplierWithdrawalInsertSQL,
+		//
+		//    收款账号在这里变成密文（见 supplier_payout_cipher.go）。加密失败就整笔
+		//    失败：这一步在扣款**之前**，失败时钱还没动过，供给者重试即可。
+		//    反过来把它挪到扣款之后、或者失败时降级存明文，都是拿一个人的银行卡号
+		//    去换一次不必要的成功。
+		sealedAccount, err := r.cipher.seal(strings.TrimSpace(params.PayoutAccount))
+		if err != nil {
+			return err
+		}
+		withdrawal, err := r.cipher.scanSupplierWithdrawalRow(txCtx, txClient, supplierWithdrawalInsertSQL,
 			params.UserID,
 			params.Amount,
 			strings.TrimSpace(params.PayoutChannel),
-			strings.TrimSpace(params.PayoutAccount),
+			sealedAccount,
 			nullableTrimmedString(params.UserNote),
 		)
 		if err != nil {
@@ -239,7 +257,7 @@ func (r *supplierWithdrawalRepository) Resolve(ctx context.Context, params servi
 	var out *service.SupplierWithdrawal
 	err := r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
 		// 1. 锁住单子并看清它现在是什么。
-		current, err := scanSupplierWithdrawalRow(txCtx, txClient, supplierWithdrawalLockSQL, params.ID)
+		current, err := r.cipher.scanSupplierWithdrawalRow(txCtx, txClient, supplierWithdrawalLockSQL, params.ID)
 		if err != nil {
 			return fmt.Errorf("lock supplier withdrawal: %w", err)
 		}
@@ -256,7 +274,7 @@ func (r *supplierWithdrawalRepository) Resolve(ctx context.Context, params servi
 
 		// 2. 推进状态。WHERE 里那个 status = 'pending' 与上面的判断重复，是故意的：
 		//    锁虽然拿着，但这条件写在语句里，读 SQL 的人不必回去确认调用方判过。
-		updated, err := scanSupplierWithdrawalRow(txCtx, txClient, supplierWithdrawalResolveSQL,
+		updated, err := r.cipher.scanSupplierWithdrawalRow(txCtx, txClient, supplierWithdrawalResolveSQL,
 			params.ID,
 			params.Status,
 			nullableInt64Arg(params.ReviewerID),
@@ -357,7 +375,7 @@ func (r *supplierWithdrawalRepository) List(ctx context.Context, filter service.
 	items := make([]service.SupplierWithdrawal, 0, pageSize)
 	for rows.Next() {
 		var item service.SupplierWithdrawal
-		if err := scanSupplierWithdrawal(rows, &item); err != nil {
+		if err := r.cipher.scanSupplierWithdrawal(rows, &item); err != nil {
 			return nil, 0, err
 		}
 		items = append(items, item)
@@ -403,7 +421,7 @@ type supplierWithdrawalScanner interface {
 	Scan(dest ...any) error
 }
 
-func scanSupplierWithdrawal(row supplierWithdrawalScanner, out *service.SupplierWithdrawal) error {
+func (c payoutAccountCipher) scanSupplierWithdrawal(row supplierWithdrawalScanner, out *service.SupplierWithdrawal) error {
 	var (
 		userNote    *string
 		ledgerID    *int64
@@ -426,12 +444,20 @@ func scanSupplierWithdrawal(row supplierWithdrawalScanner, out *service.Supplier
 	out.ReviewNote = reviewNote
 	out.ExternalRef = externalRef
 	out.ResolvedAt = resolvedAt
+
+	// 解密放在这里而不是各个调用点：这是这张表**唯一**的 Scan，
+	// 把它放在这一行上，等于将来任何一条新的读路径都自动解了密。
+	account, err := c.open(out.PayoutAccount)
+	if err != nil {
+		return err
+	}
+	out.PayoutAccount = account
 	return nil
 }
 
 // scanSupplierWithdrawalRow 跑一条最多返回一行的语句。没有行时返回 nil（不是错误），
 // 让调用方自己决定「没有行」意味着什么。
-func scanSupplierWithdrawalRow(ctx context.Context, exec supplierCreditExecer, query string, args ...any) (*service.SupplierWithdrawal, error) {
+func (c payoutAccountCipher) scanSupplierWithdrawalRow(ctx context.Context, exec supplierCreditExecer, query string, args ...any) (*service.SupplierWithdrawal, error) {
 	rows, err := exec.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -442,7 +468,7 @@ func scanSupplierWithdrawalRow(ctx context.Context, exec supplierCreditExecer, q
 		return nil, rows.Err()
 	}
 	var out service.SupplierWithdrawal
-	if err := scanSupplierWithdrawal(rows, &out); err != nil {
+	if err := c.scanSupplierWithdrawal(rows, &out); err != nil {
 		return nil, err
 	}
 	return &out, rows.Err()

@@ -15,6 +15,7 @@
 package repository
 
 import (
+	"bytes"
 	"context"
 	"testing"
 
@@ -52,8 +53,17 @@ func supplierLedgerCount(t *testing.T, ctx context.Context, client *dbent.Client
 //
 // client 传的是 tx.Client()，withTx 会认出 ctx 里的事务并复用它——于是所有写入
 // 在测试结束时随事务一起回滚，不留脏数据。
+//
+// 加密器传的是**真的那一个**（AES-256-GCM，测试密钥），不是桩：
+// 收款账号在这套测试里要走完整的加密入库 → 解密读回，用桩会让
+// "库里到底存的是什么"这个问题在这些用例里失去意义。
 func withdrawalRepoOn(client *dbent.Client) service.SupplierWithdrawalRepository {
-	return NewSupplierWithdrawalRepository(client)
+	return NewSupplierWithdrawalRepository(client, testPayoutEncryptor())
+}
+
+// testPayoutEncryptor 是测试用的 AES 加密器，密钥是一个固定的 32 字节值。
+func testPayoutEncryptor() service.SecretEncryptor {
+	return &AESEncryptor{key: bytes.Repeat([]byte{0x2b}, 32)}
 }
 
 // ============================================================================
@@ -507,4 +517,107 @@ func TestSupplierWithdrawal_OverviewSplitsWithdrawAndRevert(t *testing.T) {
 	// Withdrawn 是**申请额**（两张单都算），不是已打款额。
 	assert.InDelta(t, 50.0, after.Window.Withdrawn-before.Window.Withdrawn, 1e-6)
 	assert.InDelta(t, 20.0, after.Window.WithdrawReverted-before.Window.WithdrawReverted, 1e-6)
+}
+
+// ============================================================================
+// 收款账号密文存储（迁移 232）
+// ============================================================================
+
+// payoutAccountRaw 读出**库里真正存着的**那一串，绕过仓储的解密。
+//
+// 这个测试的全部意义就在"绕过"这两个字上：走仓储读回来的永远是明文，
+// 那证不了任何事。要证的是拿到一份 pg_dump 的人看到的是什么。
+func payoutAccountRaw(t *testing.T, ctx context.Context, client *dbent.Client, id int64) string {
+	t.Helper()
+	rows, err := client.QueryContext(ctx,
+		"SELECT payout_account FROM supplier_withdrawals WHERE id = $1", id)
+	require.NoError(t, err)
+	defer func() { _ = rows.Close() }()
+
+	require.True(t, rows.Next(), "expected one row")
+	var value string
+	require.NoError(t, rows.Scan(&value))
+	require.NoError(t, rows.Err())
+	return value
+}
+
+// 落库的是密文，读回来的是明文。
+//
+// 顺带证明迁移 232 真的把列宽放开了：VARCHAR(256) 下面这个账号加密后约 400 个
+// base64 字符，插入会直接报 value too long——而那种失败只有真库能给出来。
+func TestSupplierWithdrawal_PayoutAccountIsStoredEncrypted(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	userID := mustCreateSupplier(t, client, "wd-cipher")
+	seedSupplierWallet(t, txCtx, client, userID, 100)
+	repo := withdrawalRepoOn(client)
+
+	const account = "6222 0202 0001 2345 678 / 张三 / 招商银行深圳分行"
+	w, err := repo.Create(txCtx, service.SupplierWithdrawalCreateParams{
+		UserID: userID, Amount: 30, PayoutChannel: "bank", PayoutAccount: account, MaxPending: 1,
+	})
+	require.NoError(t, err)
+
+	// 建单时的回读已经解过密：申请页要把他填的账号显示回去。
+	assert.Equal(t, account, w.PayoutAccount)
+
+	stored := payoutAccountRaw(t, txCtx, client, w.ID)
+	assert.NotEqual(t, account, stored, "库里存的还是明文")
+	assert.NotContains(t, stored, "6222", "卡号出现在库里")
+	assert.NotContains(t, stored, "张三")
+	assert.Contains(t, stored, supplierPayoutCipherPrefix)
+
+	// 另外两条读路径也都得解密：列表与审批后的回读。
+	// 少解一条的表现是运营照着一串 base64 去打款。
+	items, _, err := repo.List(txCtx, service.SupplierWithdrawalFilter{UserID: userID, Page: 1, PageSize: 10})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, account, items[0].PayoutAccount, "列表没解密")
+
+	resolved, err := repo.Resolve(txCtx, service.SupplierWithdrawalResolveParams{
+		ID: w.ID, Status: service.SupplierWithdrawalStatusPaid,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, account, resolved.PayoutAccount, "审批回读没解密")
+}
+
+// 232 之前写下的明文行照常读得出来。
+//
+// 这条钉住的是"不需要停机窗口"这个承诺。这里绕过仓储直接插一行明文，
+// 模拟的正是升级那一刻库里的实际状态：一张已经扣过钱、还等着打款的旧单子。
+func TestSupplierWithdrawal_LegacyPlaintextPayoutAccountStillReadable(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	userID := mustCreateSupplier(t, client, "wd-legacy")
+	seedSupplierWallet(t, txCtx, client, userID, 100)
+
+	const legacy = "0xdeadbeef"
+	rows, err := client.QueryContext(txCtx, `
+        INSERT INTO supplier_withdrawals (user_id, amount, status, payout_channel, payout_account, created_at, updated_at)
+        VALUES ($1, 30, 'pending', 'USDT', $2, NOW(), NOW())
+        RETURNING id`, userID, legacy)
+	require.NoError(t, err)
+	require.True(t, rows.Next())
+	var id int64
+	require.NoError(t, rows.Scan(&id))
+	require.NoError(t, rows.Close())
+
+	repo := withdrawalRepoOn(client)
+	items, _, err := repo.List(txCtx, service.SupplierWithdrawalFilter{UserID: userID, Page: 1, PageSize: 10})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, legacy, items[0].PayoutAccount, "旧单子读不出来 = 升级当天所有待办一起失效")
+
+	// 旧单子照常能推进到终态：升级不该让任何一张已经扣过钱的单子卡死。
+	resolved, err := repo.Resolve(txCtx, service.SupplierWithdrawalResolveParams{
+		ID: id, Status: service.SupplierWithdrawalStatusPaid,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, legacy, resolved.PayoutAccount)
 }

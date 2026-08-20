@@ -316,7 +316,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	supplierCreditService := service.ProvideSupplierCreditService(supplierCreditRepository, settingService)
 	supplierAdminRepository := repository.NewSupplierAdminRepository(client)
 	supplierAdminService := service.NewSupplierAdminService(supplierAdminRepository)
-	supplierWithdrawalRepository := repository.NewSupplierWithdrawalRepository(client)
+	supplierWithdrawalRepository := repository.NewSupplierWithdrawalRepository(client, secretEncryptor)
 	supplierWithdrawalNotifier := service.ProvideSupplierWithdrawalNotifier(emailService, userRepository, settingService)
 	supplierWithdrawalService := service.NewSupplierWithdrawalService(supplierWithdrawalRepository, supplierCreditRepository, settingService, supplierWithdrawalNotifier)
 	supplierHandler := handler.NewSupplierHandler(supplierOnboardingService, supplierCreditService, supplierAdminService, supplierWithdrawalService)
