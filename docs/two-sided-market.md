@@ -104,6 +104,7 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 | 提现 HTTP | `internal/handler/supplier_withdrawal_handler.go`、`internal/handler/admin/setting_handler_supplier.go`、`internal/server/routes/supplier.go` | — | 供给者侧四条（`options` / 列表 / 申请 / 撤回，申请那条额外挂 `panelRateLimiter.Heavy()`）；管理端三条（列表 / 标记已打款 / 拒绝），方法挂在 `*SupplierAdminHandler` 上；设置一对挂在既有 `*SettingHandler` 上。返回视图剥掉 `user_id`/`reviewer_id` |
 | 提现前端 | `frontend/src/api/supply.ts`、`api/admin/supplyMarket.ts`、`views/user/SupplyView.vue`、`views/admin/SupplyOperationsView.vue`、`views/admin/SupplyMarketView.vue` | — | 供给者侧一张提现卡（在收益与接入之间）+ 申请记录表；运营页在看板下方加一段审批队列——**这是运营页唯一的写路径**，§3.6 的"整层只读"因此改成"只读 + 这一个例外"；配置页第五张卡 |
 | 收款账号密文 | `internal/repository/supplier_payout_cipher.go`（seal/open）、`supplier_withdrawal_repo.go`（一处 seal、一处 open） | `232` | `payout_account` 按 AES-256-GCM 入库，值形如 `enc.v1:` + base64(nonce\|\|ct\|\|tag)，复用既有 `SecretEncryptor`（密钥即 `TOTP_ENCRYPTION_KEY`），**不引入第二套密钥管理**。加解密钉在仓储边界（全表只有一处 INSERT、一处 Scan），任何日后新增的读路径自动解密。无前缀者视为 232 之前的历史明文原样放行，故**不需要停机窗口也不需要回填**。见 §3.7 |
+| 对账导出 | `internal/service/supplier_export.go`（类型+接口）、`supplier_export_service.go`（时间窗+计数）、`internal/repository/supplier_export_repo.go`（SQL）、`internal/handler/supplier_export_csv.go`（编码）、`supplier_export_handler.go`（HTTP） | — | `GET /api/v1/admin/supply/export/{withdrawals,ledger}`，**流式** CSV。金额一律 `::text` 取 NUMERIC 原文（全仓唯一一处不走 `::double precision` 的读路径），文件末尾必有一行 `#` 尾行报告行数/窗口/是否截断，上限 20 万行、默认窗口 90 天。收款账号在文件里是**明文**——那份文件就是打款工作单。见 §3.9 |
 | 争议台账 | `internal/service/payment_dispute.go`（类型+接口+编排）、`internal/repository/payment_dispute_repo.go`（SQL） | `231` | `payment_disputes`：拒付的唯一事实来源。`settled_at` 是"扣钱只跑一次"的闸，重复 upsert 碰不到它。见 §3.8 |
 | 争议事件解析 | `internal/payment/provider/stripe_dispute.go`、`internal/payment/dispute.go`（类型与 `DisputeAwareProvider` 接口） | — | 五种 `charge.dispute.*` 都认，**款项动没动只看 `status`**：四种 warning/prevented 是询证，返回 `(nil, nil)`；未知状态一律按"钱没动"。core 的 Stripe provider 一行未动（同包新文件） |
 | 争议 webhook 分派 | `internal/handler/payment_webhook_dispute.go` | — | 挂在既有 webhook 的 `notification == nil` 分支上，不新开路由（Stripe 一个 endpoint 收全部事件）。core 侵入两行，见 core touch #10 |
@@ -263,6 +264,22 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 
 **失败不让 webhook 报错**。返回 error 会让 handler 回 500，Stripe 于是重投；而重投打到的是同一个已经 claim 过的争议，副作用不会再跑一遍（`settled_at` 挡着），重投唯一的效果是刷日志。所以这条路径上的错误一律记 ERROR 后咽掉，webhook 照常回 200——真正需要人介入的信息在日志和运营邮件里，不在 HTTP 状态码里。同理**通知不能成为新的失败方式**：`PaymentDisputeNotifier` 没装配时静默返回，与追回单例同样的理由。但**台账没装配时仍然留一条 ERROR 日志**，那是「拒付发生过」的唯一痕迹。
 
+### 3.9 对账导出的六条边界（改动前先读）
+
+**这个功能与本仓其余所有接口有一个结构性区别：它的响应体是一份要离开这台机器的文件。** 下载完成之后，那份 CSV 就不再受这套系统的任何约束——它会被放进网盘、发进微信群、附在邮件里转给财务。前八节里那些边界（审计、限流、鉴权、只读）全都到浏览器的下载目录为止。这一节的六条边界几乎都是从这一点推出来的。
+
+**响应头在第一行数据之前就发出去了，因此错误无处可报。** `200 OK` 与 `Content-Disposition` 一旦写出，浏览器就已经在往磁盘上存文件；此后数据库掉线、连接被代理掐断、扫描到一半报错，运营看到的都是"下载完成"。这是流式下载的固有性质，不是实现缺陷——替代方案（先把整份文件攒进内存、成功了再一次性写出）能给出正确的状态码，代价是运营点一次导出就有机会把网关 OOM 掉，而那会连带停掉**所有消费者**的请求。所以错误处理只有两段：写头之前能报就报（服务没装配 → 503 JSON），写头之后只记 `slog.Error`。
+
+**尾行是唯一的补偿，因此它必须永远在。** 文件末尾那一行 `#, exported N rows for X .. Y (UTC)` 承担两件在别处说不了的事：这份文件覆盖了哪段时间、它是不是完整地写完了。中途出错时**刻意不写**这一行——一份没有尾行的文件在结构上就是"没写完"，而那是残缺文件唯一的可辨识特征。撞上 20 万行上限时尾行改口喊 `TRUNCATED ... narrow the time range and export again`：只说截断不说下一步该干什么，运营还是只能再点一次同一个按钮。**一份静默截断的对账文件比一次失败的下载危险得多**——后者你会重试，前者你会照着它打款。
+
+**收款账号在文件里是明文，这与 §3.7 的加密不矛盾。** §3.7 那层密文防的是离开数据库的数据（`pg_dump`、备份、只读分析账号、日志行），它从一开始就**不防运营本人**——审批页要显示明文，因为那是打款工作单，而这份导出文件是同一张工作单的批量版本。约束运营的是另外两样东西：这两条路由挂在管理端那个带审计中间件的组里（事后答得出"上个月那份带着全部供给者收款方式的表格是谁导的"），以及 `Cache-Control: no-store`（不让任何一层代理替我们把它留下来）。**把加密当成权限控制是这里最容易犯的错**。
+
+**金额走 `::text`，是全仓唯一一处。** 其余所有读路径都 `::double precision`，因为那些值要参与计算。导出不计算，因此没有理由让 `DECIMAL(20,8)` 先绕一趟二进制浮点——流水里 `basis_amount × share_ratio = amount` 这个等式是供给者自行核对分成的唯一依据，浮点往返之后它就不一定还成立。真库测试用 `0.00000001`（最小刻度）和 `0.333333` 钉住了这一点。
+
+**文件要在别人的表格软件里打开，于是有三条与 Excel 直接相关的决定**：写 UTF-8 BOM（少三个字节，Windows 版 Excel 按本地代码页解码，收款账号里的开户人姓名全成乱码，而运营多半会以为是自己电脑的问题）；文本列前置单引号中和公式起手字符 `= + - @ \t \r`（`user_note` 与 `payout_account` 由**供给者**填写，`=HYPERLINK(...)`、DDE 那一类把戏至今有效）；时间一律 UTC 的 RFC3339。中和**不对金额列做**——那会把负数变成文本，整列在表格里既求不了和也排不了序，等于把一个安全问题换成一个对账问题，而金额来自 NUMERIC 列，本来就注入不进东西。
+
+两条工程上的选择顺带记在这里：**没有分页循环**（LIMIT/OFFSET 翻页导出会在两页之间给表留下插入新行的机会，同一行可能出现两次或一次都不出现；一个游标从头扫到尾看到的是一致快照），以及**截断探针查 `limit+1` 行而不是先 `COUNT(*)`**（后者要多扫一次表，且数完到扫完之间的新增行会让两个数字对不上；探针只回答"后面还有没有"，那正是唯一需要回答的问题，而它本身绝不进文件）。**默认窗口 90 天**而不是"不给条件就导全部"：截断截掉的是**最新**那一段（按时间正序推），"导全部"会给运营一份从开天辟地开始、恰好把他想要的那部分截掉的文件。
+
 ## 4. Core Touch 台账
 
 core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APEXONE-EXT:` 可 grep 标记 + 详尽注释 + 单测。下表随实现逐行填。
@@ -288,8 +305,9 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 | 7a | — （**未覆盖面，记账用**） | `openai_codex_models_handler.go:44`、`gateway_handler.go:2058` | 这两处走的是 `SelectAccountForModel`，不经包装函数，因此**不溢出** | 首版切片的供给池只面向 Claude Code 形态消费，这两条路径不在范围内。若日后供给池扩到 codex 形态，需在此处补同样的包装 | 已知缺口 |
 | 5g | `backend/internal/repository/wire.go` + `backend/internal/service/wire.go` + `backend/cmd/server/wire_gen.go` | 两个 ProviderSet；`wire_gen.go` 两行 | `NewSupplierCreditRepository` → `ProvideSupplierCreditRepository`（内部调 `SetPaymentDisputeStore`）；`NewSupplierWithdrawalNotifier` → `ProvideSupplierWithdrawalNotifier`（内部调 `SetPaymentDisputeNotifier`） | 争议台账与通知器都是进程级单例，理由同 #5d/#5e（不往 `PaymentService` 上加字段）。**台账只能从 repository 那侧装配**：`repository` import `service`，反过来不成立。宿主选 `ProvideSupplierCreditRepository` 有两条理由：wire 保证会构造它（单例注入的东西没有消费者，独立 provider 会被剪掉 → 第一次真实拒付时 `store == nil`，见 #5a/#5c 那个坑），且追回写的正是它拥有的那张表。通知器同理挂在提现通知器上——两者共用同一份 `notify_emails` | **已做** |
 | 5h | `backend/cmd/server/wire_gen.go` | `NewSupplierWithdrawalRepository` 构造处 :319 | **手工改 1 行**：多传一个已存在的 `secretEncryptor`（:90 处已构造，本是 TOTP 用的） | 收款账号加密（迁移 `232`）。刻意复用既有的 `SecretEncryptor` 而不是新起一份密钥配置：多一个密钥就多一次"部署时忘了配"的机会，而这个字段配漏了的表现是**提现申请全站失败**（`seal` 在没有加密器时报错、不降级成明文）。`internal/repository/wire.go` 一字未动——`NewSupplierWithdrawalRepository` 本来就在 ProviderSet 里，wire 按类型自动补上这个形参；只有手工维护的 `wire_gen.go` 需要跟一行。**本仓无 `wire` 二进制**，同 #5f | **已做** |
+| 5i | `backend/cmd/server/wire_gen.go` | `supplierHandler` 构造处 :319 附近 | **手工改 3 行**：新建 `supplierExportRepository` / `supplierExportService` 两行，`NewSupplierHandler` 多传一个形参；`internal/repository/wire.go` 与 `internal/service/wire.go` 各加一个 provider | 对账导出。导出仓储收的是与提现仓储**同一个** `secretEncryptor`——那份文件里的收款账号必须是明文（§3.9）。导出没有并进 `SupplierAdminRepository` 也没并进 `SupplierWithdrawalRepository`：前者整层不碰收款账号，不该为了导出多拿一把密钥；后者已有自己的 sqlmock 与真库两套测试，合进去等于把两组依赖搅在一起。handler 方法照旧挂在既有的 `*SupplierAdminHandler` 上，`AdminHandlers` / `ProvideAdminHandlers` / `handler/wire.go` 三处热区一行未动（同 #9）。**本仓无 `wire` 二进制**，同 #5f/#5h | **已做** |
 | 10 | `backend/internal/handler/payment_webhook_handler.go` | `handleNotify` 的 `notification == nil` 分支 | 插入两行：一行 `// APEXONE-EXT:` 注释 + 一行 `h.handleDisputeNotify(...)`。逻辑全在新文件 `payment_webhook_dispute.go` | 争议事件挂在既有 webhook 上而不是新开路由：Stripe 后台一个 endpoint 收全部事件类型，分流要运营在后台再配一个 endpoint 并勾对事件类型——那是一件不做也不报错、做错了也不报错的运维动作，而它错了的表现是「拒付静默地不被处理」，与上线前一模一样。挂的位置是 `notification == nil`，那个分支的含义正是「验签通过但不是我们认识的支付事件」，因此**支付主链路一行不动**，认得的支付事件根本走不到这里。同步执行而非 goroutine：Stripe 超时 20 秒，而这条路径通常几十毫秒；异步会让失败日志与本次推送对不上号 | **已做** |
-| 9 | `backend/internal/server/routes/admin.go` | `registerSettingsRoutes(admin, h)` 之后 | 加 `registerSupplyMarketRoutes(admin, h)` 一行 + 一行 `// APEXONE-EXT:` 注释；函数体定义在 `routes/supplier.go` | 管理端运营视图的七条路由（四条只读 + 提现审批那三条：列表 / 标记已打款 / 拒绝）。写路径为什么能进这一层见 §3.6 首段。挂进既有 admin group（adminAuth + 面板限流 + 审计 + `AdminComplianceGuard` 四层中间件），理由同 #8。handler **不进 `AdminHandlers`** 而是挂在既有的 `Handlers.Supplier` 下（`h.Supplier.Admin`）——`AdminHandlers` 结构体、`ProvideAdminHandlers` 形参表、`handler/wire.go` 是三处上游合并热区，每加一个管理端 handler 就要各留一行。用户侧与管理侧刻意是**两个类型**：路由挂错时是编译期的事，而不是把一个全站流水接口挂到了 `/user/supply` 下面 | **已做** |
+| 9 | `backend/internal/server/routes/admin.go` | `registerSettingsRoutes(admin, h)` 之后 | 加 `registerSupplyMarketRoutes(admin, h)` 一行 + 一行 `// APEXONE-EXT:` 注释；函数体定义在 `routes/supplier.go` | 管理端运营视图的九条路由（四条只读 + 提现那三条：列表 / 标记已打款 / 拒绝 + 对账导出那两条 GET）。写路径为什么能进这一层见 §3.6 首段。挂进既有 admin group（adminAuth + 面板限流 + 审计 + `AdminComplianceGuard` 四层中间件），理由同 #8。handler **不进 `AdminHandlers`** 而是挂在既有的 `Handlers.Supplier` 下（`h.Supplier.Admin`）——`AdminHandlers` 结构体、`ProvideAdminHandlers` 形参表、`handler/wire.go` 是三处上游合并热区，每加一个管理端 handler 就要各留一行。用户侧与管理侧刻意是**两个类型**：路由挂错时是编译期的事，而不是把一个全站流水接口挂到了 `/user/supply` 下面 | **已做** |
 
 ## 5. 结算不变量（实现必须守住）
 
@@ -364,6 +382,7 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 | —（无迁移相关） | `supplier_leader_lock_integration_test.go`（5 例，新文件） | 多实例选主。此前只有两组单进程测试：service 侧一个内存假锁、repository 侧 miniredis，都答不出部署时真正关心的那个问题——**N 个实例同时起来，到底有几个跑了这一轮**。真后端证的是：真 Redis 下持锁期间后来者一个都进不来、释放后新实例立刻能进（不会永久饿死）、锁的 TTL 真的设上了、八个实例同时起跑只选出一个 leader 且**同时在跑的永远只有一个**；Redis 报错时真的退到了 Postgres advisory lock（去 `pg_locks` 里按 fnv 算出的 id 认那把锁，"裸跑"与"持锁"在这里才分得开）且释放时连会话一起收掉；解冻与生命周期用的是两把不同的锁。写法上从 `Start()` 打进去，走的是与生产完全一致的路径 |
 | 231（**2026-08-20 补**） | `payment_dispute_repo_integration_test.go`（9 例，新文件） | 这张表的全部保证都写在一条 UPSERT 的 `ON CONFLICT` 子句里，而 sqlmock 只会把那条 SQL 原样还回来。真库证的是：`ON CONFLICT (dispute_id)` 真的推断得到迁移 231 的唯一索引（推断不上不是降级而是报错，表现为"第二次推送整条 webhook 500"）；**结算之后再来的推送碰不到 `settled_at` 与四个结算金额**，也碰不到已冻住的 `basis_amount`——这是"一笔拒付只扣一遍钱"的最后一道保证；结算之前 `basis_amount` 仍可被修正；订单关联**只补不覆盖**（孤儿争议事后能被补上订单，已对上的不会被字段更少的推送打回孤儿）；`resolved_at` 只记第一次关闭；`ClaimForSettlement` 串行重放五次只有第一次拿到 true，**16 个 goroutine 同时抢也恰好只有一个赢**；空 `dispute_id` 在进库前就被三个方法各自拦下 |
 | 232（**2026-08-20 补**） | `supplier_withdrawal_repo_integration_test.go`（+2）、`supplier_payout_cipher_test.go`（6 例，新文件、不带 tag） | 单测能证密文形状，证不了**库里到底存了什么**。真库证的是：`payout_account` 列真的放得下约 1 060 个 base64 字符（229 建的是 `VARCHAR(256)`，迁移 232 没跑到的话这条插入直接报错，而不是悄悄截断），直读那一列拿到的是 `enc.v1:…`、里面搜不到卡号——**这正是一份 `pg_dump` 会看到的东西**；建单回读、列表、审批回读三条读路径都解了密（少解一条的表现是运营照着一串 base64 去打款）；以及绕过仓储直插一行明文（模拟升级那一刻库里的实际状态：一张已经扣过钱、还等着打款的旧单子）后，它照常读得出来、也照常推得到终态——那是"不需要停机窗口"这个承诺的全部依据 |
+| —（无新迁移，**2026-08-20 补**） | `supplier_export_repo_integration_test.go`（8 例，新文件） | 这两条导出查询是本轮唯一用 sqlmock 测不出**任何**东西的部分——它只把 SQL 当字符串比对，而这里每条断言问的都是"Postgres 拿到这串东西之后做了什么"。真库证的是：按 `status` 筛不撞 ambiguous column（`supplier_withdrawals` 与 `users` **都有** `status` 这一列，而导出比屏幕上的列表多一个 `LEFT JOIN users`，这条路只有"导出且按状态筛"这一个组合能走到）；两个 `LEFT JOIN` 的 **LEFT**——`reviewer_id` 为 NULL 的待处理单子必须在文件里，写成 INNER 的话"还没打的款"会整批消失，而那恰恰是运营导这份表的第一个理由；`::text` 拿到的是 NUMERIC 原文（`0.00000001` 不被舍成 `1e-08`、`0.333333` 是比例快照原文）；`limit+1` 探针置位 `truncated` 且那一行**不进文件**，而恰好导满时不算截断；时间窗真的筛、顺序真的是 `created_at ASC`；密文行与 232 之前的历史明文行同处一份文件都读得出来 |
 | —（无新迁移） | `supplier_admin_repo_integration_test.go`（7 例，新文件） | 运营视图全是跨表聚合，sqlmock 只会把写好的 SQL 原样还回来，连 `COUNT(*) FILTER (...)` 是不是合法都不知道。真库证的是：自营账号（`owner_user_id IS NULL`）一个都没混进任何一个数字；jsonb 状态缺失兜底进 `pending_review`；看板人数恒等于名册分页总数，且**号全删了但钱包还有余额的人仍在名册里**；四个排序键的 `ORDER BY` 片段都真的合法、翻页不重不漏；未知排序键报错；健康度/状态/归属三个筛子各自成立且观察期字段真的从 jsonb 里解得出来；流水窗口用的是数据库时钟（`NOW() - make_interval(days => $1)` 的参数类型推断只有真库能证），把行挪到 60 天前它就从 30 天窗口里消失、把窗口拉到 90 天它又回来 |
 
 并发那两例（溢出配额、争议占坑）刻意**不走 `testEntTx`**：那个 harness 是一个会回滚的单事务，会把所有写串行化，正好掩盖掉要测的东西。它们用 `integrationEntClient` 直连并自行清理。
@@ -378,6 +397,8 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 
 迁移 232 那一组同样逐条反证过（5 处变异，每处都能编译）：插入时跳过 `seal` 直存明文、`open` 解密失败返回空串而非报错、去掉 `open` 里的前缀判断（历史明文被喂进 `Decrypt`）、`seal` 不加版本前缀、`scan` 末尾整段不解密——五条各被对应用例逮住，其中"返回空串"与"不加前缀"两条只有单测看得见，"直存明文"与"不解密"两条只有真库看得见。
 
+对账导出（§3.9）逐条反证过 13 处变异，每处都能编译，且**刻意分布在三层**：仓储侧六处（WHERE 不加表名前缀 → 撞 ambiguous / reviewer 用 INNER JOIN / 不多要探针那一行 / 金额绕一趟 float64 / 按时间倒序 / 收款账号不解密），服务侧两处（窗口不覆盖 filter 里的时间 → 文件名与实际查询的范围各说各话 / `Available()` 不看仓储），HTTP 与编码侧五处（公式字符不中和 / 出错也写尾行 → 给半截文件盖上完整的章 / 截断不在文件里说 / 不写 BOM / 文件名用当下而非窗口）。分层是有意义的：仓储那六处只有真库看得见，编码那五处只有单测看得见——一份在 Excel 里被当成公式执行的单元格不会让任何一条服务端日志变红。
+
 **仍未验证的**（不在真库能力范围内，需要活的上游）：真实 OAuth 授权码兑换。
 
 ## 9. 路由装配的验证实录（2026-08-20）
@@ -386,7 +407,7 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 
 `supplier_test.go`（不带 build tag，与 `internal/server/routes` 其余测试一致，`make test-unit` 与 `make test-integration` 两边都跑到）分两类断言：
 
-**行为类**——从 `router.Routes()` 反推，而不是照着 `supplier.go` 抄一遍路径清单。后者只能证明"我写的和我写的一样"，前者对将来新增的每一条路由自动生效，而"新加的一条忘了挂"正是要防的那种遗漏。三条：十五条用户路由每一条都真的走过 JWT 与审计（审计桩 abort 掉，于是依赖全空的 handler 一次也没被调用）；未登录时十五条一条不漏地 401；管理端七条挂在 admin 组下，未登录同样一条都进不去。
+**行为类**——从 `router.Routes()` 反推，而不是照着 `supplier.go` 抄一遍路径清单。后者只能证明"我写的和我写的一样"，前者对将来新增的每一条路由自动生效，而"新加的一条忘了挂"正是要防的那种遗漏。三条：十五条用户路由每一条都真的走过 JWT 与审计（审计桩 abort 掉，于是依赖全空的 handler 一次也没被调用）；未登录时十五条一条不漏地 401；管理端九条挂在 admin 组下，未登录同样一条都进不去。
 
 **清单类**——三处只能从源码读，因为它们在装配测试里**观测不到**：
 
@@ -395,6 +416,8 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 | 中间件链与 `RegisterUserRoutes` 逐字相同（含顺序） | `BackendModeUserGuard(nil)` 与 `panelRateLimiter.Global()` 拿到 nil 依赖时都直接 `c.Next()`，与"根本没挂"是同一个观测结果。顺序同理：审计必须**最后**，否则被前面几层挡下的请求会在审计日志里留下一条根本没发生的"某某访问了提现接口" |
 | Heavy 限流的挂载点恰好是 `oauth/start` / `oauth/complete` / `POST /withdrawals` | `Heavy()` 与 `Global()` 在没有 Redis 的测试里都放行，注册结果里分辨不出谁是谁。而这三条的**反面**（撤回提现、解绑账号、同意协议不套 Heavy）最容易被"顺手加一层更安全"改掉——那等于在供给者最急着把钱拿回来、最想撤回授权的时候让他做不到，测试因此把这三条也单独点名 |
 | 管理端的写路径只有提现审批那两条 POST | §3.6 那条边界（整层只读，唯一例外是提现审批）在后端唯一的落点。前端有一条同形状的断言钉住 API 客户端的写方法清单；两边都要求"加一条写接口先改断言"，也就是先停下来想一下这个写动作该不该出现在一个看板里 |
+
+那条"管理端一共几条"的计数断言在加对账导出（§3.9）时立刻变红了——两条新的 GET 一挂上去，`should have 7 item(s), but has 9` 就把改动拦在了提交之前。这正是它存在的理由：改断言那一步强迫人回答"新加的这两条该不该出现在这个组里"，而答案（该，因为它们要跟着走审计中间件）是这次唯一需要想清楚的事。
 
 加上三道判空（`h` / `h.Supplier` / `h.Supplier.Admin` 任一为 nil 时一条路由都不注册）：wire 装配失误时正确的表现是这些接口 404，不是一打就 502。管理端那半边直接调 `registerSupplyMarketRoutes` 而不走 `RegisterAdminRoutes`，因为后者在 `h.Admin` 为 nil 时会自己先崩（上游既有行为，每个 `registerXxxRoutes` 都直接读 `h.Admin.<字段>`），那样测的就成了上游的容错。
 

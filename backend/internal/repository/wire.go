@@ -127,6 +127,7 @@ var ProviderSet = wire.NewSet(
 	NewSupplierAdminRepository,
 	// APEXONE-EXT: 双边市场——提现单仓储。
 	NewSupplierWithdrawalRepository,
+	NewSupplierExportRepository,
 	NewUserPlatformQuotaRepository,     // T14: user × platform quota
 	NewUserPlatformQuotaServiceAdapter, // T14: adapter → service.UserPlatformQuotaRepository
 

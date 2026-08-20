@@ -33,12 +33,13 @@ func NewSupplierHandler(
 	creditService *service.SupplierCreditService,
 	adminService *service.SupplierAdminService,
 	withdrawalService *service.SupplierWithdrawalService,
+	exportService *service.SupplierExportService,
 ) *SupplierHandler {
 	return &SupplierHandler{
 		onboardingService: onboardingService,
 		creditService:     creditService,
 		withdrawalService: withdrawalService,
-		Admin:             NewSupplierAdminHandler(adminService, withdrawalService),
+		Admin:             NewSupplierAdminHandler(adminService, withdrawalService, exportService),
 	}
 }
 

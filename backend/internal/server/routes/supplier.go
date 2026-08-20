@@ -101,5 +101,13 @@ func registerSupplyMarketRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		supply.GET("/withdrawals", h.Supplier.Admin.ListWithdrawals)
 		supply.POST("/withdrawals/:id/paid", h.Supplier.Admin.MarkWithdrawalPaid)
 		supply.POST("/withdrawals/:id/reject", h.Supplier.Admin.RejectWithdrawal)
+
+		// 对账导出。是 GET、只读，但与上面四条只读接口有一点本质不同：
+		// 响应体是一份**要离开这台机器**的文件，而且提现那份里含收款账号明文。
+		// 因此它必须走审计中间件（这个组已经带着）——事后要答得出
+		// 「上个月那份带着全部供给者收款方式的表格是谁导的」。
+		// 挂在这个组里而不是自起一个组，理由与本函数其余路由一样。
+		supply.GET("/export/withdrawals", h.Supplier.Admin.ExportWithdrawals)
+		supply.GET("/export/ledger", h.Supplier.Admin.ExportLedger)
 	}
 }

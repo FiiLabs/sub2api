@@ -149,7 +149,15 @@ type SupplierWithdrawalFilter struct {
 	// UserID 0 = 不限（仅管理端会这么传）。
 	UserID int64
 	// Status 空 = 不限。
-	Status   string
+	Status string
+	// StartAt / EndAt 按建单时间筛，nil = 不限。
+	//
+	// 屏幕上的列表目前不传这两个（分页翻着看不需要），加在这里是为了让**导出**
+	// 与列表共用同一个 WHERE 拼装函数。这不是省几行代码：一份对账文件如果比
+	// 运营刚看过的那一屏多几行或少几行，他会先怀疑账不对而不是怀疑筛子不同，
+	// 而两个各写各的筛选函数迟早会漂成两个筛子。
+	StartAt  *time.Time
+	EndAt    *time.Time
 	Page     int
 	PageSize int
 }

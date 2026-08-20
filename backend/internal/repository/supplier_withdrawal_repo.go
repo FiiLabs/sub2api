@@ -394,17 +394,37 @@ func (r *supplierWithdrawalRepository) CountPending(ctx context.Context, userID 
 	return scanSupplierInt64(ctx, client, supplierWithdrawalCountPendingSQL, userID)
 }
 
-// buildSupplierWithdrawalWhere 拼筛选条件。两个筛子都是参数化的，没有一处字符串拼值。
+// buildSupplierWithdrawalWhere 拼筛选条件。四个筛子都是参数化的，没有一处字符串拼值。
 func buildSupplierWithdrawalWhere(filter service.SupplierWithdrawalFilter) (string, []any) {
-	clauses := make([]string, 0, 2)
-	args := make([]any, 0, 2)
+	return buildSupplierWithdrawalWhereOn(filter, "")
+}
+
+// buildSupplierWithdrawalWhereOn 是同一个筛子，但给列名加一个表别名前缀。
+//
+// 导出（supplier_export_repo.go）要 LEFT JOIN users 才拿得到邮箱，而 `status`
+// 这一列在 supplier_withdrawals 和 users 上**都存在**——不限定表名的话
+// Postgres 直接报 ambiguous，而那是一条只在"导出且按状态筛"时才走到的路径。
+//
+// 拆成一个带前缀的版本而不是给导出另写一个筛子：列表与导出必须选出同一批行
+// （理由见 SupplierWithdrawalFilter 的注释），共用一份实现是唯一能保证这件事的做法。
+func buildSupplierWithdrawalWhereOn(filter service.SupplierWithdrawalFilter, prefix string) (string, []any) {
+	clauses := make([]string, 0, 4)
+	args := make([]any, 0, 4)
 	if filter.UserID > 0 {
 		args = append(args, filter.UserID)
-		clauses = append(clauses, fmt.Sprintf("user_id = $%d", len(args)))
+		clauses = append(clauses, fmt.Sprintf("%suser_id = $%d", prefix, len(args)))
 	}
 	if status := strings.TrimSpace(filter.Status); status != "" {
 		args = append(args, status)
-		clauses = append(clauses, fmt.Sprintf("status = $%d", len(args)))
+		clauses = append(clauses, fmt.Sprintf("%sstatus = $%d", prefix, len(args)))
+	}
+	if filter.StartAt != nil {
+		args = append(args, *filter.StartAt)
+		clauses = append(clauses, fmt.Sprintf("%screated_at >= $%d", prefix, len(args)))
+	}
+	if filter.EndAt != nil {
+		args = append(args, *filter.EndAt)
+		clauses = append(clauses, fmt.Sprintf("%screated_at <= $%d", prefix, len(args)))
 	}
 	if len(clauses) == 0 {
 		return "", args

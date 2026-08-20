@@ -871,6 +871,7 @@ var ProviderSet = wire.NewSet(
 	ProvideSupplierLifecycleService,
 	// APEXONE-EXT: 双边市场——管理端运营视图服务（只读聚合）。
 	NewSupplierAdminService,
+	NewSupplierExportService,
 	// APEXONE-EXT: 双边市场——提现（申请扣款 / 人工打款 / 拒绝退款）及其邮件通知。
 	ProvideSupplierWithdrawalNotifier,
 	NewSupplierWithdrawalService,

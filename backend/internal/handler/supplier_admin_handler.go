@@ -35,14 +35,23 @@ import (
 type SupplierAdminHandler struct {
 	adminService      *service.SupplierAdminService
 	withdrawalService *service.SupplierWithdrawalService
+	// exportService 对账导出（supplier_export_handler.go）。它与上面两个的
+	// 差别是**响应体是一份要离开这台机器的文件**：里面有收款账号明文，
+	// 且一旦下载完成就不再受这套系统的任何约束。边界写在 §3.9。
+	exportService *service.SupplierExportService
 }
 
 // NewSupplierAdminHandler 构造运营视图 handler。
 func NewSupplierAdminHandler(
 	adminService *service.SupplierAdminService,
 	withdrawalService *service.SupplierWithdrawalService,
+	exportService *service.SupplierExportService,
 ) *SupplierAdminHandler {
-	return &SupplierAdminHandler{adminService: adminService, withdrawalService: withdrawalService}
+	return &SupplierAdminHandler{
+		adminService:      adminService,
+		withdrawalService: withdrawalService,
+		exportService:     exportService,
+	}
 }
 
 // supplyAdminPaging 解析分页参数。越界值交给 service 侧夹回去（那里有唯一的一份上下限）。

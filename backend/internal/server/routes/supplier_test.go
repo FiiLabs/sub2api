@@ -133,7 +133,7 @@ func TestSupplierRoutes_RejectUnauthenticated(t *testing.T) {
 	}
 }
 
-// 管理端那七条走的是 admin 组的四层中间件，没登录同样一条都进不去。
+// 管理端那九条走的是 admin 组的四层中间件，没登录同样一条都进不去。
 //
 // 这条测的是"挂对了组"。挂到用户组上会让一个能看全站流水、能推进提现单的接口
 // 只需要一个普通用户的 token——而它不会有任何症状，直到有人发现自己看得见别人的账。
@@ -150,7 +150,7 @@ func TestSupplyMarketRoutes_AreUnderAdminGroup(t *testing.T) {
 	RegisterAdminRoutes(router.Group("/api/v1"), supplierTestHandlers(), adminAuth, auditLog, stepUp, nil, nil)
 
 	routes := supplierRoutePaths(t, router, "/api/v1/admin/supply")
-	require.Len(t, routes, 7, "管理端供给侧路由数变了，改动前先读 §3.6 与 routes/supplier.go 顶部")
+	require.Len(t, routes, 9, "管理端供给侧路由数变了，改动前先读 §3.6 与 routes/supplier.go 顶部")
 
 	for _, route := range routes {
 		t.Run(route.Method+" "+route.Path, func(t *testing.T) {

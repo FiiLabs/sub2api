@@ -319,7 +319,11 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	supplierWithdrawalRepository := repository.NewSupplierWithdrawalRepository(client, secretEncryptor)
 	supplierWithdrawalNotifier := service.ProvideSupplierWithdrawalNotifier(emailService, userRepository, settingService)
 	supplierWithdrawalService := service.NewSupplierWithdrawalService(supplierWithdrawalRepository, supplierCreditRepository, settingService, supplierWithdrawalNotifier)
-	supplierHandler := handler.NewSupplierHandler(supplierOnboardingService, supplierCreditService, supplierAdminService, supplierWithdrawalService)
+	// APEXONE-EXT: 对账导出。仓储与提现仓储收同一个 secretEncryptor——
+	// 导出要把收款账号解回明文（那份文件就是打款工作单）。
+	supplierExportRepository := repository.NewSupplierExportRepository(client, secretEncryptor)
+	supplierExportService := service.NewSupplierExportService(supplierExportRepository)
+	supplierHandler := handler.NewSupplierHandler(supplierOnboardingService, supplierCreditService, supplierAdminService, supplierWithdrawalService, supplierExportService)
 	idempotencyCoordinator := service.ProvideIdempotencyCoordinator(idempotencyRepository, configConfig)
 	idempotencyCleanupService := service.ProvideIdempotencyCleanupService(idempotencyRepository, configConfig)
 	handlers := handler.ProvideHandlers(authHandler, userHandler, apiKeyHandler, usageHandler, redeemHandler, subscriptionHandler, announcementHandler, channelMonitorUserHandler, channelMonitorV2Handler, adminHandlers, gatewayHandler, openAIGatewayHandler, handlerSettingHandler, totpHandler, passkeyHandler, handlerPaymentHandler, paymentWebhookHandler, availableChannelHandler, modelPlazaHandler, asyncImageHandler, batchImageHandler, supplierHandler, idempotencyCoordinator, idempotencyCleanupService)
