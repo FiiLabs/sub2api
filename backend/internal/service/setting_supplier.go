@@ -36,12 +36,19 @@ const (
 	// SupplierFreezeHoursMax 冻结窗上限 90 天。比大多数支付通道的拒付窗更长，
 	// 再长就不是风控而是拖欠了。
 	SupplierFreezeHoursMax = 24 * 90
-	// SupplierFreezeHoursDefault 默认冻结窗（7 天，**占位值**）。
+	// SupplierFreezeHoursDefault 默认冻结窗（30 天）。
 	//
 	// 这个数必须 ≥ 支付通道实际拒付窗，不变量「已释放 = 拒付安全」才成立。
-	// 7 天只是能把流程跑通的占位；Stripe 的争议窗远长于此。上线前必须按实际
-	// 支付方重设，否则冻结期过后被拒付，平台只能自吃。
-	SupplierFreezeHoursDefault = 168
+	// 代码侧只 clamp 到上面那个上限，**拦不住「配小了」**——配小了的表现是
+	// 冻结期过后钱已经付给供给者，此后再被拒付平台自吃，而这件事要等到
+	// 第一笔拒付才看得见。所以默认值必须自己是安全的那一侧。
+	//
+	// 30 天是折中，不是"安全值"：卡组织规则允许持卡人在结算后 120 天内发起
+	// 争议，真要覆盖全部得 2880 小时，但那意味着供给者干完活四个月才拿得到
+	// 钱，没有人会来供货。实际拒付的绝大多数落在交易后一个月内，漏掉的那条
+	// 尾巴不是无声的——它落在 `payment_disputes.uncovered_basis` 上。
+	// **上线一个月后按那一列的真实累计值再调**，而不是继续拍脑袋。
+	SupplierFreezeHoursDefault = 24 * 30
 	// SupplierShareRatioDefault 默认分成比例（**占位值**，运营期标定）。
 	SupplierShareRatioDefault = 0.70
 )

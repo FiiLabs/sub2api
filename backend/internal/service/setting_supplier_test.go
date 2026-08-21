@@ -74,6 +74,14 @@ func TestDefaultSupplierSettlementSettingsIsDisabled(t *testing.T) {
 	assert.False(t, settings.SpendFromWalletFirst)
 	assert.Equal(t, SupplierShareRatioDefault, settings.ShareRatio)
 	assert.Equal(t, SupplierFreezeHoursDefault, settings.FreezeHours)
+
+	// 冻结窗单独钉死字面量 720，而不是只跟着常量走。
+	//
+	// 上面那一行拿常量比常量，改小默认值它照样绿——而这个值配小了的表现是：
+	// 冻结期过后钱已经付给供给者，此后被拒付平台自吃，且要等到第一笔真实拒付
+	// 才看得见。代码侧只 clamp 上限，拦不住「配小了」，所以这里放一道会响的闸：
+	// 谁改这个数，谁就得在这条断言前停一下，回答"新的值 ≥ 支付通道拒付窗吗"。
+	assert.Equal(t, 720, settings.FreezeHours, "默认冻结窗 30 天；要改先读 docs/two-sided-market.md §6")
 }
 
 func TestSupplierSettlementSettingsNormalizeClampsGarbage(t *testing.T) {
