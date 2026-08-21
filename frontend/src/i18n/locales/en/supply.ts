@@ -511,8 +511,18 @@ export default {
       notNotified: 'Supplier not notified yet'
     },
 
+    export: {
+      button: 'Export last {days}d (CSV)',
+      running: 'Exporting…',
+      done: 'Export finished ({note})',
+      truncated: 'Export was truncated: {note}. Narrow the time window and export again.',
+      incomplete:
+        'This file is incomplete and must not be used for payouts: the server failed mid-write. Saved as {name}. Please export again.'
+    },
+
     error: {
       overviewFailed: 'Failed to load the dashboard',
+      exportFailed: 'Export failed',
       rosterFailed: 'Failed to load the roster',
       accountsFailed: 'Failed to load accounts',
       ledgerFailed: 'Failed to load the ledger',

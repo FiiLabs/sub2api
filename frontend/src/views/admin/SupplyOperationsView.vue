@@ -169,6 +169,15 @@
             <button class="btn btn-secondary btn-sm" data-testid="supply-ops-withdrawal-search" @click="reloadWithdrawals()">
               {{ t('supplyOps.search') }}
             </button>
+            <!-- 按钮上写明窗口：这张表翻的是全部历史，导出的却只有近 N 天。 -->
+            <button
+              class="btn btn-secondary btn-sm"
+              :disabled="exportingWithdrawals"
+              data-testid="supply-ops-withdrawal-export"
+              @click="exportWithdrawalsCSV()"
+            >
+              {{ exportingWithdrawals ? t('supplyOps.export.running') : t('supplyOps.export.button', { days: windowDays }) }}
+            </button>
           </div>
         </div>
 
@@ -681,6 +690,14 @@
             <button class="btn btn-secondary btn-sm" data-testid="supply-ops-ledger-search" @click="reloadLedger()">
               {{ t('supplyOps.search') }}
             </button>
+            <button
+              class="btn btn-secondary btn-sm"
+              :disabled="exportingLedger"
+              data-testid="supply-ops-ledger-export"
+              @click="exportLedgerCSV()"
+            >
+              {{ exportingLedger ? t('supplyOps.export.running') : t('supplyOps.export.button', { days: windowDays }) }}
+            </button>
           </div>
         </div>
 
@@ -752,6 +769,7 @@ import {
   type SupplyAdminLedgerEntry,
   type SupplyIncident,
   type SupplyIncidentSummary,
+  type SupplyExportFile,
   type SupplyMarketOverview,
   type SupplyWithdrawalAdminView,
   type SupplyWithdrawalStatus,
@@ -771,6 +789,10 @@ const STATE_BUCKETS = ['pending_review', 'active', 'draining', 'retired'] as con
 const LEDGER_ACTIONS = ['accrue', 'thaw', 'spend', 'clawback', 'withdraw'] as const
 
 const windowDays = ref<number>(30)
+// 导出是唯一一件"点下去要等好几秒"的事。按钮不锁住的话，运营会以为没反应
+// 再点一次，于是同一份几十 MB 的文件被拉两遍。
+const exportingWithdrawals = ref(false)
+const exportingLedger = ref(false)
 const overview = ref<SupplyMarketOverview | null>(null)
 const overviewLoading = ref(true)
 
@@ -855,6 +877,85 @@ async function loadOverview(): Promise<void> {
     reportError(error, 'supplyOps.error.overviewFailed')
   } finally {
     overviewLoading.value = false
+  }
+}
+
+/**
+ * 导出的时间窗。
+ *
+ * 用页头那个窗口选择器，而不是各自再开一个日期控件：一页上两套时间基准，
+ * 运营迟早会导出一份和屏幕上看到的不是同一段时间的文件。
+ *
+ * 需要注意的是反过来也不成立——屏幕上那两张表（提现、流水）本身**不带窗口**，
+ * 它们翻的是全部历史。所以按钮上写明"导出近 N 天"，不让人以为导出的就是
+ * 眼前这一页。
+ */
+function exportWindow(): { start_at: string; end_at: string } {
+  const end = new Date()
+  const start = new Date(end.getTime() - windowDays.value * 24 * 60 * 60 * 1000)
+  return { start_at: start.toISOString(), end_at: end.toISOString() }
+}
+
+/**
+ * 把拿到的 blob 存到磁盘上，并按完整性给出不同强度的提示。
+ *
+ * 三档提示是刻意分开的：`truncated` 是"文件是好的，但不全，收窄窗口再来一次"，
+ * `incomplete` 是"这份文件不能用来打款"。用同一句话说这两件事，运营只会记住
+ * 其中一件。文件名上也各带一个后缀——提示条会消失，文件不会。
+ */
+function saveSupplyExport(file: SupplyExportFile): void {
+  const url = window.URL.createObjectURL(file.blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = file.filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  window.URL.revokeObjectURL(url)
+
+  if (file.state === 'incomplete') {
+    appStore.showError(t('supplyOps.export.incomplete', { name: file.filename }))
+  } else if (file.state === 'truncated') {
+    appStore.showWarning(t('supplyOps.export.truncated', { note: file.note }))
+  } else {
+    appStore.showSuccess(t('supplyOps.export.done', { note: file.note }))
+  }
+}
+
+async function exportWithdrawalsCSV(): Promise<void> {
+  if (exportingWithdrawals.value) return
+  exportingWithdrawals.value = true
+  try {
+    saveSupplyExport(
+      await adminSupplyMarketAPI.exportWithdrawals({
+        ...exportWindow(),
+        status: withdrawalStatus.value || undefined,
+        user_id: withdrawalUserId.value || undefined,
+      })
+    )
+  } catch (error) {
+    reportError(error, 'supplyOps.error.exportFailed')
+  } finally {
+    exportingWithdrawals.value = false
+  }
+}
+
+async function exportLedgerCSV(): Promise<void> {
+  if (exportingLedger.value) return
+  exportingLedger.value = true
+  try {
+    saveSupplyExport(
+      await adminSupplyMarketAPI.exportLedger({
+        ...exportWindow(),
+        user_id: ledgerUserId.value || undefined,
+        action: ledgerAction.value || undefined,
+        request_id: ledgerRequestId.value.trim() || undefined,
+      })
+    )
+  } catch (error) {
+    reportError(error, 'supplyOps.error.exportFailed')
+  } finally {
+    exportingLedger.value = false
   }
 }
 

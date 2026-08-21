@@ -621,6 +621,143 @@ async function rejectWithdrawal(id: number, note: string): Promise<SupplyWithdra
   return data
 }
 
+// ============================================================================
+// 对账导出
+// ============================================================================
+
+/**
+ * 一份导出文件的完整性判定。
+ *
+ * - `complete`：尾行在，没撞上限——这份文件可以拿去打款。
+ * - `truncated`：尾行在，但后端说还有账没导出来。文件本身是好的，只是不全。
+ * - `incomplete`：尾行不在。中途出错了，而流式响应那时已经回了 200，
+ *   服务端没有别的地方能说这件事（见后端 supplier_export_csv.go 尾行一节）。
+ */
+export type SupplyExportState = 'complete' | 'truncated' | 'incomplete'
+
+export interface SupplyExportFile {
+  blob: Blob
+  /** 落到磁盘上的文件名。已按 state 加过后缀，见 supplyExportFilename。 */
+  filename: string
+  state: SupplyExportState
+  /** 尾行原文（没有尾行时为空串）。里面写着行数和窗口，值得原样给运营看。 */
+  note: string
+}
+
+/** 尾行最多可能有多长——取文件末尾这么多字节就够判定了。 */
+const SUPPLY_EXPORT_TAIL_BYTES = 4096
+
+/**
+ * 从 Content-Disposition 里取服务端定的文件名。
+ *
+ * 一定要用服务端那个：它把导出窗口写进了文件名（supply-ledger-20260721-20260820.csv），
+ * 而这份文件在硬盘上躺三天之后，文件名是唯一还留在外面的上下文。
+ */
+function parseContentDispositionFilename(header: unknown): string {
+  if (typeof header !== 'string') return ''
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(header)
+  return match ? decodeURIComponent(match[1].trim()) : ''
+}
+
+/**
+ * 把一个 blob 读成文本。读不出来给 null。
+ *
+ * 用 FileReader 而不是 `blob.text()`：后者在 jsdom 里根本不存在（它的 Blob 只有
+ * slice/size/type），于是"尾行判定"这段代码在测试里就永远走不到。改用一个
+ * 浏览器和 jsdom 都有的 API，测试跑的才是线上那条路。
+ */
+function readBlobText(blob: Blob): Promise<string | null> {
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null)
+    reader.onerror = () => resolve(null)
+    reader.readAsText(blob)
+  })
+}
+
+/**
+ * 读尾行，判定这份文件完不完整。
+ *
+ * 只取末尾几 KB 而不是整份读成字符串：一次 20 万行的导出有几十 MB，
+ * 为了看最后一行把它整个解码一遍是白烧运营那台机器的内存。
+ *
+ * 已知的一个理论误判：文件在"某个以 # 开头的行"处被截断时会被当成完整的。
+ * 数据行的第一列全是数字 id，撞不上；能以 # 开头的只有尾行本身。
+ */
+async function readSupplyExportTrailer(blob: Blob): Promise<{ state: SupplyExportState; note: string }> {
+  const tail = await readBlobText(blob.slice(Math.max(0, blob.size - SUPPLY_EXPORT_TAIL_BYTES)))
+  if (tail === null) {
+    // 读不出来就说不出这份文件完不完整。往"不完整"上判是刻意的：
+    // 错判成完整的代价是有人照着一份残缺的对账文件打款，
+    // 错判成残缺的代价是重导一次。
+    return { state: 'incomplete', note: '' }
+  }
+  const lines = tail.split('\n').map((line) => line.trim().replace(/^"|"$/g, '')).filter(Boolean)
+  const last = lines[lines.length - 1] ?? ''
+  if (!last.startsWith('#')) {
+    return { state: 'incomplete', note: '' }
+  }
+  const note = last.replace(/^#\s*,?\s*/, '').replace(/^"|"$/g, '')
+  return { state: note.includes('TRUNCATED') ? 'truncated' : 'complete', note }
+}
+
+/**
+ * 把完整性写进文件名。
+ *
+ * 提示条会消失，文件不会。一份残缺的对账文件躺在下载目录里，三天后谁都看不出
+ * 它当时报过警——除非那件事就写在文件名上。
+ */
+function supplyExportFilename(base: string, kind: string, state: SupplyExportState): string {
+  const name = base || `supply-${kind}.csv`
+  if (state === 'complete') return name
+  const suffix = state === 'truncated' ? '-TRUNCATED' : '-INCOMPLETE'
+  return name.replace(/(\.csv)?$/i, (ext) => suffix + (ext || '.csv'))
+}
+
+async function fetchSupplyExport(
+  path: string,
+  kind: string,
+  params: Record<string, string | number | undefined>
+): Promise<SupplyExportFile> {
+  // 服务不可用时后端在写响应头**之前**回一个 JSON 错误。responseType: 'blob'
+  // 会让那个 JSON 也变成 blob，于是 axios 拦截器取不出 message——调用方因此
+  // 只能报一句笼统的失败。这是流式下载换来的代价，不是遗漏。
+  const response = await apiClient.get<Blob>(path, { params, responseType: 'blob' })
+  const blob = response.data
+  const { state, note } = await readSupplyExportTrailer(blob)
+  return {
+    blob,
+    filename: supplyExportFilename(
+      parseContentDispositionFilename(response.headers?.['content-disposition']),
+      kind,
+      state
+    ),
+    state,
+    note,
+  }
+}
+
+/** 导出提现单。窗口由 start_at/end_at 决定，与页面上那张表的筛子无关。 */
+async function exportWithdrawals(
+  params: { status?: string; user_id?: number; start_at?: string; end_at?: string } = {}
+): Promise<SupplyExportFile> {
+  return fetchSupplyExport('/admin/supply/export/withdrawals', 'withdrawals', params)
+}
+
+/** 导出全站钱包流水。 */
+async function exportLedger(
+  params: {
+    user_id?: number
+    action?: string
+    account_id?: number
+    request_id?: string
+    start_at?: string
+    end_at?: string
+  } = {}
+): Promise<SupplyExportFile> {
+  return fetchSupplyExport('/admin/supply/export/ledger', 'ledger', params)
+}
+
 export const adminSupplyMarketAPI = {
   getOverview,
   listSuppliers,
@@ -628,6 +765,8 @@ export const adminSupplyMarketAPI = {
   listLedger,
   listIncidents,
   getIncidentSummary,
+  exportWithdrawals,
+  exportLedger,
   getSettlementSettings,
   updateSettlementSettings,
   getPoolSettings,

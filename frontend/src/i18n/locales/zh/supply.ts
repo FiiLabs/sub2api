@@ -485,8 +485,17 @@ export default {
       notNotified: '尚未通知到供给者'
     },
 
+    export: {
+      button: '导出近 {days} 天 CSV',
+      running: '导出中…',
+      done: '导出完成（{note}）',
+      truncated: '导出已截断：{note}。请收窄时间窗后重新导出。',
+      incomplete: '这份文件不完整，不能用于打款：服务端在写入过程中出错，文件已存为 {name}。请重新导出。'
+    },
+
     error: {
       overviewFailed: '加载看板失败',
+      exportFailed: '导出失败',
       rosterFailed: '加载名册失败',
       accountsFailed: '加载账号失败',
       ledgerFailed: '加载流水失败',

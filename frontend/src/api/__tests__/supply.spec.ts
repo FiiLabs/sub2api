@@ -391,6 +391,76 @@ describe('admin supply incidents (read-only)', () => {
   })
 })
 
+// 对账导出的判定全在文件**正文**里：响应头在第一行数据之前就发出去了，
+// 状态码永远是 200。所以"这份文件能不能拿去打款"只能靠尾行判，
+// 而这几条盯的就是那个判定。
+describe('admin supply export (trailer decides, not the status code)', () => {
+  const HEAD = '﻿id,user_id\n'
+
+  function respond(body: string, disposition?: string) {
+    get.mockResolvedValue({
+      data: new Blob([body]),
+      headers: disposition ? { 'content-disposition': disposition } : {},
+    })
+  }
+
+  beforeEach(() => {
+    get.mockReset()
+  })
+
+  it('asks for a blob and keeps the window-stamped name the server chose', async () => {
+    // 文件名里写着导出窗口，而这份文件在硬盘上躺三天之后，文件名是唯一
+    // 还留在外面的上下文。自己另编一个名字就把它丢了。
+    respond(`${HEAD}1,7\n#,exported 1 rows for 2026-07-21T00:00:00Z .. 2026-08-20T00:00:00Z (UTC)\n`,
+      'attachment; filename="supply-ledger-20260721-20260820.csv"')
+
+    const file = await adminSupplyMarketAPI.exportLedger({ start_at: 'A', end_at: 'B', action: 'accrue' })
+
+    expect(get).toHaveBeenCalledWith('/admin/supply/export/ledger', {
+      params: { start_at: 'A', end_at: 'B', action: 'accrue' },
+      responseType: 'blob',
+    })
+    expect(file.state).toBe('complete')
+    expect(file.filename).toBe('supply-ledger-20260721-20260820.csv')
+    expect(file.note).toContain('exported 1 rows')
+  })
+
+  it('carries a truncated export in the filename, not just in a toast', async () => {
+    // 提示条会消失，文件不会。一份只导了一半的对账文件躺在下载目录里，
+    // 三天后谁都看不出它当时报过警——除非那件事就写在文件名上。
+    respond(`${HEAD}1,7\n#,TRUNCATED at 200000 rows (limit 200000) for X .. Y (UTC) -- narrow the time range and export again\n`,
+      'attachment; filename="supply-withdrawals-20260721-20260820.csv"')
+
+    const file = await adminSupplyMarketAPI.exportWithdrawals({ status: 'pending' })
+
+    expect(file.state).toBe('truncated')
+    expect(file.filename).toBe('supply-withdrawals-20260721-20260820-TRUNCATED.csv')
+  })
+
+  it('treats a missing trailer as a broken file', async () => {
+    // 尾行总是写的。它不在，就说明服务端在写的过程中挂了——而那时 200 已经
+    // 发出去了，浏览器显示的是"下载完成"。这是整条链路上最危险的一种成功。
+    respond(`${HEAD}1,7\n2,9\n`, 'attachment; filename="supply-ledger-20260721-20260820.csv"')
+
+    const file = await adminSupplyMarketAPI.exportLedger()
+
+    expect(file.state).toBe('incomplete')
+    expect(file.filename).toBe('supply-ledger-20260721-20260820-INCOMPLETE.csv')
+    expect(file.note).toBe('')
+  })
+
+  it('still saves under a usable name when the header is missing', async () => {
+    // 代理剥掉 Content-Disposition 是常见的。名字丢了不该让下载失败——
+    // 文件本身是好的。
+    respond(`${HEAD}#,exported 0 rows for X .. Y (UTC)\n`)
+
+    const file = await adminSupplyMarketAPI.exportWithdrawals()
+
+    expect(file.state).toBe('complete')
+    expect(file.filename).toBe('supply-withdrawals.csv')
+  })
+})
+
 // 提现审批是管理端唯一动业务数据的写路径，所以单开一个 describe：上面那个
 // describe 的名字里写着 read-only，把两个 POST 塞进去会让那句话变成假的。
 describe('admin withdrawal review (the one write path)', () => {
