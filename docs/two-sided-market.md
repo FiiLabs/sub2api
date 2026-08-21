@@ -358,6 +358,7 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 | 9a | `backend/internal/server/routes/supplier.go` | `registerSupplyMarketRoutes` 函数体 | 加两条只读 GET（`/incidents`、`/incidents/summary`）+ 一行 `// APEXONE-EXT:` 注释 | 管理端供给侧路由从九条变成十一条。`routes/admin.go` **一行未动**——#9 那一行调用已经把整组挂进去了，这正是当初单起 `registerSupplyMarketRoutes` 的收益：此后每加一条运营接口，core 的路由文件都不再需要改动。`supplier_test.go` 里那条计数断言随之从 9 改到 11，改断言那一步强迫人回答"这两条该不该出现在这个组里"（见 §9） | **已做** |
 | 9b | `backend/internal/server/routes/supplier.go` | `RegisterSupplierRoutes` 函数体 | 加三条收款地址绑定路由（`GET /payout-wallets`、`PUT|DELETE /payout-wallets/:network`）+ 一段 `// APEXONE-EXT:` 注释 | 用户侧供给路由从十六条变成十九条。`routes/router.go` **一行未动**——#4 那一行调用已经把整组挂进去了。`PUT` 单独套 `panelRateLimiter.Heavy()`：它是供给侧唯一一个会往带唯一索引的表里写行的接口，不限住的话，反复 PUT 别人的地址、看回的是 200 还是"已被占用"，就是一个现成的「这个地址有没有人绑过」查询器。`DELETE` 刻意不套，理由与撤回提现、解绑账号一字不差。**管理端一条都不加**：一个能替别人改收款地址的按钮，与一个能替别人提现的按钮是同一件东西（见 §3.11） | **已做** |
 | 5l | `backend/internal/repository/wire.go` + `internal/service/wire.go` + `backend/cmd/server/wire_gen.go` | 两个 ProviderSet；`supplierWithdrawalService` 与 `supplierHandler` 构造处 | 注册 `NewSupplierPayoutWalletRepository` / `NewSupplierPayoutWalletService`；**手工改 4 处**：wire_gen 里新建两行，`NewSupplierWithdrawalService` 多收第五个形参，`NewSupplierHandler` 多收第七个形参 | 绑定仓储收的是与提现仓储**同一个** `secretEncryptor`（同 #5h：多一把密钥就多一次"部署时忘了配"的机会）。提现服务通过一个**窄口**（`supplierWithdrawalAddressResolver`，只有 `ResolvePayoutAddress` 一个方法）依赖它，而不是直接持有整个服务：提现只需要回答"这个渠道该打到哪"，给它绑定/解绑的能力等于让提现路径有改收款地址的可能。构造函数里 `if wallets != nil` 那一支是必需的，理由与 #5f 同形但后果不同——直接赋值得到的"非 nil 接口装着 nil 指针"**不会** panic（`ready()` 挡住了 nil 接收者），只会让链上渠道静默变成"服务不可用"，比 panic 更糟：运维会去查一个根本没坏的服务。**本仓无 `wire` 二进制**，同 #5f/#5h/#5i/#5j | **已做** |
+| 11 | `backend/cmd/server/main.go` | `runMainServer()` 内，SIMPLE 模式告警之后 | 加一行 `logPayoutChainStatus()` + 一段 `// APEXONE-EXT:` 注释；函数体定义在同文件末尾（+27 行） | 链上打款的启动自检。密钥没注入 / RPC 指向测试网 / 币地址写错，这三种误配如果不在启动时说，就要等到第一笔提现走到一半才暴露——那时单子已经进了 `processing`。**出错刻意不致命**：提现走不通的代价远小于整个进程起不来（所有用户都登不上），所以自检失败只记一条 `⚠️` 继续启动。自检**只读配置、只问一次 `eth_chainId`，不动任何钱**，且给了 5 秒超时——一个连不上的 RPC 不该把启动拖住。日志里带金库地址但**永远没有私钥**：地址是公开信息（每笔链上交易都写着它），运维靠它在 BscScan 上盯余额 | **已做** |
 | 9 | `backend/internal/server/routes/admin.go` | `registerSettingsRoutes(admin, h)` 之后 | 加 `registerSupplyMarketRoutes(admin, h)` 一行 + 一行 `// APEXONE-EXT:` 注释；函数体定义在 `routes/supplier.go` | 管理端运营视图的路由组（起步九条：四条只读 + 提现那三条：列表 / 标记已打款 / 拒绝 + 对账导出那两条 GET；失效视图两条后为十一条，见 #9a）。写路径为什么能进这一层见 §3.6 首段。挂进既有 admin group（adminAuth + 面板限流 + 审计 + `AdminComplianceGuard` 四层中间件），理由同 #8。handler **不进 `AdminHandlers`** 而是挂在既有的 `Handlers.Supplier` 下（`h.Supplier.Admin`）——`AdminHandlers` 结构体、`ProvideAdminHandlers` 形参表、`handler/wire.go` 是三处上游合并热区，每加一个管理端 handler 就要各留一行。用户侧与管理侧刻意是**两个类型**：路由挂错时是编译期的事，而不是把一个全站流水接口挂到了 `/user/supply` 下面 | **已做** |
 
 ## 5. 结算不变量（实现必须守住）
@@ -541,3 +542,50 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 **这一层顺手逮到一个已经上线的真 bug。** `submitWithdrawal` 里写着 `withdrawalForm.value.amount.trim()`，而 `amount` 的运行时类型是 `string | number`——Vue 的 `vModelText` 对 `<input type="number">` 会自动套上 `.number` 的转换（`castToNumber = number || props.type === 'number'`），填了数字之后拿到的是 `number`，只有清空时才留下空串。也就是说**每一次真实的提现提交**都在那行抛 `TypeError`，按钮看起来毫无反应。TS 看不见它，因为 v-model 的写入绕过了 ref 的类型；此前也没有任何一个测试挂载过这个视图。改成先 `String(...)` 再判空，并把 ref 的类型改成 `string | number` 让它说实话。
 
 **前端 13 处变异**（`SupplyView.payoutWallet.spec.ts` 11 条 + `api/__tests__/supply.spec.ts` 新增 6 条）逐条反证：绑定改用 POST / 地址塞进 URL / 前端先把地址转小写 / 链名不转义直接拼进路径 / 链上渠道也画自由输入框 / 人工渠道也被当成链上渠道 / 链上提现改送表单里手填的账号 / 没绑地址也放行建单 / 绑定后显示手里那串 / 已绑定时仍然摊开可编辑输入框 / 没有链上渠道的部署也去问绑定 / 金额当成一定是字符串 / 绑定时连 trim 都不做。
+
+### 9.5 链上客户端（2026-08-21）
+
+**没有引 go-ethereum。** 它会带进 7 个新模块、强制升级 3 个已有依赖，其中 c-kzg / blst 是 cgo 的——而本项目的发布产物是 `CGO_ENABLED=0` 的静态二进制。换来的是一整套用不到的东西：EVM、状态树、P2P、共识。真正需要的面很窄：一种交易类型（EIP-155 legacy）、五个 JSON-RPC 方法、四个合约调用。
+
+自己写的**只有 RLP 和 ABI 这两段纯编码**。真正难的两块没自己写：secp256k1 用 `decred/dcrd/dcrec/secp256k1/v4`（已在依赖图里，且正是 go-ethereum 非 cgo 路径用的同一个库），keccak256 用 `golang.org/x/crypto/sha3`（已是直接依赖）。**新增模块数：0。**
+
+这套取舍的安全性来自它的失败模式：编码错了，签名对不上、节点直接拒收，链上什么都不会发生。唯一会"钱打错地方"的是 ABI 里收款地址那一段，而那一段被**金标向量逐字节钉住**——EIP-155 官方参考交易、一笔真实形态的 BSC USDT transfer、`disperseToken` 的完整字节串。**全部在第一次运行就对上了**，这是"手写编码等价于 go-ethereum"这个说法唯一的实证。
+
+顺带钉住一件容易错到没人发现的事：`sha3.NewLegacyKeccak256()` 不是 `sha3.New256()`。两者签名一样、都编译、都是 32 字节，空输入的结果分别是 `c5d24601…` 和 `a7ffc6f8…`。用错的表现只是"节点说签名无效"。测试用空输入向量把这条钉死。
+
+**选 legacy 交易而不是 EIP-1559**，理由不在链上而在 M3：手续费要从供给者收益里扣，legacy 的费用是一次乘法（gasPrice × gasLimit），扣多少在建单那一刻就是确定的；1559 的实际花费取决于出块时的 baseFee，会让"扣了多少"和"实际花了多少"永远差一点。BSC 上两者的价格差可以忽略。
+
+**这个包里唯一真正难的东西是 nonce。** 用同一个 nonce 重签重发 → 链上认得出是同一笔，最多上一次；换一个新 nonce 重发 → 两笔独立的转账，供给者收到两次钱。三条防线都是可测的：
+
+- **广播失败时返回的是本地算出来的哈希**，不是节点回的。哈希在签名那一刻就定了，广播超时（连接断、502、网关吞了响应）时我们不知道节点看没看到——但只要哈希记下来了，下一轮就能去查收据，而不是当成"没发过"再发一笔。
+- **`already known` / `nonce too low` 这类回应不算失败。** 它们的含义正是"这笔已经在池子里了"，判成失败会让上层重发。
+- **`WaitForConfirmation` 等不到时返回错误，不返回 `failed`。** 返回错误 = 还不知道；判成 `failed` 会让一笔可能已经成功的转账被退款，等于双付。链上明确 revert（收据在、`status=0x0`）是**唯一**一种可以放心退款的失败。
+
+**节点拒绝与传输失败是两种东西**，因为它们的正确应对相反。前者是 JSON-RPC 的 `error` 字段（节点看过了、说不行），后者是超时 / 连接断 / 502 / 网关回的 HTML（不知道节点看没看到）。这条差别做成了类型上的区分——`*rpcError` 只在前一种情况下出现，`asRPCError` 是唯一的判据。
+
+**链头倒退单独挡了一次。** 多节点负载均衡后面，两次 `eth_blockNumber` 可能落在不同高度上，后一次比前一次矮。`head - mined + 1` 在无符号数上会下溢成天文数字，于是一笔刚上链一个块的交易被判成"确认充分"。判据是 `if head < mined { return false, nil }`——当成还不够深继续等。
+
+**配置只从环境变量读，不进 `internal/config`。** 那个包里的字段全带 `mapstructure` 标签，意味着它们可以从配置文件来、也可能被写回配置文件；金库私钥不能沾这条路。私钥连一次都不会被格式化进任何字符串——错误消息里只有长度，没有内容。
+
+**默认落在拒绝那一边，而且 `PAYOUT_MOCK` 单独设置不生效。** 没配好是最常见的运维状态（新环境、密钥没注入、RPC 写错），它必须落到「每个会动钱的方法都拒绝」。如果默认是假装成功，表现就是工单被安静地标成已付、供给者余额被清零，而链上什么都没发生，还没有任何一条错误日志。假客户端要 `PAYOUT_ENABLED` 与 `PAYOUT_MOCK` **同时**为真才拿得到——一个环境变量被误抄进生产配置是会发生的事，要两个同时抄错才会让生产环境假装打款；只设 `PAYOUT_MOCK` 的那种误配落到 Disabled，拒绝，看得见。
+
+**本轮没有把真客户端接进 DI。** 消费者要到 M4 的 worker 才出现，现在接进去就是一个死变量（而 wire 会把没有消费者的 provider 整个剪掉，见 #5a/#5c 那个坑）。改成在 `main.go` 里做一次启动自检（#11），把配置错误提前到启动那一刻。
+
+**变异 44 处逐条反证**，覆盖编码、签名、RPC、客户端、配置五层：
+
+- **RLP（4）**：整数不去前导零 / 大整数的零编成 `0x00` / 整数的零留一个 `0x00` / 列表长度前缀数项数而不是字节数 / 短串上界写成 55。
+- **ABI（8）**：用 NIST SHA3 而不是 keccak（选择器、哈希各一次）/ 字左对齐而不是右对齐（地址错位）/ `values` 偏移写死成 `0xc0` / 超 256 位截断 / 负数放行 / 短返回值补零当 0 读 / 批量长度不一致不拦。
+- **签名（9）**：`v` 里不带 chainID（退回 EIP-155 之前）/ chainID 只乘一次 / 待签名负载末尾少两个零 / 负载里不带 chainID / 地址取摘要前 20 字节 / 算地址时没去掉 `0x04` 前缀 / chainID 为 0 也肯签 / 私钥回显进错误消息 / 全零私钥放行 / 交易哈希算错。
+- **RPC（3）**：取 nonce 用 `latest` 而不是 `pending` / HTTP 错误码当成节点拒绝 / 空的十六进制数量当 0 读。
+- **客户端（10）**：无视调用方给的 nonce / 确认超时判成 `failed` / 链头倒退不拦 / 真拒绝当成"已广播过" / "已广播过"当成失败 / 精度写死 18 / 零地址放行 / 别的链也照发 / 批量人数上限不拦 / approve 不等确认 / 估价失败报错而不是回落。
+- **配置与工厂（7）**：开关认任何非空值为真 / 写错的数字静默回落 / 启用时不校验必填项 / 零个确认放行 / 没配好时默认给 mock / 单独一个 mock 开关就够 / 造不出真客户端时给 mock。
+
+其中两条第一轮没被逮住，都不是补一条断言就完事：
+
+**「确认超时判成 failed」活了下来**，而这个包里最不能出错的判断恰好就是它。测试确实存在，但它打在了错误的分支上：`pollEvery` 是 1ms、ctx 是 30ms，本地 httptest 又快到微秒级，于是 ctx 总在某次 HTTP 调用**当中**过期，函数从"节点连不上"那条路返回——那条路另有测试，而真正的超时分支（`select` 里的 `ctx.Done()`）根本没人走过。这也是生产里唯一会发生的那条路（`pollEvery` 是 3 秒，收据查询是毫秒级，等待必然停在 `select` 上）。改法是把轮询间隔调得**比 ctx 长**，让第一次收据查询顺利返回 nil 然后必然停在 `select` 上，并补断言 `errors.Is(err, context.DeadlineExceeded)` 与"错误里带交易哈希"。
+
+**「零编成 `0x00`」的第一版是个等价变异。** 把 `rlpBig` 里的 `value.Sign() == 0` 条件删掉之后测试仍然全绿——因为 `big.NewInt(0).Bytes()` 本来就是空切片，两条路给出同一个 `0x80`。这不是测试的漏洞，是变异写错了：它没有改变任何行为。真正能把 0 编错的写法是让零分支返回 `rlpBytes([]byte{0})`，以及让 `trimLeadingZeros` 留下最后一个零字节——换成这两条，都是红的。**一个 GREEN 的变异要先问它是不是等价变异，再去改测试**，否则会为了一个不存在的漏洞加一条永远为真的断言。
+
+同一轮还修掉一个纯属自己写错的锚点（`if head < mined {` 那行在源码里跟着两行注释，整段匹配落空报了 `ANCHOR-BAD`）。锚点匹配不上要与 GREEN 分开计——它证明的不是测试弱，而是变异根本没被应用。
+
+服务层那 16 处变异（M1 建立的矩阵）本轮重跑仍是 16/16 红，其中「换算改用一次浮点乘法」的反例在本轮被换成了实测出来的两个（`0.47` 与 `0.00000011`）：原来那个反例（`0.07`）是照 18 位精度挑的，而变异实际发生在 8 位精度上，于是它逃了一次。反例要从**变异真正发生的那个精度**上扫出来，不能凭直觉挑。
