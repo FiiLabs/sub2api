@@ -23,7 +23,7 @@
         </div>
         <div class="flex items-center gap-2">
           <label class="text-sm text-gray-500 dark:text-gray-400">{{ t('supplyOps.window.label') }}</label>
-          <select v-model.number="windowDays" class="input w-auto" data-testid="supply-ops-window" @change="loadOverview">
+          <select v-model.number="windowDays" class="input w-auto" data-testid="supply-ops-window" @change="onWindowChange">
             <option v-for="days in WINDOW_CHOICES" :key="days" :value="days">
               {{ t('supplyOps.window.days', { days }) }}
             </option>
@@ -464,6 +464,191 @@
         />
       </div>
 
+      <!-- ===================== 失效事件 =====================
+           与上面那张账号明细表刻意分开：那张答的是"这个号**此刻**怎么样"，
+           这一段答的是"这段时间**发生过**什么"。号从 error 恢复成 active 的
+           那一刻，上面那张表就再也说不出他这个月坏过五次。 -->
+      <div class="card space-y-4 p-6">
+        <div class="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('supplyOps.incidents.title') }}</h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('supplyOps.incidents.description') }}</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <label class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+              <input
+                v-model="incidentOpenOnly"
+                type="checkbox"
+                data-testid="supply-ops-incident-open"
+                @change="reloadIncidents()"
+              />
+              {{ t('supplyOps.incidents.openOnly') }}
+            </label>
+            <button
+              v-if="incidentUserId"
+              class="btn btn-secondary btn-sm"
+              data-testid="supply-ops-incident-user-clear"
+              @click="clearIncidentUser()"
+            >
+              {{ t('supplyOps.incidents.userFilter', { id: incidentUserId }) }} ✕
+            </button>
+          </div>
+        </div>
+
+        <!-- 报表四格。第三格与前两格**不是同一个口径**（它不带窗口），
+             所以它自己的副标题要把这件事说出来——并排四个数字里混着两种口径，
+             而没有任何视觉线索的话，运营会把它们当成同一段时间里的事。 -->
+        <div v-if="incidentSummary" class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div class="card bg-gray-50 p-4 dark:bg-dark-800" data-testid="supply-ops-incident-opened">
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('supplyOps.incidents.opened') }}</p>
+            <p class="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{{ incidentSummary.opened }}</p>
+            <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">
+              {{ t('supplyOps.incidents.inWindow', { days: incidentSummary.window_days }) }}
+            </p>
+          </div>
+          <div class="card bg-gray-50 p-4 dark:bg-dark-800" data-testid="supply-ops-incident-resolved">
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('supplyOps.incidents.resolved') }}</p>
+            <p class="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{{ incidentSummary.resolved }}</p>
+            <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">
+              {{ t('supplyOps.incidents.inWindow', { days: incidentSummary.window_days }) }}
+            </p>
+          </div>
+          <div class="card bg-gray-50 p-4 dark:bg-dark-800" data-testid="supply-ops-incident-open">
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('supplyOps.incidents.open') }}</p>
+            <p
+              class="mt-1 text-2xl font-semibold"
+              :class="incidentSummary.open > 0 ? 'text-red-500' : 'text-gray-900 dark:text-white'"
+            >
+              {{ incidentSummary.open }}
+            </p>
+            <p class="mt-1 text-xs text-amber-600 dark:text-amber-400">{{ t('supplyOps.incidents.openNoWindow') }}</p>
+          </div>
+          <div class="card bg-gray-50 p-4 dark:bg-dark-800" data-testid="supply-ops-incident-suppliers">
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('supplyOps.incidents.suppliers') }}</p>
+            <p class="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{{ incidentSummary.suppliers }}</p>
+            <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">
+              {{ t('supplyOps.incidents.ofAccounts', { count: incidentSummary.accounts }) }}
+            </p>
+          </div>
+        </div>
+
+        <!-- 封禁率榜单。零事件的人不在榜上（那是"谁在坏"的榜，不是全体名册）。 -->
+        <div v-if="incidentSummary && incidentSummary.top.length" class="overflow-x-auto">
+          <table class="min-w-full text-left text-sm">
+            <thead class="text-xs uppercase text-gray-400 dark:text-dark-500">
+              <tr>
+                <th class="px-3 py-2">{{ t('supplyOps.incidents.supplier') }}</th>
+                <th class="px-3 py-2">{{ t('supplyOps.incidents.accountsCol') }}</th>
+                <th class="px-3 py-2">{{ t('supplyOps.incidents.incidentsCol') }}</th>
+                <th class="px-3 py-2">{{ t('supplyOps.incidents.openCol') }}</th>
+                <th class="px-3 py-2">{{ t('supplyOps.incidents.rateCol') }}</th>
+                <th class="px-3 py-2">{{ t('supplyOps.incidents.lastDetectedAt') }}</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100 dark:divide-dark-800">
+              <tr v-for="row in incidentSummary.top" :key="row.user_id" :data-testid="`supply-ops-incident-top-${row.user_id}`">
+                <td class="px-3 py-3">
+                  <button
+                    class="text-primary-600 hover:underline dark:text-primary-400"
+                    @click="focusIncidentUser(row.user_id)"
+                  >
+                    {{ row.email || row.username || `#${row.user_id}` }}
+                  </button>
+                </td>
+                <td class="px-3 py-3 text-gray-500 dark:text-dark-400">{{ row.accounts }}</td>
+                <td class="px-3 py-3 text-gray-900 dark:text-white">{{ row.incidents }}</td>
+                <td class="px-3 py-3" :class="row.open_incidents > 0 ? 'text-red-500' : 'text-gray-500 dark:text-dark-400'">
+                  {{ row.open_incidents }}
+                </td>
+                <!-- 号全解绑的人 accounts = 0，比率恒为 0；这里画成 “—” 而不是
+                     0.00，因为一个 0.00 的比率看起来像"他很健康"，而事实是
+                     这个比率对他没有意义。 -->
+                <td class="px-3 py-3 text-gray-500 dark:text-dark-400">
+                  {{ row.accounts > 0 ? row.rate.toFixed(2) : '—' }}
+                </td>
+                <td class="px-3 py-3 text-gray-500 dark:text-dark-400">
+                  {{ row.last_detected_at ? formatDateTime(row.last_detected_at) : '—' }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div v-if="incidentsLoading" class="py-8 text-center text-sm text-gray-400">{{ t('supplyOps.loading') }}</div>
+        <p v-else-if="!incidents.length" class="py-8 text-center text-sm text-gray-400">{{ t('supplyOps.empty') }}</p>
+        <div v-else class="overflow-x-auto">
+          <table class="min-w-full text-left text-sm">
+            <thead class="text-xs uppercase text-gray-400 dark:text-dark-500">
+              <tr>
+                <th class="px-3 py-2">{{ t('supplyOps.incidents.detectedAt') }}</th>
+                <th class="px-3 py-2">{{ t('supplyOps.incidents.account') }}</th>
+                <th class="px-3 py-2">{{ t('supplyOps.incidents.supplier') }}</th>
+                <th class="px-3 py-2">{{ t('supplyOps.incidents.reason') }}</th>
+                <th class="px-3 py-2">{{ t('supplyOps.incidents.state') }}</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100 dark:divide-dark-800">
+              <tr v-for="item in incidents" :key="item.id" :data-testid="`supply-ops-incident-${item.id}`">
+                <td class="px-3 py-3 text-gray-500 dark:text-dark-400">{{ formatDateTime(item.detected_at) }}</td>
+                <td class="px-3 py-3">
+                  <p class="font-medium text-gray-900 dark:text-white">{{ item.account_name || `#${item.account_id}` }}</p>
+                  <p class="text-xs text-gray-400 dark:text-dark-500">#{{ item.account_id }} · {{ item.platform }}</p>
+                </td>
+                <td class="px-3 py-3">
+                  <button
+                    class="text-primary-600 hover:underline dark:text-primary-400"
+                    @click="focusIncidentUser(item.user_id)"
+                  >
+                    #{{ item.user_id }}
+                  </button>
+                </td>
+                <td class="px-3 py-3">
+                  <span class="text-red-500">{{ item.status }}</span>
+                  <!-- 上游错误原文只在这里出现：它不进给供给者的那封信（可能带
+                       token 片段、内部地址、整段上游 JSON），见 §3.10。 -->
+                  <p v-if="item.error_message" class="mt-1 max-w-md text-xs text-gray-400 dark:text-dark-500">
+                    {{ item.error_message }}
+                  </p>
+                </td>
+                <td class="px-3 py-3">
+                  <span
+                    class="rounded-full px-2 py-0.5 text-xs font-medium"
+                    :class="
+                      item.resolved_at
+                        ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                        : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                    "
+                  >
+                    {{ item.resolved_at ? t('supplyOps.incidents.closed') : t('supplyOps.incidents.stillOpen') }}
+                  </span>
+                  <p v-if="item.resolved_at" class="mt-1 text-xs text-gray-400 dark:text-dark-500">
+                    {{ formatDateTime(item.resolved_at) }}
+                  </p>
+                  <!-- 「已通知」画出来是有用的：一个开着好几个小时却始终没通知的
+                       事件，说明发信这条链路本身出了问题，而那件事没有别的症状。 -->
+                  <p
+                    v-if="!item.notified_at"
+                    class="mt-1 text-xs text-amber-600 dark:text-amber-400"
+                    :data-testid="`supply-ops-incident-unnotified-${item.id}`"
+                  >
+                    {{ t('supplyOps.incidents.notNotified') }}
+                  </p>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <Pagination
+          v-if="incidentTotal > 0"
+          :total="incidentTotal"
+          :page="incidentPage"
+          :page-size="PAGE_SIZE"
+          :show-page-size-selector="false"
+          @update:page="goIncidents"
+        />
+      </div>
+
       <!-- ===================== 全站流水 ===================== -->
       <div class="card space-y-4 p-6">
         <div class="flex flex-wrap items-end justify-between gap-3">
@@ -565,6 +750,8 @@ import {
   type SupplyAccountAdminView,
   type SupplyAccountHealth,
   type SupplyAdminLedgerEntry,
+  type SupplyIncident,
+  type SupplyIncidentSummary,
   type SupplyMarketOverview,
   type SupplyWithdrawalAdminView,
   type SupplyWithdrawalStatus,
@@ -613,6 +800,18 @@ const withdrawalUserId = ref(0)
 const withdrawalPage = ref(1)
 const withdrawalTotal = ref(0)
 const resolvingWithdrawalId = ref<number | null>(null)
+
+// 失效事件。报表与明细是两条接口（聚合扫全表，不该跟着每次翻页重算），
+// 因此这里也是两组状态：summary 只随窗口变，列表随筛选与翻页变。
+const incidentSummary = ref<SupplyIncidentSummary | null>(null)
+const incidents = ref<SupplyIncident[]>([])
+const incidentsLoading = ref(true)
+// 默认只看未结的：运营打开这一页最先要回答的是"现在还有哪些号坏着"，
+// 而混排列表里那几行会散落在各页。
+const incidentOpenOnly = ref(true)
+const incidentUserId = ref(0)
+const incidentPage = ref(1)
+const incidentTotal = ref(0)
 
 const ledger = ref<SupplyAdminLedgerEntry[]>([])
 const ledgerLoading = ref(true)
@@ -693,6 +892,47 @@ async function loadAccounts(): Promise<void> {
     reportError(error, 'supplyOps.error.accountsFailed')
   } finally {
     accountsLoading.value = false
+  }
+}
+
+/**
+ * 窗口选择器同时管着看板与失效报表——它们是同一个问题的两半（"这段时间供给侧
+ * 怎么样"），两个数字分别属于两个窗口是一屏自相矛盾的读数。
+ *
+ * 明细表**不跟着变**：它有自己的筛选，而且默认只看未结的（未结事件没有窗口
+ * 可言，它就是现在还坏着的那些）。
+ */
+function onWindowChange(): void {
+  void loadOverview()
+  void loadIncidentSummary()
+}
+
+async function loadIncidentSummary(): Promise<void> {
+  try {
+    incidentSummary.value = await adminSupplyMarketAPI.getIncidentSummary({ window_days: windowDays.value })
+  } catch (error) {
+    // 报表挂了不该把下面的明细一起拖走：那两条接口互不依赖，而明细是
+    // 出事时真正要看的东西。
+    incidentSummary.value = null
+    reportError(error, 'supplyOps.error.incidentSummaryFailed')
+  }
+}
+
+async function loadIncidents(): Promise<void> {
+  incidentsLoading.value = true
+  try {
+    const page = await adminSupplyMarketAPI.listIncidents({
+      page: incidentPage.value,
+      page_size: PAGE_SIZE,
+      user_id: incidentUserId.value || undefined,
+      open: incidentOpenOnly.value,
+    })
+    incidents.value = page.items ?? []
+    incidentTotal.value = page.total ?? 0
+  } catch (error) {
+    reportError(error, 'supplyOps.error.incidentsFailed')
+  } finally {
+    incidentsLoading.value = false
   }
 }
 
@@ -832,6 +1072,33 @@ function goAccounts(page: number): void {
   void loadAccounts()
 }
 
+function reloadIncidents(): void {
+  incidentPage.value = 1
+  void loadIncidents()
+}
+
+function goIncidents(page: number): void {
+  incidentPage.value = page
+  void loadIncidents()
+}
+
+/**
+ * 从榜单点进某个供给者的事件明细。
+ *
+ * 顺手把「只看未结」关掉：点一个人的目的是"他到底出过什么事"，
+ * 留着那个筛子会让一个刚刚全部恢复的人显示成空列表——而他正是榜首。
+ */
+function focusIncidentUser(userID: number): void {
+  incidentUserId.value = userID
+  incidentOpenOnly.value = false
+  reloadIncidents()
+}
+
+function clearIncidentUser(): void {
+  incidentUserId.value = 0
+  reloadIncidents()
+}
+
 function goLedger(page: number): void {
   ledgerPage.value = page
   void loadLedger()
@@ -901,6 +1168,8 @@ function clearLedgerUser(): void {
 
 onMounted(() => {
   void loadOverview()
+  void loadIncidentSummary()
+  void loadIncidents()
   void loadWithdrawals()
   void loadRoster()
   void loadAccounts()

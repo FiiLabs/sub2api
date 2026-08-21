@@ -456,12 +456,43 @@ export default {
       rejected: '已拒绝，金额已退回供给者的可用余额。'
     },
 
+    // 失效事件。文案上刻意区分「窗口内发生过」与「现在还坏着」两种口径——
+    // 那是这一段唯一容易被读错的地方。
+    incidents: {
+      title: '供给号失效',
+      description: '一次失效 = 一行。上面那张账号表答的是「此刻怎么样」，这里答的是「这段时间发生过什么」——号恢复之后，前者就再也说不出他这个月坏过几次。',
+      openOnly: '只看还没恢复的',
+      userFilter: '只看 #{id}',
+      opened: '新发生',
+      resolved: '已恢复',
+      open: '当前还坏着',
+      openNoWindow: '不受窗口限制：坏了三个月的号也算在内',
+      suppliers: '被波及的供给者',
+      inWindow: '最近 {days} 天',
+      ofAccounts: '全站共 {count} 个供给号',
+      supplier: '供给者',
+      accountsCol: '在册号数',
+      incidentsCol: '窗口内失效次数',
+      openCol: '当前未恢复',
+      rateCol: '失效率',
+      lastDetectedAt: '最近一次',
+      detectedAt: '发现时间',
+      account: '账号',
+      reason: '上游状态',
+      state: '状态',
+      closed: '已恢复',
+      stillOpen: '还坏着',
+      notNotified: '尚未通知到供给者'
+    },
+
     error: {
       overviewFailed: '加载看板失败',
       rosterFailed: '加载名册失败',
       accountsFailed: '加载账号失败',
       ledgerFailed: '加载流水失败',
       withdrawalsFailed: '加载提现单失败',
+      incidentSummaryFailed: '加载失效报表失败',
+      incidentsFailed: '加载失效事件失败',
       withdrawalResolveFailed: '处理提现单失败',
       rejectNoteRequired: '拒绝必须填写理由'
     }

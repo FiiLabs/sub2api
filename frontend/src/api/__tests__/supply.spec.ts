@@ -353,6 +353,44 @@ describe('admin supply ops api (read-only)', () => {
   })
 })
 
+// 失效事件是纯读的一层（它连"把坏号禁掉"都不做），所以两条断言都在读路径上。
+// 真正会错的是那个 open 参数：后端认不出的值一律当 false，"认不出就是没筛"。
+describe('admin supply incidents (read-only)', () => {
+  beforeEach(() => {
+    get.mockReset()
+    get.mockResolvedValue({ data: { items: [], total: 0 } })
+  })
+
+  it('sends open=true as a string the backend actually recognises', async () => {
+    // 后端只认 true / 1 / yes / on。发一个布尔值 axios 会序列化成 "true"，
+    // 这里显式传字符串是为了让这条契约在前端也看得见——它不是实现细节，
+    // 认错了的表现是一个全量列表悄悄只剩未结的那几行。
+    await adminSupplyMarketAPI.listIncidents({ open: true, page: 2 })
+
+    expect(get).toHaveBeenCalledWith('/admin/supply/incidents', {
+      params: { page: 2, open: 'true' },
+    })
+  })
+
+  it('omits open entirely when it is off', async () => {
+    // 传 open=false 与不传是同一个意思，但会让 URL 看起来像在筛什么。
+    await adminSupplyMarketAPI.listIncidents({ open: false, user_id: 7 })
+
+    expect(get).toHaveBeenCalledWith('/admin/supply/incidents', {
+      params: { user_id: 7 },
+    })
+  })
+
+  it('reads the report from its own endpoint, not the list', async () => {
+    // 报表与明细刻意是两条接口：聚合扫全表，合成一条会让它跟着每次翻页重算。
+    await adminSupplyMarketAPI.getIncidentSummary({ window_days: 7 })
+
+    expect(get).toHaveBeenCalledWith('/admin/supply/incidents/summary', {
+      params: { window_days: 7 },
+    })
+  })
+})
+
 // 提现审批是管理端唯一动业务数据的写路径，所以单开一个 describe：上面那个
 // describe 的名字里写着 read-only，把两个 POST 塞进去会让那句话变成假的。
 describe('admin withdrawal review (the one write path)', () => {

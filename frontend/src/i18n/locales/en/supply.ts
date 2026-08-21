@@ -482,12 +482,43 @@ export default {
       rejected: 'Rejected. The amount is back in the supplier\'s available balance.'
     },
 
+    // Two different time bases live side by side here (window vs. right now);
+    // the copy has to say which is which or the numbers read as contradictory.
+    incidents: {
+      title: 'Supply account failures',
+      description: 'One failure = one row. The account table above answers "how is it right now"; this answers "what happened over this period" — once an account recovers, the table above can no longer tell you it broke five times this month.',
+      openOnly: 'Unresolved only',
+      userFilter: 'Only #{id}',
+      opened: 'New failures',
+      resolved: 'Recovered',
+      open: 'Currently broken',
+      openNoWindow: 'Not limited by the window: accounts broken for months are counted',
+      suppliers: 'Suppliers affected',
+      inWindow: 'Last {days} days',
+      ofAccounts: '{count} supply accounts in total',
+      supplier: 'Supplier',
+      accountsCol: 'Accounts',
+      incidentsCol: 'Failures in window',
+      openCol: 'Still broken',
+      rateCol: 'Failure rate',
+      lastDetectedAt: 'Last seen',
+      detectedAt: 'Detected',
+      account: 'Account',
+      reason: 'Upstream status',
+      state: 'State',
+      closed: 'Recovered',
+      stillOpen: 'Still broken',
+      notNotified: 'Supplier not notified yet'
+    },
+
     error: {
       overviewFailed: 'Failed to load the dashboard',
       rosterFailed: 'Failed to load the roster',
       accountsFailed: 'Failed to load accounts',
       ledgerFailed: 'Failed to load the ledger',
       withdrawalsFailed: 'Failed to load withdrawal requests',
+      incidentSummaryFailed: 'Failed to load the failure report',
+      incidentsFailed: 'Failed to load failure events',
       withdrawalResolveFailed: 'Failed to resolve the withdrawal request',
       rejectNoteRequired: 'A rejection needs a reason'
     }

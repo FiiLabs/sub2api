@@ -358,6 +358,55 @@ export interface SupplyAdminPage<T> {
   pages: number
 }
 
+/**
+ * 一次供给号失效。这是一张追加式台账里的一行，不是账号此刻的状态——
+ * `status` / `error_message` 都是**发现当时**的快照，号后来改名或恢复了它也不变。
+ *
+ * 三个时刻各答一个问题：detected_at 什么时候坏的、notified_at 信发出去了没有
+ * （空 = 还没发，不是"发失败了"）、resolved_at 什么时候好的（空 = 现在还坏着）。
+ */
+export interface SupplyIncident {
+  id: number
+  account_id: number
+  user_id: number
+  account_name?: string
+  platform?: string
+  status: string
+  error_message?: string
+  detected_at: string
+  notified_at?: string | null
+  resolved_at?: string | null
+}
+
+/** 封禁率榜单的一行。rate = incidents / accounts，号全解绑的人这里是 0 而不是报错。 */
+export interface SupplyIncidentRate {
+  user_id: number
+  email?: string
+  username?: string
+  accounts: number
+  incidents: number
+  open_incidents: number
+  rate: number
+  last_detected_at?: string | null
+}
+
+/**
+ * 封禁率报表。
+ *
+ * `open` 与榜单里的 `open_incidents` **不带窗口**，其余三个数带——一个坏了三个月的
+ * 号仍然要出现在"现在还有几个坏着"里。界面上因此不能把它们并排画成同一口径的四格
+ * 而不加说明。
+ */
+export interface SupplyIncidentSummary {
+  window_days: number
+  opened: number
+  resolved: number
+  open: number
+  accounts: number
+  suppliers: number
+  top: SupplyIncidentRate[]
+}
+
 async function getOverview(windowDays?: number): Promise<SupplyMarketOverview> {
   const { data } = await apiClient.get<SupplyMarketOverview>('/admin/supply/overview', {
     params: windowDays ? { window_days: windowDays } : undefined,
@@ -398,6 +447,40 @@ async function listLedger(
   } = {}
 ): Promise<SupplyAdminPage<SupplyAdminLedgerEntry>> {
   const { data } = await apiClient.get<SupplyAdminPage<SupplyAdminLedgerEntry>>('/admin/supply/ledger', { params })
+  return data
+}
+
+/**
+ * 读失效事件明细。
+ *
+ * `open` 只在为真时才传：后端认不出的值一律当 false（"认不出就是没筛"），
+ * 传一个 `open=false` 与不传是同一个意思，但会让 URL 看起来像在筛什么。
+ */
+async function listIncidents(
+  params: {
+    page?: number
+    page_size?: number
+    user_id?: number
+    account_id?: number
+    open?: boolean
+    start_at?: string
+    end_at?: string
+  } = {}
+): Promise<SupplyAdminPage<SupplyIncident>> {
+  const { open, ...rest } = params
+  const { data } = await apiClient.get<SupplyAdminPage<SupplyIncident>>('/admin/supply/incidents', {
+    params: open ? { ...rest, open: 'true' } : rest,
+  })
+  return data
+}
+
+/** 读封禁率报表。窗口与明细那张表的时间筛**互不影响**，两者各问各的。 */
+async function getIncidentSummary(
+  params: { window_days?: number; top?: number } = {}
+): Promise<SupplyIncidentSummary> {
+  const { data } = await apiClient.get<SupplyIncidentSummary>('/admin/supply/incidents/summary', {
+    params,
+  })
   return data
 }
 
@@ -543,6 +626,8 @@ export const adminSupplyMarketAPI = {
   listSuppliers,
   listAccounts,
   listLedger,
+  listIncidents,
+  getIncidentSummary,
   getSettlementSettings,
   updateSettlementSettings,
   getPoolSettings,
