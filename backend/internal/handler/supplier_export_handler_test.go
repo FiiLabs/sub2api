@@ -63,7 +63,7 @@ func (f *fakeExportRepo) StreamLedger(_ context.Context, filter service.SupplyAd
 // 鉴权是路由组的事，已由 routes/supplier_test.go 钉住）。
 func exportRouterOn(repo service.SupplierExportRepository) (*gin.Engine, *SupplierAdminHandler) {
 	gin.SetMode(gin.TestMode)
-	h := NewSupplierAdminHandler(nil, nil, service.NewSupplierExportService(repo))
+	h := NewSupplierAdminHandler(nil, nil, service.NewSupplierExportService(repo), nil)
 	router := gin.New()
 	router.GET("/export/withdrawals", h.ExportWithdrawals)
 	router.GET("/export/ledger", h.ExportLedger)
@@ -150,7 +150,7 @@ func TestExportKeepsTrailerOffWhenTheStreamDies(t *testing.T) {
 // "这段时间确实没有账"长得一模一样。
 func TestExportRefusesBeforeWritingHeadersWhenUnavailable(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	h := NewSupplierAdminHandler(nil, nil, nil)
+	h := NewSupplierAdminHandler(nil, nil, nil, nil)
 	router := gin.New()
 	router.GET("/export/ledger", h.ExportLedger)
 

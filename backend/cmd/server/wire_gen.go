@@ -311,7 +311,12 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	batchImageCleanupService := service.ProvideBatchImageCleanupService(batchImageRepository, accountRepository, configConfig)
 	batchImageHandler := handler.ProvideBatchImageHandler(batchImagePublicService, batchImageDownloadService, batchImageCleanupService, openAIGatewayHandler)
 	supplierOnboardingRepository := repository.NewSupplierOnboardingRepository(client)
-	supplierOnboardingService := service.NewSupplierOnboardingService(supplierOnboardingRepository, accountRepository, oAuthService, settingService)
+	// APEXONE-EXT: 失效事件台账。排在接入服务之前构造：接入的熔断闸和
+	// 下面生命周期任务的扫描器都吃它。
+	supplierIncidentRepository := repository.NewSupplierIncidentRepository(client)
+	supplierIncidentNotifier := service.NewSupplierIncidentNotifier(emailService, userRepository, settingService)
+	supplierIncidentService := service.NewSupplierIncidentService(supplierIncidentRepository, supplierIncidentNotifier)
+	supplierOnboardingService := service.ProvideSupplierOnboardingService(supplierOnboardingRepository, accountRepository, oAuthService, settingService, supplierIncidentService)
 	supplierCreditRepository := repository.ProvideSupplierCreditRepository(client)
 	supplierCreditService := service.ProvideSupplierCreditService(supplierCreditRepository, settingService)
 	supplierAdminRepository := repository.NewSupplierAdminRepository(client)
@@ -323,7 +328,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	// 导出要把收款账号解回明文（那份文件就是打款工作单）。
 	supplierExportRepository := repository.NewSupplierExportRepository(client, secretEncryptor)
 	supplierExportService := service.NewSupplierExportService(supplierExportRepository)
-	supplierHandler := handler.NewSupplierHandler(supplierOnboardingService, supplierCreditService, supplierAdminService, supplierWithdrawalService, supplierExportService)
+	supplierHandler := handler.NewSupplierHandler(supplierOnboardingService, supplierCreditService, supplierAdminService, supplierWithdrawalService, supplierExportService, supplierIncidentService)
 	idempotencyCoordinator := service.ProvideIdempotencyCoordinator(idempotencyRepository, configConfig)
 	idempotencyCleanupService := service.ProvideIdempotencyCleanupService(idempotencyRepository, configConfig)
 	handlers := handler.ProvideHandlers(authHandler, userHandler, apiKeyHandler, usageHandler, redeemHandler, subscriptionHandler, announcementHandler, channelMonitorUserHandler, channelMonitorV2Handler, adminHandlers, gatewayHandler, openAIGatewayHandler, handlerSettingHandler, totpHandler, passkeyHandler, handlerPaymentHandler, paymentWebhookHandler, availableChannelHandler, modelPlazaHandler, asyncImageHandler, batchImageHandler, supplierHandler, idempotencyCoordinator, idempotencyCleanupService)
@@ -349,7 +354,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	scheduledTestRunnerService := service.ProvideScheduledTestRunnerService(scheduledTestPlanRepository, scheduledTestService, accountTestService, rateLimitService, configConfig)
 	paymentOrderExpiryService := service.ProvidePaymentOrderExpiryService(paymentService, leaderLockCache, db)
 	supplierThawService := service.ProvideSupplierThawService(supplierCreditRepository, leaderLockCache, db)
-	supplierLifecycleService := service.ProvideSupplierLifecycleService(supplierOnboardingRepository, accountRepository, settingService, accountTestService, leaderLockCache, db)
+	supplierLifecycleService := service.ProvideSupplierLifecycleService(supplierOnboardingRepository, accountRepository, settingService, accountTestService, supplierIncidentService, leaderLockCache, db)
 	channelMonitorRunner := service.ProvideChannelMonitorRunner(channelMonitorService, settingService)
 	channelMonitorV2Aggregator := service.ProvideChannelMonitorV2Aggregator(channelMonitorV2Repository, db, settingService)
 	userPlatformQuotaUsageFlusher := service.ProvideUserPlatformQuotaUsageFlusher(configConfig, billingCache, serviceUserPlatformQuotaRepository, timingWheelService)

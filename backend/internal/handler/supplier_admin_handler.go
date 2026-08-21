@@ -39,6 +39,9 @@ type SupplierAdminHandler struct {
 	// 差别是**响应体是一份要离开这台机器的文件**：里面有收款账号明文，
 	// 且一旦下载完成就不再受这套系统的任何约束。边界写在 §3.9。
 	exportService *service.SupplierExportService
+	// incidentService 供给号失效事件（supplier_incident_handler.go）。只读，
+	// 与看板同类。边界写在 §3.10。
+	incidentService *service.SupplierIncidentService
 }
 
 // NewSupplierAdminHandler 构造运营视图 handler。
@@ -46,11 +49,13 @@ func NewSupplierAdminHandler(
 	adminService *service.SupplierAdminService,
 	withdrawalService *service.SupplierWithdrawalService,
 	exportService *service.SupplierExportService,
+	incidentService *service.SupplierIncidentService,
 ) *SupplierAdminHandler {
 	return &SupplierAdminHandler{
 		adminService:      adminService,
 		withdrawalService: withdrawalService,
 		exportService:     exportService,
+		incidentService:   incidentService,
 	}
 }
 

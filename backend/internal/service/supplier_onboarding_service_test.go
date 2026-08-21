@@ -50,8 +50,8 @@ type supplierOnboardingRepoStub struct {
 	ownedCountErr error
 
 	// countByIP 按 IP 索引已挂的号数，缺省的键返回 0。
-	countByIP     map[string]int
-	countByIPErr  error
+	countByIP       map[string]int
+	countByIPErr    error
 	countedIPs      []string
 	recordedOrigins []supplierOriginRecord
 	recordOriginErr error

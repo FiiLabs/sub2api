@@ -80,12 +80,28 @@ const (
 	// 比每人上限宽两个量级：这道闸的正常取值就该覆盖「一整个校园网后面有多少个
 	// 真实供给者」，而那个数可以很大。
 	SupplyOnboardingMaxAccountsPerIPMax = 10000
+	// SupplyOnboardingMaxIncidentsPerUserMax 失效熔断的次数上限最大可配到 1000。
+	//
+	// 配到这个量级等同于关闭这道闸——真想关就填 0。留一个上限只是为了让
+	// 一个手滑填成 100000 的配置不至于看起来还在生效。
+	SupplyOnboardingMaxIncidentsPerUserMax = 1000
+	// SupplyOnboardingIncidentWindowHoursMax 熔断窗口最长 90 天。
+	//
+	// 再长就不是「最近」了：一个三个月前坏过号的人此刻被挡在门外，
+	// 他既想不起来为什么，也没有任何办法把那件事变回去。
+	SupplyOnboardingIncidentWindowHoursMax = 24 * 90
 )
 
 // 默认值。
 const (
 	supplyOnboardingDefaultMaxAccountsPerUser = 5
 	supplyOnboardingDefaultMaxAccountsPerIP   = 0
+	// supplyOnboardingDefaultMaxIncidents 默认 0 = 熔断关着，理由见结构体上的注释。
+	supplyOnboardingDefaultMaxIncidents = 0
+	// supplyOnboardingDefaultIncidentWindowHours 熔断窗口的默认值：7 天。
+	//
+	// 它在闸关着时也有值，因为运营打开这道闸时最不该同时被要求想清楚窗口该多长。
+	supplyOnboardingDefaultIncidentWindowHours = 24 * 7
 )
 
 // SupplyOnboardingSettings 是接入准入的数量上限。
@@ -102,13 +118,36 @@ type SupplyOnboardingSettings struct {
 	//
 	// 默认 0（不限），理由见文件头——这道闸开错了会静默地挡住整个 NAT 后面的人。
 	MaxAccountsPerIP int `json:"max_accounts_per_ip"`
+
+	// MaxIncidentsPerUser 窗口内失效事件数达到这个值之后，这个人不能再接入新号。
+	//
+	// # 这是第三道闸，挡的是前两道都挡不住的那件事
+	//
+	// 每人上限与每 IP 上限数的都是「现在挂着几个」，而刷坏号的人恰恰不囤号：
+	// 挂上去、被上游封掉、解绑、再挂一个。他名下的账号数可以永远是 1。
+	// 这道闸数的是**历史事件**，所以解绑帮不了他。
+	//
+	// # 默认 0（关着）
+	//
+	// 与每 IP 上限同一个理由，但风险更具体：一次上游的大面积封号（同一批订阅
+	// 被批量风控）会在几分钟内给一大群**正常**供给者各记一条事件，而这道闸
+	// 会紧接着把他们全部挡在门外——症状是"平台在最需要供给的那一刻拒绝了所有供给"。
+	// 它应当在运营看过一段时间真实的事件分布之后再打开。
+	MaxIncidentsPerUser int `json:"max_incidents_per_user"`
+	// IncidentWindowHours 上一项往回数多久。0 用默认值（7 天）。
+	//
+	// 与 MaxIncidentsPerUser 分成两个字段而不是写死窗口：窗口的合适长度取决于
+	// 上游封号的节奏，而那个节奏在不同时期完全不同。
+	IncidentWindowHours int `json:"incident_window_hours"`
 }
 
-// DefaultSupplyOnboardingSettings 返回默认上限：每人 5 个，每 IP 不限。
+// DefaultSupplyOnboardingSettings 返回默认上限：每人 5 个，每 IP 不限，失效熔断关着。
 func DefaultSupplyOnboardingSettings() *SupplyOnboardingSettings {
 	return &SupplyOnboardingSettings{
-		MaxAccountsPerUser: supplyOnboardingDefaultMaxAccountsPerUser,
-		MaxAccountsPerIP:   supplyOnboardingDefaultMaxAccountsPerIP,
+		MaxAccountsPerUser:  supplyOnboardingDefaultMaxAccountsPerUser,
+		MaxAccountsPerIP:    supplyOnboardingDefaultMaxAccountsPerIP,
+		MaxIncidentsPerUser: supplyOnboardingDefaultMaxIncidents,
+		IncidentWindowHours: supplyOnboardingDefaultIncidentWindowHours,
 	}
 }
 
@@ -132,6 +171,21 @@ func (s *SupplyOnboardingSettings) normalize() {
 	}
 	if s.MaxAccountsPerIP > SupplyOnboardingMaxAccountsPerIPMax {
 		s.MaxAccountsPerIP = SupplyOnboardingMaxAccountsPerIPMax
+	}
+	if s.MaxIncidentsPerUser < 0 {
+		s.MaxIncidentsPerUser = 0
+	}
+	if s.MaxIncidentsPerUser > SupplyOnboardingMaxIncidentsPerUserMax {
+		s.MaxIncidentsPerUser = SupplyOnboardingMaxIncidentsPerUserMax
+	}
+	// 窗口的 0 与另外三项的 0 含义**不同**：那三项的 0 是「不限」，
+	// 这一项的 0 只是「没填」。把它夹成默认值而不是留 0，是因为一个 0 小时的
+	// 窗口会让熔断闸恒不触发——一道配了次数、看起来开着、实际永远拦不住任何人的闸。
+	if s.IncidentWindowHours <= 0 {
+		s.IncidentWindowHours = supplyOnboardingDefaultIncidentWindowHours
+	}
+	if s.IncidentWindowHours > SupplyOnboardingIncidentWindowHoursMax {
+		s.IncidentWindowHours = SupplyOnboardingIncidentWindowHoursMax
 	}
 }
 
@@ -170,6 +224,32 @@ func (s *SupplyOnboardingSettings) ipCapReached(current int) bool {
 		return false
 	}
 	return current >= s.MaxAccountsPerIP
+}
+
+// incidentCapEnabled 失效熔断是否真的在起作用。默认配置下它是关的，见字段注释。
+func (s *SupplyOnboardingSettings) incidentCapEnabled() bool {
+	return s != nil && s.MaxIncidentsPerUser > 0
+}
+
+// incidentCapReached 判断「窗口内已经出了 current 次事的人还能不能再挂一个」。
+func (s *SupplyOnboardingSettings) incidentCapReached(current int) bool {
+	if !s.incidentCapEnabled() {
+		return false
+	}
+	return current >= s.MaxIncidentsPerUser
+}
+
+// incidentWindow 熔断窗口。
+//
+// 这里也兜一次底而不是信任 normalize：这个值参与的是一次减法（now - window），
+// 而一个 0 窗口算出来的 since 就是「现在」，于是那次 COUNT 恒为 0、闸恒放行。
+// normalize 只在读写 settings 的路径上跑过，一个手工构造的结构体（测试、
+// 将来某处的默认值）绕得过它。
+func (s *SupplyOnboardingSettings) incidentWindow() time.Duration {
+	if s == nil || s.IncidentWindowHours <= 0 {
+		return time.Duration(supplyOnboardingDefaultIncidentWindowHours) * time.Hour
+	}
+	return time.Duration(s.IncidentWindowHours) * time.Hour
 }
 
 // ============================================================================

@@ -109,5 +109,11 @@ func registerSupplyMarketRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		// 挂在这个组里而不是自起一个组，理由与本函数其余路由一样。
 		supply.GET("/export/withdrawals", h.Supplier.Admin.ExportWithdrawals)
 		supply.GET("/export/ledger", h.Supplier.Admin.ExportLedger)
+
+		// 供给号失效事件。只读，与上面那几条看板接口同类。
+		// summary 在 incidents 之后注册：gin 的路由树里 /incidents/summary 是
+		// 一个更长的静态路径，两者不冲突（这里没有 :id 参数段），顺序只是可读性。
+		supply.GET("/incidents", h.Supplier.Admin.ListIncidents)
+		supply.GET("/incidents/summary", h.Supplier.Admin.GetIncidentSummary)
 	}
 }

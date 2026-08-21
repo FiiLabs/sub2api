@@ -108,6 +108,10 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 | 争议台账 | `internal/service/payment_dispute.go`（类型+接口+编排）、`internal/repository/payment_dispute_repo.go`（SQL） | `231` | `payment_disputes`：拒付的唯一事实来源。`settled_at` 是"扣钱只跑一次"的闸，重复 upsert 碰不到它。见 §3.8 |
 | 争议事件解析 | `internal/payment/provider/stripe_dispute.go`、`internal/payment/dispute.go`（类型与 `DisputeAwareProvider` 接口） | — | 五种 `charge.dispute.*` 都认，**款项动没动只看 `status`**：四种 warning/prevented 是询证，返回 `(nil, nil)`；未知状态一律按"钱没动"。core 的 Stripe provider 一行未动（同包新文件） |
 | 争议 webhook 分派 | `internal/handler/payment_webhook_dispute.go` | — | 挂在既有 webhook 的 `notification == nil` 分支上，不新开路由（Stripe 一个 endpoint 收全部事件）。core 侵入两行，见 core touch #10 |
+| 供给号失效台账 | `internal/service/supplier_incident.go`（类型+接口）、`supplier_incident_service.go`（扫描/报表/熔断三个出口）、`internal/repository/supplier_incident_repo.go`（SQL） | `233` | `supplier_account_incidents`：一行 = 一次失效。开与关是**互补**的两条判据，一个号同时只能有一条未结事件（部分唯一索引 + `ON CONFLICT ... DO NOTHING`）。由 `SupplierLifecycleService` 每轮驱动，见 §3.10 |
+| 失效通知 | `internal/service/supplier_incident_notify.go` | — | 「你的号停了」，**只发供给者不发运营**、**同步**发（`notified_at` 的含义是信真的发出去了）、信里不含上游错误原文。缺 SMTP 或缺用户读取能力时通知器构造成 nil，检测与报表照常工作。见 §3.10 |
+| 接入熔断 | `internal/service/supplier_incident_service.go`（`GuardOnboarding`）、`setting_supply_onboarding.go`（两个新字段） | — | 反复往平台塞坏号的人被挡在接入路径上。`supply_onboarding_settings` 加 `max_incidents_per_user`（默认 **0 = 关**）与 `incident_window_hours`（默认 7 天）。判据放在事件服务而不是接入服务：接入服务不需要知道事件是什么。**查询失败放行**，与另外两道闸相反，理由见 §3.10 |
+| 失效运营视图 | `internal/handler/supplier_incident_handler.go`、`internal/server/routes/supplier.go` | — | `GET /api/v1/admin/supply/incidents{,/summary}` 两条只读路由，方法挂在既有的 `*SupplierAdminHandler` 上（同 §3.6）。明细可按供给者 / 账号 / 是否未结 / 时间窗筛；报表是四个数 + 封禁率榜单 |
 | 争议通知 | `internal/service/payment_dispute_notify.go` | — | 三种状态三封信，收件人复用 `supply_withdrawal_settings.notify_emails`。全程 best-effort、异步、不用请求 ctx。信里必须写清**收信人现在该做什么**——应诉窗只有几天 |
 
 **结算参数现在有人填了，但默认是关的**。`GetSupplierSettlementSettings` 读那个 JSON key，`ToBillingParams()` 在总开关关闭时返回全零值——也就是计费里「什么都不做」的那一支。配置行不存在（当前生产状态）、JSON 损坏、数据库读失败，一律回退到关闭：这是**刻意的 fail-closed**，与本包其他网关行为设置的 fail-open 相反。网关设置读不到时放行请求最多少一层加工；结算参数读不到时按猜测值给钱，错的是账。打开开关要管理员在「双边市场」页显式保存一次（`PUT /api/v1/admin/settings/supplier-settlement`）。
@@ -280,6 +284,24 @@ wire 注册后跑 `make -C backend generate`（本轮已实测：该命令在本
 
 两条工程上的选择顺带记在这里：**没有分页循环**（LIMIT/OFFSET 翻页导出会在两页之间给表留下插入新行的机会，同一行可能出现两次或一次都不出现；一个游标从头扫到尾看到的是一致快照），以及**截断探针查 `limit+1` 行而不是先 `COUNT(*)`**（后者要多扫一次表，且数完到扫完之间的新增行会让两个数字对不上；探针只回答"后面还有没有"，那正是唯一需要回答的问题，而它本身绝不进文件）。**默认窗口 90 天**而不是"不给条件就导全部"：截断截掉的是**最新**那一段（按时间正序推），"导全部"会给运营一份从开天辟地开始、恰好把他想要的那部分截掉的文件。
 
+### 3.10 供给号失效事件的八条边界（改动前先读）
+
+**这张表存在的唯一理由是 `accounts` 没有历史。** 账号状态只回答「此刻怎么样」，而这个功能要回答的三个问题全是时间上的：这个号是**什么时候**坏的（决定那封信该不该发）、这个人**这个月**坏了几次（封禁率报表）、他**最近**坏得是不是太频繁（接入熔断）。这三个问题在 `accounts` 上一个也问不出来——号从 `error` 恢复成 `active` 的那一刻，"它坏过"这件事就没了。所以迁移 `233` 建的是一张追加式台账：一行 = 一次失效，`detected_at` / `notified_at` / `resolved_at` 三个时刻各记各的。
+
+**开与关必须互补，这是全模块最重要的一条。** 开的判据是「有主人 + 未软删 + 状态非空且非 `active` + 状态不是 `retired`」，关的判据是它逐条的反面**外加**「号已经不在了」。两者若不互补，坏的方向有两个且都不响：留下一条永远关不掉的事件（运营看板上一个永远归不了零的数字），或者每一轮扫描先关再开同一条事件——那意味着**供给者每 5 分钟收到一封同样的邮件**。互补性由一条部分唯一索引（`WHERE resolved_at IS NULL`）与 `ON CONFLICT (account_id) WHERE resolved_at IS NULL DO NOTHING` 兜底：即便判据将来漂了，一个号同时也只可能有一条未结事件。真库那 22 处变异里有 10 处就是逐条拆这两个表达式（见 §8）。
+
+**供给者自己按的下线不是事故。** `retired` 与 `draining` 的区别在这里第一次有了实际后果：`retired` 被排除（他自己解绑的号坏了，不该收到"你的号出问题了"），`draining` 不排除（排空中的号**还在接单**，坏了照样要通知）。这条判据之所以能这么干净地写出来，是因为 §3.5 那个决定——供给者发起的暂停只写 `extra` 里的 `supply_state` 与 `schedulable`，**从不碰 `accounts.status`**。于是 `status <> 'active'` 恒等于"上游那边出事了"，没有第二种解释。反过来说：将来谁让下线路径去写一次 `status = 'disabled'`，这张台账立刻开始给所有主动下线的人发事故信。
+
+**状态为空算健康。** `accounts.status` 上游只有 `active`/`disabled`/`error` 三个取值，但历史行里可能是空串。把空算成坏的表现非常具体：功能上线的第一分钟，给一批存量供给者群发"你的号停了"。这条在真库测试里差点漏掉——共用的 fixture 会把空 status 兜底成 `active`，于是"空状态"那个用例造出来的其实是一个健康号，变异因此活了一轮（见 §8）。
+
+**`notified_at` 的含义是「信发出去了」，不是「我们试过发」。** 因此发信是**同步**的（与 §3.7 提现那三封信相反：那边的调用方是 HTTP 请求，不能等 SMTP；这边的调用方是后台扫描，它必须知道结果），且**先发后标**、失败不标。单轮只发 50 封而开事件一轮 500 条，是因为前者是 N 次 SMTP 往返、后者是一条 SQL，而整轮跑在生命周期任务 10 分钟的总超时里——一次波及几百个号的上游故障中，信会分几轮发完，`notified_at` 保证没有人因此收到两封。`MarkNotified` 上那个 `AND notified_at IS NULL` 是同一件事的多实例版本：它拦不住两封信都已发出（那一刻已经过去了），但它保证列里留下的是**第一封**的时刻。
+
+**信只发给供给者，且不含上游错误原文。** 一个号坏了是那个人的损失，不是运营的待办；运营要的是趋势（封禁率报表），不是每个坏号一封邮件——真到了该惊动运营的量级，那是告警的事，不是收件箱的事。原文（可能带 token 片段、内部地址、整段上游 JSON）只留在管理端报表里，入库前还先截到 `SupplierIncidentErrorMaxLen`。
+
+**熔断闸默认关着，且查询失败一律放行。** 后半句是与另外两道接入闸（每人 / 每 IP）**相反**的方向，理由不对称：那两道数的是当下的账号数，一次简单 COUNT，失败几乎只意味着库挂了，而库挂了接入本来也走不通；这道数的是历史事件，它失败时接入路径其余部分完全正常——为一次统计查询的抖动把一个正常供给者挡在门外，代价大于放进来一个坏号（下一轮扫描照样记下他，闸恢复后照样拦得住）。数的是**事件次数**而不是坏号个数：同一个号反复坏是最强的信号，按号去重会把它压成 1。窗口与阈值分成两个配置字段（`max_incidents_per_user` / `incident_window_hours`），且窗口的 `0` 与本仓其它所有上限的 `0` 含义**不同**——那些是"不限"，这个只是"没填"，兜默认 7 天，因为 0 小时的窗口会让一道看起来开着的闸永远拦不住任何人。给用户的错误文案刻意不写具体阈值（那等于把绕过方法一起发给他），也刻意说"最近"和"稍后再试"（被上游一次大面积封号波及的正常供给者需要知道这不是永久的）。
+
+**报表里「当前未结」不带窗口，其余三个数带。** `opened` / `resolved` / `suppliers` 问的是"这段时间发生了什么"，`open` 与榜单里的 `open_incidents` 问的是"现在还有几个坏着"——一个坏了三个月的号不该因为它是在窗口之前坏的就从后者里消失。榜单的驱动表是"窗口内出过事的人"，所以榜上不会出现零事件的行（那是一张"谁在坏"的榜，不是全体供给者名册），但连账号数用的是 `LEFT JOIN`：号全解绑了、事件还挂着的人必须留在榜上，而他的 `Rate` 分母为零——比率因此在 Go 侧算并显式判零，不在 SQL 里写 `NULLIF`（那个 `NULLIF` 漏一次就是运营点开报表看到整页 500）。**最后：整层对账号是只读的**，检测到坏号不会自动禁用、下线或解绑任何东西。那是供给者的资产，平台的动作止于"记下来 + 告诉他"。
+
 ## 4. Core Touch 台账
 
 core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APEXONE-EXT:` 可 grep 标记 + 详尽注释 + 单测。下表随实现逐行填。
@@ -307,7 +329,10 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 | 5h | `backend/cmd/server/wire_gen.go` | `NewSupplierWithdrawalRepository` 构造处 :319 | **手工改 1 行**：多传一个已存在的 `secretEncryptor`（:90 处已构造，本是 TOTP 用的） | 收款账号加密（迁移 `232`）。刻意复用既有的 `SecretEncryptor` 而不是新起一份密钥配置：多一个密钥就多一次"部署时忘了配"的机会，而这个字段配漏了的表现是**提现申请全站失败**（`seal` 在没有加密器时报错、不降级成明文）。`internal/repository/wire.go` 一字未动——`NewSupplierWithdrawalRepository` 本来就在 ProviderSet 里，wire 按类型自动补上这个形参；只有手工维护的 `wire_gen.go` 需要跟一行。**本仓无 `wire` 二进制**，同 #5f | **已做** |
 | 5i | `backend/cmd/server/wire_gen.go` | `supplierHandler` 构造处 :319 附近 | **手工改 3 行**：新建 `supplierExportRepository` / `supplierExportService` 两行，`NewSupplierHandler` 多传一个形参；`internal/repository/wire.go` 与 `internal/service/wire.go` 各加一个 provider | 对账导出。导出仓储收的是与提现仓储**同一个** `secretEncryptor`——那份文件里的收款账号必须是明文（§3.9）。导出没有并进 `SupplierAdminRepository` 也没并进 `SupplierWithdrawalRepository`：前者整层不碰收款账号，不该为了导出多拿一把密钥；后者已有自己的 sqlmock 与真库两套测试，合进去等于把两组依赖搅在一起。handler 方法照旧挂在既有的 `*SupplierAdminHandler` 上，`AdminHandlers` / `ProvideAdminHandlers` / `handler/wire.go` 三处热区一行未动（同 #9）。**本仓无 `wire` 二进制**，同 #5f/#5h | **已做** |
 | 10 | `backend/internal/handler/payment_webhook_handler.go` | `handleNotify` 的 `notification == nil` 分支 | 插入两行：一行 `// APEXONE-EXT:` 注释 + 一行 `h.handleDisputeNotify(...)`。逻辑全在新文件 `payment_webhook_dispute.go` | 争议事件挂在既有 webhook 上而不是新开路由：Stripe 后台一个 endpoint 收全部事件类型，分流要运营在后台再配一个 endpoint 并勾对事件类型——那是一件不做也不报错、做错了也不报错的运维动作，而它错了的表现是「拒付静默地不被处理」，与上线前一模一样。挂的位置是 `notification == nil`，那个分支的含义正是「验签通过但不是我们认识的支付事件」，因此**支付主链路一行不动**，认得的支付事件根本走不到这里。同步执行而非 goroutine：Stripe 超时 20 秒，而这条路径通常几十毫秒；异步会让失败日志与本次推送对不上号 | **已做** |
-| 9 | `backend/internal/server/routes/admin.go` | `registerSettingsRoutes(admin, h)` 之后 | 加 `registerSupplyMarketRoutes(admin, h)` 一行 + 一行 `// APEXONE-EXT:` 注释；函数体定义在 `routes/supplier.go` | 管理端运营视图的九条路由（四条只读 + 提现那三条：列表 / 标记已打款 / 拒绝 + 对账导出那两条 GET）。写路径为什么能进这一层见 §3.6 首段。挂进既有 admin group（adminAuth + 面板限流 + 审计 + `AdminComplianceGuard` 四层中间件），理由同 #8。handler **不进 `AdminHandlers`** 而是挂在既有的 `Handlers.Supplier` 下（`h.Supplier.Admin`）——`AdminHandlers` 结构体、`ProvideAdminHandlers` 形参表、`handler/wire.go` 是三处上游合并热区，每加一个管理端 handler 就要各留一行。用户侧与管理侧刻意是**两个类型**：路由挂错时是编译期的事，而不是把一个全站流水接口挂到了 `/user/supply` 下面 | **已做** |
+| 5j | `backend/internal/service/wire.go` + `internal/repository/wire.go` + `backend/cmd/server/wire_gen.go` | 两个 ProviderSet / `supplierHandler` 构造处附近 | 新增 `NewSupplierIncidentRepository` / `NewSupplierIncidentNotifier` / `NewSupplierIncidentService` 三个注册，并把既有的 `NewSupplierOnboardingService` 包一层成 `ProvideSupplierOnboardingService`；`ProvideSupplierLifecycleService` 多一个形参。**手工改 3 处**：wire_gen 里新建三行、接入服务改走新 provider、生命周期服务多传一个实参 | 失效事件同时被两个已有服务消费，而两处都只能用 setter：`SetIncidentGuard`（接入服务）与 `SetIncidentSweeper`（生命周期任务）写成构造参数会**成环**——事件服务不依赖它们，它们依赖事件服务，但接入服务的构造又发生在事件服务能被观测到之前。setter 需要一个能表达这一步的 provider，于是有了 `Provide*` 壳。`SetIncidentSweeper` 必须排在 `Start()` **之前**：`Start()` 之后第一轮随时可能起跑，那一轮读到的是 nil 还是真对象取决于赛跑结果。构造顺序上事件仓储/通知器/服务三行排在接入服务之前。**本仓无 `wire` 二进制**，同 #5f/#5h/#5i | **已做** |
+| 5k | `backend/internal/handler/supplier_handler.go` | `NewSupplierHandler` 形参表 | 加第六个形参 `incidentService`，转手作为 `NewSupplierAdminHandler` 的第四个实参 | 失效运营视图的两条路由挂在既有的 `*SupplierAdminHandler` 上（同 #9），因此依赖从 `Handlers.Supplier` 这条既有链路下传。`AdminHandlers` / `ProvideAdminHandlers` / `handler/wire.go` 三处热区仍是一行未动。既有 handler 单测两处调用点各补一个 `nil` | **已做** |
+| 9a | `backend/internal/server/routes/supplier.go` | `registerSupplyMarketRoutes` 函数体 | 加两条只读 GET（`/incidents`、`/incidents/summary`）+ 一行 `// APEXONE-EXT:` 注释 | 管理端供给侧路由从九条变成十一条。`routes/admin.go` **一行未动**——#9 那一行调用已经把整组挂进去了，这正是当初单起 `registerSupplyMarketRoutes` 的收益：此后每加一条运营接口，core 的路由文件都不再需要改动。`supplier_test.go` 里那条计数断言随之从 9 改到 11，改断言那一步强迫人回答"这两条该不该出现在这个组里"（见 §9） | **已做** |
+| 9 | `backend/internal/server/routes/admin.go` | `registerSettingsRoutes(admin, h)` 之后 | 加 `registerSupplyMarketRoutes(admin, h)` 一行 + 一行 `// APEXONE-EXT:` 注释；函数体定义在 `routes/supplier.go` | 管理端运营视图的路由组（起步九条：四条只读 + 提现那三条：列表 / 标记已打款 / 拒绝 + 对账导出那两条 GET；失效视图两条后为十一条，见 #9a）。写路径为什么能进这一层见 §3.6 首段。挂进既有 admin group（adminAuth + 面板限流 + 审计 + `AdminComplianceGuard` 四层中间件），理由同 #8。handler **不进 `AdminHandlers`** 而是挂在既有的 `Handlers.Supplier` 下（`h.Supplier.Admin`）——`AdminHandlers` 结构体、`ProvideAdminHandlers` 形参表、`handler/wire.go` 是三处上游合并热区，每加一个管理端 handler 就要各留一行。用户侧与管理侧刻意是**两个类型**：路由挂错时是编译期的事，而不是把一个全站流水接口挂到了 `/user/supply` 下面 | **已做** |
 
 ## 5. 结算不变量（实现必须守住）
 
@@ -383,6 +408,7 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 | 231（**2026-08-20 补**） | `payment_dispute_repo_integration_test.go`（9 例，新文件） | 这张表的全部保证都写在一条 UPSERT 的 `ON CONFLICT` 子句里，而 sqlmock 只会把那条 SQL 原样还回来。真库证的是：`ON CONFLICT (dispute_id)` 真的推断得到迁移 231 的唯一索引（推断不上不是降级而是报错，表现为"第二次推送整条 webhook 500"）；**结算之后再来的推送碰不到 `settled_at` 与四个结算金额**，也碰不到已冻住的 `basis_amount`——这是"一笔拒付只扣一遍钱"的最后一道保证；结算之前 `basis_amount` 仍可被修正；订单关联**只补不覆盖**（孤儿争议事后能被补上订单，已对上的不会被字段更少的推送打回孤儿）；`resolved_at` 只记第一次关闭；`ClaimForSettlement` 串行重放五次只有第一次拿到 true，**16 个 goroutine 同时抢也恰好只有一个赢**；空 `dispute_id` 在进库前就被三个方法各自拦下 |
 | 232（**2026-08-20 补**） | `supplier_withdrawal_repo_integration_test.go`（+2）、`supplier_payout_cipher_test.go`（6 例，新文件、不带 tag） | 单测能证密文形状，证不了**库里到底存了什么**。真库证的是：`payout_account` 列真的放得下约 1 060 个 base64 字符（229 建的是 `VARCHAR(256)`，迁移 232 没跑到的话这条插入直接报错，而不是悄悄截断），直读那一列拿到的是 `enc.v1:…`、里面搜不到卡号——**这正是一份 `pg_dump` 会看到的东西**；建单回读、列表、审批回读三条读路径都解了密（少解一条的表现是运营照着一串 base64 去打款）；以及绕过仓储直插一行明文（模拟升级那一刻库里的实际状态：一张已经扣过钱、还等着打款的旧单子）后，它照常读得出来、也照常推得到终态——那是"不需要停机窗口"这个承诺的全部依据 |
 | —（无新迁移，**2026-08-20 补**） | `supplier_export_repo_integration_test.go`（8 例，新文件） | 这两条导出查询是本轮唯一用 sqlmock 测不出**任何**东西的部分——它只把 SQL 当字符串比对，而这里每条断言问的都是"Postgres 拿到这串东西之后做了什么"。真库证的是：按 `status` 筛不撞 ambiguous column（`supplier_withdrawals` 与 `users` **都有** `status` 这一列，而导出比屏幕上的列表多一个 `LEFT JOIN users`，这条路只有"导出且按状态筛"这一个组合能走到）；两个 `LEFT JOIN` 的 **LEFT**——`reviewer_id` 为 NULL 的待处理单子必须在文件里，写成 INNER 的话"还没打的款"会整批消失，而那恰恰是运营导这份表的第一个理由；`::text` 拿到的是 NUMERIC 原文（`0.00000001` 不被舍成 `1e-08`、`0.333333` 是比例快照原文）；`limit+1` 探针置位 `truncated` 且那一行**不进文件**，而恰好导满时不算截断；时间窗真的筛、顺序真的是 `created_at ASC`；密文行与 232 之前的历史明文行同处一份文件都读得出来 |
+| 233（**2026-08-21 补**） | `supplier_incident_repo_integration_test.go`（16 例，新文件） | 这张表的核心性质是**开与关必须互补**，而互补性是两条 SQL 表达式之间的关系——sqlmock 把它们都当字符串，看不出两条加起来是不是恰好覆盖了全集。真库证的是：`ON CONFLICT (account_id) WHERE resolved_at IS NULL` 真的推断得到迁移 233 那条部分唯一索引（推断不上不是降级而是报错），于是**连扫三轮只开出一条事件**；号恢复后事件被关掉、复发时开的是**第二条**新事件而不是复用旧的；自营号（无归属人）、空状态号、`retired` 号一个都不被开事件，而 `draining` 号照常开（它还在接单）；关的那一侧三条路径各自成立——号被软删（`LEFT JOIN ... AND a.deleted_at IS NULL`，写成 INNER JOIN 的话事件会永远留在“当前坏着”里指向一个不存在的号）、归属被摘、主人自己按了解绑；上游错误原文真的被截到 `SupplierIncidentErrorMaxLen`；`MarkNotified` 的 `AND notified_at IS NULL` 真的保留**第一封**信的时刻（这条只有在事务里种一个人为提前两小时的值才测得出来——同一事务内两次 `NOW()` 是同一个值）；待发队列按 `detected_at ASC` 出（积压时先通知已经停了最久的那个人）；明细列表的四个筛子与“未结置顶”的排序；报表里**「当前未结」不带窗口而其余三个数带**（一个坏了三个月的号仍要出现在“现在还有几个坏着”里）；以及号全解绑的供给者仍在榜上且他的 `Rate` 是 0 而不是一次除零 |
 | —（无新迁移） | `supplier_admin_repo_integration_test.go`（7 例，新文件） | 运营视图全是跨表聚合，sqlmock 只会把写好的 SQL 原样还回来，连 `COUNT(*) FILTER (...)` 是不是合法都不知道。真库证的是：自营账号（`owner_user_id IS NULL`）一个都没混进任何一个数字；jsonb 状态缺失兜底进 `pending_review`；看板人数恒等于名册分页总数，且**号全删了但钱包还有余额的人仍在名册里**；四个排序键的 `ORDER BY` 片段都真的合法、翻页不重不漏；未知排序键报错；健康度/状态/归属三个筛子各自成立且观察期字段真的从 jsonb 里解得出来；流水窗口用的是数据库时钟（`NOW() - make_interval(days => $1)` 的参数类型推断只有真库能证），把行挪到 60 天前它就从 30 天窗口里消失、把窗口拉到 90 天它又回来 |
 
 并发那两例（溢出配额、争议占坑）刻意**不走 `testEntTx`**：那个 harness 是一个会回滚的单事务，会把所有写串行化，正好掩盖掉要测的东西。它们用 `integrationEntClient` 直连并自行清理。
@@ -399,6 +425,10 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 
 对账导出（§3.9）逐条反证过 13 处变异，每处都能编译，且**刻意分布在三层**：仓储侧六处（WHERE 不加表名前缀 → 撞 ambiguous / reviewer 用 INNER JOIN / 不多要探针那一行 / 金额绕一趟 float64 / 按时间倒序 / 收款账号不解密），服务侧两处（窗口不覆盖 filter 里的时间 → 文件名与实际查询的范围各说各话 / `Available()` 不看仓储），HTTP 与编码侧五处（公式字符不中和 / 出错也写尾行 → 给半截文件盖上完整的章 / 截断不在文件里说 / 不写 BOM / 文件名用当下而非窗口）。分层是有意义的：仓储那六处只有真库看得见，编码那五处只有单测看得见——一份在 Excel 里被当成公式执行的单元格不会让任何一条服务端日志变红。
 
+失效事件（§3.10）逐条反证过 **33 处**变异，每处都能编译，分布在两层。仓储侧 22 处：开的判据五处（不排除 `retired` / 空状态算坏 / 不排除自营号 / 不截断错误原文 / 去掉 `ON CONFLICT` 幂等）、关的判据五处（JOIN 不排除软删 / 漏掉「归属被摘」 / 漏掉 `retired` / 把还坏着的也关掉 / `LEFT JOIN` 改 `INNER`）、通知队列三处（去掉「只记第一封」闸 / 把已发过的也捞出来 / 改成先通知最新出事的）、明细列表三处、报表与榜单五处（当前未结夹上窗口 / `open_counts` 夹上窗口 / `windowed` 丢掉窗口 / 没有号的供给者被挤掉 / 去掉除零护栏）、熔断一处（不看时间窗）。服务侧 11 处，其中三处是**顺序**而非取值：`Sweep` 必须先关后开（先开后关会让一批刚恢复的号在同一轮里先被开一条事件再被关掉——供给者收到的是一封「你的号坏了」，而他的号此刻是好的）、发信必须在标记之前、发信失败不许标记。
+
+这一组里有两个变异第一轮活了下来，两者的性质完全不同，都记在这里：**「空状态算坏」活下来是测试的错**——共用 fixture 会把空 `status` 兜底成 `active`，那个用例造出来的其实是一个健康号，修法是在测试里直接改库把它改回真正的空串。**「关的判据漏掉『号已不在』」活下来是被测代码的性质**：`a.id IS NULL` 与紧邻的 `a.owner_user_id IS NULL` 在 `LEFT JOIN` 补出的空行里恒同真假，去掉前者行为完全不变，它是一个等价变异，不可能被任何测试钉住。那一支仍然留在表达式里（它让「号被删了」这件事有个名字，否则下一个人读到的会是「归属被摘的号要关事件」），代价写在源码注释里；真正守着删号路径的是 JOIN 上的 `a.deleted_at IS NULL`，替它的变异因此改成拿掉那个条件，一次就红。
+
 **仍未验证的**（不在真库能力范围内，需要活的上游）：真实 OAuth 授权码兑换。
 
 ## 9. 路由装配的验证实录（2026-08-20）
@@ -407,7 +437,7 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 
 `supplier_test.go`（不带 build tag，与 `internal/server/routes` 其余测试一致，`make test-unit` 与 `make test-integration` 两边都跑到）分两类断言：
 
-**行为类**——从 `router.Routes()` 反推，而不是照着 `supplier.go` 抄一遍路径清单。后者只能证明"我写的和我写的一样"，前者对将来新增的每一条路由自动生效，而"新加的一条忘了挂"正是要防的那种遗漏。三条：十五条用户路由每一条都真的走过 JWT 与审计（审计桩 abort 掉，于是依赖全空的 handler 一次也没被调用）；未登录时十五条一条不漏地 401；管理端九条挂在 admin 组下，未登录同样一条都进不去。
+**行为类**——从 `router.Routes()` 反推，而不是照着 `supplier.go` 抄一遍路径清单。后者只能证明"我写的和我写的一样"，前者对将来新增的每一条路由自动生效，而"新加的一条忘了挂"正是要防的那种遗漏。三条：十五条用户路由每一条都真的走过 JWT 与审计（审计桩 abort 掉，于是依赖全空的 handler 一次也没被调用）；未登录时十五条一条不漏地 401；管理端十一条挂在 admin 组下，未登录同样一条都进不去。
 
 **清单类**——三处只能从源码读，因为它们在装配测试里**观测不到**：
 
@@ -417,7 +447,7 @@ core 侵入处一律：逻辑放新文件，core 处只留单行调用 + `// APE
 | Heavy 限流的挂载点恰好是 `oauth/start` / `oauth/complete` / `POST /withdrawals` | `Heavy()` 与 `Global()` 在没有 Redis 的测试里都放行，注册结果里分辨不出谁是谁。而这三条的**反面**（撤回提现、解绑账号、同意协议不套 Heavy）最容易被"顺手加一层更安全"改掉——那等于在供给者最急着把钱拿回来、最想撤回授权的时候让他做不到，测试因此把这三条也单独点名 |
 | 管理端的写路径只有提现审批那两条 POST | §3.6 那条边界（整层只读，唯一例外是提现审批）在后端唯一的落点。前端有一条同形状的断言钉住 API 客户端的写方法清单；两边都要求"加一条写接口先改断言"，也就是先停下来想一下这个写动作该不该出现在一个看板里 |
 
-那条"管理端一共几条"的计数断言在加对账导出（§3.9）时立刻变红了——两条新的 GET 一挂上去，`should have 7 item(s), but has 9` 就把改动拦在了提交之前。这正是它存在的理由：改断言那一步强迫人回答"新加的这两条该不该出现在这个组里"，而答案（该，因为它们要跟着走审计中间件）是这次唯一需要想清楚的事。
+那条"管理端一共几条"的计数断言在加对账导出（§3.9）时立刻变红了——两条新的 GET 一挂上去，`should have 7 item(s), but has 9` 就把改动拦在了提交之前。这正是它存在的理由：改断言那一步强迫人回答"新加的这两条该不该出现在这个组里"，而答案（该，因为它们要跟着走审计中间件）是这次唯一需要想清楚的事。失效运营视图（§3.10）上线时它第二次变红——`should have 9 item(s), but has 11`，同样的两条 GET、同样的一次追问。两次都只改了那个数字，但两次都是在那一刻才确认「这条新接口进的是带审计的管理端组」，而不是上线三个月后从日志里发现它没进。
 
 加上三道判空（`h` / `h.Supplier` / `h.Supplier.Admin` 任一为 nil 时一条路由都不注册）：wire 装配失误时正确的表现是这些接口 404，不是一打就 502。管理端那半边直接调 `registerSupplyMarketRoutes` 而不走 `RegisterAdminRoutes`，因为后者在 `h.Admin` 为 nil 时会自己先崩（上游既有行为，每个 `registerXxxRoutes` 都直接读 `h.Admin.<字段>`），那样测的就成了上游的容错。
 

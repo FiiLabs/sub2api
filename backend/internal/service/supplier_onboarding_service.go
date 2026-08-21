@@ -98,6 +98,18 @@ type SupplierOnboardingService struct {
 	accountRepo supplierAccountStore
 	oauth       supplierClaudeOAuth
 	settings    supplierSettingsReader
+	// incidents 失效熔断的判据来源。可选，见 SetIncidentGuard。
+	incidents supplierIncidentGuard
+}
+
+// supplierIncidentGuard 是「这个人最近坏掉的号是不是太多了」这一个判断。
+//
+// 只有一个方法，且方法本身吃 *SupplyOnboardingSettings：窗口与阈值都在配置里，
+// 而配置本文件已经读过一次（requireCapacity 里那个 limits）。把它传过去而不是
+// 让事件服务自己再读一遍，是为了让同一次接入判断中的两道闸看的是**同一份配置**——
+// 两次读之间隔着一个 60 秒的缓存，运营刚改完设置的那一分钟里它们可以是不同的。
+type supplierIncidentGuard interface {
+	GuardOnboarding(ctx context.Context, userID int64, limits *SupplyOnboardingSettings) error
 }
 
 // NewSupplierOnboardingService 构造自助接入服务。
@@ -113,6 +125,19 @@ func NewSupplierOnboardingService(
 		oauth:       oauthService,
 		settings:    settingService,
 	}
+}
+
+// SetIncidentGuard 注入失效熔断的判据来源。为 nil 时这道闸整个不存在。
+//
+// setter 而不是构造参数，理由与 SupplierLifecycleService.SetIncidentSweeper 一样：
+// 接入服务在没有事件台账的部署里必须照常工作，而构造函数里那四个依赖是它跑起来的
+// 必要条件。另有一条本处独有的：反过来注入会成环——事件服务读的是账号表，
+// 接入服务写的也是账号表，把它塞进构造签名会让 wire 的装配顺序变成一件要想的事。
+func (s *SupplierOnboardingService) SetIncidentGuard(guard *SupplierIncidentService) {
+	if s == nil || guard == nil {
+		return
+	}
+	s.incidents = guard
 }
 
 // supplyGroupID 返回新账号该挂的供给池分组，同时充当「自助接入是否开放」的判据。
@@ -410,6 +435,15 @@ func (s *SupplierOnboardingService) requireCapacity(ctx context.Context, userID 
 		}
 		if limits.ipCapReached(fromIP) {
 			return ErrSupplierNetworkLimitReached
+		}
+	}
+
+	// 第三道闸：最近坏掉的号太多。排在最后是因为它是三道里最贵的一次查询
+	// （数的是历史事件而不是当下的行数），而前两道能挡住的人不必走到这里。
+	// 它默认是关的，那时这一步连一次查询都不会发（见 GuardOnboarding）。
+	if s.incidents != nil {
+		if err := s.incidents.GuardOnboarding(ctx, userID, limits); err != nil {
+			return err
 		}
 	}
 	return nil

@@ -87,12 +87,21 @@ type supplierLifecycleProber interface {
 	RunTestBackground(ctx context.Context, accountID int64, modelID string) (*ScheduledTestResult, error)
 }
 
+// supplierLifecycleIncidentSweeper 跑一轮失效事件的检测与通知。
+//
+// 窄到只有一个方法，理由与 supplierLifecycleProber 一样：本服务不该因为多做一件事
+// 就长出一个新的存储依赖，而测试要能用一个计数器假件钉住「这一步被调了几次」。
+type supplierLifecycleIncidentSweeper interface {
+	Sweep(ctx context.Context)
+}
+
 // SupplierLifecycleService 周期推进供给账号的接入状态。
 type SupplierLifecycleService struct {
 	repo        supplierLifecycleStateLister
 	accountRepo supplierLifecycleAccountStore
 	settings    supplierLifecycleProbationReader
 	prober      supplierLifecycleProber
+	incidents   supplierLifecycleIncidentSweeper
 
 	interval time.Duration
 	stopCh   chan struct{}
@@ -132,6 +141,18 @@ func NewSupplierLifecycleService(
 		svc.prober = testService
 	}
 	return svc
+}
+
+// SetIncidentSweeper 注入失效事件扫描。为 nil 时这一步整个跳过。
+//
+// 用 setter 而不是加进构造签名：它是可选的（没有配 SMTP、或者部署方不需要事件台账
+// 时都可以不装），而构造函数的五个参数全部是这个任务跑起来的必要条件。
+// 这个区分与 SetLeaderLock 是同一条——必需的进构造，可选的进 setter。
+func (s *SupplierLifecycleService) SetIncidentSweeper(sweeper *SupplierIncidentService) {
+	if s == nil || sweeper == nil {
+		return
+	}
+	s.incidents = sweeper
 }
 
 // SetLeaderLock 注入选主用的缓存与数据库。两者都为 nil 时不选主直接跑（单实例与测试）。
@@ -206,6 +227,29 @@ func (s *SupplierLifecycleService) runOnce() {
 	s.sweepUnavailableOwners(runCtx)
 	s.sweepDraining(runCtx)
 	s.sweepPendingReview(runCtx)
+	s.sweepIncidents(runCtx)
+}
+
+// sweepIncidents 记下坏掉的号、关掉恢复了的、给新事件的主人发信。
+//
+// # 为什么排在最后
+//
+// 前三步都会改变账号的状态（停掉孤儿号、把排空到期的转终态、把观察期跑完的推进
+// active），而本步读的正是那个状态。排在前面的话，它看到的是**上一轮**留下的世界：
+// 一个刚刚被 sweepUnavailableOwners 停掉的号要多等五分钟才会被记下来，
+// 而一个刚被 promote 成 active 的号会带着一条本该在这一轮就关掉的事件多活一轮。
+//
+// # 为什么搭这趟车而不是自起一个任务
+//
+// 这一步与前三步共享的东西比看上去多：同一把选主锁（多实例下重复扫描的代价在这里
+// 是**重复发信**）、同一个 5 分钟节奏（事件的时效性要求与排空到期一个量级）、
+// 同一个 run 超时。再起一个任务意味着再写一遍选主、再配一个间隔、再多一个
+// 会在部署时被忘记打开的开关。
+func (s *SupplierLifecycleService) sweepIncidents(ctx context.Context) {
+	if s.incidents == nil {
+		return
+	}
+	s.incidents.Sweep(ctx)
 }
 
 // ============================================================================

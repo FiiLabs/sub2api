@@ -866,8 +866,12 @@ var ProviderSet = wire.NewSet(
 	// APEXONE-EXT: 双边市场——赚取钱包读侧服务 + 冻结额释放任务。
 	ProvideSupplierCreditService,
 	ProvideSupplierThawService,
+	// APEXONE-EXT: 双边市场——供给号失效事件（台账扫描 + 供给者邮件 + 接入熔断）。
+	// 它是下面接入/生命周期两个 Provide 的入参，被那两个拉起来。
+	NewSupplierIncidentNotifier,
+	NewSupplierIncidentService,
 	// APEXONE-EXT: 双边市场——供给者自助接入 + 观察期/排空推进任务。
-	NewSupplierOnboardingService,
+	ProvideSupplierOnboardingService,
 	ProvideSupplierLifecycleService,
 	// APEXONE-EXT: 双边市场——管理端运营视图服务（只读聚合）。
 	NewSupplierAdminService,
@@ -971,12 +975,33 @@ func ProvideSupplierLifecycleService(
 	accountRepo AccountRepository,
 	settingService *SettingService,
 	testService *AccountTestService,
+	incidents *SupplierIncidentService,
 	lockCache LeaderLockCache,
 	db *sql.DB,
 ) *SupplierLifecycleService {
 	svc := NewSupplierLifecycleService(repo, accountRepo, settingService, testService, SupplierLifecycleDefaultInterval)
 	svc.SetLeaderLock(lockCache, db)
+	// 两个 setter 都必须排在 Start 之前：Start 之后第一轮随时可能起跑，
+	// 那一轮读到的是 nil 还是真对象，取决于赛跑结果。
+	svc.SetIncidentSweeper(incidents)
 	svc.Start()
+	return svc
+}
+
+// APEXONE-EXT: ProvideSupplierOnboardingService 构造接入服务并挂上失效熔断。
+//
+// 存在的唯一理由是那一行 SetIncidentGuard——为什么是 setter 而不是构造参数，
+// 写在 SetIncidentGuard 的注释里（会成环）。wire 需要一个能把这一步表达出来的
+// provider，于是有了这个壳。
+func ProvideSupplierOnboardingService(
+	repo SupplierOnboardingRepository,
+	accountRepo AccountRepository,
+	oauthService *OAuthService,
+	settingService *SettingService,
+	incidents *SupplierIncidentService,
+) *SupplierOnboardingService {
+	svc := NewSupplierOnboardingService(repo, accountRepo, oauthService, settingService)
+	svc.SetIncidentGuard(incidents)
 	return svc
 }
 
