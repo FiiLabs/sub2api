@@ -672,12 +672,20 @@ func TestWithdrawalWorksWithoutNotifier(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// 构造函数收到一个 nil 的 *SupplierWithdrawalNotifier 时，字段必须仍是 nil 接口。
-// 直接赋值的话会得到一个"非 nil 接口装着 nil 指针"，上面那条 nil 判断就失效了。
-func TestNewWithdrawalServiceKeepsNilNotifierNil(t *testing.T) {
-	svc := NewSupplierWithdrawalService(&supplierWithdrawalRepoStub{}, nil, nil, nil)
+// 构造函数收到一个 nil 的具体指针时，对应字段必须仍是 nil **接口**。
+// 直接赋值的话会得到一个"非 nil 接口装着 nil 指针"，下游的 nil 判断就全失效了。
+//
+// 两个字段都要钉，而且两处的代价不一样：
+//   - notifier：typed-nil 会让 s.notifier == nil 判假，于是提现主路径上一次空指针 panic。
+//   - addresses：typed-nil 会让 resolveOnchainAccount 走进"绑定服务已装配"那条分支，
+//     在一个 nil 的 *SupplierPayoutWalletService 上调方法。那个方法的接收者判了 nil
+//     （ready()），所以不会 panic，而是返回 unavailable——比 panic 更糟：
+//     链上渠道会变成"服务不可用"，而运营会去查一个根本没坏的绑定服务。
+func TestNewWithdrawalServiceKeepsNilDepsNil(t *testing.T) {
+	svc := NewSupplierWithdrawalService(&supplierWithdrawalRepoStub{}, nil, nil, nil, nil)
 	// 用 == nil 而不是 assert.Nil：testify 的 Nil 会对"接口里装着一个 nil 指针"
 	// 也返回 true，而那恰好就是这条测试要拦的东西——它会把自己要测的 bug 判成通过。
 	// 生产代码里的 `s.notifier == nil` 用的是这里这个语义。
-	assert.True(t, svc.notifier == nil, "typed-nil 接口会让所有 nil 判断失效") //nolint:testifylint
+	assert.True(t, svc.notifier == nil, "typed-nil 接口会让所有 nil 判断失效")  //nolint:testifylint
+	assert.True(t, svc.addresses == nil, "typed-nil 接口会让所有 nil 判断失效") //nolint:testifylint
 }

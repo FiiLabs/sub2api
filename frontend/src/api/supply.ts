@@ -174,6 +174,51 @@ export interface SupplyWithdrawalOptions {
   available_credit: number
   /** 已挂着的未决单数，达到 max_pending 就提不了了 */
   pending_count: number
+  /**
+   * 会自动上链结算的渠道（渠道名 → 链 + 币）。
+   *
+   * 回答的是「**如果**选了这个渠道会怎么结算」，不是「现在能不能选」——
+   * 能不能选看上面的 channels 白名单。两件事分开，是为了让「先把代码放上去、
+   * 之后再打开」这条上线路径成立：一个渠道可以先出现在这里、暂不进白名单。
+   *
+   * 表单靠它决定收款账号那一栏画输入框还是画「你绑定的地址」。
+   */
+  onchain_channels?: SupplyOnchainChannel[]
+}
+
+/** 一个会自动上链结算的渠道。 */
+export interface SupplyOnchainChannel {
+  /** 渠道名，与 channels 白名单里的字符串一字不差 */
+  channel: string
+  /** 链标识，也是绑定接口路径上那个 :network */
+  network: string
+  token_symbol: string
+}
+
+/**
+ * 一条收款地址绑定。
+ *
+ * address 是**小写**形态。要显示成 EIP-55 混合大小写请前端自己加——后端返回
+ * 什么、就该能原样再提交回来，而一个被美化过的地址提交回来会撞在校验和那道门上。
+ */
+export interface SupplyPayoutWallet {
+  id: number
+  network: string
+  address: string
+  created_at: string
+  updated_at: string
+}
+
+/**
+ * 绑定表单需要的一切，一次拿全。
+ *
+ * 与提现 options 同一个理由：分两个接口拼会画出「链列表里没有 bsc、下面却显示着
+ * 一个 bsc 地址」这种自相矛盾的界面。
+ */
+export interface SupplyPayoutWalletOptions {
+  channels: SupplyOnchainChannel[]
+  /** 已绑定的地址。没绑过是空数组，不是 null。 */
+  wallets: SupplyPayoutWallet[]
 }
 
 export interface StartOAuthResponse {
@@ -318,6 +363,47 @@ async function cancelWithdrawal(id: number): Promise<SupplyWithdrawal> {
   return data
 }
 
+/** 读绑定表单的全部前提。没绑过也照常成功返回（wallets 为空数组）。 */
+async function getPayoutWallets(): Promise<SupplyPayoutWalletOptions> {
+  const { data } = await apiClient.get<SupplyPayoutWalletOptions>('/user/supply/payout-wallets')
+  return data
+}
+
+/**
+ * 绑定或换绑某条链上的收款地址。
+ *
+ * 是 PUT 不是 POST：每人每链**至多一个**地址，这是一次幂等的置换，不是往一个
+ * 集合里追加。重复提交同一个地址必须是同一个结果。
+ *
+ * 地址走请求体、链走路径，两者不能对调：地址会出现在 access log、代理日志和
+ * 浏览器历史里，而一条能把这个账户的钱全部取走的地址不该进那三个地方。
+ *
+ * 地址已被别人绑走时后端回 409（`SUPPLIER_PAYOUT_ADDRESS_TAKEN`），那**不是**
+ * 格式问题——文案要说"这个地址已绑在另一个账号上"，否则用户会一遍遍去检查一个
+ * 完全正确的地址。校验和错（`..._CHECKSUM`）同理要与格式错分开说。
+ */
+async function bindPayoutWallet(network: string, address: string): Promise<SupplyPayoutWallet> {
+  const { data } = await apiClient.put<SupplyPayoutWallet>(
+    `/user/supply/payout-wallets/${encodeURIComponent(network)}`,
+    { address }
+  )
+  return data
+}
+
+/**
+ * 解绑某条链上的收款地址。
+ *
+ * 不影响任何**在途**的提现单：那些单子上的收款地址是建单那一刻的快照，
+ * 解绑改不了任何一笔已经在路上的钱。界面上要说清楚这一点，否则会有人以为
+ * 解绑能把一笔打错地址的款拦下来。
+ */
+async function unbindPayoutWallet(network: string): Promise<{ network: string; bound: boolean }> {
+  const { data } = await apiClient.delete<{ network: string; bound: boolean }>(
+    `/user/supply/payout-wallets/${encodeURIComponent(network)}`
+  )
+  return data
+}
+
 export const supplyAPI = {
   getStatus,
   getAgreement,
@@ -334,6 +420,9 @@ export const supplyAPI = {
   requestWithdrawal,
   listWithdrawals,
   cancelWithdrawal,
+  getPayoutWallets,
+  bindPayoutWallet,
+  unbindPayoutWallet,
 }
 
 export default supplyAPI

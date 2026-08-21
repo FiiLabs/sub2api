@@ -57,6 +57,18 @@ func RegisterSupplierRoutes(
 		// 撤回刻意**不**套 Heavy，理由与 DELETE /accounts/:id 一字不差：把钱拿回来
 		// 这个动作排在限流后面，等于在他最急着要回钱的时候让他要不回来。
 		// 它也只改一行状态，不打上游、不消耗任何配额。
+		// 链上收款地址绑定。读是纯读；绑定与解绑都改的是「钱最终打到哪」，
+		// 因此都走审计中间件（这个组已经带着）——出纠纷时要答得出
+		// 「那个地址是什么时候、从哪个会话绑上去的」。
+		//
+		// 绑定套 Heavy 限流：它是唯一一个会往一张带唯一索引的表里写行的供给侧接口，
+		// 不限住的话可以拿它枚举「某个地址有没有被人绑过」。
+		// 解绑不套，理由与撤回提现、解绑账号一字不差：把自己的东西拿回来这个动作
+		// 排在限流后面，等于在他最想改的时候让他改不了。
+		supply.GET("/payout-wallets", h.Supplier.GetPayoutWalletOptions)
+		supply.PUT("/payout-wallets/:network", panelRateLimiter.Heavy(), h.Supplier.BindPayoutWallet)
+		supply.DELETE("/payout-wallets/:network", h.Supplier.UnbindPayoutWallet)
+
 		supply.GET("/withdrawals/options", h.Supplier.GetWithdrawalOptions)
 		supply.GET("/withdrawals", h.Supplier.ListWithdrawals)
 		supply.POST("/withdrawals", panelRateLimiter.Heavy(), h.Supplier.RequestWithdrawal)

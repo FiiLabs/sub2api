@@ -878,6 +878,9 @@ var ProviderSet = wire.NewSet(
 	NewSupplierExportService,
 	// APEXONE-EXT: 双边市场——提现（申请扣款 / 人工打款 / 拒绝退款）及其邮件通知。
 	ProvideSupplierWithdrawalNotifier,
+	// APEXONE-EXT: 双边市场——链上收款地址绑定。必须排在提现服务之前被构造：
+	// 提现建单要靠它把链上渠道的收款地址解析出来。
+	NewSupplierPayoutWalletService,
 	NewSupplierWithdrawalService,
 	ProvidePaymentConfigService,
 	ProvidePaymentService,

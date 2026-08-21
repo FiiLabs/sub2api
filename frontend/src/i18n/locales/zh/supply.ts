@@ -191,6 +191,27 @@ export default {
       cancelConfirm: '确定要撤回这张 {amount} 的提现申请吗？撤回后金额会退回可用余额。',
       cancelled: '已撤回，金额已退回可用余额。',
 
+      // 链上收款地址。这一组文案的重量与它守的东西成正比：链上转账不可逆，
+      // 且没有任何下游能兜住一个填错的地址——交易会成功，浏览器上写着「已转账」，
+      // 钱在一个谁也不认识的地址里。所以 hint 必须说清后果，而不是写「请核对」。
+      wallet: {
+        autoNotice: '{channel} 由系统自动打款到你绑定的链上地址，不需要手填收款账号。',
+        empty: '你还没有绑定 {network} 收款地址。绑定之后才能用这个渠道提现。',
+        label: '{network} 收款地址（{token}）',
+        placeholder: '从钱包复制的 0x 开头地址',
+        hint: '请从钱包里复制粘贴，不要手打、也不要凭记忆改动其中任何一位。链上转账不可逆：地址错了，钱会成功转到别人手里，平台无法追回。',
+        bind: '绑定',
+        binding: '绑定中…',
+        rebind: '换绑',
+        cancelEdit: '取消',
+        rebindNotice: '换绑不影响已经提交的单子——那些单子记的是提交那一刻的地址。',
+        unbind: '解绑',
+        unbinding: '解绑中…',
+        unbindConfirm: '确定解绑 {network} 上的收款地址吗？解绑后这个渠道就提不了现，已经提交的单子不受影响。',
+        bindSuccess: '收款地址已绑定。',
+        unbindSuccess: '收款地址已解绑。'
+      },
+
       state: {
         pending: '待处理',
         paid: '已打款',
@@ -213,7 +234,13 @@ export default {
       withdrawalChannelRequired: '请选择收款渠道',
       withdrawalAccountRequired: '请填写收款账号',
       withdrawalFailed: '提交提现申请失败',
-      withdrawalCancelFailed: '撤回提现申请失败'
+      withdrawalCancelFailed: '撤回提现申请失败',
+      payoutAddressRequired: '请填写收款地址',
+      // 与 withdrawalAccountRequired 分开：链上渠道的收款账号不是「填」出来的，
+      // 是绑定出来的。让他去表单里找一个不存在的输入框，是一次白跑。
+      payoutWalletRequired: '请先绑定这个渠道的链上收款地址',
+      payoutBindFailed: '绑定收款地址失败',
+      payoutUnbindFailed: '解绑收款地址失败'
     }
   },
 

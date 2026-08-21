@@ -17,6 +17,7 @@ package handler
 
 import (
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -25,22 +26,35 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// supplierUserSideFiles 是挂着 *SupplierHandler 方法的两个文件。
-// supplier_admin_handler.go 刻意不在其中：管理端的 `user_id` 查询参数是筛子，
-// 是那一层该有的东西（见 §3.6），而它的鉴权在路由组的 adminAuth 上。
-var supplierUserSideFiles = []string{
-	"supplier_handler.go",
-	"supplier_withdrawal_handler.go",
-}
-
+// supplierUserSideSource 读出所有挂着 *SupplierHandler 方法的源文件。
+//
+// **从文件系统发现，不写死清单**：这个文件此前列的是两个文件名，而它要防的
+// 恰恰是"有人新加了一个端点、忘了把它纳进来"。一份手抄的清单在那种时候
+// 不会报错，只会安静地少测一个文件——也就是这套断言本身有一个和它要防的
+// 那个漏洞一模一样的漏洞。
+//
+// supplier_admin_handler.go 自然不会被选中：它挂的是 *SupplierAdminHandler。
+// 管理端的 `user_id` 查询参数是筛子，是那一层该有的东西（见 §3.6），
+// 它的鉴权在路由组的 adminAuth 上。
 func supplierUserSideSource(t *testing.T) map[string]string {
 	t.Helper()
+	files, err := filepath.Glob("*.go")
+	require.NoError(t, err)
+
 	sources := map[string]string{}
-	for _, file := range supplierUserSideFiles {
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
 		content, err := os.ReadFile(file)
 		require.NoError(t, err)
+		if !strings.Contains(string(content), "func (h *SupplierHandler)") {
+			continue
+		}
 		sources[file] = string(content)
 	}
+	require.GreaterOrEqual(t, len(sources), 3,
+		"挂着 *SupplierHandler 的文件少于预期——发现逻辑大概率没匹配上，这些断言正在空转")
 	return sources
 }
 
@@ -75,7 +89,7 @@ func TestSupplierUserEndpointsTakeUserIDFromJWTOnly(t *testing.T) {
 			})
 		}
 	}
-	require.Greater(t, checked, 14, "端点数少于预期，正则大概率没匹配上——这个测试正在空转")
+	require.Greater(t, checked, 17, "端点数少于预期，正则大概率没匹配上——这个测试正在空转")
 }
 
 // mutateAccount 是第二个入口，它必须自己先取 id。

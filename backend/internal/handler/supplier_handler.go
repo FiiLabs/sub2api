@@ -17,9 +17,10 @@ import (
 
 // SupplierHandler 处理供给者自助接入与收益查询请求。
 type SupplierHandler struct {
-	onboardingService *service.SupplierOnboardingService
-	creditService     *service.SupplierCreditService
-	withdrawalService *service.SupplierWithdrawalService
+	onboardingService   *service.SupplierOnboardingService
+	creditService       *service.SupplierCreditService
+	withdrawalService   *service.SupplierWithdrawalService
+	payoutWalletService *service.SupplierPayoutWalletService
 
 	// Admin 是管理端运营视图的入口，挂在这里只是为了不动 AdminHandlers 那三处
 	// 合并热区（理由见 supplier_admin_handler.go 顶部）。它是一个**独立类型**：
@@ -35,12 +36,14 @@ func NewSupplierHandler(
 	withdrawalService *service.SupplierWithdrawalService,
 	exportService *service.SupplierExportService,
 	incidentService *service.SupplierIncidentService,
+	payoutWalletService *service.SupplierPayoutWalletService,
 ) *SupplierHandler {
 	return &SupplierHandler{
-		onboardingService: onboardingService,
-		creditService:     creditService,
-		withdrawalService: withdrawalService,
-		Admin:             NewSupplierAdminHandler(adminService, withdrawalService, exportService, incidentService),
+		onboardingService:   onboardingService,
+		creditService:       creditService,
+		withdrawalService:   withdrawalService,
+		payoutWalletService: payoutWalletService,
+		Admin:               NewSupplierAdminHandler(adminService, withdrawalService, exportService, incidentService),
 	}
 }
 

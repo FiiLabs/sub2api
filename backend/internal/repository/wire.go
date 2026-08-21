@@ -127,6 +127,8 @@ var ProviderSet = wire.NewSet(
 	NewSupplierAdminRepository,
 	// APEXONE-EXT: 双边市场——提现单仓储。
 	NewSupplierWithdrawalRepository,
+	// APEXONE-EXT: 双边市场——链上收款地址绑定仓储。
+	NewSupplierPayoutWalletRepository,
 	NewSupplierExportRepository,
 	// APEXONE-EXT: 双边市场——供给号失效事件台账仓储。
 	NewSupplierIncidentRepository,

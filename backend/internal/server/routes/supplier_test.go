@@ -56,12 +56,23 @@ func supplierRoutePaths(t *testing.T, router *gin.Engine, prefix string) []gin.R
 }
 
 // concreteRequestPath 把 /user/supply/accounts/:id 变成能真的发出去的路径。
+//
+// 填什么值不影响这个文件里的任何断言——gin 的参数段匹配任意非空片段，而这些
+// 测试全都在中间件层就收尾了，handler 一次也没被调用。按参数名填成像样的值
+// 只是为了让失败信息里出现的是 `/payout-wallets/bsc` 而不是 `/payout-wallets/1`，
+// 后者会让读日志的人以为链号是个整数。
 func concreteRequestPath(path string) string {
+	placeholders := map[string]string{":network": "bsc"}
 	segments := strings.Split(path, "/")
 	for i, segment := range segments {
-		if strings.HasPrefix(segment, ":") {
-			segments[i] = "1"
+		if !strings.HasPrefix(segment, ":") {
+			continue
 		}
+		if value, ok := placeholders[segment]; ok {
+			segments[i] = value
+			continue
+		}
+		segments[i] = "1"
 	}
 	return strings.Join(segments, "/")
 }
@@ -259,17 +270,84 @@ func TestSupplierRoutes_HeavyRateLimitManifest(t *testing.T) {
 		"POST /oauth/complete",
 		"POST /oauth/start",
 		"POST /withdrawals",
+		// 绑定收款地址：唯一一个会往带唯一索引的表里写行的供给侧接口。
+		// 不限住的话，反复 PUT 别人的地址、看回的是 200 还是"已被占用"，
+		// 就是一个现成的「这个地址有没有人绑过」查询器。
+		"PUT /payout-wallets/:network",
 	}, got, "Heavy 限流的挂载点变了——每一条的理由都写在 supplier.go 的注释里，改之前先读")
 
-	// 这三条的反面同样重要，单独点名：它们是"把东西拿回去"的动作。
+	// 这几条的反面同样重要，单独点名：它们是"把东西拿回去"的动作。
 	for _, route := range []string{
 		"POST /withdrawals/:id/cancel",
 		"DELETE /accounts/:id",
 		"POST /agreement/accept",
+		"DELETE /payout-wallets/:network",
 	} {
 		isHeavy, registered := heavy[route]
 		require.Truef(t, registered, "%s 不见了", route)
 		assert.Falsef(t, isHeavy, "%s 不该套重限流，理由见 supplier.go 里紧挨着它的注释", route)
+	}
+}
+
+// 收款地址绑定的**全站**路由清单——三条，全在用户自己那一侧。
+//
+// 这条断言横跨用户端与管理端两次注册，是因为它要钉住的那件事只有合起来看才成立：
+// 改一个人的收款地址，等价于替他提现。所以管理端**一条**碰得到这张表的路由都不能有，
+// 包括看起来无害的 GET——那会让「谁绑了哪个地址」变成一份可以在后台随手导出的名单。
+// 支持有人代改的唯一正确形态是走客服流程改数据库，那至少留得下人工痕迹。
+//
+// 上面那两个循环测试只能证明"已注册的每一条都挂对了"，证明不了"该有的都在"：
+// 一条被误删的路由在它们眼里等于零次循环，安静地全绿。这里用清单补上那一半。
+func TestSupplierRoutes_PayoutWalletRoutesAreUserSideOnly(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	noop := func(c *gin.Context) { c.Next() }
+
+	RegisterSupplierRoutes(router.Group("/api/v1"), supplierTestHandlers(),
+		servermiddleware.JWTAuthMiddleware(noop), servermiddleware.AuditLogMiddleware(noop), nil, nil)
+	RegisterAdminRoutes(router.Group("/api/v1"), supplierTestHandlers(),
+		servermiddleware.AdminAuthMiddleware(noop), servermiddleware.AuditLogMiddleware(noop),
+		servermiddleware.StepUpAuthMiddleware(noop), nil, nil)
+
+	var wallet []string
+	for _, route := range router.Routes() {
+		if strings.Contains(route.Path, "payout-wallet") {
+			wallet = append(wallet, route.Method+" "+route.Path)
+		}
+	}
+	sort.Strings(wallet)
+
+	assert.Equal(t, []string{
+		"DELETE /api/v1/user/supply/payout-wallets/:network",
+		"GET /api/v1/user/supply/payout-wallets",
+		"PUT /api/v1/user/supply/payout-wallets/:network",
+	}, wallet, "收款地址路由清单变了：新增的那条谁能调？管理端一条都不该有，理由见 supplier_payout_wallet_handler.go 顶部")
+}
+
+// 地址走请求体，不走路径。
+//
+// PUT /payout-wallets/:network 的参数段是**链名**，不是地址。这不是风格问题：
+// 路径会原样落进 access log、反代日志和浏览器历史，而一条能把某个账户的钱
+// 全部取走的地址不该出现在这三个地方里的任何一个。
+//
+// 从注册结果读而不是从源码读：这里要证的恰好是路由树里那个参数段的**名字**，
+// 而它就是注册结果本身。
+func TestSupplierRoutes_PayoutWalletPathCarriesNoAddress(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	noop := func(c *gin.Context) { c.Next() }
+
+	RegisterSupplierRoutes(router.Group("/api/v1"), supplierTestHandlers(),
+		servermiddleware.JWTAuthMiddleware(noop), servermiddleware.AuditLogMiddleware(noop), nil, nil)
+
+	for _, route := range supplierRoutePaths(t, router, "/api/v1/user/supply/payout-wallets") {
+		for _, segment := range strings.Split(route.Path, "/") {
+			if !strings.HasPrefix(segment, ":") {
+				continue
+			}
+			assert.Equalf(t, ":network", segment,
+				"%s %s 的路径参数不是链名——地址一旦进了路径就会进日志", route.Method, route.Path)
+		}
 	}
 }
 

@@ -190,7 +190,109 @@
                 </select>
               </div>
 
-              <div class="sm:col-span-2">
+              <!-- 收款账号有两副面孔，取决于选中的渠道是不是链上渠道。
+                   链上渠道的地址来自**绑定**，不来自这张表单：一串手填的、未经
+                   校验的字符被当成链上地址打出去，是这整套绑定机制要消灭的东西。
+                   所以那种情况下这里根本不该存在一个自由输入框。 -->
+              <div v-if="selectedOnchainChannel" class="sm:col-span-2" data-testid="supply-payout-wallet">
+                <label class="input-label">
+                  {{
+                    t('supply.withdrawal.wallet.label', {
+                      network: selectedOnchainChannel.network,
+                      token: selectedOnchainChannel.token_symbol,
+                    })
+                  }}
+                </label>
+                <p class="text-xs text-gray-400 dark:text-dark-500">
+                  {{ t('supply.withdrawal.wallet.autoNotice', { channel: selectedOnchainChannel.channel }) }}
+                </p>
+
+                <!-- 已绑定：默认只读地显示那一串，不摊在可编辑的输入框里。
+                     地址是个看一眼就够的东西，让它一直可编辑只是多一次误改机会。 -->
+                <div
+                  v-if="boundPayoutWallet && !editingWallet"
+                  class="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 dark:border-dark-700 dark:bg-dark-900"
+                >
+                  <code class="break-all text-sm text-gray-800 dark:text-gray-100" data-testid="supply-payout-wallet-address">
+                    {{ boundPayoutWallet.address }}
+                  </code>
+                  <span class="grow"></span>
+                  <button
+                    class="btn btn-secondary btn-sm"
+                    type="button"
+                    data-testid="supply-payout-wallet-rebind"
+                    @click="startEditingWallet"
+                  >
+                    {{ t('supply.withdrawal.wallet.rebind') }}
+                  </button>
+                  <button
+                    class="btn btn-secondary btn-sm"
+                    type="button"
+                    :disabled="unbindingWallet"
+                    data-testid="supply-payout-wallet-unbind"
+                    @click="unbindPayoutWallet"
+                  >
+                    {{
+                      unbindingWallet
+                        ? t('supply.withdrawal.wallet.unbinding')
+                        : t('supply.withdrawal.wallet.unbind')
+                    }}
+                  </button>
+                </div>
+
+                <!-- 未绑定 / 换绑中 -->
+                <div v-else class="mt-2">
+                  <p
+                    v-if="!boundPayoutWallet"
+                    class="mb-2 text-sm text-amber-700 dark:text-amber-300"
+                    data-testid="supply-payout-wallet-empty"
+                  >
+                    {{ t('supply.withdrawal.wallet.empty', { network: selectedOnchainChannel.network }) }}
+                  </p>
+                  <p v-else class="mb-2 text-xs text-gray-400 dark:text-dark-500">
+                    {{ t('supply.withdrawal.wallet.rebindNotice') }}
+                  </p>
+                  <div class="flex flex-wrap items-start gap-2">
+                    <input
+                      v-model="payoutAddressInput"
+                      class="input grow"
+                      type="text"
+                      autocomplete="off"
+                      spellcheck="false"
+                      :placeholder="t('supply.withdrawal.wallet.placeholder')"
+                      data-testid="supply-payout-wallet-input"
+                    />
+                    <button
+                      class="btn btn-primary"
+                      type="button"
+                      :disabled="bindingWallet"
+                      data-testid="supply-payout-wallet-bind"
+                      @click="bindPayoutWallet"
+                    >
+                      {{
+                        bindingWallet
+                          ? t('supply.withdrawal.wallet.binding')
+                          : t('supply.withdrawal.wallet.bind')
+                      }}
+                    </button>
+                    <button
+                      v-if="boundPayoutWallet"
+                      class="btn btn-secondary"
+                      type="button"
+                      @click="editingWallet = false"
+                    >
+                      {{ t('supply.withdrawal.wallet.cancelEdit') }}
+                    </button>
+                  </div>
+                  <!-- 这句话说的是后果，不是"请核对"。链上转账不可逆，而
+                       这一刻是整条链路上最后一个还没有钱牵扯进来的时刻。 -->
+                  <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">
+                    {{ t('supply.withdrawal.wallet.hint') }}
+                  </p>
+                </div>
+              </div>
+
+              <div v-else class="sm:col-span-2">
                 <label class="input-label" for="withdrawal-account">{{ t('supply.withdrawal.accountLabel') }}</label>
                 <input
                   id="withdrawal-account"
@@ -664,11 +766,11 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { supplyAPI, type SupplyAccount, type SupplyAgreement, type SupplyLedgerEntry, type SupplyPauseMode, type SupplyStatus, type SupplyWallet, type SupplyWithdrawal, type SupplyWithdrawalOptions, type StartOAuthResponse } from '@/api/supply'
+import { supplyAPI, type SupplyAccount, type SupplyAgreement, type SupplyLedgerEntry, type SupplyOnchainChannel, type SupplyPauseMode, type SupplyPayoutWallet, type SupplyStatus, type SupplyWallet, type SupplyWithdrawal, type SupplyWithdrawalOptions, type StartOAuthResponse } from '@/api/supply'
 import { useAppStore } from '@/stores/app'
 import { useSupplyStore } from '@/stores/supply'
 import { useClipboard } from '@/composables/useClipboard'
@@ -715,9 +817,43 @@ const withdrawalOptions = ref<SupplyWithdrawalOptions | null>(null)
 const withdrawals = ref<SupplyWithdrawal[]>([])
 const submittingWithdrawal = ref(false)
 const cancellingWithdrawalId = ref<number | null>(null)
-// amount 存字符串：input[type=number] 清空时 v-model 会给出空串，
-// 用 number 类型接会变成 NaN，而 NaN 传到后端就是一个 400。
-const withdrawalForm = ref({ amount: '', payout_channel: '', payout_account: '', user_note: '' })
+// amount 声明成 string | number，因为它运行时**两种都会是**：<input type="number">
+// 上的 v-model 会把填进去的东西转成 number（Vue 对 type=number 自动套 .number），
+// 而清空时留下的是空串。初值取 '' 是为了让「还没填」和「填了 0」在界面上分得开。
+// 读它的地方一律先 String(...) 再判，别信这里的初值。
+const withdrawalForm = ref<{
+  amount: string | number
+  payout_channel: string
+  payout_account: string
+  user_note: string
+}>({ amount: '', payout_channel: '', payout_account: '', user_note: '' })
+
+// 链上收款地址绑定。
+//
+// 只存 wallets，不存绑定接口一起返回的那份 channels：「选中的渠道是不是链上渠道」
+// 必须与「有哪些渠道能选」来自同一个响应（withdrawalOptions），否则两个接口之间
+// 的时间差会画出「渠道列表里没有 BSC-USDT、下面却在催你绑 bsc 地址」的界面。
+const payoutWallets = ref<SupplyPayoutWallet[]>([])
+const bindingWallet = ref(false)
+const unbindingWallet = ref(false)
+// 已绑定时输入框默认收起来。地址是一个看一眼就够的东西，让它一直摊在
+// 可编辑的输入框里，只会增加一次误改的机会——而误改在这里是不可逆的。
+const editingWallet = ref(false)
+const payoutAddressInput = ref('')
+
+/** 当前选中的渠道是不是链上渠道；不是则返回 null（走人工那条路径）。 */
+const selectedOnchainChannel = computed<SupplyOnchainChannel | null>(() => {
+  const channel = withdrawalForm.value.payout_channel
+  if (!channel) return null
+  return withdrawalOptions.value?.onchain_channels?.find((item) => item.channel === channel) ?? null
+})
+
+/** 选中渠道那条链上已绑定的地址。没绑（或不是链上渠道）返回 null。 */
+const boundPayoutWallet = computed<SupplyPayoutWallet | null>(() => {
+  const network = selectedOnchainChannel.value?.network
+  if (!network) return null
+  return payoutWallets.value.find((item) => item.network === network) ?? null
+})
 
 function stateLabel(state: string): string {
   const known = ['pending_review', 'active', 'draining', 'retired']
@@ -835,9 +971,88 @@ async function loadWithdrawals(): Promise<void> {
     if (!withdrawalForm.value.payout_channel && options.channels.length === 1) {
       withdrawalForm.value.payout_channel = options.channels[0]
     }
+    // 只在这个部署真的有链上渠道时才去问绑定。没有链上渠道的部署（默认就是）
+    // 一次也不该打这个接口——否则一个没装配起来的绑定服务会让每次进页面
+    // 都弹一条与他无关的错误。代价是多一趟往返，只发生在用得上的部署里。
+    if ((options.onchain_channels?.length ?? 0) > 0) {
+      await loadPayoutWallets()
+    }
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, t('supply.error.loadFailed')))
   }
+}
+
+async function loadPayoutWallets(): Promise<void> {
+  try {
+    const options = await supplyAPI.getPayoutWallets()
+    payoutWallets.value = options?.wallets ?? []
+  } catch (error) {
+    // 读失败时保持空数组——界面会显示"还没绑定"，而那句话此刻是**不确定**的。
+    // 所以错误必须弹出来：他至少要知道页面上这一块的信息不可信，
+    // 而不是照着一句可能错的提示去重新绑一次。
+    appStore.showError(extractApiErrorMessage(error, t('supply.error.loadFailed')))
+  }
+}
+
+/**
+ * 绑定/换绑当前渠道那条链上的收款地址。
+ *
+ * 地址**原样**提交，不做 trim 之外的任何加工——尤其不做 toLowerCase：
+ * EIP-55 的校验和就编码在字母的大小写里，前端归一化一下，「你改过其中一位」
+ * 这个唯一能挡住不可逆损失的信号就在到达后端之前消失了。
+ */
+async function bindPayoutWallet(): Promise<void> {
+  const network = selectedOnchainChannel.value?.network
+  if (!network) return
+
+  const address = payoutAddressInput.value.trim()
+  if (!address) {
+    appStore.showError(t('supply.error.payoutAddressRequired'))
+    return
+  }
+
+  bindingWallet.value = true
+  try {
+    const wallet = await supplyAPI.bindPayoutWallet(network, address)
+    // 用返回值而不是手里这串输入更新本地状态：后端存的是小写形态，
+    // 而界面上显示的必须是**库里那一个**——两者不一致时，人会以为自己绑的
+    // 是屏幕上这个，下次比对交易记录时对不上。
+    payoutWallets.value = [...payoutWallets.value.filter((item) => item.network !== network), wallet]
+    payoutAddressInput.value = ''
+    editingWallet.value = false
+    appStore.showSuccess(t('supply.withdrawal.wallet.bindSuccess'))
+  } catch (error) {
+    // 地址被别人绑走（409）、格式错、校验和不符——后端每一种都有自己的文案，
+    // 原样透出来。前端归成一句"绑定失败"会把"你粘少了几位"和"这个地址已经
+    // 是别人的"混成同一件事，而它们要做的动作完全不同。
+    appStore.showError(extractApiErrorMessage(error, t('supply.error.payoutBindFailed')))
+  } finally {
+    bindingWallet.value = false
+  }
+}
+
+async function unbindPayoutWallet(): Promise<void> {
+  const network = selectedOnchainChannel.value?.network
+  if (!network) return
+  if (!window.confirm(t('supply.withdrawal.wallet.unbindConfirm', { network }))) return
+
+  unbindingWallet.value = true
+  try {
+    await supplyAPI.unbindPayoutWallet(network)
+    payoutWallets.value = payoutWallets.value.filter((item) => item.network !== network)
+    editingWallet.value = false
+    appStore.showSuccess(t('supply.withdrawal.wallet.unbindSuccess'))
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('supply.error.payoutUnbindFailed')))
+  } finally {
+    unbindingWallet.value = false
+  }
+}
+
+/** 展开换绑输入框。预填当前地址只会让人在上面改字，而改字正是要防的那件事。 */
+function startEditingWallet(): void {
+  payoutAddressInput.value = ''
+  editingWallet.value = true
 }
 
 /** 并发拉五份数据。任一份失败只影响它自己那一块，不该让整页空着。 */
@@ -865,8 +1080,17 @@ function fillMaxAmount(): void {
  * 前端拦一遍只是把同一句话说两遍，还多一份会过期的规则。
  */
 async function submitWithdrawal(): Promise<void> {
-  const amount = Number(withdrawalForm.value.amount)
-  if (!withdrawalForm.value.amount.trim() || Number.isNaN(amount) || amount <= 0) {
+  // 先转成字符串再判空。amount 的**运行时**类型是 string | number，尽管初值是 ''：
+  // Vue 的 vModelText 对 <input type="number"> 会自动套上 .number 的转换
+  // （castToNumber = number || props.type === 'number'），所以填了数字之后
+  // 这里拿到的是 number，清空时才留下空串。
+  //
+  // 早先这行写的是 `withdrawalForm.value.amount.trim()`——它在**任何**填了金额的
+  // 提交上都抛 TypeError，也就是提现按钮实际上一次也按不动；而 TS 看不见这件事，
+  // 因为 v-model 的写入绕过了 ref 的类型。
+  const raw = String(withdrawalForm.value.amount).trim()
+  const amount = Number(raw)
+  if (!raw || Number.isNaN(amount) || amount <= 0) {
     appStore.showError(t('supply.error.withdrawalAmountInvalid'))
     return
   }
@@ -874,8 +1098,19 @@ async function submitWithdrawal(): Promise<void> {
     appStore.showError(t('supply.error.withdrawalChannelRequired'))
     return
   }
-  if (!withdrawalForm.value.payout_account.trim()) {
-    appStore.showError(t('supply.error.withdrawalAccountRequired'))
+
+  // 链上渠道的收款账号来自绑定，**不**来自这张表单里的任何一个输入框。
+  // 这里用 boundPayoutWallet 而不是 payout_account，是为了让「手填的一串字符
+  // 被当成链上地址送出去」这件事在前端就没有路径——后端会用同一条规则覆盖它
+  // （ResolvePayoutAddress），但那时单子已经建了一半。
+  const onchain = selectedOnchainChannel.value
+  const payoutAccount = onchain
+    ? boundPayoutWallet.value?.address ?? ''
+    : withdrawalForm.value.payout_account.trim()
+  if (!payoutAccount) {
+    appStore.showError(
+      onchain ? t('supply.error.payoutWalletRequired') : t('supply.error.withdrawalAccountRequired')
+    )
     return
   }
 
@@ -884,7 +1119,7 @@ async function submitWithdrawal(): Promise<void> {
     await supplyAPI.requestWithdrawal({
       amount,
       payout_channel: withdrawalForm.value.payout_channel,
-      payout_account: withdrawalForm.value.payout_account.trim(),
+      payout_account: payoutAccount,
       user_note: withdrawalForm.value.user_note.trim() || undefined,
     })
     appStore.showSuccess(t('supply.withdrawal.submitted'))

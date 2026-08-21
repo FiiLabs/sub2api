@@ -34,6 +34,15 @@ type supplierWithdrawalWalletReader interface {
 	EnsureWallet(ctx context.Context, userID int64) (*SupplierCreditSummary, error)
 }
 
+// supplierWithdrawalAddressResolver 把「这个渠道该打到哪个地址」这个问题
+// 转给绑定服务。
+//
+// 窄到只有一个方法，是因为提现服务在这件事上只有一个问题要问。给它一个完整的
+// 钱包服务，就等于给了它换绑别人地址的能力——而换绑是供给者本人的动作。
+type supplierWithdrawalAddressResolver interface {
+	ResolvePayoutAddress(ctx context.Context, userID int64, channel string) (SupplierOnchainChannel, string, bool, error)
+}
+
 // supplierWithdrawalNotifierPort 是通知出口。做成接口而不是直接持有
 // *SupplierWithdrawalNotifier，是为了让测试能在不碰 SMTP 的前提下断言
 // 「哪一步该发信、哪一步不该发」——尤其是撤回**不该**发信这一条，只有
@@ -49,6 +58,9 @@ type SupplierWithdrawalService struct {
 	wallet   supplierWithdrawalWalletReader
 	settings supplierWithdrawalSettingsReader
 	notifier supplierWithdrawalNotifierPort
+	// addresses 解析链上渠道的收款地址。可以为 nil（部署里没配绑定服务），
+	// 那时链上渠道会**失败关闭**——见 resolveOnchainAccount。
+	addresses supplierWithdrawalAddressResolver
 }
 
 // NewSupplierWithdrawalService 构造提现服务。
@@ -60,12 +72,16 @@ func NewSupplierWithdrawalService(
 	creditRepo SupplierCreditRepository,
 	settingService *SettingService,
 	notifier *SupplierWithdrawalNotifier,
+	wallets *SupplierPayoutWalletService,
 ) *SupplierWithdrawalService {
 	s := &SupplierWithdrawalService{repo: repo, wallet: creditRepo, settings: settingService}
 	// 显式判 nil 再赋值：一个装着 nil 指针的非 nil 接口会让下面的 nil 判断失效，
 	// 于是"通知没配"变成一次空指针 panic，而 panic 的位置在提现主路径上。
 	if notifier != nil {
 		s.notifier = notifier
+	}
+	if wallets != nil {
+		s.addresses = wallets
 	}
 	return s
 }
@@ -107,6 +123,13 @@ type SupplierWithdrawalOptions struct {
 	MaxPending int      `json:"max_pending"`
 	Channels   []string `json:"channels"`
 	Notice     string   `json:"notice"`
+	// OnchainChannels 这些渠道会自动打到链上，收款地址取自本人的绑定，
+	// 申请表单上不该再画一个可以手填的账号输入框。
+	//
+	// 与 Channels 分开报而不是给 Channels 里的项加个标记：Channels 是管理员配的
+	// 白名单（决定"能不能选"），这一份是代码里的注册表（决定"选了怎么结算"）。
+	// 合成一个数组，等于让人以为改配置就能改一个渠道打到哪条链上。
+	OnchainChannels []SupplierOnchainChannel `json:"onchain_channels"`
 	// AvailableCredit 此刻可提的余额（钱包的可用区）。
 	AvailableCredit float64 `json:"available_credit"`
 	// PendingCount 已挂着的未决单数。
@@ -127,12 +150,13 @@ func (s *SupplierWithdrawalService) GetOptions(ctx context.Context, userID int64
 	}
 	settings := s.settings.GetSupplyWithdrawalSettings(ctx)
 	out := &SupplierWithdrawalOptions{
-		Available:  settings.Available(),
-		Enabled:    settings.Enabled,
-		MinAmount:  settings.MinAmount,
-		MaxPending: settings.MaxPending,
-		Channels:   append([]string(nil), settings.Channels...),
-		Notice:     settings.Notice,
+		Available:       settings.Available(),
+		Enabled:         settings.Enabled,
+		MinAmount:       settings.MinAmount,
+		MaxPending:      settings.MaxPending,
+		Channels:        append([]string(nil), settings.Channels...),
+		Notice:          settings.Notice,
+		OnchainChannels: SupplierOnchainChannels(),
 	}
 	if s.wallet != nil {
 		if wallet, err := s.wallet.EnsureWallet(ctx, userID); err == nil && wallet != nil {
@@ -176,12 +200,9 @@ func (s *SupplierWithdrawalService) Request(ctx context.Context, userID int64, r
 		return nil, ErrSupplierWithdrawalChannelInvalid
 	}
 
-	account := strings.TrimSpace(req.PayoutAccount)
-	if account == "" {
-		return nil, infraerrors.BadRequest("SUPPLIER_WITHDRAWAL_ACCOUNT_REQUIRED", "payout account is required")
-	}
-	if len([]rune(account)) > SupplierPayoutAccountMaxLen {
-		return nil, infraerrors.BadRequest("SUPPLIER_WITHDRAWAL_ACCOUNT_TOO_LONG", "payout account is too long")
+	account, err := s.resolveOnchainAccount(ctx, userID, req.PayoutChannel, req.PayoutAccount)
+	if err != nil {
+		return nil, err
 	}
 	note := strings.TrimSpace(req.UserNote)
 	if len([]rune(note)) > SupplierWithdrawalNoteMaxLen {
@@ -213,6 +234,47 @@ func (s *SupplierWithdrawalService) Request(ctx context.Context, userID int64, r
 	// 单子的邮件。
 	s.notifyRequested(created)
 	return created, nil
+}
+
+// resolveOnchainAccount 定下这张单子的收款账号。
+//
+// 两条路径：
+//   - 人工渠道（支付宝、银行卡……）：用供给者手填的那一串，照旧只做长度与非空校验。
+//   - 链上渠道：**忽略手填的内容**，一律用他绑定过的地址。
+//
+// 后者是这个函数存在的全部理由。链上转账不可逆，而一个手填的地址没有经过
+// 绑定时那三道校验，也没有经过反女巫唯一索引——把它落进单子，等于把整套绑定
+// 机制绕过去。忽略而不是报错，是因为前端在链上渠道下根本不该画那个输入框：
+// 能走到"手填了一个链上地址"这一步的，只可能是直接打接口的人，而对他最安全的
+// 回答就是"钱打到你自己绑的地址上"。
+//
+// 没绑地址时失败关闭（ErrSupplierPayoutWalletNotFound）；绑定服务没配时同样
+// 失败关闭——宁可这个渠道申请不了，也不能让一个未经校验的地址溜进来。
+func (s *SupplierWithdrawalService) resolveOnchainAccount(ctx context.Context, userID int64, channel, submitted string) (string, error) {
+	if s.addresses != nil {
+		// 第一个返回值（链与币）在 M3 落到单子的 network/token_* 列上；
+		// M1 只改收款账号的来源，单子本身仍然走人工打款那条路。
+		_, address, isOnchain, err := s.addresses.ResolvePayoutAddress(ctx, userID, channel)
+		if err != nil {
+			return "", err
+		}
+		if isOnchain {
+			return address, nil
+		}
+	} else if _, isOnchain := LookupSupplierOnchainChannel(channel); isOnchain {
+		// 渠道白名单里放了链上渠道，但这套部署没装绑定服务。
+		// 这时唯一安全的回答是"提不了"，而不是回落到手填地址。
+		return "", ErrSupplierPayoutWalletNotFound
+	}
+
+	account := strings.TrimSpace(submitted)
+	if account == "" {
+		return "", infraerrors.BadRequest("SUPPLIER_WITHDRAWAL_ACCOUNT_REQUIRED", "payout account is required")
+	}
+	if len([]rune(account)) > SupplierPayoutAccountMaxLen {
+		return "", infraerrors.BadRequest("SUPPLIER_WITHDRAWAL_ACCOUNT_TOO_LONG", "payout account is too long")
+	}
+	return account, nil
 }
 
 // Cancel 供给者撤回自己的未决单，钱退回可用区。

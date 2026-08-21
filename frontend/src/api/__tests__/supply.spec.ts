@@ -128,6 +128,82 @@ describe('supply api', () => {
   })
 })
 
+// 收款地址绑定。这一组盯的东西比上面重一级：一个绑错的链上地址不会报错，
+// 钱会成功转到一个谁也不认识的地址里，且不可逆。
+describe('supply payout wallet api', () => {
+  let put: ReturnType<typeof vi.fn>
+
+  beforeEach(async () => {
+    get.mockReset()
+    del.mockReset()
+    get.mockResolvedValue({ data: { channels: [], wallets: [] } })
+    del.mockResolvedValue({ data: { network: 'bsc', bound: false } })
+    put = vi.fn().mockResolvedValue({ data: {} })
+    const client = (await import('@/api/client')).apiClient as unknown as Record<string, unknown>
+    client.put = put
+  })
+
+  it('reads the channels and the bound addresses in one call', async () => {
+    // 拆成两个请求会画出「链列表里没有 bsc、下面却显示着一个 bsc 地址」
+    // 这种自相矛盾的界面。
+    await supplyAPI.getPayoutWallets()
+
+    expect(get).toHaveBeenCalledWith('/user/supply/payout-wallets')
+    expect(get).toHaveBeenCalledTimes(1)
+  })
+
+  it('binds with PUT — each person has at most one address per chain', async () => {
+    // PUT 而不是 POST：这是一次幂等的置换，不是往集合里追加。重复提交同一个
+    // 地址必须是同一个结果，否则用户点两下就有了两个收款地址，而钱只能去一个。
+    await supplyAPI.bindPayoutWallet('bsc', '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed')
+
+    expect(put).toHaveBeenCalledWith('/user/supply/payout-wallets/bsc', {
+      address: '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed',
+    })
+    expect(post).not.toHaveBeenCalled()
+  })
+
+  it('keeps the address in the body, never in the URL', async () => {
+    // 路径会进访问日志、代理日志、浏览器历史。把一个人的链上身份写进那三个
+    // 地方，与把它明文存进数据库是同一类问题——后端为此专门加了密（迁移 234），
+    // 前端在 URL 里泄一次就把那件事抵消了。
+    await supplyAPI.bindPayoutWallet('bsc', '0xde709f2102306220921060314715629080e2fb77')
+    await supplyAPI.unbindPayoutWallet('bsc')
+
+    const urls = [...put.mock.calls, ...del.mock.calls].map((call) => String(call[0]))
+    for (const url of urls) {
+      expect(url).not.toMatch(/0x[0-9a-fA-F]{6}/)
+    }
+  })
+
+  it('does not pre-normalise the address — the checksum is the backend\'s to judge', async () => {
+    // 前端 toLowerCase 一下会让 EIP-55 校验和信息在到达后端之前就消失，
+    // 于是「你改过其中一位」这个唯一能挡住不可逆损失的信号被前端自己抹掉了。
+    const tampered = '0x5aaeb6053F3E94C9b9A09f33669435E7Ef1BeAed'
+    await supplyAPI.bindPayoutWallet('bsc', tampered)
+
+    expect(put).toHaveBeenCalledWith('/user/supply/payout-wallets/bsc', { address: tampered })
+  })
+
+  it('unbinds with DELETE on the network, not a verb sub-path', async () => {
+    await expect(supplyAPI.unbindPayoutWallet('bsc')).resolves.toEqual({
+      network: 'bsc',
+      bound: false,
+    })
+
+    expect(del).toHaveBeenCalledWith('/user/supply/payout-wallets/bsc')
+    expect(post).not.toHaveBeenCalled()
+  })
+
+  it('escapes the network segment instead of pasting it into the path', async () => {
+    // 链标识今天来自后端返回的注册表，不是用户输入。但这个函数签名收的是
+    // 一个 string，而「这个 string 从哪来」是调用方将来可以改的事。
+    await supplyAPI.unbindPayoutWallet('bsc/../../admin')
+
+    expect(del).toHaveBeenCalledWith('/user/supply/payout-wallets/bsc%2F..%2F..%2Fadmin')
+  })
+})
+
 describe('admin supply market api', () => {
   beforeEach(() => {
     get.mockReset()

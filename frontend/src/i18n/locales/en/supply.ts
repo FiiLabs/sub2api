@@ -198,6 +198,24 @@ export default {
       cancelConfirm: 'Cancel this {amount} withdrawal request? The amount returns to your available balance.',
       cancelled: 'Cancelled. The amount is back in your available balance.',
 
+      wallet: {
+        autoNotice: '{channel} pays out automatically to the on-chain address you bind — there is no account to type in.',
+        empty: 'You have not bound a {network} payout address yet. This channel cannot be used until you do.',
+        label: '{network} payout address ({token})',
+        placeholder: 'The 0x address copied from your wallet',
+        hint: 'Copy and paste it from your wallet — do not type it out and do not adjust a single character from memory. On-chain transfers cannot be reversed: a wrong address means the money successfully lands in someone else\'s hands and cannot be recovered.',
+        bind: 'Bind',
+        binding: 'Binding…',
+        rebind: 'Change',
+        cancelEdit: 'Cancel',
+        rebindNotice: 'Changing it does not affect requests you already submitted — those carry the address as it was at submission time.',
+        unbind: 'Unbind',
+        unbinding: 'Unbinding…',
+        unbindConfirm: 'Unbind your payout address on {network}? This channel becomes unusable until you bind a new one; requests already submitted are unaffected.',
+        bindSuccess: 'Payout address bound.',
+        unbindSuccess: 'Payout address unbound.'
+      },
+
       state: {
         pending: 'Pending',
         paid: 'Paid',
@@ -220,7 +238,11 @@ export default {
       withdrawalChannelRequired: 'Select a payout channel',
       withdrawalAccountRequired: 'Enter your payout account',
       withdrawalFailed: 'Failed to submit the withdrawal request',
-      withdrawalCancelFailed: 'Failed to cancel the withdrawal request'
+      withdrawalCancelFailed: 'Failed to cancel the withdrawal request',
+      payoutAddressRequired: 'Enter the payout address',
+      payoutWalletRequired: 'Bind an on-chain payout address for this channel first',
+      payoutBindFailed: 'Failed to bind the payout address',
+      payoutUnbindFailed: 'Failed to unbind the payout address'
     }
   },
 
