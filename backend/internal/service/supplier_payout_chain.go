@@ -258,15 +258,25 @@ func SanitizeChainFee(fee float64) (float64, bool) {
 // 的近似值拉回它本来想表示的那个十进制数），再纯整数运算放大到 decimals。
 // 全程没有一次浮点乘法。
 //
-// # 负数与精度不足都报错，不夹带默认值
+// # 负数与不可表示都报错，不夹带默认值
 //
-// decimals < ChainAmountScale 的币（以太坊上的 USDT 是 6 位）会让第 8 位小数
-// 无处安放。这里直接拒绝而不是悄悄截断：截断的方向是少发钱，而少发的那一点
-// 会永远挂在供给者的账上对不平。真要支持这类币，得先想清楚零头怎么记账。
+// decimals < ChainAmountScale 的币（以太坊主网与不少测试网的 USDT 是 6 位）
+// 会让第 7、8 位小数无处安放。这里**向下取整**到代币能表示的位数：
+//
+//   - 方向与手续费侧同一条原则（估价上浮、fallback 保守）：宁可金库留下零头，
+//     绝不多发。零头 < 10^-decimals（6 位币即百万分之一），且**留在金库**——
+//     它不属于任何一张单子，不进任何流水，对账口径是「链上实发 = 净额向下取整
+//     到代币精度」，写在 §9.9。
+//   - 早先这里是直接拒绝（"先想清楚零头怎么记账"）。第一次真链验证就撞上了
+//     6 位的 USDT：拒绝等于把以太坊系最主流的稳定币精度整个关在门外，而
+//     手续费是 8 位估算值，净额几乎必然带着第 7、8 位的尾巴——每一笔都拒。
+//
+// 取整后归零的金额仍然拒绝：那不是零头，是整笔钱都小于代币的最小单位，
+// 放行就是"安静地转账 0"，收款人什么都拿不到而单子标成 paid。
 func ToTokenAmount(amount float64, decimals int) (*big.Int, error) {
-	if decimals < ChainAmountScale {
-		return nil, fmt.Errorf("token decimals %d is below the %d decimal places the ledger keeps",
-			decimals, ChainAmountScale)
+	if decimals <= 0 {
+		// 0 位精度的"稳定币"不存在于任何我们要打款的场景；负数是坏数据。
+		return nil, fmt.Errorf("token decimals %d is not usable", decimals)
 	}
 	if amount < 0 {
 		return nil, fmt.Errorf("payout amount %v is negative", amount)
@@ -283,9 +293,18 @@ func ToTokenAmount(amount float64, decimals int) (*big.Int, error) {
 	if !ok {
 		return nil, fmt.Errorf("cannot read payout amount %q as a decimal", fixed)
 	}
-	// 已经是 ChainAmountScale 位了，再补 decimals - ChainAmountScale 个零。
-	scale := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(decimals-ChainAmountScale)), nil)
-	return units.Mul(units, scale), nil
+	if decimals >= ChainAmountScale {
+		// 已经是 ChainAmountScale 位了，再补 decimals - ChainAmountScale 个零。
+		scale := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(decimals-ChainAmountScale)), nil)
+		return units.Mul(units, scale), nil
+	}
+	// 精度低于账本：砍掉代币放不下的尾巴（纯整数除法，向零 = 向下，金额非负）。
+	drop := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(ChainAmountScale-decimals)), nil)
+	units.Quo(units, drop)
+	if units.Sign() == 0 && amount > 0 {
+		return nil, fmt.Errorf("payout amount %v is below what a %d-decimal token can represent", amount, decimals)
+	}
+	return units, nil
 }
 
 // DisabledChainClient 是生产默认：不触网，且**拒绝**任何广播。

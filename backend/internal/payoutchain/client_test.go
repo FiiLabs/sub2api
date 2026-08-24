@@ -99,10 +99,13 @@ func (n *fakeNode) start(t *testing.T, tweak func(*Config)) *Client {
 	t.Cleanup(server.Close)
 
 	cfg := Config{
-		Enabled:       true,
-		RPCURL:        server.URL,
-		SignerKey:     keyBSC,
-		TokenAddress:  addrBSCUSDT,
+		Enabled:      true,
+		RPCURL:       server.URL,
+		SignerKey:    keyBSC,
+		TokenAddress: addrBSCUSDT,
+		// 生产的 LoadConfig 恒有这个默认值；夹具也得带上，否则 checkToken
+		// 的符号分支会把每一笔 Token:"USDT" 的测试转账当成发错币拒掉。
+		TokenSymbol:   "USDT",
 		ChainID:       56,
 		Confirmations: 3,
 		FallbackFee:   0.5,
@@ -671,4 +674,69 @@ func TestClientSatisfiesTheServiceInterface(t *testing.T) {
 	// 这里再从调用方的角度走一遍：真客户端和 mock 必须能互换。
 	var client service.SupplierChainClient = newFakeNode().start(t, nil)
 	assert.False(t, client.SupportsBatch("bsc"))
+}
+
+// ============================================================================
+// 发错币的闸（checkToken）
+// ============================================================================
+
+// 单子钉的币与金库配的币不一致 → 拒绝广播。
+//
+// 这条只会在「建单之后有人换了金库配置」时触发，而它不拦的话链上不会报
+// 任何错——交易成功、事件正常，只是收款人拿到了另一种币。拒绝让单子带着
+// 明确的 last_error 走 failed → 运营，那是唯一不出错的动作。
+func TestTransferRefusesTheWrongCoin(t *testing.T) {
+	client := newFakeNode().
+		on("eth_call", decimals18).
+		on("eth_gasPrice", "0x3b9aca00").
+		on("eth_sendRawTransaction", "0x00").
+		start(t, nil)
+
+	t.Run("按地址钉（worker 的快照路径）", func(t *testing.T) {
+		_, err := client.Transfer(context.Background(), service.ChainTransferParams{
+			Network: "bsc",
+			Token:   "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d", // 另一个合约（USDC）
+			To:      addrRecipient, Amount: 1,
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "wrong coin")
+	})
+	t.Run("按符号钉（展示路径）", func(t *testing.T) {
+		_, err := client.Transfer(context.Background(), service.ChainTransferParams{
+			Network: "bsc", Token: "USDC", To: addrRecipient, Amount: 1,
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "wrong coin")
+	})
+	t.Run("地址快照与配置一致时放行（大小写无关）", func(t *testing.T) {
+		// 走到广播是这条子测的成功条件——用一个会挂的假节点也无妨，
+		// 只要错误不是 wrong coin。
+		_, err := client.Transfer(context.Background(), service.ChainTransferParams{
+			Network: "bsc", Token: addrBSCUSDT, To: addrRecipient, Amount: 1,
+		})
+		if err != nil {
+			assert.NotContains(t, err.Error(), "wrong coin")
+		}
+	})
+	t.Run("空串放行（调用方没有要钉的东西）", func(t *testing.T) {
+		_, err := client.Transfer(context.Background(), service.ChainTransferParams{
+			Network: "bsc", Token: "", To: addrRecipient, Amount: 1,
+		})
+		if err != nil {
+			assert.NotContains(t, err.Error(), "wrong coin")
+		}
+	})
+}
+
+// 批量同一道闸：整组发错币比单笔更贵——一笔交易里全部收款人都拿错。
+func TestTransferBatchRefusesTheWrongCoin(t *testing.T) {
+	client := newFakeNode().start(t, func(cfg *Config) { cfg.DisperseAddress = addrOther })
+
+	_, err := client.TransferBatch(context.Background(), service.ChainBatchParams{
+		Network: "bsc",
+		Token:   "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d",
+		Items:   []service.ChainBatchItem{{To: addrRecipient, Amount: 1}},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "wrong coin")
 }

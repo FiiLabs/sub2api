@@ -129,6 +129,39 @@ func (c *Client) checkNetwork(network string) error {
 	return nil
 }
 
+// checkToken 拦住「单子钉的币」与「金库配的币」不一致的转账。
+//
+// 单子上的 token 快照在建单那一刻等于当时的配置（TokenAddress 是建单的唯一
+// 判据），两者只会因为**建单之后有人换了配置**而分岔——比如金库从 USDT 换成
+// USDC。这时按配置发是发错币，按快照发这个客户端又发不了（它只连着一个合约）。
+// 唯一不出错的动作是拒绝：单子带着明确的 last_error 走 failed → 运营。
+// 不拦的话链上不会报任何错——交易成功、事件正常，只是收款人拿到了另一种币。
+//
+// 入参既可能是合约地址（worker 从单子上取的快照），也可能是币种符号
+// （报价等展示路径）；空串放行——那是"调用方没有要钉的东西"。
+func (c *Client) checkToken(token string) error {
+	trimmed := strings.TrimSpace(token)
+	if trimmed == "" {
+		return nil
+	}
+	if strings.HasPrefix(trimmed, "0x") || strings.HasPrefix(trimmed, "0X") {
+		parsed, err := parseAddress(trimmed)
+		if err != nil {
+			return fmt.Errorf("payoutchain: order token address %q is malformed: %w", trimmed, err)
+		}
+		if parsed != c.token {
+			return fmt.Errorf("payoutchain: order is pinned to token %s but this treasury pays %s — refusing to pay the wrong coin",
+				strings.ToLower(trimmed), formatAddress(c.token))
+		}
+		return nil
+	}
+	if !strings.EqualFold(trimmed, c.cfg.TokenSymbol) {
+		return fmt.Errorf("payoutchain: order wants %q but this treasury pays %q — refusing to pay the wrong coin",
+			trimmed, c.cfg.TokenSymbol)
+	}
+	return nil
+}
+
 // tokenDecimals 问一次合约的精度，之后记住。
 func (c *Client) tokenDecimals(ctx context.Context) (int, error) {
 	c.mu.Lock()
@@ -257,6 +290,9 @@ func (c *Client) resolveNonce(ctx context.Context, provided *uint64) (uint64, er
 func (c *Client) Transfer(ctx context.Context, params service.ChainTransferParams) (service.ChainTransferResult, error) {
 	var empty service.ChainTransferResult
 	if err := c.checkNetwork(params.Network); err != nil {
+		return empty, err
+	}
+	if err := c.checkToken(params.Token); err != nil {
 		return empty, err
 	}
 	to, err := parseAddress(params.To)
@@ -389,6 +425,9 @@ func (c *Client) TransferBatch(ctx context.Context, params service.ChainBatchPar
 	}
 	if !c.SupportsBatch(params.Network) {
 		return empty, service.ErrSupplierPayoutChainNoBatch
+	}
+	if err := c.checkToken(params.Token); err != nil {
+		return empty, err
 	}
 	_, values, err := c.batchTotals(ctx, params)
 	if err != nil {

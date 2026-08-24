@@ -101,14 +101,46 @@ func TestToTokenAmountDoesNotDriftLikeAFloatMultiply(t *testing.T) {
 	}
 }
 
-func TestToTokenAmountRefusesWhatItCannotPayExactly(t *testing.T) {
-	t.Run("精度低于账本的币", func(t *testing.T) {
-		// 以太坊上的 USDT 是 6 位。第 8 位小数在那里无处安放，
-		// 截断的方向是少发钱，而少发的零头会永远挂在供给者账上对不平。
-		_, err := ToTokenAmount(1, 6)
+// 精度低于账本的币（以太坊主网/多数测试网的 USDT 是 6 位）：净额**向下取整**
+// 到代币能表示的位数，零头留在金库——方向与手续费侧同一条原则，绝不多发。
+//
+// 早先这里测的是"直接拒绝"。第一次真链验证（BSC 测试网，6 位 USDT）证明
+// 拒绝不可用：手续费是 8 位估算值，净额几乎必然带第 7、8 位的尾巴，每笔都拒。
+func TestToTokenAmountFloorsToTokenPrecision(t *testing.T) {
+	for name, tc := range map[string]struct {
+		amount   float64
+		decimals int
+		want     string
+	}{
+		// 整额不受影响：1 USDT = 1_000000。
+		"整额原样":  {1, 6, "1000000"},
+		"两位小数":  {99.7, 6, "99700000"},
+		// 第 7、8 位的尾巴被砍掉，且是**向下**：99.69999999 → 99.699999，
+		// 不是四舍五入到 99.700000——入的方向是多发钱。
+		"尾巴向下砍": {99.69999999, 6, "99699999"},
+		"手续费尾巴": {0.12345678, 6, "123456"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := ToTokenAmount(tc.amount, tc.decimals)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got.String())
+		})
+	}
+
+	t.Run("取整后归零仍然拒绝", func(t *testing.T) {
+		// 这不是零头，是整笔钱小于代币最小单位——放行就是"安静地转账 0"，
+		// 收款人什么都拿不到而单子标成 paid。
+		_, err := ToTokenAmount(0.0000001, 6)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "decimals")
+		assert.Contains(t, err.Error(), "below")
 	})
+	t.Run("零精度的币拒绝", func(t *testing.T) {
+		_, err := ToTokenAmount(1, 0)
+		require.Error(t, err)
+	})
+}
+
+func TestToTokenAmountRefusesWhatItCannotPayExactly(t *testing.T) {
 	t.Run("负数", func(t *testing.T) {
 		_, err := ToTokenAmount(-1, 18)
 		require.Error(t, err)
