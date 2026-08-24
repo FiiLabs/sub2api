@@ -125,6 +125,21 @@ func (n *SupplierWithdrawalNotifier) NotifyResolved(w *SupplierWithdrawal) {
 	}()
 }
 
+// NotifyPayoutFailed 链上打款没成（M4 worker 停靠到 failed）：只叫运营。
+//
+// **不给供给者发**：failed 不是终态，钱还扣着、结果还没定，一封「打款失败」
+// 会让他立刻来问退款——而正确答案可能是运营核实后标记已打款。供给者收到的
+// 下一封信永远是终态那封（paid 或 rejected）。
+func (n *SupplierWithdrawalNotifier) NotifyPayoutFailed(w *SupplierWithdrawal) {
+	if !n.ready() || w == nil {
+		return
+	}
+	snapshot := *w
+	go func() {
+		n.notifyPayoutFailed(&snapshot)
+	}()
+}
+
 // ============================================================================
 // 同步实现。测试直接调这两个。
 // ============================================================================
@@ -175,6 +190,24 @@ func (n *SupplierWithdrawalNotifier) notifyResolved(w *SupplierWithdrawal) {
 	}
 	body := buildSupplierWithdrawalResolvedEmail(siteName, name, w)
 	n.send(ctx, []string{email}, subject, body, "withdrawal_id", w.ID, "status", w.Status)
+}
+
+func (n *SupplierWithdrawalNotifier) notifyPayoutFailed(w *SupplierWithdrawal) {
+	ctx, cancel := context.WithTimeout(context.Background(), supplierWithdrawalNotifyTimeout)
+	defer cancel()
+
+	settings := n.settings.GetSupplyWithdrawalSettings(ctx)
+	if settings == nil || len(settings.NotifyEmails) == 0 {
+		// 与新申请那边同一条规矩：这正是「有单卡着但没人被叫来」的坏状态，
+		// 日志是它唯一的痕迹。
+		slog.Warn("[SupplierWithdrawalNotifier] 链上打款失败无人收到通知：supply_withdrawal_settings.notify_emails 为空",
+			"withdrawal_id", w.ID, "amount", w.Amount)
+		return
+	}
+	siteName := n.siteName(ctx)
+	subject := fmt.Sprintf("[%s] 链上打款需要人工处理 / On-chain payout needs attention #%d", siteName, w.ID)
+	body := buildSupplierWithdrawalPayoutFailedEmail(siteName, w)
+	n.send(ctx, settings.NotifyEmails, subject, body, "withdrawal_id", w.ID)
 }
 
 // supplierContact 取供给者的收件邮箱与称呼。查不到用户、或用户没绑邮箱时返回空串。
@@ -329,6 +362,31 @@ func buildSupplierWithdrawalResolvedEmail(siteName, userName string, w *Supplier
 	}
 	return buildSupplierWithdrawalEmail("#ef4444", "#dc2626", siteName,
 		userName+"，你的提现申请未通过", "Your withdrawal request was rejected", rows, notice)
+}
+
+// buildSupplierWithdrawalPayoutFailedEmail 运营收到的「链上打款没成」告警。
+//
+// 与新申请那封不同，这封必须带上 last_error 与 tx_hash：收件人接下来要做的
+// 第一件事就是拿哈希去区块浏览器核实——尤其是「结果不明」那一种失败，
+// 核实之前退款可能是双付。收款账号依旧不进邮件（后台可见）。
+func buildSupplierWithdrawalPayoutFailedEmail(siteName string, w *SupplierWithdrawal) string {
+	rows := withdrawalEmailRow("单号 / Request", fmt.Sprintf("#%d", w.ID)) +
+		withdrawalEmailRow("金额 / Amount", fmt.Sprintf("%.2f", w.Amount)) +
+		withdrawalEmailRow("收款方式 / Channel", w.PayoutChannel)
+	if w.TxHash != nil && strings.TrimSpace(*w.TxHash) != "" {
+		rows += withdrawalEmailRow("交易哈希 / Tx hash", strings.TrimSpace(*w.TxHash))
+	}
+	if w.LastError != nil && strings.TrimSpace(*w.LastError) != "" {
+		rows += withdrawalEmailRow("失败原因 / Reason", strings.TrimSpace(*w.LastError))
+	}
+	notice := `<p><strong>钱仍扣在这张单子上，没有退回供给者。</strong></p>
+            <p><strong>The amount is still held on this request; nothing has been refunded.</strong></p>
+            <p>请先按交易哈希在区块浏览器上核实这笔交易的真实状态，再决定「标记已打款」或「拒绝退款」。</p>
+            <p>Verify the transaction on a block explorer first, then either mark it paid or reject with a refund.</p>
+            <p>在核实之前退款可能构成双付。</p>
+            <p>Refunding before verifying may double-pay.</p>`
+	return buildSupplierWithdrawalEmail("#ef4444", "#b91c1c", siteName,
+		"链上打款需要人工处理", "On-chain payout needs attention", rows, notice)
 }
 
 // withdrawalReviewNoteHTML 把运营的处理意见放在最前面。

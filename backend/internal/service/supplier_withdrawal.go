@@ -77,14 +77,37 @@ var (
 	// 这是并发双击/重复审批唯一的出口：条件更新没命中行，就报它。
 	ErrSupplierWithdrawalNotPending = infraerrors.BadRequest(
 		"SUPPLIER_WITHDRAWAL_NOT_PENDING", "withdrawal is already resolved")
+	// ErrSupplierWithdrawalProcessing worker 正拿着这张单子。
+	//
+	// 与 NotPending 分开报：NotPending 说的是「已经处理完了」，这条说的是
+	// 「正在处理，稍等」。合并的话，运营对一张 processing 单点拒绝会看到
+	// 「已处理」，去列表里找结果又找不到，然后开始怀疑数据。
+	ErrSupplierWithdrawalProcessing = infraerrors.BadRequest(
+		"SUPPLIER_WITHDRAWAL_PROCESSING", "withdrawal is being settled on-chain")
 )
 
 // 提现单状态。
 const (
 	// SupplierWithdrawalStatusPending 待处理。钱已从可用区扣走，挂在这张单子上。
 	SupplierWithdrawalStatusPending = "pending"
+	// SupplierWithdrawalStatusProcessing worker 正在上链结算（中间态，仅链上单会进）。
+	//
+	// 进入这个状态意味着 nonce 已经预留、随时可能已有交易在内存池里。从这一刻起，
+	// 除了链上给出的答案（confirmed/failed）没人能推进它——管理端的打款/拒绝
+	// 对 processing 一律报 ErrSupplierWithdrawalProcessing。放开这个口子，
+	// 运营的一次「拒绝退款」就可能与一笔正在路上的转账同时成立：双付。
+	SupplierWithdrawalStatusProcessing = "processing"
 	// SupplierWithdrawalStatusPaid 已打款（终态）。
 	SupplierWithdrawalStatusPaid = "paid"
+	// SupplierWithdrawalStatusFailed 链上打款没成（不是终态：钱还扣着，等运营裁决）。
+	//
+	// 两种来路，都写在 last_error 里：链上明确 revert（收据在、status=0，钱确定
+	// 没出去），或 worker 等确认超过了放弃期限（结果不明，退款前必须先查链）。
+	// **刻意不自动退款**，哪怕是确定 revert 的那种：revert 几乎总意味着结构性
+	// 配置错误（金库没钱、合约不对），自动退款会抹掉现场并邀请供给者立刻重试
+	// 一次注定同样失败的申请。运营从 failed 出发有两条路：核实后标记已打款
+	// （链上其实成了 / 人工补打了），或拒绝退款。
+	SupplierWithdrawalStatusFailed = "failed"
 	// SupplierWithdrawalStatusRejected 运营拒绝（终态），钱已退回可用区。
 	SupplierWithdrawalStatusRejected = "rejected"
 	// SupplierWithdrawalStatusCanceled 供给者自己撤回（终态），钱已退回可用区。
@@ -134,6 +157,20 @@ type SupplierWithdrawal struct {
 	// Amount 仍然是从可用区扣走的总额，这一条不能改：ledger 的 withdraw 流水、
 	// 退款、对账导出全部按 Amount 走。于是退款时按 Amount 全额退——gas 还没花出去。
 	FeeAmount float64 `json:"fee_amount"`
+
+	// ---- worker 执行留痕（M4）。人工单与还没被 worker 碰过的单子上全是 nil。----
+	// 全部走管理端与对账，不进供给侧 DTO（供给者看 external_ref 就够了）。
+
+	// TxHash 广播出去那笔交易的哈希（本地签名时算出的那一个，见 §9.5）。
+	TxHash *string `json:"tx_hash,omitempty"`
+	// ChainNonce 广播用的 nonce，**广播之前**落库、重试原样复用——防双付的唯一手段。
+	ChainNonce *int64 `json:"chain_nonce,omitempty"`
+	// BroadcastedAt 第一次广播的时刻，只写一次；worker 放弃等确认的时钟。
+	BroadcastedAt *time.Time `json:"broadcasted_at,omitempty"`
+	// LastError 上一次处理失败的原因。成功进入 paid 时清空。
+	LastError *string `json:"last_error,omitempty"`
+	// LeasedUntil worker 租约。非空且在未来 = 有人正在处理。
+	LeasedUntil *time.Time `json:"leased_until,omitempty"`
 
 	// LedgerID 申请时那条 withdraw 流水。供给者对账时用它把单子和流水对上。
 	LedgerID *int64 `json:"ledger_id,omitempty"`
@@ -206,7 +243,11 @@ type SupplierWithdrawalResolveParams struct {
 	ReviewerID *int64
 	// Refund 为真时把金额退回可用区并写一条 withdraw_revert 流水。
 	// rejected/canceled 传真，paid 传假——钱已经出去了，退回来就是凭空发钱。
-	Refund      bool
+	Refund bool
+	// FromFailed 允许从 failed 推进。**只有管理端传真**：failed 是「链上打款
+	// 没成、等运营裁决」的停靠位，供给者的撤回不该绕过这次裁决——尤其是
+	// 「结果不明」那一种 failed，退款之前必须有人先去链上看一眼那笔哈希。
+	FromFailed  bool
 	ReviewNote  string
 	ExternalRef string
 }
@@ -246,4 +287,48 @@ type SupplierWithdrawalRepository interface {
 	List(ctx context.Context, filter SupplierWithdrawalFilter) ([]SupplierWithdrawal, int64, error)
 	// CountPending 统计某人的未决单数（管理端看板与申请前置校验共用）。
 	CountPending(ctx context.Context, userID int64) (int64, error)
+}
+
+// SupplierPayoutFinishParams 是 worker 给一张单子的最终答案。
+type SupplierPayoutFinishParams struct {
+	ID int64
+	// Status 只取 paid / failed 两个值。
+	Status string
+	// TxHash paid 时写进 external_ref（供给者对账的凭证）与 tx_hash。
+	TxHash string
+	// Reason failed 时写进 last_error，给运营裁决用。
+	Reason string
+}
+
+// SupplierPayoutQueueRepository 是打款 worker 的仓储面。
+//
+// 与 SupplierWithdrawalRepository 分开定义（同一个具体实现），是因为消费者
+// 完全不同：提现服务永远不该拿得到「跳过状态机直接标 paid」这种能力，
+// 而 worker 恰恰需要它——合并成一个接口，每个 service 层的测试桩都要
+// 陪着实现五个自己用不到的方法。
+//
+// 五个方法合起来是一台状态机，调用顺序是硬约束（见 SupplierPayoutWorker）：
+// Claim → Begin →（广播）→ RecordTx →（等确认）→ Finish；
+// 任何一步陷入「还不知道」就 Release，把单子留给下一轮。
+type SupplierPayoutQueueRepository interface {
+	// ClaimPayoutDue 捞出到期该处理的链上单并续上租约。
+	//
+	// 只动租约、不动状态：拿着租约不代表要动钱（客户端可能没配好），
+	// 状态要等第一个不可逆动作（预留 nonce）之前才翻成 processing。
+	// 租约本身就是与管理端的互斥——Resolve 对租约未到期的单子拒绝动手。
+	ClaimPayoutDue(ctx context.Context, limit int, lease time.Duration) ([]SupplierWithdrawal, error)
+	// BeginPayout 把 nonce 落库并把单子翻进 processing，**必须在广播之前**。
+	//
+	// 条件更新：单子已不在 pending/processing、或已带着另一个 nonce 时返回
+	// ErrSupplierWithdrawalNotPending——调用方看到它必须放弃广播，
+	// 这是「管理端在租约过期后已把单子处理掉」唯一的防线。
+	BeginPayout(ctx context.Context, id int64, nonce uint64) error
+	// RecordPayoutTx 记下广播出去的哈希；broadcasted_at 只在第一次写。
+	RecordPayoutTx(ctx context.Context, id int64, txHash string) error
+	// FinishPayout 写终局：paid（清 last_error、写 external_ref、resolved_at）
+	// 或 failed（写 last_error，等运营）。两者都不退款——退款只有一个入口
+	// （Resolve 的 Refund），让「会加钱的代码」只有一处。
+	FinishPayout(ctx context.Context, params SupplierPayoutFinishParams) (*SupplierWithdrawal, error)
+	// ReleasePayoutLease 交还租约（可带退避），单子留在原状态等下一轮。
+	ReleasePayoutLease(ctx context.Context, id int64, lastError string, retryAfter time.Duration) error
 }

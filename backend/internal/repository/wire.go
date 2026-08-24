@@ -127,6 +127,7 @@ var ProviderSet = wire.NewSet(
 	NewSupplierAdminRepository,
 	// APEXONE-EXT: 双边市场——提现单仓储。
 	NewSupplierWithdrawalRepository,
+	NewSupplierPayoutQueueRepository,
 	// APEXONE-EXT: 双边市场——链上收款地址绑定仓储。
 	//
 	// 与提现仓储收同一个 secretEncryptor：链上地址与收款账号是同一类

@@ -233,6 +233,11 @@ export default {
 
       state: {
         pending: 'Pending',
+        // The two on-chain intermediate states (M4). "failed" deliberately
+        // avoids the word itself: it means "automatic payout hit a snag and a
+        // human is on it" — the money is still on the request.
+        processing: 'Paying out',
+        failed: 'Payout issue (being handled)',
         paid: 'Paid',
         rejected: 'Rejected',
         canceled: 'Cancelled',

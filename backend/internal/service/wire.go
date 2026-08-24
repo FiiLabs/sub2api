@@ -882,6 +882,8 @@ var ProviderSet = wire.NewSet(
 	// 提现建单要靠它把链上渠道的收款地址解析出来。
 	NewSupplierPayoutWalletService,
 	NewSupplierWithdrawalService,
+	// APEXONE-EXT: 双边市场——链上打款 worker（M4）。
+	ProvideSupplierPayoutWorker,
 	ProvidePaymentConfigService,
 	ProvidePaymentService,
 	ProvidePaymentOrderExpiryService,
@@ -957,6 +959,25 @@ func ProvideSupplierWithdrawalNotifier(
 		SetPaymentDisputeNotifier(NewPaymentDisputeNotifier(emailService, settingService))
 	}
 	return NewSupplierWithdrawalNotifier(emailService, userRepo, settingService)
+}
+
+// APEXONE-EXT: ProvideSupplierPayoutWorker 创建并启动链上打款 worker（M4）。
+//
+// 与 ProvideSupplierThawService 同形：构造 → 注入选主 → Start。链上客户端
+// 没配好时拿到的是 DisabledChainClient（不是 nil），worker 照常启动——
+// 存量链上单会带着「没配置」的 last_error 和长退避留在 pending，
+// 管理端随时可以人工处理，而不是安静地消失在一个没启动的任务里。
+func ProvideSupplierPayoutWorker(
+	repo SupplierPayoutQueueRepository,
+	chain SupplierChainClient,
+	notifier *SupplierWithdrawalNotifier,
+	lockCache LeaderLockCache,
+	db *sql.DB,
+) *SupplierPayoutWorker {
+	worker := NewSupplierPayoutWorker(repo, chain, notifier, SupplierPayoutDefaultInterval)
+	worker.SetLeaderLock(lockCache, db)
+	worker.Start()
+	return worker
 }
 
 // APEXONE-EXT: ProvideSupplierThawService 创建并启动供给冻结额释放任务。

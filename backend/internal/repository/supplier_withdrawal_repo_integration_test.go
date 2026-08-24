@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"testing"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -729,4 +730,381 @@ SELECT COUNT(*)::int FROM supplier_withdrawals
 WHERE id = $1 AND network IS NULL AND token_symbol IS NULL AND token_address IS NULL AND fee_amount = 0`,
 		w.ID)
 	assert.Equal(t, 1, nullRows, "人工单的链上列不是 NULL/0——worker 会把它当成链上单捞走")
+}
+
+// ============================================================================
+// 打款 worker 的队列面（M4）
+// ============================================================================
+
+// payoutQueueOn 队列仓储与审批仓储是同一个实现，这里各造一个，
+// 顺带证明两个构造函数看到的是同一张表。
+func payoutQueueOn(client *dbent.Client) service.SupplierPayoutQueueRepository {
+	return NewSupplierPayoutQueueRepository(client, testPayoutEncryptor())
+}
+
+// createOnchainWithdrawal 建一张链上单（四列齐全）。
+func createOnchainWithdrawal(t *testing.T, txCtx context.Context, repo service.SupplierWithdrawalRepository, userID int64) *service.SupplierWithdrawal {
+	t.Helper()
+	w, err := repo.Create(txCtx, service.SupplierWithdrawalCreateParams{
+		UserID:        userID,
+		Amount:        30,
+		PayoutChannel: "BSC-USDT",
+		PayoutAccount: "0xde709f2102306220921060314715629080e2fb77",
+		Network:       "bsc",
+		TokenSymbol:   "USDT",
+		TokenAddress:  "0x55d398326f99059ff775485246999027b3197955",
+		FeeAmount:     0.3,
+		MaxPending:    10,
+	})
+	require.NoError(t, err)
+	return w
+}
+
+// 捞单只捞「链上、未决、租约空闲」，且捞到即续租。
+//
+// 每个被排除的类别单独断言：人工单混进来是把一张该人工打的单交给广播代码，
+// 已租的单捞两次是两个 worker 同时给一个人打款。
+func TestSupplierWithdrawal_ClaimPayoutDueScopesAndLeases(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	userID := mustCreateSupplier(t, client, "wd-claim")
+	seedSupplierWallet(t, txCtx, client, userID, 200)
+	repo := withdrawalRepoOn(client)
+	queue := payoutQueueOn(client)
+
+	onchain := createOnchainWithdrawal(t, txCtx, repo, userID)
+	manual, err := repo.Create(txCtx, service.SupplierWithdrawalCreateParams{
+		UserID: userID, Amount: 20, PayoutChannel: "支付宝",
+		PayoutAccount: "alipay@example.com", MaxPending: 10,
+	})
+	require.NoError(t, err)
+
+	claimed, err := queue.ClaimPayoutDue(txCtx, 10, 5*time.Minute)
+	require.NoError(t, err)
+	require.Len(t, claimed, 1, "只该捞到那张链上单")
+	assert.Equal(t, onchain.ID, claimed[0].ID)
+	assert.NotEqual(t, manual.ID, claimed[0].ID)
+	// 捞到的行必须带着解密后的收款地址——worker 直接拿它广播。
+	assert.Equal(t, "0xde709f2102306220921060314715629080e2fb77", claimed[0].PayoutAccount)
+	require.NotNil(t, claimed[0].LeasedUntil, "捞到即续租，否则下一轮会再捞一次")
+
+	// 立刻再捞：租约在手，谁都捞不到。
+	again, err := queue.ClaimPayoutDue(txCtx, 10, 5*time.Minute)
+	require.NoError(t, err)
+	assert.Empty(t, again, "租约期内的单子被第二次捞走 = 两个 worker 同时打一笔款")
+}
+
+// 先来的单子先打；limit 是硬上限。
+func TestSupplierWithdrawal_ClaimPayoutDueOldestFirst(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	userID := mustCreateSupplier(t, client, "wd-claim-order")
+	seedSupplierWallet(t, txCtx, client, userID, 200)
+	repo := withdrawalRepoOn(client)
+	queue := payoutQueueOn(client)
+
+	first := createOnchainWithdrawal(t, txCtx, repo, userID)
+	second := createOnchainWithdrawal(t, txCtx, repo, userID)
+
+	claimed, err := queue.ClaimPayoutDue(txCtx, 1, 5*time.Minute)
+	require.NoError(t, err)
+	require.Len(t, claimed, 1)
+	assert.Equal(t, first.ID, claimed[0].ID, "插队 = 后申请的人先拿钱")
+
+	rest, err := queue.ClaimPayoutDue(txCtx, 1, 5*time.Minute)
+	require.NoError(t, err)
+	require.Len(t, rest, 1)
+	assert.Equal(t, second.ID, rest[0].ID)
+}
+
+// BeginPayout：同一个 nonce 幂等，换一个 nonce 拒绝，终态单拒绝。
+func TestSupplierWithdrawal_BeginPayoutPinsTheNonce(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	userID := mustCreateSupplier(t, client, "wd-begin")
+	seedSupplierWallet(t, txCtx, client, userID, 100)
+	repo := withdrawalRepoOn(client)
+	queue := payoutQueueOn(client)
+	w := createOnchainWithdrawal(t, txCtx, repo, userID)
+
+	require.NoError(t, queue.BeginPayout(txCtx, w.ID, 7))
+
+	items, _, err := repo.List(txCtx, service.SupplierWithdrawalFilter{UserID: userID, Page: 1, PageSize: 10})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, service.SupplierWithdrawalStatusProcessing, items[0].Status)
+	require.NotNil(t, items[0].ChainNonce)
+	assert.Equal(t, int64(7), *items[0].ChainNonce)
+
+	// 重播路径：同一个 nonce 再钉一次，放行。
+	require.NoError(t, queue.BeginPayout(txCtx, w.ID, 7))
+	// 换号：这正是双付的形状，条件更新必须拒绝。
+	err = queue.BeginPayout(txCtx, w.ID, 8)
+	assert.ErrorIs(t, err, service.ErrSupplierWithdrawalNotPending,
+		"带着另一个 nonce 的 BeginPayout 被放行 = 同一张单子两个 nonce 两笔钱")
+}
+
+// 已被人工处理掉的单子，worker 一步都推不动。
+func TestSupplierWithdrawal_BeginPayoutRefusesResolvedOrders(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	userID := mustCreateSupplier(t, client, "wd-begin-resolved")
+	seedSupplierWallet(t, txCtx, client, userID, 100)
+	repo := withdrawalRepoOn(client)
+	queue := payoutQueueOn(client)
+	w := createOnchainWithdrawal(t, txCtx, repo, userID)
+
+	_, err := repo.Resolve(txCtx, service.SupplierWithdrawalResolveParams{
+		ID: w.ID, Status: service.SupplierWithdrawalStatusRejected, Refund: true, ReviewNote: "手工处理",
+	})
+	require.NoError(t, err)
+
+	assert.ErrorIs(t, queue.BeginPayout(txCtx, w.ID, 0), service.ErrSupplierWithdrawalNotPending)
+}
+
+// 记哈希 → 终局 paid：external_ref 与 tx_hash 同值、broadcasted_at 只写一次、
+// 余额一分不动（paid 没有退款这回事）。
+func TestSupplierWithdrawal_RecordTxThenFinishPaid(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	userID := mustCreateSupplier(t, client, "wd-finish-paid")
+	seedSupplierWallet(t, txCtx, client, userID, 100)
+	repo := withdrawalRepoOn(client)
+	queue := payoutQueueOn(client)
+	w := createOnchainWithdrawal(t, txCtx, repo, userID)
+	require.NoError(t, queue.BeginPayout(txCtx, w.ID, 0))
+
+	require.NoError(t, queue.RecordPayoutTx(txCtx, w.ID, "0xhash-first"))
+	items, _, err := repo.List(txCtx, service.SupplierWithdrawalFilter{UserID: userID, Page: 1, PageSize: 10})
+	require.NoError(t, err)
+	require.NotNil(t, items[0].BroadcastedAt)
+	firstBroadcast := *items[0].BroadcastedAt
+
+	// 重播换了哈希（gasPrice 变了）：哈希更新，但放弃时钟**不许**被刷新——
+	// 刷新等于让"等确认的期限"永远到不了。
+	require.NoError(t, queue.RecordPayoutTx(txCtx, w.ID, "0xhash-second"))
+	items, _, err = repo.List(txCtx, service.SupplierWithdrawalFilter{UserID: userID, Page: 1, PageSize: 10})
+	require.NoError(t, err)
+	require.NotNil(t, items[0].TxHash)
+	assert.Equal(t, "0xhash-second", *items[0].TxHash)
+	assert.Equal(t, firstBroadcast, *items[0].BroadcastedAt, "broadcasted_at 被重播刷新了")
+
+	// 先制造一条 last_error（一次失败的重试留下的），让下面「paid 清空它」
+	// 这条断言真的有东西可清。
+	require.NoError(t, queue.ReleasePayoutLease(txCtx, w.ID, "confirm timed out once", 0))
+
+	paid, err := queue.FinishPayout(txCtx, service.SupplierPayoutFinishParams{
+		ID: w.ID, Status: service.SupplierWithdrawalStatusPaid, TxHash: "0xhash-second",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, service.SupplierWithdrawalStatusPaid, paid.Status)
+	require.NotNil(t, paid.ExternalRef)
+	assert.Equal(t, "0xhash-second", *paid.ExternalRef, "供给者对账的凭证就是交易哈希")
+	assert.Nil(t, paid.LastError)
+	assert.Nil(t, paid.LeasedUntil)
+	require.NotNil(t, paid.ResolvedAt)
+
+	// 钱已经上链发走，可用区一分不回。
+	assert.InDelta(t, 70.0, supplierAvailable(t, txCtx, client, userID), 1e-9)
+	assert.Equal(t, 0, supplierLedgerCount(t, txCtx, client, userID, service.SupplierCreditActionWithdrawRevert))
+
+	// 终局只有一次。
+	_, err = queue.FinishPayout(txCtx, service.SupplierPayoutFinishParams{
+		ID: w.ID, Status: service.SupplierWithdrawalStatusPaid, TxHash: "0xhash-third",
+	})
+	assert.ErrorIs(t, err, service.ErrSupplierWithdrawalNotPending)
+}
+
+// failed 停靠位：钱还扣着；运营从这里拒绝时才退，且只退一次。
+func TestSupplierWithdrawal_FinishFailedThenOperatorDecides(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	userID := mustCreateSupplier(t, client, "wd-finish-failed")
+	seedSupplierWallet(t, txCtx, client, userID, 100)
+	repo := withdrawalRepoOn(client)
+	queue := payoutQueueOn(client)
+	w := createOnchainWithdrawal(t, txCtx, repo, userID)
+	require.NoError(t, queue.BeginPayout(txCtx, w.ID, 0))
+
+	failed, err := queue.FinishPayout(txCtx, service.SupplierPayoutFinishParams{
+		ID: w.ID, Status: service.SupplierWithdrawalStatusFailed, Reason: "transaction reverted on-chain",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, service.SupplierWithdrawalStatusFailed, failed.Status)
+	require.NotNil(t, failed.LastError)
+	assert.Nil(t, failed.ResolvedAt, "failed 不是终态，不该有 resolved_at")
+	// **钱还扣着**：自动退款被刻意排除在 worker 的能力之外。
+	assert.InDelta(t, 70.0, supplierAvailable(t, txCtx, client, userID), 1e-9)
+
+	// 供给者不能撤回一张 failed 单（FromFailed=false 是用户路径）。
+	_, err = repo.Resolve(txCtx, service.SupplierWithdrawalResolveParams{
+		ID: w.ID, UserID: userID, Status: service.SupplierWithdrawalStatusCanceled, Refund: true,
+	})
+	assert.ErrorIs(t, err, service.ErrSupplierWithdrawalNotPending)
+	assert.InDelta(t, 70.0, supplierAvailable(t, txCtx, client, userID), 1e-9)
+
+	// 运营裁决：拒绝退款。FromFailed 打开这条路，退款走原有的两道闸。
+	resolved, err := repo.Resolve(txCtx, service.SupplierWithdrawalResolveParams{
+		ID: w.ID, Status: service.SupplierWithdrawalStatusRejected, Refund: true,
+		FromFailed: true, ReviewNote: "链上失败，退回",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, service.SupplierWithdrawalStatusRejected, resolved.Status)
+	require.NotNil(t, resolved.LastError, "拒绝时保留 last_error——它解释了这张单子为什么走到人工")
+	assert.InDelta(t, 100.0, supplierAvailable(t, txCtx, client, userID), 1e-9)
+
+	// 再拒一次：状态机挡住，余额纹丝不动。
+	_, err = repo.Resolve(txCtx, service.SupplierWithdrawalResolveParams{
+		ID: w.ID, Status: service.SupplierWithdrawalStatusRejected, Refund: true,
+		FromFailed: true, ReviewNote: "再来一次",
+	})
+	assert.ErrorIs(t, err, service.ErrSupplierWithdrawalNotPending)
+	assert.InDelta(t, 100.0, supplierAvailable(t, txCtx, client, userID), 1e-9)
+}
+
+// 运营也可以把 failed 核实成 paid（链上其实成了 / 人工补打了）——不退款，清 last_error。
+func TestSupplierWithdrawal_OperatorCanMarkFailedAsPaid(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	userID := mustCreateSupplier(t, client, "wd-failed-paid")
+	seedSupplierWallet(t, txCtx, client, userID, 100)
+	repo := withdrawalRepoOn(client)
+	queue := payoutQueueOn(client)
+	w := createOnchainWithdrawal(t, txCtx, repo, userID)
+	require.NoError(t, queue.BeginPayout(txCtx, w.ID, 0))
+	_, err := queue.FinishPayout(txCtx, service.SupplierPayoutFinishParams{
+		ID: w.ID, Status: service.SupplierWithdrawalStatusFailed, Reason: "confirmation unknown",
+	})
+	require.NoError(t, err)
+
+	resolved, err := repo.Resolve(txCtx, service.SupplierWithdrawalResolveParams{
+		ID: w.ID, Status: service.SupplierWithdrawalStatusPaid, Refund: false,
+		FromFailed: true, ExternalRef: "0xhash-manual",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, service.SupplierWithdrawalStatusPaid, resolved.Status)
+	assert.Nil(t, resolved.LastError, "paid 上留着旧报错只会误导下一个看到它的人")
+	assert.InDelta(t, 70.0, supplierAvailable(t, txCtx, client, userID), 1e-9, "标 paid 不退款")
+}
+
+// 租约在手（还没翻 processing）与 processing 本身，人工审批都必须吃闭门羹。
+func TestSupplierWithdrawal_ResolveRefusesOrdersHeldByTheWorker(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	userID := mustCreateSupplier(t, client, "wd-resolve-held")
+	seedSupplierWallet(t, txCtx, client, userID, 100)
+	repo := withdrawalRepoOn(client)
+	queue := payoutQueueOn(client)
+	w := createOnchainWithdrawal(t, txCtx, repo, userID)
+
+	// 阶段一：捞走（pending + 租约）。此刻 worker 随时可能钉 nonce。
+	claimed, err := queue.ClaimPayoutDue(txCtx, 10, 5*time.Minute)
+	require.NoError(t, err)
+	require.Len(t, claimed, 1)
+
+	_, err = repo.Resolve(txCtx, service.SupplierWithdrawalResolveParams{
+		ID: w.ID, Status: service.SupplierWithdrawalStatusRejected, Refund: true,
+		FromFailed: true, ReviewNote: "抢在 worker 前面",
+	})
+	assert.ErrorIs(t, err, service.ErrSupplierWithdrawalProcessing,
+		"租约在手时放行人工拒绝 = 退款与广播赛跑")
+	assert.InDelta(t, 70.0, supplierAvailable(t, txCtx, client, userID), 1e-9)
+
+	// 阶段二：翻进 processing 并把租约清零——状态本身就足够挡住。
+	require.NoError(t, queue.BeginPayout(txCtx, w.ID, 0))
+	require.NoError(t, queue.ReleasePayoutLease(txCtx, w.ID, "test", 0))
+	_, err = repo.Resolve(txCtx, service.SupplierWithdrawalResolveParams{
+		ID: w.ID, Status: service.SupplierWithdrawalStatusRejected, Refund: true,
+		FromFailed: true, ReviewNote: "还是想拒",
+	})
+	assert.ErrorIs(t, err, service.ErrSupplierWithdrawalProcessing)
+}
+
+// 交还租约 = 退避：退避期内捞不到，退避归零后立刻回队。
+func TestSupplierWithdrawal_ReleaseLeaseBacksOff(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	userID := mustCreateSupplier(t, client, "wd-release")
+	seedSupplierWallet(t, txCtx, client, userID, 100)
+	repo := withdrawalRepoOn(client)
+	queue := payoutQueueOn(client)
+	w := createOnchainWithdrawal(t, txCtx, repo, userID)
+
+	claimed, err := queue.ClaimPayoutDue(txCtx, 10, 5*time.Minute)
+	require.NoError(t, err)
+	require.Len(t, claimed, 1)
+
+	require.NoError(t, queue.ReleasePayoutLease(txCtx, w.ID, "rpc flaky", time.Hour))
+	held, err := queue.ClaimPayoutDue(txCtx, 10, 5*time.Minute)
+	require.NoError(t, err)
+	assert.Empty(t, held, "退避期内的单子不该被捞")
+
+	require.NoError(t, queue.ReleasePayoutLease(txCtx, w.ID, "retry now", 0))
+	back, err := queue.ClaimPayoutDue(txCtx, 10, 5*time.Minute)
+	require.NoError(t, err)
+	require.Len(t, back, 1)
+	assert.Equal(t, w.ID, back[0].ID)
+	require.NotNil(t, back[0].LastError)
+	assert.Equal(t, "retry now", *back[0].LastError, "退避原因要跟着单子走，运营看它排查")
+}
+
+// processing / failed 都占用未决名额：卡在链上流程里的钱仍然挂在单子上。
+func TestSupplierWithdrawal_ProcessingAndFailedCountAsPending(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	userID := mustCreateSupplier(t, client, "wd-count")
+	seedSupplierWallet(t, txCtx, client, userID, 200)
+	repo := withdrawalRepoOn(client)
+	queue := payoutQueueOn(client)
+	w := createOnchainWithdrawal(t, txCtx, repo, userID)
+	require.NoError(t, queue.BeginPayout(txCtx, w.ID, 0))
+
+	// processing 占名额。
+	_, err := repo.Create(txCtx, service.SupplierWithdrawalCreateParams{
+		UserID: userID, Amount: 10, PayoutChannel: "支付宝",
+		PayoutAccount: "a@b.c", MaxPending: 1,
+	})
+	assert.ErrorIs(t, err, service.ErrSupplierWithdrawalTooManyPending)
+
+	// failed 同样占。
+	_, err = queue.FinishPayout(txCtx, service.SupplierPayoutFinishParams{
+		ID: w.ID, Status: service.SupplierWithdrawalStatusFailed, Reason: "reverted",
+	})
+	require.NoError(t, err)
+	_, err = repo.Create(txCtx, service.SupplierWithdrawalCreateParams{
+		UserID: userID, Amount: 10, PayoutChannel: "支付宝",
+		PayoutAccount: "a@b.c", MaxPending: 1,
+	})
+	assert.ErrorIs(t, err, service.ErrSupplierWithdrawalTooManyPending,
+		"failed 不占名额的话，一张卡住的链上单会放开整个闸门")
 }

@@ -972,7 +972,7 @@ function actionLabel(action: string): string {
 }
 
 function withdrawalStatusLabel(status: string): string {
-  const known = ['pending', 'paid', 'rejected', 'canceled']
+  const known = ['pending', 'processing', 'failed', 'paid', 'rejected', 'canceled']
   return known.includes(status) ? t(`supply.withdrawal.state.${status}`) : t('supply.withdrawal.state.unknown')
 }
 
@@ -980,6 +980,10 @@ function withdrawalBadgeClass(status: string): string {
   switch (status) {
     case 'paid':
       return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+    case 'processing':
+      // 蓝色 = "系统正在动"，与琥珀色的"等着被处理"分开：
+      // 打款中的单子没有撤回按钮，颜色得先把"为什么点不了"说了。
+      return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
     case 'rejected':
       // 被拒是要他做点什么（多半是改收款账号），用红色而不是灰色。
       return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'

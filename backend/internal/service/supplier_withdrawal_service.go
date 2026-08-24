@@ -490,10 +490,13 @@ func (s *SupplierWithdrawalService) MarkPaid(ctx context.Context, id int64, revi
 		return nil, infraerrors.BadRequest("SUPPLIER_WITHDRAWAL_NOTE_TOO_LONG", "note is too long")
 	}
 	resolved, err := s.repo.Resolve(ctx, SupplierWithdrawalResolveParams{
-		ID:          id,
-		Status:      SupplierWithdrawalStatusPaid,
-		ReviewerID:  reviewerID,
-		Refund:      false,
+		ID:         id,
+		Status:     SupplierWithdrawalStatusPaid,
+		ReviewerID: reviewerID,
+		Refund:     false,
+		// 管理端可以把一张链上失败单标成已打款：worker 放弃后运营核实
+		// 「链上其实成了」或人工补打，都落在这条路上。
+		FromFailed:  true,
 		ReviewNote:  note,
 		ExternalRef: externalRef,
 	})
@@ -524,6 +527,8 @@ func (s *SupplierWithdrawalService) Reject(ctx context.Context, id int64, review
 		Status:     SupplierWithdrawalStatusRejected,
 		ReviewerID: reviewerID,
 		Refund:     true,
+		// 链上失败单的另一条出路：核实钱确实没出去之后，拒绝并退款。
+		FromFailed: true,
 		ReviewNote: trimmed,
 	})
 	if err != nil {
@@ -537,7 +542,9 @@ func (s *SupplierWithdrawalService) Reject(ctx context.Context, id int64, review
 func isKnownWithdrawalStatus(status string) bool {
 	switch status {
 	case SupplierWithdrawalStatusPending,
+		SupplierWithdrawalStatusProcessing,
 		SupplierWithdrawalStatusPaid,
+		SupplierWithdrawalStatusFailed,
 		SupplierWithdrawalStatusRejected,
 		SupplierWithdrawalStatusCanceled:
 		return true

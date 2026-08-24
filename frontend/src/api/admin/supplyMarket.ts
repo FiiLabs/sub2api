@@ -335,16 +335,28 @@ export interface SupplyWithdrawalAdminView {
   reviewer_id?: number
   review_note?: string
   external_ref?: string
+  // ---- 链上结算（M3/M4）。人工单上这些字段不出现。----
+  /** 手续费，从 amount 内部扣；链上实发 = amount - fee_amount */
+  fee_amount?: number
+  network?: string
+  token_symbol?: string
+  token_address?: string
+  /** 广播出去那笔交易的哈希。failed 单上它是运营核实链上真相的钥匙 */
+  tx_hash?: string
+  /** worker 上一次没走通的原因。failed 单必看：它写明了该核实什么 */
+  last_error?: string
   created_at: string
   updated_at: string
   resolved_at?: string | null
 }
 
 /** 提现单状态。传给后端的值必须在这个联合里——未知状态后端报 400，不会静默"不筛"。 */
-export type SupplyWithdrawalStatus = 'pending' | 'paid' | 'rejected' | 'canceled'
+export type SupplyWithdrawalStatus = 'pending' | 'processing' | 'failed' | 'paid' | 'rejected' | 'canceled'
 
 export const SUPPLY_WITHDRAWAL_STATUSES: SupplyWithdrawalStatus[] = [
   'pending',
+  'processing',
+  'failed',
   'paid',
   'rejected',
   'canceled',

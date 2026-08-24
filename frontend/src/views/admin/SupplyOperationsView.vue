@@ -231,9 +231,26 @@
                   <p v-if="item.external_ref" class="mt-1 max-w-xs font-mono text-xs text-gray-400 dark:text-dark-500">
                     {{ item.external_ref }}
                   </p>
+                  <!-- failed 单的两样证物：worker 的失败原因，和要去区块浏览器核实的哈希。
+                       不摆在这里，运营就得去翻库——而他核实之前不该点任何按钮。 -->
+                  <p v-if="item.last_error" class="mt-1 max-w-xs text-xs text-red-600 dark:text-red-400">
+                    {{ item.last_error }}
+                  </p>
+                  <p
+                    v-if="item.tx_hash && !item.external_ref"
+                    class="mt-1 max-w-xs font-mono text-xs text-gray-400 dark:text-dark-500"
+                  >
+                    {{ item.tx_hash }}
+                  </p>
                 </td>
                 <td class="px-3 py-3 text-right">
-                  <div v-if="item.status === 'pending'" class="flex flex-wrap justify-end gap-2">
+                  <!-- failed 也给按钮：那正是"等运营裁决"的停靠位——核实链上真相后，
+                       要么标记已打款（链上其实成了/人工补打），要么拒绝退款。
+                       processing 刻意没有按钮：worker 正拿着单子，此刻人工插手就是双付。 -->
+                  <div
+                    v-if="item.status === 'pending' || item.status === 'failed'"
+                    class="flex flex-wrap justify-end gap-2"
+                  >
                     <button
                       class="btn btn-primary btn-sm"
                       :disabled="resolvingWithdrawalId === item.id"
@@ -1136,6 +1153,12 @@ function withdrawalBadgeClass(status: string): string {
   switch (status) {
     case 'paid':
       return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+    case 'processing':
+      // 蓝色 = worker 正在动它，此刻没有任何按钮可点。
+      return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+    case 'failed':
+      // 橙色而不是 rejected 的红：红是"处理完了"，橙是"轮到你了"。
+      return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
     case 'rejected':
       return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
     case 'canceled':

@@ -118,6 +118,9 @@ func provideCleanup(
 	// 也是为了让 wire 真的把它们构造出来（Provide* 里 Start，没人引用就不会启动）。
 	supplierThaw *service.SupplierThawService,
 	supplierLifecycle *service.SupplierLifecycleService,
+	// APEXONE-EXT: 双边市场——链上打款 worker（M4）。停机时它必须被等到：
+	// 一轮打款走到一半被 kill，nonce 已钉、哈希未记的单子要等下一次启动重播。
+	supplierPayout *service.SupplierPayoutWorker,
 	channelMonitorRunner *service.ChannelMonitorRunner,
 	channelMonitorV2Aggregator *service.ChannelMonitorV2Aggregator,
 	quotaFlusher *service.UserPlatformQuotaUsageFlusher,
@@ -339,6 +342,12 @@ func provideCleanup(
 			{"SupplierLifecycleService", func() error {
 				if supplierLifecycle != nil {
 					supplierLifecycle.Stop()
+				}
+				return nil
+			}},
+			{"SupplierPayoutWorker", func() error {
+				if supplierPayout != nil {
+					supplierPayout.Stop()
 				}
 				return nil
 			}},

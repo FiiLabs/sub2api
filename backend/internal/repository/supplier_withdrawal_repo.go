@@ -53,7 +53,8 @@ const supplierWithdrawalColumns = `
     payout_channel, payout_account, user_note,
     ledger_id, reviewer_id, review_note, external_ref,
     created_at, updated_at, resolved_at,
-    network, token_symbol, token_address, fee_amount::double precision`
+    network, token_symbol, token_address, fee_amount::double precision,
+    tx_hash, chain_nonce, broadcasted_at, last_error, leased_until`
 
 // supplierWithdrawalInsertSQL 建单。
 //
@@ -73,8 +74,13 @@ RETURNING ` + supplierWithdrawalColumns
 // 与建单在同一个事务里跑，且跑在钱包行 FOR UPDATE **之后**：那把锁让同一个人的
 // 两次并发申请必然串行，否则两个请求会各自数到 0、双双建单，把「每人一张」
 // 变成一句空话。
+//
+// 「未决」= 还没到终态：pending / processing / failed 都算。只数 pending 的话，
+// 一张卡在链上流程里的单子会把名额还给他——未决单上限想挡的恰恰是
+// 「同一笔余额挂出多张单」，而 processing/failed 的钱一样还挂在单子上。
 const supplierWithdrawalCountPendingSQL = `
-SELECT COUNT(*) FROM supplier_withdrawals WHERE user_id = $1 AND status = 'pending'`
+SELECT COUNT(*) FROM supplier_withdrawals
+WHERE user_id = $1 AND status IN ('pending', 'processing', 'failed')`
 
 const supplierWithdrawalAttachLedgerSQL = `
 UPDATE supplier_withdrawals SET ledger_id = $2, updated_at = NOW() WHERE id = $1`
@@ -90,6 +96,15 @@ FROM supplier_withdrawals
 WHERE id = $1
 FOR UPDATE`
 
+// supplierWithdrawalResolveSQL 人工推进终态。
+//
+// $6 是「允许从 failed 出发」的开关（只有管理端传真，见 FromFailed）。
+// 租约条件挡的是 worker 手里的单子：租约未到期时管理端不许动——
+// 那一刻可能已有一笔交易在内存池里，这里的一次拒绝退款就是双付的另一半。
+// last_error 在 paid 时清空（$7，陈旧的报错留在一张已打款的单子上只会误导人），
+// rejected 时保留（它解释了这张单子为什么走到人工裁决）。清空条件用独立的
+// 布尔参数而不是复用 $2 比较：$2 同时出现在赋值位（varchar）与比较位（text）
+// 会让 Postgres 对它的类型推导自相矛盾（inconsistent types deduced）。
 const supplierWithdrawalResolveSQL = `
 UPDATE supplier_withdrawals
 SET status       = $2,
@@ -97,9 +112,12 @@ SET status       = $2,
     review_note  = $4,
     external_ref = $5,
     resolved_at  = NOW(),
-    updated_at   = NOW()
+    updated_at   = NOW(),
+    leased_until = NULL,
+    last_error   = CASE WHEN $7 THEN NULL ELSE last_error END
 WHERE id = $1
-  AND status = 'pending'
+  AND (status = 'pending' OR ($6 AND status = 'failed'))
+  AND (leased_until IS NULL OR leased_until <= NOW())
 RETURNING ` + supplierWithdrawalColumns
 
 // supplierWithdrawalRefundSQL 把钱退回可用区。
@@ -279,18 +297,30 @@ func (r *supplierWithdrawalRepository) Resolve(ctx context.Context, params servi
 		if params.UserID > 0 && current.UserID != params.UserID {
 			return service.ErrSupplierWithdrawalNotFound
 		}
-		if !current.Pending() {
+		// 三种不许动的情形，报两种错——「正在处理」与「已处理完」对点按钮的人
+		// 是完全不同的两句话（见 ErrSupplierWithdrawalProcessing）。
+		switch {
+		case current.Status == service.SupplierWithdrawalStatusProcessing:
+			return service.ErrSupplierWithdrawalProcessing
+		case current.LeasedUntil != nil && current.LeasedUntil.After(time.Now()):
+			// pending 但 worker 已租走：那一刻起它随时可能翻进 processing。
+			return service.ErrSupplierWithdrawalProcessing
+		case current.Status == service.SupplierWithdrawalStatusFailed && params.FromFailed:
+			// 管理端裁决一张链上失败单：放行。
+		case !current.Pending():
 			return service.ErrSupplierWithdrawalNotPending
 		}
 
-		// 2. 推进状态。WHERE 里那个 status = 'pending' 与上面的判断重复，是故意的：
-		//    锁虽然拿着，但这条件写在语句里，读 SQL 的人不必回去确认调用方判过。
+		// 2. 推进状态。WHERE 里的条件与上面的判断重复，是故意的：
+		//    锁虽然拿着，但条件写在语句里，读 SQL 的人不必回去确认调用方判过。
 		updated, err := r.cipher.scanSupplierWithdrawalRow(txCtx, txClient, supplierWithdrawalResolveSQL,
 			params.ID,
 			params.Status,
 			nullableInt64Arg(params.ReviewerID),
 			nullableTrimmedString(params.ReviewNote),
 			nullableTrimmedString(params.ExternalRef),
+			params.FromFailed,
+			params.Status == service.SupplierWithdrawalStatusPaid,
 		)
 		if err != nil {
 			return fmt.Errorf("resolve supplier withdrawal: %w", err)
@@ -348,6 +378,209 @@ func refundSupplierWithdrawal(ctx context.Context, exec supplierCreditExecer, w 
 		return fmt.Errorf("supplier credit wallet not found for withdrawal #%d", w.ID)
 	}
 	return backfillSupplierLedgerSnapshot(ctx, exec, ledgerID, snapshot)
+}
+
+// ============================================================================
+// 打款 worker 的队列面（M4）
+// ============================================================================
+
+// NewSupplierPayoutQueueRepository 给 worker 一个只含队列操作的仓储面。
+//
+// 与 NewSupplierWithdrawalRepository 是同一个结构体：队列操作与人工审批
+// 必须看到同一张表、同一套解密——分开的只是**接口**，让提现服务拿不到
+// 「跳过状态机直接标 paid」的能力（见 service.SupplierPayoutQueueRepository）。
+func NewSupplierPayoutQueueRepository(client *dbent.Client, encryptor service.SecretEncryptor) service.SupplierPayoutQueueRepository {
+	return &supplierWithdrawalRepository{
+		client: client,
+		cipher: payoutAccountCipher{encryptor: encryptor},
+	}
+}
+
+// supplierWithdrawalClaimSQL 捞单 + 续租，一条语句。
+//
+// FOR UPDATE SKIP LOCKED：与并发的 Resolve（FOR UPDATE 锁着行）互不阻塞——
+// 正被人工处理的行直接跳过，下一轮再看。只动租约不动状态，理由见接口注释。
+// 按 id 升序：先来的单子先打，供给者之间不插队。
+const supplierWithdrawalClaimSQL = `
+UPDATE supplier_withdrawals
+SET leased_until = NOW() + make_interval(secs => $2),
+    updated_at   = NOW()
+WHERE id IN (
+    SELECT id FROM supplier_withdrawals
+    WHERE network IS NOT NULL
+      AND status IN ('pending', 'processing')
+      AND (leased_until IS NULL OR leased_until <= NOW())
+    ORDER BY id
+    LIMIT $1
+    FOR UPDATE SKIP LOCKED
+)
+RETURNING ` + supplierWithdrawalColumns
+
+func (r *supplierWithdrawalRepository) ClaimPayoutDue(ctx context.Context, limit int, lease time.Duration) ([]service.SupplierWithdrawal, error) {
+	if limit <= 0 || lease <= 0 {
+		return nil, nil
+	}
+	client := clientFromContext(ctx, r.client)
+	rows, err := client.QueryContext(ctx, supplierWithdrawalClaimSQL, limit, lease.Seconds())
+	if err != nil {
+		return nil, fmt.Errorf("claim payout due: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []service.SupplierWithdrawal
+	for rows.Next() {
+		var item service.SupplierWithdrawal
+		if err := r.cipher.scanSupplierWithdrawal(rows, &item); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+// supplierWithdrawalBeginSQL 钉 nonce + 翻 processing，广播前的最后一道闸。
+//
+// chain_nonce 的条件允许两种情形：还没有 nonce（第一次），或已经是**同一个**
+// nonce（上一轮广播失败后的重播）。带着另一个 nonce 说明数据被动过，
+// 条件不命中、调用方放弃广播——保守的那一边。
+const supplierWithdrawalBeginSQL = `
+UPDATE supplier_withdrawals
+SET status      = 'processing',
+    chain_nonce = $2,
+    updated_at  = NOW()
+WHERE id = $1
+  AND status IN ('pending', 'processing')
+  AND (chain_nonce IS NULL OR chain_nonce = $2)`
+
+func (r *supplierWithdrawalRepository) BeginPayout(ctx context.Context, id int64, nonce uint64) error {
+	client := clientFromContext(ctx, r.client)
+	res, err := client.ExecContext(ctx, supplierWithdrawalBeginSQL, id, int64(nonce))
+	if err != nil {
+		return fmt.Errorf("begin payout: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("begin payout rows affected: %w", err)
+	}
+	if affected == 0 {
+		return service.ErrSupplierWithdrawalNotPending
+	}
+	return nil
+}
+
+// supplierWithdrawalRecordTxSQL 记哈希。broadcasted_at 只写第一次——
+// 它是放弃等确认的时钟，重播刷新它会让期限永远到不了。
+//
+// 用 clock_timestamp() 而不是 NOW()：NOW() 在一个事务里是常量（事务开始时刻），
+// 真库测试整个跑在一个回滚事务里，两次 RecordPayoutTx 会拿到同一个 NOW()，
+// 于是「重播刷新了时钟」这类回归在测试里不可见。生产里两次调用各自成句，
+// 两者本无差别——差别只在可测性上。
+const supplierWithdrawalRecordTxSQL = `
+UPDATE supplier_withdrawals
+SET tx_hash        = $2,
+    broadcasted_at = COALESCE(broadcasted_at, clock_timestamp()),
+    updated_at     = NOW()
+WHERE id = $1
+  AND status = 'processing'`
+
+func (r *supplierWithdrawalRepository) RecordPayoutTx(ctx context.Context, id int64, txHash string) error {
+	trimmed := strings.TrimSpace(txHash)
+	if trimmed == "" {
+		return fmt.Errorf("record payout tx: empty tx hash")
+	}
+	client := clientFromContext(ctx, r.client)
+	res, err := client.ExecContext(ctx, supplierWithdrawalRecordTxSQL, id, trimmed)
+	if err != nil {
+		return fmt.Errorf("record payout tx: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("record payout tx rows affected: %w", err)
+	}
+	if affected == 0 {
+		return service.ErrSupplierWithdrawalNotPending
+	}
+	return nil
+}
+
+// supplierWithdrawalFinishPaidSQL 链上确认成功的终局。
+//
+// external_ref 与 tx_hash 写同一个值（§234 的迁移注释：前者给人对账，
+// 后者给程序对账，同源不同用途）。两条 Finish 语句都钉着 status = 'processing'：
+// paid/failed 只能从 processing 出发，一张没经过「钉 nonce」的单子拿不到终局。
+const supplierWithdrawalFinishPaidSQL = `
+UPDATE supplier_withdrawals
+SET status       = 'paid',
+    tx_hash      = $2,
+    external_ref = $2,
+    last_error   = NULL,
+    leased_until = NULL,
+    resolved_at  = NOW(),
+    updated_at   = NOW()
+WHERE id = $1
+  AND status = 'processing'
+RETURNING ` + supplierWithdrawalColumns
+
+// supplierWithdrawalFinishFailedSQL 停靠到 failed 等运营。
+// 不写 resolved_at——它没被 resolve，钱还挂着。
+const supplierWithdrawalFinishFailedSQL = `
+UPDATE supplier_withdrawals
+SET status       = 'failed',
+    last_error   = $2,
+    leased_until = NULL,
+    updated_at   = NOW()
+WHERE id = $1
+  AND status = 'processing'
+RETURNING ` + supplierWithdrawalColumns
+
+func (r *supplierWithdrawalRepository) FinishPayout(ctx context.Context, params service.SupplierPayoutFinishParams) (*service.SupplierWithdrawal, error) {
+	client := clientFromContext(ctx, r.client)
+	var (
+		updated *service.SupplierWithdrawal
+		err     error
+	)
+	switch params.Status {
+	case service.SupplierWithdrawalStatusPaid:
+		hash := strings.TrimSpace(params.TxHash)
+		if hash == "" {
+			// 一张没有哈希的 paid 单在对账里是个洞，宁可不写。
+			return nil, fmt.Errorf("finish payout: paid without tx hash")
+		}
+		updated, err = r.cipher.scanSupplierWithdrawalRow(ctx, client, supplierWithdrawalFinishPaidSQL, params.ID, hash)
+	case service.SupplierWithdrawalStatusFailed:
+		updated, err = r.cipher.scanSupplierWithdrawalRow(ctx, client, supplierWithdrawalFinishFailedSQL,
+			params.ID, nullableTrimmedString(params.Reason))
+	default:
+		return nil, fmt.Errorf("finish payout: unsupported status %q", params.Status)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("finish payout: %w", err)
+	}
+	if updated == nil {
+		return nil, service.ErrSupplierWithdrawalNotPending
+	}
+	return updated, nil
+}
+
+// supplierWithdrawalReleaseLeaseSQL 交还租约（可带退避），单子留在原状态。
+const supplierWithdrawalReleaseLeaseSQL = `
+UPDATE supplier_withdrawals
+SET leased_until = NOW() + make_interval(secs => $3),
+    last_error   = $2,
+    updated_at   = NOW()
+WHERE id = $1
+  AND status IN ('pending', 'processing')`
+
+func (r *supplierWithdrawalRepository) ReleasePayoutLease(ctx context.Context, id int64, lastError string, retryAfter time.Duration) error {
+	if retryAfter < 0 {
+		retryAfter = 0
+	}
+	client := clientFromContext(ctx, r.client)
+	if _, err := client.ExecContext(ctx, supplierWithdrawalReleaseLeaseSQL,
+		id, nullableTrimmedString(lastError), retryAfter.Seconds()); err != nil {
+		return fmt.Errorf("release payout lease: %w", err)
+	}
+	return nil
 }
 
 // ============================================================================
@@ -454,15 +687,20 @@ type supplierWithdrawalScanner interface {
 
 func (c payoutAccountCipher) scanSupplierWithdrawal(row supplierWithdrawalScanner, out *service.SupplierWithdrawal) error {
 	var (
-		userNote     *string
-		ledgerID     *int64
-		reviewerID   *int64
-		reviewNote   *string
-		externalRef  *string
-		resolvedAt   *time.Time
-		network      *string
-		tokenSymbol  *string
-		tokenAddress *string
+		userNote      *string
+		ledgerID      *int64
+		reviewerID    *int64
+		reviewNote    *string
+		externalRef   *string
+		resolvedAt    *time.Time
+		network       *string
+		tokenSymbol   *string
+		tokenAddress  *string
+		txHash        *string
+		chainNonce    *int64
+		broadcastedAt *time.Time
+		lastError     *string
+		leasedUntil   *time.Time
 	)
 	if err := row.Scan(
 		&out.ID, &out.UserID, &out.Amount, &out.Status,
@@ -470,6 +708,7 @@ func (c payoutAccountCipher) scanSupplierWithdrawal(row supplierWithdrawalScanne
 		&ledgerID, &reviewerID, &reviewNote, &externalRef,
 		&out.CreatedAt, &out.UpdatedAt, &resolvedAt,
 		&network, &tokenSymbol, &tokenAddress, &out.FeeAmount,
+		&txHash, &chainNonce, &broadcastedAt, &lastError, &leasedUntil,
 	); err != nil {
 		return fmt.Errorf("scan supplier withdrawal: %w", err)
 	}
@@ -482,6 +721,11 @@ func (c payoutAccountCipher) scanSupplierWithdrawal(row supplierWithdrawalScanne
 	out.Network = network
 	out.TokenSymbol = tokenSymbol
 	out.TokenAddress = tokenAddress
+	out.TxHash = txHash
+	out.ChainNonce = chainNonce
+	out.BroadcastedAt = broadcastedAt
+	out.LastError = lastError
+	out.LeasedUntil = leasedUntil
 
 	// 解密放在这里而不是各个调用点：这是这张表**唯一**的 Scan，
 	// 把它放在这一行上，等于将来任何一条新的读路径都自动解了密。
