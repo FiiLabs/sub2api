@@ -207,6 +207,42 @@
                   {{ t('supply.withdrawal.wallet.autoNotice', { channel: selectedOnchainChannel.channel }) }}
                 </p>
 
+                <!-- 手续费预告。拿不到报价 ≠ 免费：那是「这个渠道此刻自动结算不了」，
+                     提交后会落到人工打款——两种情况必须说两句不同的话，
+                     显示一个 0 会被读成承诺。 -->
+                <div class="mt-1 text-xs" data-testid="supply-withdrawal-fee">
+                  <template v-if="selectedFeeQuote">
+                    <p class="text-gray-500 dark:text-dark-400">
+                      {{
+                        t(
+                          selectedFeeQuote.estimated
+                            ? 'supply.withdrawal.fee.quote'
+                            : 'supply.withdrawal.fee.fixed',
+                          { fee: formatCurrency(selectedFeeQuote.fee) }
+                        )
+                      }}
+                    </p>
+                    <p
+                      v-if="withdrawalNetPreview !== null"
+                      class="text-gray-700 dark:text-gray-300"
+                      data-testid="supply-withdrawal-net-preview"
+                    >
+                      {{ t('supply.withdrawal.fee.netPreview', { net: formatCurrency(withdrawalNetPreview) }) }}
+                    </p>
+                    <!-- 只在真的填了金额且盖不住时才警告；表单还空着就先不吓人。 -->
+                    <p
+                      v-else-if="withdrawalAmountNumber !== null"
+                      class="text-amber-700 dark:text-amber-300"
+                      data-testid="supply-withdrawal-fee-not-covered"
+                    >
+                      {{ t('supply.withdrawal.fee.notCovered') }}
+                    </p>
+                  </template>
+                  <p v-else class="text-gray-500 dark:text-dark-400" data-testid="supply-withdrawal-fee-manual">
+                    {{ t('supply.withdrawal.fee.manualFallback') }}
+                  </p>
+                </div>
+
                 <!-- 已绑定：默认只读地显示那一串，不摊在可编辑的输入框里。
                      地址是个看一眼就够的东西，让它一直可编辑只是多一次误改机会。 -->
                 <div
@@ -356,10 +392,30 @@
                     <td class="px-3 py-3 text-gray-500 dark:text-dark-400">{{ formatDateTime(item.created_at) }}</td>
                     <td class="px-3 py-3 text-right font-medium text-gray-900 dark:text-white">
                       {{ formatCurrency(item.amount) }}
+                      <!-- 有手续费的单子必须把「扣了多少、到手多少」写在他看得见的地方：
+                           申请 100 到账 99.7，那 0.3 只存在于数据库里的话，
+                           对他就是一笔凭空少掉的钱。 -->
+                      <p
+                        v-if="item.fee_amount > 0"
+                        class="text-xs font-normal text-gray-400 dark:text-dark-500"
+                        :data-testid="`supply-withdrawal-fee-${item.id}`"
+                      >
+                        {{
+                          t('supply.withdrawal.fee.line', {
+                            fee: formatCurrency(item.fee_amount),
+                            net: formatCurrency(item.net_amount),
+                          })
+                        }}
+                      </p>
                     </td>
                     <td class="px-3 py-3 text-gray-700 dark:text-gray-300">
                       <p>{{ item.payout_channel }}</p>
                       <p class="text-xs text-gray-400 dark:text-dark-500">{{ item.payout_account }}</p>
+                      <!-- network 非空 = worker 自动打款。这一行决定他对时效的预期：
+                           自动的是几分钟，人工的是工作日——说错了他会在第一个小时就来问。 -->
+                      <p v-if="item.network" class="text-xs text-emerald-600 dark:text-emerald-400">
+                        {{ t('supply.withdrawal.fee.auto', { network: item.network }) }}
+                      </p>
                     </td>
                     <td class="px-3 py-3">
                       <span
@@ -770,7 +826,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { supplyAPI, type SupplyAccount, type SupplyAgreement, type SupplyLedgerEntry, type SupplyOnchainChannel, type SupplyPauseMode, type SupplyPayoutWallet, type SupplyStatus, type SupplyWallet, type SupplyWithdrawal, type SupplyWithdrawalOptions, type StartOAuthResponse } from '@/api/supply'
+import { supplyAPI, type SupplyAccount, type SupplyAgreement, type SupplyLedgerEntry, type SupplyOnchainChannel, type SupplyPauseMode, type SupplyPayoutWallet, type SupplyStatus, type SupplyWallet, type SupplyWithdrawal, type SupplyWithdrawalFeeQuote, type SupplyWithdrawalOptions, type StartOAuthResponse } from '@/api/supply'
 import { useAppStore } from '@/stores/app'
 import { useSupplyStore } from '@/stores/supply'
 import { useClipboard } from '@/composables/useClipboard'
@@ -853,6 +909,38 @@ const boundPayoutWallet = computed<SupplyPayoutWallet | null>(() => {
   const network = selectedOnchainChannel.value?.network
   if (!network) return null
   return payoutWallets.value.find((item) => item.network === network) ?? null
+})
+
+/**
+ * 选中渠道此刻的手续费报价。null 有两个成因，界面上是同一句话：
+ * 渠道不是链上渠道（不该显示手续费），或渠道会上链但此刻自动结算不了
+ * （onchain_fees 刻意不含它，提交后会按人工打款处理）。
+ * **拿不到报价绝不显示 0**——0 元手续费是一个承诺，而后端没做这个承诺。
+ */
+const selectedFeeQuote = computed<SupplyWithdrawalFeeQuote | null>(() => {
+  const channel = selectedOnchainChannel.value?.channel
+  if (!channel) return null
+  return withdrawalOptions.value?.onchain_fees?.find((item) => item.channel === channel) ?? null
+})
+
+/** 表单里此刻填的金额，解析成数字。没填 / 填的不是正数时是 null。 */
+const withdrawalAmountNumber = computed<number | null>(() => {
+  const raw = String(withdrawalForm.value.amount).trim()
+  if (!raw) return null
+  const amount = Number(raw)
+  return Number.isFinite(amount) && amount > 0 ? amount : null
+})
+
+/**
+ * 按当前金额与报价算的预计到账。金额没填、或盖不住手续费时是 null——
+ * 后者与后端建单时的 fee >= amount 拒绝是同一条线，提前画在表单上，
+ * 免得他提交了才被打回来。
+ */
+const withdrawalNetPreview = computed<number | null>(() => {
+  const quote = selectedFeeQuote.value
+  const amount = withdrawalAmountNumber.value
+  if (!quote || amount === null || amount <= quote.fee) return null
+  return amount - quote.fee
 })
 
 function stateLabel(state: string): string {

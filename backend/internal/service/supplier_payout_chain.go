@@ -30,6 +30,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"math/big"
 	"strconv"
 	"strings"
@@ -161,6 +162,20 @@ type SupplierChainClient interface {
 	// 供给者看到一个"提现暂时不可用"——他会以为是自己的账号出了问题。取不到时
 	// 回落到配置里的保守值并把 Estimated 置假，让降级是可见的而不是可感的。
 	EstimateFee(ctx context.Context, network string) ChainFeeEstimate
+	// TokenAddress 回答「这条链上的这种币，合约地址是多少」。
+	//
+	// 同步、不触网：它读的是配置，而调用点在**建单事务之前**——那里不该有一次
+	// 可能超时的网络调用。
+	//
+	// 第二个返回值为假表示这套部署此刻结算不了这个币种：没配金库、链不对，
+	// 或者金库配的是另一种币。它是建单时「这张单子走链上还是走人工」的**唯一**
+	// 判据——取不到地址就不写 network，于是单子退回 229 的人工工单那条路
+	// （见 SupplierWithdrawalService.applyChainSnapshot）。
+	//
+	// 关键是**不许猜一个地址**。猜出来的地址会让单子带着 network 落库、被 M4 的
+	// worker 捞起来、然后打不出去，而供给者的钱在建单那一刻就已经被扣走了。
+	// 「没有答案」与「一个凑合的答案」在这里差着一笔卡死的钱。
+	TokenAddress(network, symbol string) (string, bool)
 	// NextNonce 取金库地址下一个可用的 nonce（含内存池里待打包的）。
 	//
 	// 调用方应当在广播**之前**把它落库，见 ChainTransferParams.Nonce。
@@ -196,6 +211,39 @@ type SupplierChainClient interface {
 // 取 8 是因为提现单的金额列是 DECIMAL(20,8)：库里存得下的精度就是这么多，
 // 再多的位数不来自任何真实数据，只来自 float64 表示误差的尾巴。
 const ChainAmountScale = 8
+
+// SanitizeChainFee 把一个手续费估算值收敛成可以落库的形态。
+//
+// 返回值：收敛后的金额，以及"这个估算值本身是不是可信的"。
+//
+// # 为什么要收敛
+//
+// fee_amount 是 DECIMAL(20,8)。估算值来自一串浮点乘法（gasPrice × gasLimit ÷ 1e18
+// × 币价 × 安全系数），小数位可以有二十几位。不收敛就落库，数据库会替我们截断，
+// 于是**服务算出来的 net 与按库里那一行算出来的 net 不是同一个数**——而 M4 打款时
+// 读的是库里那一行。差值只有 1e-9 量级，但两个本该相等的数不相等，
+// 是一类会在对账时耗掉一整天的问题。
+//
+// 方向取四舍五入而不是向上取整：在 1e-8 美元这个量级上，多收还是少收都不是钱，
+// 而"服务与数据库算出同一个数"才是要的东西。
+//
+// # 为什么非有限值要回假，而不是当成 0
+//
+// 当成 0 就是"这笔提现不收手续费"，而它真实的含义是"链上客户端算出了一个不是数的东西"。
+// 前者静默地让金库替所有人垫 gas，后者是个配置故障——必须让它以故障的形态出现。
+func SanitizeChainFee(fee float64) (float64, bool) {
+	if math.IsNaN(fee) || math.IsInf(fee, 0) || fee < 0 {
+		return 0, false
+	}
+	if fee == 0 {
+		return 0, true
+	}
+	rounded, err := strconv.ParseFloat(strconv.FormatFloat(fee, 'f', ChainAmountScale, 64), 64)
+	if err != nil {
+		return 0, false
+	}
+	return rounded, true
+}
 
 // ToTokenAmount 把计价单位的金额换算成代币最小单位。
 //
@@ -262,6 +310,10 @@ func (c *DisabledChainClient) EstimateFee(context.Context, string) ChainFeeEstim
 	return ChainFeeEstimate{Amount: c.FallbackFee}
 }
 
+// TokenAddress 恒假：没配金库就没有合约地址，而**猜一个**会让建单成功、
+// 让单子进 pending、让钱被扣走，然后 worker 到了才发现打不出去。
+func (c *DisabledChainClient) TokenAddress(string, string) (string, bool) { return "", false }
+
 // NextNonce 恒错。
 func (c *DisabledChainClient) NextNonce(context.Context, string) (uint64, error) {
 	return 0, ErrSupplierPayoutChainDisabled
@@ -306,6 +358,8 @@ type MockChainClient struct {
 	fee     float64
 	outcome string
 	batch   bool
+	// token 假的合约地址，见 MockChainTokenAddress。空串 = TokenAddress 恒回假。
+	token string
 
 	// nonce 每条链一个，模拟节点视角。
 	//
@@ -335,6 +389,13 @@ type MockChainOptions struct {
 	// 默认（零值）是**支持**批量：M5 的分组逻辑要靠它才走得到，
 	// 而"默认不支持"会让那些测试全部安静地走进逐笔分支，看起来还是绿的。
 	NoBatch bool
+	// TokenAddress 覆盖 TokenAddress 返回的地址；空 = MockChainTokenAddress。
+	//
+	// 留一个覆盖口，是为了让"单子上钉的地址与此刻配置的不一样"这种情况可测——
+	// 那正是 M4 该按单子上那一列打款、而不是按配置打款的理由。
+	TokenAddress string
+	// NoToken 为真时 TokenAddress 恒回假，模拟"链上打款开着，但这种币结算不了"。
+	NoToken bool
 }
 
 // NewMockChainClient 造一个假装成功的客户端。
@@ -343,12 +404,37 @@ func NewMockChainClient(opts MockChainOptions) *MockChainClient {
 	if outcome == "" {
 		outcome = ChainTxConfirmed
 	}
+	token := strings.TrimSpace(opts.TokenAddress)
+	if token == "" {
+		token = MockChainTokenAddress
+	}
+	if opts.NoToken {
+		token = ""
+	}
 	return &MockChainClient{
 		fee:     opts.Fee,
 		outcome: outcome,
 		batch:   !opts.NoBatch,
+		token:   token,
 		nonce:   map[string]uint64{},
 	}
+}
+
+// MockChainTokenAddress 是假客户端默认返回的合约地址。
+//
+// 它是一个格式合法、但**一眼假**的地址（末尾 dead）。理由与 MockChainTxPrefix
+// 一样：运营在单子上看到它、粘进区块浏览器、发现那不是任何一个稳定币合约，
+// 排查就在那一刻结束了。造一个长得像真 USDT 合约的地址，才是这里最容易犯的错。
+const MockChainTokenAddress = "0x000000000000000000000000000000000000dead"
+
+// TokenAddress 返回假的合约地址。NoToken 为真时恒假。
+func (m *MockChainClient) TokenAddress(string, string) (string, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.token == "" {
+		return "", false
+	}
+	return m.token, true
 }
 
 // EstimateFee 返回配置的固定值。Estimated 为真——它模拟的是"问过链了"。

@@ -135,6 +135,23 @@ export interface SupplyWithdrawal {
   payout_channel: string
   payout_account: string
   user_note?: string
+  /**
+   * 这笔提现的 gas，从 amount **内部**扣掉。人工渠道恒为 0。
+   *
+   * 后端不给它加 omitempty，所以这里也不写 `?`：0 和 undefined 在做减法时
+   * 是两回事，后者会让界面显示「到账 NaN」。
+   */
+  fee_amount: number
+  /** 实际到账 = amount - fee_amount。**由后端算**，前端不重算一遍。 */
+  net_amount: number
+  /**
+   * 非空 = 这张单子会被 worker 自动打款；空 = 人工打款。
+   *
+   * 界面靠它决定说"几分钟内到账"还是"工作日内处理"——两句话的落差是几个小时，
+   * 说错了人就会在第一个小时里来问。
+   */
+  network?: string
+  token_symbol?: string
   /** 申请时那条 withdraw 流水的 id，用来把这张单子和账单页对上 */
   ledger_id?: number
   review_note?: string
@@ -184,6 +201,17 @@ export interface SupplyWithdrawalOptions {
    * 表单靠它决定收款账号那一栏画输入框还是画「你绑定的地址」。
    */
   onchain_channels?: SupplyOnchainChannel[]
+  /**
+   * 此刻**真能自动结算**的渠道各自的手续费报价。
+   *
+   * 它是 onchain_channels 的子集，且刻意允许比后者小：一个渠道可以「会上链」
+   * 但此刻结算不了（没接客户端 / 金库没配这种币 / 手续费估不出来）——那样的
+   * 渠道不出现在这里。表单靠「在不在这个数组里」分辨该画报价还是画
+   * 「按人工打款处理」，**不要**拿不到报价就显示 0：0 元手续费是一个承诺。
+   *
+   * 报价不是承诺——建单那一刻会重新估一次，落库的是那一次的数。
+   */
+  onchain_fees?: SupplyWithdrawalFeeQuote[]
 }
 
 /** 一个会自动上链结算的渠道。 */
@@ -193,6 +221,16 @@ export interface SupplyOnchainChannel {
   /** 链标识，也是绑定接口路径上那个 :network */
   network: string
   token_symbol: string
+}
+
+/** 一个链上渠道此刻的手续费报价。 */
+export interface SupplyWithdrawalFeeQuote {
+  /** 渠道名，与 onchain_channels 里的 channel 一字不差 */
+  channel: string
+  /** 手续费（与提现同一币种），会从提现金额里扣掉 */
+  fee: number
+  /** true = 实时估算；false = 配置里写死的兜底值 */
+  estimated: boolean
 }
 
 /**

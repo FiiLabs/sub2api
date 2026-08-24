@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
+	"github.com/Wei-Shaw/sub2api/internal/payoutchain"
 	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 	"github.com/Wei-Shaw/sub2api/internal/server"
@@ -40,6 +41,10 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		service.ProviderSet,
 		securityaudit.ProviderSet,
 		payment.ProviderSet,
+		// APEXONE-EXT: 链上打款客户端。默认落在 DisabledChainClient——
+		// 提现服务拿它来问「这种币的合约地址是多少」，答不上来的部署
+		// 照旧走人工打款。
+		payoutchain.ProviderSet,
 		middleware.ProviderSet,
 		handler.ProviderSet,
 

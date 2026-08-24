@@ -25,7 +25,8 @@ const (
 	envMock          = "PAYOUT_MOCK"
 	envRPCURL        = "PAYOUT_BSC_RPC_URL"
 	envSignerKey     = "PAYOUT_BSC_SIGNER_KEY"
-	envTokenAddress  = "PAYOUT_BSC_USDT_ADDRESS"
+	envTokenAddress  = "PAYOUT_BSC_TOKEN_ADDRESS"
+	envTokenSymbol   = "PAYOUT_BSC_TOKEN_SYMBOL"
 	envDisperse      = "PAYOUT_BSC_DISPERSE_ADDRESS"
 	envChainID       = "PAYOUT_BSC_CHAIN_ID"
 	envNativeUSD     = "PAYOUT_BSC_NATIVE_USD"
@@ -37,6 +38,12 @@ const (
 // 默认值。
 const (
 	defaultChainID       = 56 // BSC 主网
+	// defaultTokenSymbol 与 service 里那张链上渠道注册表上的 BSC-USDT 对上。
+	//
+	// 做成一个可覆盖的默认值而不是写死："这个金库配的是哪种币"必须是可问的——
+	// 建单时要拿它去核对渠道要的币种，而把 USDC 的合约地址填进一个只认 USDT 的
+	// 客户端里，是一件既不会报错也不会被发现的事，直到有人收到了错的币。
+	defaultTokenSymbol = "USDT"
 	defaultConfirmations = 3
 	// defaultFallbackFee 是估不出手续费时按每笔多少美元扣。
 	//
@@ -62,8 +69,13 @@ type Config struct {
 	RPCURL string
 	// SignerKey 金库私钥，十六进制。绝不出现在任何输出里。
 	SignerKey string
-	// TokenAddress USDT 在 BSC 上的合约地址。
+	// TokenAddress 稳定币在 BSC 上的合约地址。
 	TokenAddress string
+	// TokenSymbol 上面那个合约地址对应的币种符号，默认 USDT。
+	//
+	// 它是 TokenAddress 的**标签**，不是选择器：改它不会换一个合约，
+	// 只会改变这个客户端愿意为哪个渠道结算。两者对不上时建单会被拒。
+	TokenSymbol string
 	// DisperseAddress 批量发放合约。留空则退化为逐笔转账。
 	DisperseAddress string
 	ChainID         uint64
@@ -92,11 +104,16 @@ func LoadConfig() (Config, error) {
 		RPCURL:          envString(envRPCURL),
 		SignerKey:       envString(envSignerKey),
 		TokenAddress:    envString(envTokenAddress),
+		TokenSymbol:     defaultTokenSymbol,
 		DisperseAddress: envString(envDisperse),
 		ChainID:         defaultChainID,
 		Confirmations:   defaultConfirmations,
 		FallbackFee:     defaultFallbackFee,
 		FeeMultiplier:   defaultFeeMultiplier,
+	}
+
+	if symbol := strings.TrimSpace(envString(envTokenSymbol)); symbol != "" {
+		cfg.TokenSymbol = symbol
 	}
 
 	var err error

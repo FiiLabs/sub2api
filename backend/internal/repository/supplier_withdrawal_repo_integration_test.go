@@ -621,3 +621,112 @@ func TestSupplierWithdrawal_LegacyPlaintextPayoutAccountStillReadable(t *testing
 	require.NoError(t, err)
 	assert.Equal(t, legacy, resolved.PayoutAccount)
 }
+
+// ============================================================================
+// 链上快照四列（M3）
+// ============================================================================
+
+// 四列写进去、读出来、且**库里那一行算出的 net 与服务层是同一个数**。
+//
+// 最后一条是这组测试的重心：fee_amount 落在 DECIMAL(20,8) 上，服务层若不把
+// 估算值收敛到 8 位就交给这里，这一列会替我们做一次没人看见的截断——
+// 于是「按内存里的 fee 算的 net」与「按库里这一行算的 net」不是同一个数，
+// 而 M4 的 worker 打款读的是库里那一行。这种分岔只有真 Postgres 能证伪，
+// sqlmock 里的 DECIMAL 是我以为的 DECIMAL。
+func TestSupplierWithdrawal_ChainSnapshotRoundTrips(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	userID := mustCreateSupplier(t, client, "wd-chain")
+	seedSupplierWallet(t, txCtx, client, userID, 100)
+	repo := withdrawalRepoOn(client)
+
+	// 手续费取一个把 8 位小数占满的值：截断类回归只在最后几位现形。
+	const fee = 0.12345678
+	const tokenAddress = "0x55d398326f99059ff775485246999027b3197955"
+	w, err := repo.Create(txCtx, service.SupplierWithdrawalCreateParams{
+		UserID:        userID,
+		Amount:        30,
+		PayoutChannel: "BSC-USDT",
+		PayoutAccount: "0xde709f2102306220921060314715629080e2fb77",
+		Network:       "bsc",
+		TokenSymbol:   "USDT",
+		TokenAddress:  tokenAddress,
+		FeeAmount:     fee,
+		MaxPending:    1,
+	})
+	require.NoError(t, err)
+
+	// 建单的回读四列齐全。
+	require.NotNil(t, w.Network)
+	assert.Equal(t, "bsc", *w.Network)
+	require.NotNil(t, w.TokenSymbol)
+	assert.Equal(t, "USDT", *w.TokenSymbol)
+	require.NotNil(t, w.TokenAddress)
+	assert.Equal(t, tokenAddress, *w.TokenAddress)
+	assert.Equal(t, fee, w.FeeAmount, "fee 回读时变了——多半是列精度或扫描类型")
+
+	// 库里那一行：fee 一位不丢，net 与服务层同一个数。
+	storedFee := querySingleFloat(t, txCtx, client,
+		"SELECT fee_amount::double precision FROM supplier_withdrawals WHERE id = $1", w.ID)
+	assert.Equal(t, fee, storedFee, "DECIMAL(20,8) 截断了 fee——服务层没收敛就落库")
+	storedNet := querySingleFloat(t, txCtx, client,
+		"SELECT (amount - fee_amount)::double precision FROM supplier_withdrawals WHERE id = $1", w.ID)
+	assert.Equal(t, w.NetAmount(), storedNet, "按库里算的 net 与服务层不是同一个数")
+
+	// 列表走的是同一个 scan，但那是今天的实现细节；明天有人给列表单写一条
+	// 精简 SELECT，第一个坏的就是这里。
+	items, _, err := repo.List(txCtx, service.SupplierWithdrawalFilter{UserID: userID, Page: 1, PageSize: 10})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.NotNil(t, items[0].Network)
+	assert.Equal(t, "bsc", *items[0].Network)
+	assert.Equal(t, fee, items[0].FeeAmount)
+
+	// 快照在终态推进后原样还在：审批只改状态，不动这四列。
+	resolved, err := repo.Resolve(txCtx, service.SupplierWithdrawalResolveParams{
+		ID: w.ID, Status: service.SupplierWithdrawalStatusPaid,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resolved.TokenAddress)
+	assert.Equal(t, tokenAddress, *resolved.TokenAddress)
+	assert.Equal(t, fee, resolved.FeeAmount)
+}
+
+// 人工单三列落 NULL、fee 落 0——不是空串，不是别的哨兵值。
+//
+// M4 的 worker 用 `WHERE network IS NOT NULL` 捞单：这里若把空串写进去，
+// 一张人工单就成了一张链不存在的「链上单」，worker 捞到它、打不出去、
+// 无限重试。空串与 NULL 的区别在应用层看不见，只有真库能证。
+func TestSupplierWithdrawal_ManualOrderLeavesChainColumnsNull(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	userID := mustCreateSupplier(t, client, "wd-manual")
+	seedSupplierWallet(t, txCtx, client, userID, 100)
+	repo := withdrawalRepoOn(client)
+
+	w, err := repo.Create(txCtx, service.SupplierWithdrawalCreateParams{
+		UserID:        userID,
+		Amount:        30,
+		PayoutChannel: "支付宝",
+		PayoutAccount: "alipay@example.com",
+		MaxPending:    1,
+	})
+	require.NoError(t, err)
+
+	assert.Nil(t, w.Network)
+	assert.Nil(t, w.TokenSymbol)
+	assert.Nil(t, w.TokenAddress)
+	assert.Zero(t, w.FeeAmount)
+
+	nullRows := querySingleInt(t, txCtx, client, `
+SELECT COUNT(*)::int FROM supplier_withdrawals
+WHERE id = $1 AND network IS NULL AND token_symbol IS NULL AND token_address IS NULL AND fee_amount = 0`,
+		w.ID)
+	assert.Equal(t, 1, nullRows, "人工单的链上列不是 NULL/0——worker 会把它当成链上单捞走")
+}

@@ -52,13 +52,20 @@ const supplierWithdrawalColumns = `
     id, user_id, amount::double precision, status,
     payout_channel, payout_account, user_note,
     ledger_id, reviewer_id, review_note, external_ref,
-    created_at, updated_at, resolved_at`
+    created_at, updated_at, resolved_at,
+    network, token_symbol, token_address, fee_amount::double precision`
 
+// supplierWithdrawalInsertSQL 建单。
+//
+// 链上那四列一律显式写进 INSERT，人工渠道传 NULL / 0——不靠列默认值。
+// 靠默认值意味着"这张单子是不是链上的"这个问题的答案有两个来源（代码传的值，
+// 和 schema 里的 DEFAULT），而它们可以不一致。
 const supplierWithdrawalInsertSQL = `
 INSERT INTO supplier_withdrawals (
-    user_id, amount, status, payout_channel, payout_account, user_note, created_at, updated_at
+    user_id, amount, status, payout_channel, payout_account, user_note, created_at, updated_at,
+    network, token_symbol, token_address, fee_amount
 )
-VALUES ($1, $2, 'pending', $3, $4, $5, NOW(), NOW())
+VALUES ($1, $2, 'pending', $3, $4, $5, NOW(), NOW(), $6, $7, $8, $9)
 RETURNING ` + supplierWithdrawalColumns
 
 // supplierWithdrawalCountPendingSQL 未决单计数。
@@ -192,6 +199,10 @@ func (r *supplierWithdrawalRepository) Create(ctx context.Context, params servic
 			strings.TrimSpace(params.PayoutChannel),
 			sealedAccount,
 			nullableTrimmedString(params.UserNote),
+			nullableTrimmedString(params.Network),
+			nullableTrimmedString(params.TokenSymbol),
+			nullableTrimmedString(params.TokenAddress),
+			params.FeeAmount,
 		)
 		if err != nil {
 			return fmt.Errorf("insert supplier withdrawal: %w", err)
@@ -443,18 +454,22 @@ type supplierWithdrawalScanner interface {
 
 func (c payoutAccountCipher) scanSupplierWithdrawal(row supplierWithdrawalScanner, out *service.SupplierWithdrawal) error {
 	var (
-		userNote    *string
-		ledgerID    *int64
-		reviewerID  *int64
-		reviewNote  *string
-		externalRef *string
-		resolvedAt  *time.Time
+		userNote     *string
+		ledgerID     *int64
+		reviewerID   *int64
+		reviewNote   *string
+		externalRef  *string
+		resolvedAt   *time.Time
+		network      *string
+		tokenSymbol  *string
+		tokenAddress *string
 	)
 	if err := row.Scan(
 		&out.ID, &out.UserID, &out.Amount, &out.Status,
 		&out.PayoutChannel, &out.PayoutAccount, &userNote,
 		&ledgerID, &reviewerID, &reviewNote, &externalRef,
 		&out.CreatedAt, &out.UpdatedAt, &resolvedAt,
+		&network, &tokenSymbol, &tokenAddress, &out.FeeAmount,
 	); err != nil {
 		return fmt.Errorf("scan supplier withdrawal: %w", err)
 	}
@@ -464,6 +479,9 @@ func (c payoutAccountCipher) scanSupplierWithdrawal(row supplierWithdrawalScanne
 	out.ReviewNote = reviewNote
 	out.ExternalRef = externalRef
 	out.ResolvedAt = resolvedAt
+	out.Network = network
+	out.TokenSymbol = tokenSymbol
+	out.TokenAddress = tokenAddress
 
 	// 解密放在这里而不是各个调用点：这是这张表**唯一**的 Scan，
 	// 把它放在这一行上，等于将来任何一条新的读路径都自动解了密。

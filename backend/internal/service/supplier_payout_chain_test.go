@@ -125,6 +125,87 @@ func TestToTokenAmountRefusesWhatItCannotPayExactly(t *testing.T) {
 	})
 }
 
+// SanitizeChainFee 的全部输入分区。
+//
+// 它是建单那条路径上唯一一个「决定要不要落库」的判断（见 applyChainSnapshot），
+// 而它的两类返回值对应两种完全不同的后果：回真 = 这个数会被写进 fee_amount 并
+// 从供给者的收益里扣掉；回假 = 这笔申请当场 503。把"算不出来"错判成 0 是这里
+// 最贵的一种错——它没有任何症状，只是让金库开始替所有人垫 gas。
+func TestSanitizeChainFeePartitionsUsableFromUnusable(t *testing.T) {
+	t.Run("落库不了的值一律回假，且不夹带一个 0 当结果", func(t *testing.T) {
+		for name, fee := range map[string]float64{
+			"NaN": math.NaN(),
+			"正无穷": math.Inf(1),
+			"负无穷": math.Inf(-1),
+			// 负手续费的现实来源是「币价配成了负数」或一次减法写反。
+			// 它落库后 net = amount - fee 会**大于** amount——平台倒贴。
+			"负数": -0.00000001,
+		} {
+			t.Run(name, func(t *testing.T) {
+				value, ok := SanitizeChainFee(fee)
+				assert.False(t, ok)
+				assert.Zero(t, value, "回假时还给了一个非零值，调用方一旦忘了看 ok 就会把它扣掉")
+			})
+		}
+	})
+
+	t.Run("零是一个合法的手续费", func(t *testing.T) {
+		// 与"算不出来"必须分得开：0 的正当来源是配置里的回落值被设成了 0，
+		// 那是运营的决定（平台承担 gas），不是故障。
+		value, ok := SanitizeChainFee(0)
+		assert.True(t, ok)
+		assert.Zero(t, value)
+	})
+
+	t.Run("收敛到账本的 8 位，四舍五入", func(t *testing.T) {
+		for _, tc := range []struct {
+			raw  float64
+			want float64
+		}{
+			{0.123456789123, 0.12345679}, // 第 9 位是 9，进位
+			{0.123456781, 0.12345678},    // 第 9 位是 1，舍去
+			{0.000000004, 0},             // 比账本精度还小 —— 收敛成 0，但仍然可用
+			{1.5, 1.5},                   // 位数够短的原样返回
+		} {
+			value, ok := SanitizeChainFee(tc.raw)
+			require.True(t, ok)
+			assert.Equal(t, tc.want, value)
+		}
+	})
+
+	t.Run("收敛过的值再收敛一次是它自己", func(t *testing.T) {
+		// 幂等是"服务算的 net 与数据库那一行算的 net 相等"这句话的另一种说法：
+		// 落库是一次 DECIMAL(20,8) 的收敛，如果我们这一次收敛的结果还能被它再改一次，
+		// 那两个数就还是对不上。
+		for _, raw := range []float64{0.123456789123, 1e-9, 12.345678915, 999999.99999999} {
+			once, ok := SanitizeChainFee(raw)
+			require.True(t, ok)
+			twice, ok := SanitizeChainFee(once)
+			require.True(t, ok)
+			assert.Equal(t, once, twice)
+		}
+	})
+}
+
+// 假客户端的 TokenAddress：默认给一个显然是假的地址，NoToken 时恒假。
+//
+// 这两个分支是 M3 建单路径上的开关——前者让单子带着链上四项落库，
+// 后者让它退回人工工单。联调时"为什么这张单子没走自动打款"的答案通常在这里。
+func TestMockChainTokenAddressSwitchesTheSettlementPath(t *testing.T) {
+	t.Run("默认给一个一眼假的地址", func(t *testing.T) {
+		address, ok := NewMockChainClient(MockChainOptions{}).TokenAddress(SupplierPayoutNetworkBSC, "USDT")
+		assert.True(t, ok)
+		assert.Equal(t, MockChainTokenAddress, address)
+		assert.Contains(t, address, "dead", "假地址长得像真的，联调时会被当成金库的真实配置抄走")
+	})
+
+	t.Run("NoToken 模拟金库里是另一种币", func(t *testing.T) {
+		address, ok := NewMockChainClient(MockChainOptions{NoToken: true}).TokenAddress(SupplierPayoutNetworkBSC, "USDT")
+		assert.False(t, ok)
+		assert.Empty(t, address, "回假时还给了个地址，调用方漏看 ok 就会拿它去转账")
+	})
+}
+
 func TestDisabledChainClientRefusesEverything(t *testing.T) {
 	ctx := context.Background()
 	client := NewDisabledChainClient(0.5)

@@ -13,6 +13,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
+	"github.com/Wei-Shaw/sub2api/internal/payoutchain"
 	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 	"github.com/Wei-Shaw/sub2api/internal/server"
@@ -311,8 +312,6 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	batchImageCleanupService := service.ProvideBatchImageCleanupService(batchImageRepository, accountRepository, configConfig)
 	batchImageHandler := handler.ProvideBatchImageHandler(batchImagePublicService, batchImageDownloadService, batchImageCleanupService, openAIGatewayHandler)
 	supplierOnboardingRepository := repository.NewSupplierOnboardingRepository(client)
-	// APEXONE-EXT: 失效事件台账。排在接入服务之前构造：接入的熔断闸和
-	// 下面生命周期任务的扫描器都吃它。
 	supplierIncidentRepository := repository.NewSupplierIncidentRepository(client)
 	supplierIncidentNotifier := service.NewSupplierIncidentNotifier(emailService, userRepository, settingService)
 	supplierIncidentService := service.NewSupplierIncidentService(supplierIncidentRepository, supplierIncidentNotifier)
@@ -323,13 +322,10 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	supplierAdminService := service.NewSupplierAdminService(supplierAdminRepository)
 	supplierWithdrawalRepository := repository.NewSupplierWithdrawalRepository(client, secretEncryptor)
 	supplierWithdrawalNotifier := service.ProvideSupplierWithdrawalNotifier(emailService, userRepository, settingService)
-	// APEXONE-EXT: 链上收款地址绑定。与提现仓储收同一个 secretEncryptor——
-	// 地址与收款账号是同一类「当事人换不掉」的东西，该由同一把密钥保护。
 	supplierPayoutWalletRepository := repository.NewSupplierPayoutWalletRepository(client, secretEncryptor)
 	supplierPayoutWalletService := service.NewSupplierPayoutWalletService(supplierPayoutWalletRepository)
-	supplierWithdrawalService := service.NewSupplierWithdrawalService(supplierWithdrawalRepository, supplierCreditRepository, settingService, supplierWithdrawalNotifier, supplierPayoutWalletService)
-	// APEXONE-EXT: 对账导出。仓储与提现仓储收同一个 secretEncryptor——
-	// 导出要把收款账号解回明文（那份文件就是打款工作单）。
+	supplierChainClient := payoutchain.ProvideChainClient()
+	supplierWithdrawalService := service.NewSupplierWithdrawalService(supplierWithdrawalRepository, supplierCreditRepository, settingService, supplierWithdrawalNotifier, supplierPayoutWalletService, supplierChainClient)
 	supplierExportRepository := repository.NewSupplierExportRepository(client, secretEncryptor)
 	supplierExportService := service.NewSupplierExportService(supplierExportRepository)
 	supplierHandler := handler.NewSupplierHandler(supplierOnboardingService, supplierCreditService, supplierAdminService, supplierWithdrawalService, supplierExportService, supplierIncidentService, supplierPayoutWalletService)

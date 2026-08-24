@@ -128,7 +128,12 @@ var ProviderSet = wire.NewSet(
 	// APEXONE-EXT: 双边市场——提现单仓储。
 	NewSupplierWithdrawalRepository,
 	// APEXONE-EXT: 双边市场——链上收款地址绑定仓储。
+	//
+	// 与提现仓储收同一个 secretEncryptor：链上地址与收款账号是同一类
+	// 「当事人换不掉」的东西（见迁移 234 文件头），该由同一把密钥保护。
 	NewSupplierPayoutWalletRepository,
+	// APEXONE-EXT: 双边市场——对账导出仓储。同样收那个 secretEncryptor：
+	// 导出要把收款账号解回明文，那份 CSV 本身就是人工打款的工作单。
 	NewSupplierExportRepository,
 	// APEXONE-EXT: 双边市场——供给号失效事件台账仓储。
 	NewSupplierIncidentRepository,

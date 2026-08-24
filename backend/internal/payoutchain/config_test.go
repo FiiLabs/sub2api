@@ -18,7 +18,7 @@ func setEnv(t *testing.T, values map[string]string) {
 	// 先把所有相关变量清空，免得跑测试的机器上恰好设了其中某一个。
 	for _, name := range []string{
 		envEnabled, envMock, envRPCURL, envSignerKey, envTokenAddress,
-		envDisperse, envChainID, envNativeUSD, envConfirmations,
+		envTokenSymbol, envDisperse, envChainID, envNativeUSD, envConfirmations,
 		envFallbackFee, envFeeMultiplier,
 	} {
 		t.Setenv(name, "")

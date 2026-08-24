@@ -682,7 +682,7 @@ func TestWithdrawalWorksWithoutNotifier(t *testing.T) {
 //     （ready()），所以不会 panic，而是返回 unavailable——比 panic 更糟：
 //     链上渠道会变成"服务不可用"，而运营会去查一个根本没坏的绑定服务。
 func TestNewWithdrawalServiceKeepsNilDepsNil(t *testing.T) {
-	svc := NewSupplierWithdrawalService(&supplierWithdrawalRepoStub{}, nil, nil, nil, nil)
+	svc := NewSupplierWithdrawalService(&supplierWithdrawalRepoStub{}, nil, nil, nil, nil, nil)
 	// 用 == nil 而不是 assert.Nil：testify 的 Nil 会对"接口里装着一个 nil 指针"
 	// 也返回 true，而那恰好就是这条测试要拦的东西——它会把自己要测的 bug 判成通过。
 	// 生产代码里的 `s.notifier == nil` 用的是这里这个语义。

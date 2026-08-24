@@ -33,6 +33,27 @@ type supplierWithdrawalView struct {
 	PayoutAccount string  `json:"payout_account"`
 	UserNote      *string `json:"user_note,omitempty"`
 
+	// ---- 链上结算（M3）。人工渠道的单子这几项是零值。----
+
+	// FeeAmount 这笔提现要付的 gas，从 Amount **内部**扣掉。
+	//
+	// 一定要给供给者看：他申请的是 100，到账的是 99.7，而那 0.3 的去向如果只存在于
+	// 数据库里，对他就是一笔凭空少掉的钱。**没有 omitempty**——人工单上它是 0，
+	// 而 0 与 undefined 对前端不是一回事：后者做减法会得到 NaN。
+	FeeAmount float64 `json:"fee_amount"`
+	// NetAmount 链上实际到账 = Amount - FeeAmount。
+	//
+	// 由后端算而不是让前端减一次：这是一个关于钱的公式，抄进 TypeScript 就有了
+	// 第二份，而两份迟早会在某次改动里分岔（比如将来手续费改成加在外面）。
+	NetAmount float64 `json:"net_amount"`
+	// Network / TokenSymbol 非空 = 这张单子由 worker 自动打款，界面可以说"几分钟"；
+	// 空 = 人工打款，界面该说的是"工作日内处理"。
+	//
+	// **不带 token_address**：合约地址是结算细节，对供给者是噪音，而它在管理端
+	// 与对账导出里都拿得到。
+	Network     *string `json:"network,omitempty"`
+	TokenSymbol *string `json:"token_symbol,omitempty"`
+
 	// LedgerID 申请时那条 withdraw 流水，供给者拿它把单子和账单页对上。
 	LedgerID *int64 `json:"ledger_id,omitempty"`
 
@@ -57,6 +78,10 @@ func toSupplierWithdrawalView(w *service.SupplierWithdrawal) supplierWithdrawalV
 		PayoutChannel: w.PayoutChannel,
 		PayoutAccount: w.PayoutAccount,
 		UserNote:      w.UserNote,
+		FeeAmount:     w.FeeAmount,
+		NetAmount:     w.NetAmount(),
+		Network:       w.Network,
+		TokenSymbol:   w.TokenSymbol,
 		LedgerID:      w.LedgerID,
 		ReviewNote:    w.ReviewNote,
 		ExternalRef:   w.ExternalRef,

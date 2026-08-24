@@ -216,6 +216,21 @@ export default {
         unbindSuccess: 'Payout address unbound.'
       },
 
+      // Fees. Three things have to be explicit: the fee comes out of the
+      // withdrawal amount (it is not charged on top), a quote is not a promise
+      // (what lands on the request is re-estimated at submission), and "no
+      // quote" does not mean "free" — it means the channel cannot settle
+      // on-chain right now and the request will be paid out manually.
+      fee: {
+        quote: 'Current network fee ≈ {fee}, deducted from the withdrawal amount; the estimate at submission time is what counts.',
+        fixed: 'Network fee {fee} (a configured fallback value), deducted from the withdrawal amount.',
+        netPreview: 'At this amount you would receive about {net}.',
+        notCovered: 'The amount must exceed the network fee, or the request is rejected outright.',
+        manualFallback: 'This channel cannot settle on-chain right now: your request will be paid out manually, with no fee.',
+        line: 'fee {fee} · net {net}',
+        auto: 'auto payout · {network}'
+      },
+
       state: {
         pending: 'Pending',
         paid: 'Paid',

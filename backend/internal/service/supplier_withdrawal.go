@@ -23,6 +23,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -44,6 +45,24 @@ var (
 	// ErrSupplierWithdrawalBelowMinimum 低于起提额。
 	ErrSupplierWithdrawalBelowMinimum = infraerrors.BadRequest(
 		"SUPPLIER_WITHDRAWAL_BELOW_MINIMUM", "amount is below the minimum withdrawal")
+	// ErrSupplierWithdrawalFeeExceedsAmount 手续费吃掉了整笔金额。
+	//
+	// 链上渠道的 gas 从供给者收益里扣（链上实发 = amount - fee）。fee ≥ amount 时
+	// 实发为零或负数——**必须在建单之前**拦住：让这张单子建起来，供给者的钱会被
+	// 从可用区扣走，然后 worker 发现没得可发，于是一笔钱卡在一张永远推不动的单子上。
+	//
+	// 4xx 而不是 5xx：这不是故障，是"你提的太少了"，而正确的动作在调用方手里
+	// （提多一点，或者等 gas 便宜一点）。运营的对应动作是把起提额调高。
+	ErrSupplierWithdrawalFeeExceedsAmount = infraerrors.BadRequest(
+		"SUPPLIER_WITHDRAWAL_FEE_EXCEEDS_AMOUNT", "the network fee is not covered by this amount")
+	// ErrSupplierWithdrawalFeeUnavailable 手续费估算不是一个能落库的数。
+	//
+	// 5xx 而不是 4xx：调用方没做错任何事，是链上客户端算出了 NaN / 无穷 / 负数
+	// （币价配成 0 之类）。把它当成 0 放行，就是静默地让金库替所有人垫 gas；
+	// 把它落库，DECIMAL(20,8) 那一列会替我们做一次没人看见的截断。
+	// 两种都不如让这笔申请当场失败——它指向运维，而运维改完配置这条路就通了。
+	ErrSupplierWithdrawalFeeUnavailable = infraerrors.ServiceUnavailable(
+		"SUPPLIER_WITHDRAWAL_FEE_UNAVAILABLE", "the network fee cannot be determined right now")
 	// ErrSupplierWithdrawalTooManyPending 未决单已达上限。
 	ErrSupplierWithdrawalTooManyPending = infraerrors.BadRequest(
 		"SUPPLIER_WITHDRAWAL_TOO_MANY_PENDING", "too many pending withdrawals")
@@ -95,6 +114,27 @@ type SupplierWithdrawal struct {
 	PayoutAccount string  `json:"payout_account"`
 	UserNote      *string `json:"user_note,omitempty"`
 
+	// ---- 链上结算（迁移 234）。人工渠道的单子这四项全是零值。----
+
+	// Network 非空 = 这张单子由 worker 上链结算；空 = 沿用人工打款。
+	//
+	// 用一个可空列分辨两条路径，而不是加一个 is_onchain 布尔：布尔为真时还要再问
+	// 一次"那是哪条链"，于是两个字段就能不一致。
+	Network *string `json:"network,omitempty"`
+	// TokenSymbol 仅作展示。
+	TokenSymbol *string `json:"token_symbol,omitempty"`
+	// TokenAddress 稳定币合约地址，**建单那一刻的快照**。
+	//
+	// 落地的是地址而不是符号：符号→地址的映射来自配置，配置一改，历史单子上
+	// 那个 "USDT" 指的是哪个合约就被悄悄改写了。钉在行上，这张单子发的是什么，
+	// 十年后还答得出来。
+	TokenAddress *string `json:"token_address,omitempty"`
+	// FeeAmount gas 手续费，从 Amount **内部**切分出来（链上实发 = Amount - FeeAmount）。
+	//
+	// Amount 仍然是从可用区扣走的总额，这一条不能改：ledger 的 withdraw 流水、
+	// 退款、对账导出全部按 Amount 走。于是退款时按 Amount 全额退——gas 还没花出去。
+	FeeAmount float64 `json:"fee_amount"`
+
 	// LedgerID 申请时那条 withdraw 流水。供给者对账时用它把单子和流水对上。
 	LedgerID *int64 `json:"ledger_id,omitempty"`
 
@@ -114,6 +154,26 @@ func (w *SupplierWithdrawal) Pending() bool {
 	return w != nil && w.Status == SupplierWithdrawalStatusPending
 }
 
+// OnChain 这张单子是不是由 worker 上链结算。
+//
+// 判据只有 Network 一个，且要求它非空**且非空串**：一条 network = '' 的行
+// 在数据库里是完全合法的，而它既不是"人工"也不是任何一条链——把它归到人工那边，
+// 是因为人工那条路上有人看着。
+func (w *SupplierWithdrawal) OnChain() bool {
+	return w != nil && w.Network != nil && strings.TrimSpace(*w.Network) != ""
+}
+
+// NetAmount 链上实际到账的金额 = 总额 - 手续费。
+//
+// 它不落库：落一个可以由另外两列算出来的数，就多了一处能与它们不一致的地方，
+// 而不一致时没人知道该信哪个。
+func (w *SupplierWithdrawal) NetAmount() float64 {
+	if w == nil {
+		return 0
+	}
+	return w.Amount - w.FeeAmount
+}
+
 // SupplierWithdrawalCreateParams 是一次申请。
 type SupplierWithdrawalCreateParams struct {
 	UserID        int64
@@ -121,6 +181,13 @@ type SupplierWithdrawalCreateParams struct {
 	PayoutChannel string
 	PayoutAccount string
 	UserNote      string
+	// Network / TokenSymbol / TokenAddress / FeeAmount 链上结算的四项快照，
+	// 人工渠道全传零值。它们由服务层在建单**之前**定下来（渠道注册表 + 链上客户端），
+	// 不让仓储自己去查：一条 SQL 依赖一次 RPC 调用，事务就会被一次网络抖动拖住。
+	Network      string
+	TokenSymbol  string
+	TokenAddress string
+	FeeAmount    float64
 	// MaxPending 允许的未决单上限，由服务层从设置里读出来传进来。
 	//
 	// 不让仓储自己去读设置：那会让一条 SQL 依赖一个带缓存的服务，

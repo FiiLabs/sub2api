@@ -217,6 +217,24 @@ func (c *Client) EstimateFee(ctx context.Context, network string) service.ChainF
 	}
 }
 
+// TokenAddress 回答"这条链上的这种币，合约地址是多少"。
+//
+// 只在**建单**那一刻被调用一次，把地址快照进单子（迁移 234）。此后打款一律读单子上
+// 那一列，不再问这里——配置会改，而一张三个月前的单子该发哪个合约的币，
+// 答案必须还是三个月前那个。
+//
+// 币种符号对不上就回假，不是回一个"反正只有一种币"的地址：把 USDC 的合约地址
+// 填进一个只认 USDT 的部署，是一件既不报错也不被发现的事，直到有人收到了错的币。
+func (c *Client) TokenAddress(network, symbol string) (string, bool) {
+	if err := c.checkNetwork(network); err != nil {
+		return "", false
+	}
+	if !strings.EqualFold(strings.TrimSpace(symbol), strings.TrimSpace(c.cfg.TokenSymbol)) {
+		return "", false
+	}
+	return formatAddress(c.token), true
+}
+
 // NextNonce 取金库地址下一个可用的 nonce。
 func (c *Client) NextNonce(ctx context.Context, network string) (uint64, error) {
 	if err := c.checkNetwork(network); err != nil {
