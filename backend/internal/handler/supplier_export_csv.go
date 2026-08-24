@@ -96,6 +96,11 @@ var supplierWithdrawalCSVHeader = []string{
 	"payout_channel", "payout_account", "user_note",
 	"ledger_id", "reviewer_id", "reviewer_email", "review_note", "external_ref",
 	"created_at", "resolved_at",
+	// 链上结算列（M3/M4）一律**追加在末尾**：这份文件的下游可能按列序号读，
+	// 往中间插列等于把它们的每个值都挪一格。人工单上这五列是空串/0。
+	// net_amount 由数据库算（amount - fee_amount），与服务层同数有真库测试钉着；
+	// 财务对链上流水用的就是它 + tx_hash。
+	"network", "token_symbol", "fee_amount", "net_amount", "tx_hash",
 }
 
 // supplierWithdrawalCSVRow 把一张单子摊成一行。顺序必须与表头逐字对应。
@@ -116,6 +121,11 @@ func supplierWithdrawalCSVRow(row *service.SupplierWithdrawalExportRow) []string
 		csvText(row.ExternalRef),
 		csvTime(row.CreatedAt),
 		csvTimePtr(row.ResolvedAt),
+		csvText(row.Network),
+		csvText(row.TokenSymbol),
+		row.FeeAmount,  // NUMERIC 原文，同 amount 不转义
+		row.NetAmount,  // 同上
+		csvText(row.TxHash),
 	}
 }
 

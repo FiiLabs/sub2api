@@ -77,6 +77,23 @@ type SupplierWithdrawalExportRow struct {
 
 	CreatedAt  time.Time
 	ResolvedAt *time.Time
+
+	// ---- 链上结算（M3/M4）。人工单上全是空串/零。----
+
+	// Network / TokenSymbol 空 = 人工打款。财务按它把这份文件劈成两半：
+	// 人工的对银行流水，链上的对区块浏览器。
+	Network     string
+	TokenSymbol string
+	// FeeAmount NUMERIC 原文。链上实发 = amount - fee_amount（见 NetAmount 列）。
+	FeeAmount string
+	// NetAmount (amount - fee_amount) 的 NUMERIC 原文，由数据库算——
+	// 「按库里那一行算的 net 与服务层是同一个数」有真库测试钉着
+	// （TestSupplierWithdrawal_ChainSnapshotRoundTrips），这一列因此
+	// 与界面上显示的净额必然一致。
+	NetAmount string
+	// TxHash 链上交易哈希。paid 的链上单里它与 external_ref 同值（刻意冗余：
+	// external_ref 将来可能装别的渠道的凭证，这一列永远只装哈希）。
+	TxHash string
 }
 
 // SupplyLedgerExportRow 是导出文件里的一条钱包流水。

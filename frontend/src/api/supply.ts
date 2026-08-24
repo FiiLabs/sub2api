@@ -130,7 +130,11 @@ export interface SupplyAgreement {
 export interface SupplyWithdrawal {
   id: number
   amount: number
-  /** pending | paid | rejected | canceled。只有 pending 能撤回。 */
+  /**
+   * pending | processing | failed | paid | rejected | canceled。
+   * 只有 pending 能撤回：processing 是 worker 正在上链（此刻撤回可能与一笔
+   * 在途转账同时成立），failed 在等运营裁决（钱还挂在单子上）。
+   */
   status: string
   payout_channel: string
   payout_account: string

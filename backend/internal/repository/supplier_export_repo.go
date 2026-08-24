@@ -71,7 +71,12 @@ SELECT w.id,
        COALESCE(w.review_note, ''),
        COALESCE(w.external_ref, ''),
        w.created_at,
-       w.resolved_at
+       w.resolved_at,
+       COALESCE(w.network, ''),
+       COALESCE(w.token_symbol, ''),
+       w.fee_amount::text,
+       (w.amount - w.fee_amount)::text,
+       COALESCE(w.tx_hash, '')
 FROM supplier_withdrawals w
 LEFT JOIN users u ON u.id = w.user_id
 LEFT JOIN users r ON r.id = w.reviewer_id`
@@ -111,6 +116,7 @@ func (r *supplierExportRepository) StreamWithdrawals(
 			&row.PayoutChannel, &sealed, &row.UserNote,
 			&row.LedgerID, &row.ReviewerID, &row.ReviewerEmail, &row.ReviewNote, &row.ExternalRef,
 			&row.CreatedAt, &resolvedAt,
+			&row.Network, &row.TokenSymbol, &row.FeeAmount, &row.NetAmount, &row.TxHash,
 		); err != nil {
 			return false, fmt.Errorf("scan supplier withdrawal export row: %w", err)
 		}

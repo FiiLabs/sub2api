@@ -392,3 +392,61 @@ VALUES ($1, $2, 1, $3, NOW())`, userID, seed.action, seed.at)
 		UserID: userID, Action: "accrue", StartAt: &start, EndAt: &end}),
 		"动作筛子没生效")
 }
+
+// 链上单的五个新列（M3/M4）逐个出现在导出行里；人工单上它们全是空串/零。
+//
+// 这五列是财务把对账文件劈成两半的依据：人工的对银行流水，链上的拿
+// net_amount + tx_hash 对区块浏览器。少一列不会报错——文件照样能下载、
+// 格式正常，只是链上那一半永远对不上。
+func TestSupplierExport_CarriesChainColumns(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	userID := mustCreateSupplier(t, client, "exp-chain")
+	seedSupplierWallet(t, txCtx, client, userID, 200)
+	repo := withdrawalRepoOn(client)
+	queue := payoutQueueOn(client)
+
+	// 一张走完 worker 全程的链上单。
+	onchain := createOnchainWithdrawal(t, txCtx, repo, userID)
+	require.NoError(t, queue.BeginPayout(txCtx, onchain.ID, 0))
+	require.NoError(t, queue.RecordPayoutTx(txCtx, onchain.ID, "0xchain-hash"))
+	_, err := queue.FinishPayout(txCtx, service.SupplierPayoutFinishParams{
+		ID: onchain.ID, Status: service.SupplierWithdrawalStatusPaid, TxHash: "0xchain-hash",
+	})
+	require.NoError(t, err)
+
+	// 一张人工单作对照。
+	manual, err := repo.Create(txCtx, service.SupplierWithdrawalCreateParams{
+		UserID: userID, Amount: 20, PayoutChannel: "bank", PayoutAccount: "acct", MaxPending: 10,
+	})
+	require.NoError(t, err)
+
+	rows, _ := collectWithdrawals(t, txCtx, exportRepoOn(client),
+		service.SupplierWithdrawalFilter{UserID: userID}, 0)
+	require.Len(t, rows, 2)
+	byID := map[int64]service.SupplierWithdrawalExportRow{}
+	for _, row := range rows {
+		byID[row.ID] = row
+	}
+
+	chain := byID[onchain.ID]
+	assert.Equal(t, "bsc", chain.Network)
+	assert.Equal(t, "USDT", chain.TokenSymbol)
+	// NUMERIC 原文，不经过 float64——建单传的 0.3 落库后就是这个形态。
+	assert.Equal(t, "0.30000000", chain.FeeAmount)
+	// net 由数据库算：amount(30) - fee(0.3)。与服务层同数由
+	// TestSupplierWithdrawal_ChainSnapshotRoundTrips 钉着。
+	assert.Equal(t, "29.70000000", chain.NetAmount)
+	assert.Equal(t, "0xchain-hash", chain.TxHash)
+	assert.Equal(t, "0xchain-hash", chain.ExternalRef, "paid 的链上单里 external_ref 与 tx_hash 同源")
+
+	blank := byID[manual.ID]
+	assert.Empty(t, blank.Network)
+	assert.Empty(t, blank.TokenSymbol)
+	assert.Equal(t, "0.00000000", blank.FeeAmount, "人工单的手续费是 NUMERIC 的零，不是空串——它是数字列")
+	assert.Equal(t, "20.00000000", blank.NetAmount, "人工单全额到手")
+	assert.Empty(t, blank.TxHash)
+}
