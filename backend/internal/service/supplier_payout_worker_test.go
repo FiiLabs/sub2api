@@ -41,9 +41,15 @@ type payoutQueueStub struct {
 
 	begins   []payoutBegin
 	beginErr error
+	// beginErrFor 只对指定单号注错——批量测试要让组里**一张**掉队而其余照走。
+	beginErrFor map[int64]error
 
-	records   []struct{ ID int64; TxHash string }
-	recordErr error
+	records []struct {
+		ID     int64
+		TxHash string
+	}
+	recordErr    error
+	recordErrFor map[int64]error
 
 	finishes  []SupplierPayoutFinishParams
 	finishErr error
@@ -59,6 +65,9 @@ func (s *payoutQueueStub) ClaimPayoutDue(context.Context, int, time.Duration) ([
 }
 
 func (s *payoutQueueStub) BeginPayout(_ context.Context, id int64, nonce uint64) error {
+	if err, ok := s.beginErrFor[id]; ok {
+		return err
+	}
 	if s.beginErr != nil {
 		return s.beginErr
 	}
@@ -67,10 +76,16 @@ func (s *payoutQueueStub) BeginPayout(_ context.Context, id int64, nonce uint64)
 }
 
 func (s *payoutQueueStub) RecordPayoutTx(_ context.Context, id int64, txHash string) error {
+	if err, ok := s.recordErrFor[id]; ok {
+		return err
+	}
 	if s.recordErr != nil {
 		return s.recordErr
 	}
-	s.records = append(s.records, struct{ ID int64; TxHash string }{id, txHash})
+	s.records = append(s.records, struct {
+		ID     int64
+		TxHash string
+	}{id, txHash})
 	return nil
 }
 
@@ -94,9 +109,11 @@ type unknownConfirmChain struct {
 	*MockChainClient
 	confirmErr    error
 	confirmStatus string
+	confirmCalls  int // 数查询次数：一组共享哈希的单子只该问链一次
 }
 
 func (c *unknownConfirmChain) WaitForConfirmation(ctx context.Context, network, txHash string) (ChainConfirmation, error) {
+	c.confirmCalls++
 	if c.confirmErr != nil {
 		return ChainConfirmation{}, c.confirmErr
 	}
@@ -171,14 +188,19 @@ func TestPayoutWorkerPaysNetToTheBoundAddress(t *testing.T) {
 	assert.Empty(t, repo.releases, "快乐路径不该有任何一次退避")
 }
 
-// 多张单子顺序处理，nonce 逐张递增——这是"顺序、不并发"的可观测形态。
+// 不同币种的单子各自成组、顺序处理，nonce 逐张递增——这是"顺序、不并发"的
+// 可观测形态。同币种的两张不走这里：它们会合成一笔批量（见 M5 那组测试）。
 func TestPayoutWorkerSettlesSequentiallyWithFreshNonces(t *testing.T) {
-	repo := &payoutQueueStub{due: []SupplierWithdrawal{onchainDueWithdrawal(1), onchainDueWithdrawal(2)}}
+	second := onchainDueWithdrawal(2)
+	otherToken := "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d" // BSC 上的 USDC
+	second.TokenAddress = &otherToken
+	repo := &payoutQueueStub{due: []SupplierWithdrawal{onchainDueWithdrawal(1), second}}
 	chain := NewMockChainClient(MockChainOptions{})
 	payoutWorkerOn(repo, chain).RunOnce(context.Background())
 
 	transfers := chain.Transfers()
 	require.Len(t, transfers, 2)
+	assert.Empty(t, chain.Batches(), "不同币种绝不能进同一笔批量——那是拿 A 币的额度发 B 币")
 	assert.Equal(t, uint64(0), *transfers[0].Nonce)
 	assert.Equal(t, uint64(1), *transfers[1].Nonce, "第二张必须拿到广播后前进过的 nonce")
 	require.Len(t, repo.finishes, 2)
@@ -400,16 +422,41 @@ func TestPayoutWorkerFailsCorruptSnapshots(t *testing.T) {
 }
 
 // 单轮预算耗尽 → 立刻收手，剩下的单子留给租约到期后的下一轮。
+//
+// 预算闸在确认、广播两个循环里各有一道，**必须分开钉**：确认组一触闸整轮
+// 就返回，所以「确认+广播混着放」的场景永远走不到广播段那道闸——第一轮
+// 变异矩阵先后抓出两道闸各自没被测到（W13 GREEN 两次），就是这么漏的。
 func TestPayoutWorkerStopsWhenBudgetExpires(t *testing.T) {
-	repo := &payoutQueueStub{due: []SupplierWithdrawal{onchainDueWithdrawal(1), onchainDueWithdrawal(2)}}
-	chain := NewMockChainClient(MockChainOptions{})
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	ctxDone := func() context.Context {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		return ctx
+	}
 
-	payoutWorkerOn(repo, chain).RunOnce(ctx)
+	t.Run("确认段", func(t *testing.T) {
+		confirming := onchainDueWithdrawal(3)
+		hash := "0xwaiting"
+		broadcasted := time.Now().Add(-time.Minute)
+		confirming.TxHash = &hash
+		confirming.BroadcastedAt = &broadcasted
+		confirming.Status = SupplierWithdrawalStatusProcessing
 
-	assert.Empty(t, chain.Transfers())
-	assert.Empty(t, repo.finishes)
+		repo := &payoutQueueStub{due: []SupplierWithdrawal{confirming}}
+		chain := NewMockChainClient(MockChainOptions{})
+		payoutWorkerOn(repo, chain).RunOnce(ctxDone())
+
+		assert.Empty(t, repo.finishes, "预算耗尽后连确认都不该做——Mock 的链无视 ctx，会把单子标成 paid")
+	})
+
+	t.Run("广播段", func(t *testing.T) {
+		repo := &payoutQueueStub{due: []SupplierWithdrawal{onchainDueWithdrawal(1), onchainDueWithdrawal(2)}}
+		chain := NewMockChainClient(MockChainOptions{})
+		payoutWorkerOn(repo, chain).RunOnce(ctxDone())
+
+		assert.Empty(t, chain.Transfers())
+		assert.Empty(t, chain.Batches())
+		assert.Empty(t, repo.finishes)
+	})
 }
 
 // 放弃期限的 reason 会被写进 last_error 给运营看——顺带钉住给-up 只对
@@ -438,4 +485,264 @@ func TestPayoutWorkerSkipsRoundWhenClaimFails(t *testing.T) {
 	assert.Empty(t, repo.begins)
 	assert.Empty(t, repo.finishes)
 	assert.Empty(t, repo.releases)
+}
+
+// ============================================================================
+// 批量发放（M5）
+// ============================================================================
+
+// batchProbeChain 记录「额度检查」与「要号」的先后。这条顺序是批量路径上
+// 唯一一条看不见的硬约束：approve 自己要占金库地址上的一个 nonce，
+// 顺序反了它会把我们刚要到的号吃掉，批量交易重发时撞 nonce too low。
+type batchProbeChain struct {
+	*MockChainClient
+	calls        []string
+	allowanceErr error
+	topUp        *ChainAllowanceTopUp
+}
+
+func (c *batchProbeChain) EnsureBatchAllowance(ctx context.Context, params ChainBatchParams) (*ChainAllowanceTopUp, error) {
+	c.calls = append(c.calls, "allowance")
+	if c.allowanceErr != nil {
+		return nil, c.allowanceErr
+	}
+	if c.topUp != nil {
+		return c.topUp, nil
+	}
+	return c.MockChainClient.EnsureBatchAllowance(ctx, params)
+}
+
+func (c *batchProbeChain) NextNonce(ctx context.Context, network string) (uint64, error) {
+	c.calls = append(c.calls, "nonce")
+	return c.MockChainClient.NextNonce(ctx, network)
+}
+
+// 同币种多张 → 一笔批量：一个 nonce、一个哈希、每张的净额与地址逐项对上。
+func TestPayoutWorkerBatchesSameTokenOrders(t *testing.T) {
+	repo := &payoutQueueStub{due: []SupplierWithdrawal{
+		onchainDueWithdrawal(1), onchainDueWithdrawal(2), onchainDueWithdrawal(3),
+	}}
+	chain := NewMockChainClient(MockChainOptions{})
+	payoutWorkerOn(repo, chain).RunOnce(context.Background())
+
+	assert.Empty(t, chain.Transfers(), "该合批的单子逐笔发，就是把三笔 gas 花成三倍")
+	batches := chain.Batches()
+	require.Len(t, batches, 1)
+	require.Len(t, batches[0].Items, 3)
+	for _, item := range batches[0].Items {
+		assert.InDelta(t, 99.7, item.Amount, 1e-9, "批量里的每一项都必须是净额")
+		assert.Equal(t, payoutTestAccount, item.To)
+	}
+	assert.Equal(t, payoutTestToken, batches[0].Token, "批量发的必须是单子上快照的那个合约")
+	require.NotNil(t, batches[0].Nonce)
+	assert.Equal(t, uint64(0), *batches[0].Nonce)
+
+	// 整组共享一个 nonce（这是恢复逻辑按 nonce 归队的前提）。
+	require.Len(t, repo.begins, 3)
+	for _, begin := range repo.begins {
+		assert.Equal(t, uint64(0), begin.Nonce)
+	}
+	// 整组共享一个哈希，三张全部 paid。
+	require.Len(t, repo.records, 3)
+	require.Len(t, repo.finishes, 3)
+	for _, finish := range repo.finishes {
+		assert.Equal(t, SupplierWithdrawalStatusPaid, finish.Status)
+		assert.Equal(t, repo.records[0].TxHash, finish.TxHash)
+	}
+	assert.Empty(t, repo.releases)
+}
+
+// 额度检查必须排在要号之前——顺序错了 approve 会吃掉我们要用的号。
+func TestPayoutWorkerBatchChecksAllowanceBeforeReservingNonce(t *testing.T) {
+	repo := &payoutQueueStub{due: []SupplierWithdrawal{onchainDueWithdrawal(1), onchainDueWithdrawal(2)}}
+	chain := &batchProbeChain{MockChainClient: NewMockChainClient(MockChainOptions{})}
+	payoutWorkerOn(repo, chain).RunOnce(context.Background())
+
+	require.GreaterOrEqual(t, len(chain.calls), 2)
+	assert.Equal(t, []string{"allowance", "nonce"}, chain.calls[:2])
+}
+
+// 没配批量合约 = 没有优化，不是故障：安静退回逐笔，每张自己的 nonce。
+func TestPayoutWorkerBatchFallsBackToSinglesWithoutContract(t *testing.T) {
+	repo := &payoutQueueStub{due: []SupplierWithdrawal{onchainDueWithdrawal(1), onchainDueWithdrawal(2)}}
+	chain := NewMockChainClient(MockChainOptions{NoBatch: true})
+	payoutWorkerOn(repo, chain).RunOnce(context.Background())
+
+	assert.Empty(t, chain.Batches())
+	transfers := chain.Transfers()
+	require.Len(t, transfers, 2)
+	assert.NotEqual(t, *transfers[0].Nonce, *transfers[1].Nonce, "逐笔回退时两张不能共用一个号")
+	require.Len(t, repo.finishes, 2)
+}
+
+// 额度检查失败 → 整组交还，一个 nonce 都还没钉、一个字节都没广播。
+func TestPayoutWorkerBatchAllowanceFailureReleasesTheGroup(t *testing.T) {
+	repo := &payoutQueueStub{due: []SupplierWithdrawal{onchainDueWithdrawal(1), onchainDueWithdrawal(2)}}
+	chain := &batchProbeChain{
+		MockChainClient: NewMockChainClient(MockChainOptions{}),
+		allowanceErr:    assert.AnError,
+	}
+	payoutWorkerOn(repo, chain).RunOnce(context.Background())
+
+	assert.Empty(t, repo.begins, "额度都没确认就钉 nonce，等于把一组单子锁死在一个可能发不出去的号上")
+	assert.Empty(t, chain.Batches())
+	assert.Empty(t, repo.finishes)
+	require.Len(t, repo.releases, 2)
+}
+
+// 批量广播失败 → 整组带着钉住的 nonce 回队；没有任何终局。
+func TestPayoutWorkerBatchBroadcastFailureKeepsTheGroupPinned(t *testing.T) {
+	repo := &payoutQueueStub{due: []SupplierWithdrawal{onchainDueWithdrawal(1), onchainDueWithdrawal(2)}}
+	chain := NewMockChainClient(MockChainOptions{})
+	chain.FailNextBatch("rpc timeout")
+	payoutWorkerOn(repo, chain).RunOnce(context.Background())
+
+	require.Len(t, repo.begins, 2, "广播前 nonce 必须已经钉进整组——重播归队全靠它")
+	assert.Empty(t, repo.finishes)
+	require.Len(t, repo.releases, 2)
+	for _, release := range repo.releases {
+		assert.Contains(t, release.LastError, "batch broadcast")
+	}
+}
+
+// 批量在链上 revert → 整组 failed（all-or-nothing，不存在"半成"），不退款。
+func TestPayoutWorkerBatchRevertFailsEveryOrder(t *testing.T) {
+	repo := &payoutQueueStub{due: []SupplierWithdrawal{onchainDueWithdrawal(1), onchainDueWithdrawal(2)}}
+	chain := NewMockChainClient(MockChainOptions{Outcome: ChainTxFailed})
+	payoutWorkerOn(repo, chain).RunOnce(context.Background())
+
+	require.Len(t, repo.finishes, 2)
+	for _, finish := range repo.finishes {
+		assert.Equal(t, SupplierWithdrawalStatusFailed, finish.Status)
+		assert.Contains(t, finish.Reason, "reverted")
+	}
+}
+
+// 恢复期：共享同一个落库 nonce 的组原封归队，用**那个** nonce 重播，
+// 不做额度检查、不重新要号——两者都可能占掉那个还没花出去的号。
+func TestPayoutWorkerBatchRecoveryReusesTheSharedNonce(t *testing.T) {
+	first := onchainDueWithdrawal(1)
+	second := onchainDueWithdrawal(2)
+	pinned := int64(5)
+	first.ChainNonce = &pinned
+	second.ChainNonce = &pinned
+	first.Status = SupplierWithdrawalStatusProcessing
+	second.Status = SupplierWithdrawalStatusProcessing
+	repo := &payoutQueueStub{due: []SupplierWithdrawal{first, second}}
+	chain := &batchProbeChain{MockChainClient: NewMockChainClient(MockChainOptions{})}
+
+	payoutWorkerOn(repo, chain).RunOnce(context.Background())
+
+	assert.NotContains(t, chain.calls, "allowance",
+		"恢复期补 approve 会占一个新号，却换不回任何东西（额度要么已扣、要么原封没动）")
+	assert.NotContains(t, chain.calls, "nonce", "恢复期换号 = 双付")
+	batches := chain.Batches()
+	require.Len(t, batches, 1)
+	require.NotNil(t, batches[0].Nonce)
+	assert.Equal(t, uint64(5), *batches[0].Nonce)
+	require.Len(t, batches[0].Items, 2)
+	require.Len(t, repo.finishes, 2)
+}
+
+// 恢复期批次撞上被关掉的批量配置：整组共用一个号拆不成单笔（每笔要自己的号，
+// 换号 = 双付）——只能带长退避原地等配置修回来，并把话说清楚。
+func TestPayoutWorkerBatchRecoveryBlockedWithoutContract(t *testing.T) {
+	first := onchainDueWithdrawal(1)
+	second := onchainDueWithdrawal(2)
+	pinned := int64(5)
+	first.ChainNonce = &pinned
+	second.ChainNonce = &pinned
+	repo := &payoutQueueStub{due: []SupplierWithdrawal{first, second}}
+	chain := NewMockChainClient(MockChainOptions{NoBatch: true})
+
+	payoutWorkerOn(repo, chain).RunOnce(context.Background())
+
+	assert.Empty(t, chain.Transfers(), "共用一个 nonce 的组拆成单笔广播，第二笔就是双付的候选")
+	assert.Empty(t, chain.Batches())
+	assert.Empty(t, repo.finishes)
+	require.Len(t, repo.releases, 2)
+	for _, release := range repo.releases {
+		assert.Equal(t, supplierPayoutDisabledRetryDelay, release.RetryAfter)
+		assert.Contains(t, release.LastError, "share nonce")
+	}
+}
+
+// 组里一张在钉号时发现已被别人处理 → 它无声退出，其余照播（同号安全，
+// 组成允许缩水；换号才是禁区）。
+func TestPayoutWorkerBatchShrinksWhenAnOrderWasResolvedElsewhere(t *testing.T) {
+	repo := &payoutQueueStub{
+		due:         []SupplierWithdrawal{onchainDueWithdrawal(1), onchainDueWithdrawal(2)},
+		beginErrFor: map[int64]error{2: ErrSupplierWithdrawalNotPending},
+	}
+	chain := NewMockChainClient(MockChainOptions{})
+	payoutWorkerOn(repo, chain).RunOnce(context.Background())
+
+	batches := chain.Batches()
+	require.Len(t, batches, 1)
+	require.Len(t, batches[0].Items, 1, "掉队的那张不能再出现在批量里——它的钱已经被别的路径处理了")
+	require.Len(t, repo.finishes, 1)
+	assert.Equal(t, int64(1), repo.finishes[0].ID)
+	assert.Empty(t, repo.releases, "掉队不是错误，不需要退避")
+}
+
+// 哈希没落库的那张不能进终局：它退出确认组、带着钉住的 nonce 回队；
+// 其余照常走到 paid。
+func TestPayoutWorkerBatchDropsOrderWhoseHashIsNotDurable(t *testing.T) {
+	repo := &payoutQueueStub{
+		due:          []SupplierWithdrawal{onchainDueWithdrawal(1), onchainDueWithdrawal(2)},
+		recordErrFor: map[int64]error{2: assert.AnError},
+	}
+	chain := NewMockChainClient(MockChainOptions{})
+	payoutWorkerOn(repo, chain).RunOnce(context.Background())
+
+	require.Len(t, repo.finishes, 1)
+	assert.Equal(t, int64(1), repo.finishes[0].ID)
+	assert.Equal(t, SupplierWithdrawalStatusPaid, repo.finishes[0].Status)
+	require.Len(t, repo.releases, 1)
+	assert.Equal(t, int64(2), repo.releases[0].ID)
+	assert.Contains(t, repo.releases[0].LastError, "record tx hash")
+}
+
+// 共享一个哈希的确认组只问链一次，一次的答案定整组。
+func TestPayoutWorkerConfirmGroupQueriesTheChainOnce(t *testing.T) {
+	first := onchainDueWithdrawal(1)
+	second := onchainDueWithdrawal(2)
+	hash := "0xbatch-hash"
+	broadcasted := time.Now().Add(-time.Minute)
+	for _, w := range []*SupplierWithdrawal{&first, &second} {
+		w.TxHash = &hash
+		w.BroadcastedAt = &broadcasted
+		w.Status = SupplierWithdrawalStatusProcessing
+	}
+	repo := &payoutQueueStub{due: []SupplierWithdrawal{first, second}}
+	chain := &unknownConfirmChain{MockChainClient: NewMockChainClient(MockChainOptions{})}
+
+	payoutWorkerOn(repo, chain).RunOnce(context.Background())
+
+	assert.Equal(t, 1, chain.confirmCalls, "同一个哈希问两次链，答案不会更对，只会更慢")
+	require.Len(t, repo.finishes, 2)
+	for _, finish := range repo.finishes {
+		assert.Equal(t, SupplierWithdrawalStatusPaid, finish.Status)
+		assert.Equal(t, hash, finish.TxHash)
+	}
+}
+
+// 钉了**不同** nonce 的恢复单绝不能进同一批：批量只有一个 nonce 字段，
+// 合并意味着其中一张被换号——那正是双付的形状。
+func TestPayoutWorkerRecoveryKeepsDistinctNoncesApart(t *testing.T) {
+	first := onchainDueWithdrawal(1)
+	second := onchainDueWithdrawal(2)
+	nonceA, nonceB := int64(5), int64(7)
+	first.ChainNonce = &nonceA
+	second.ChainNonce = &nonceB
+	repo := &payoutQueueStub{due: []SupplierWithdrawal{first, second}}
+	chain := NewMockChainClient(MockChainOptions{})
+
+	payoutWorkerOn(repo, chain).RunOnce(context.Background())
+
+	assert.Empty(t, chain.Batches())
+	transfers := chain.Transfers()
+	require.Len(t, transfers, 2)
+	assert.Equal(t, uint64(5), *transfers[0].Nonce)
+	assert.Equal(t, uint64(7), *transfers[1].Nonce)
 }

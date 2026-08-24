@@ -185,37 +185,227 @@ func (s *SupplierPayoutWorker) RunOnce(ctx context.Context) {
 		slog.Error("[SupplierPayout] failed to claim due withdrawals", "error", err)
 		return
 	}
-	for i := range due {
+	plan := s.plan(ctx, due)
+	// 先确认后广播：等答案的单子是最老的，供给者已经在数着分钟；
+	// 而广播是新增负债，晚半轮没有任何人察觉。
+	for _, group := range plan.confirms {
 		if ctx.Err() != nil {
 			// 单轮预算用完。没处理到的单子还握着租约，租约到期后自然回队；
 			// 刻意不逐张去释放——那要再打 N 次库，而这里已经没有预算了。
 			return
 		}
-		s.settleOne(ctx, &due[i])
+		s.confirmMany(ctx, group.orders, group.network, group.hash)
+	}
+	for _, group := range plan.broadcasts {
+		if ctx.Err() != nil {
+			return
+		}
+		s.settleGroup(ctx, group)
 	}
 }
 
-// settleOne 推进一张单子，走到哪算哪。
-func (s *SupplierPayoutWorker) settleOne(ctx context.Context, w *SupplierWithdrawal) {
-	// M3 保证四列写就写全；这里兜的是「有人手改库」。缺列的单子推不动也
-	// 修不好，直接转给运营，别让它每 30 秒空转一次。
-	if w.Network == nil || w.TokenAddress == nil {
-		s.finishFailed(ctx, w, "chain snapshot incomplete: network/token_address missing")
+// payoutPlan 是一轮的施工图：先分好组，再动手。
+type payoutPlan struct {
+	confirms   []*payoutConfirmGroup
+	broadcasts []*payoutGroup
+}
+
+// payoutConfirmGroup 等同一个哈希的一组单子（一次批量广播的产物共享一个哈希）。
+type payoutConfirmGroup struct {
+	network string
+	hash    string
+	orders  []*SupplierWithdrawal
+}
+
+// payoutGroup 一次广播的候选组。
+//
+// 分组键是 (network, token)——disperseToken 一笔只发一种币，混编会拿 A 币的
+// 额度去发 B 币；恢复期（nonce 非 nil）分组键还要带上 nonce 本身：
+// 上一轮批量把同一个号钉给了整组，这一组必须原封不动地一起重播。
+type payoutGroup struct {
+	network string
+	token   string
+	// nonce 非 nil = 恢复期批次（上一轮钉过号、没播出去或没记上哈希）。
+	nonce  *uint64
+	orders []*SupplierWithdrawal
+}
+
+// plan 把捞到的单子分成三摊：坏快照（当场转运营）、等确认的（按哈希分组）、
+// 待广播的（按 network+token 分组，恢复期再按 nonce 细分）。
+//
+// 分组顺序 = 捞单顺序（id 升序），组内亦然：先来的先处理，且两轮之间
+// 组的组成是确定的——恢复逻辑靠这一点重建上一轮的批次。
+func (s *SupplierPayoutWorker) plan(ctx context.Context, due []SupplierWithdrawal) *payoutPlan {
+	plan := &payoutPlan{}
+	confirmIndex := map[string]*payoutConfirmGroup{}
+	broadcastIndex := map[string]*payoutGroup{}
+
+	for i := range due {
+		w := &due[i]
+		// M3 保证四列写就写全；这里兜的是「有人手改库」。缺列的单子推不动也
+		// 修不好，直接转给运营，别让它每 30 秒空转一次。
+		if w.Network == nil || w.TokenAddress == nil {
+			s.finishFailed(ctx, w, "chain snapshot incomplete: network/token_address missing")
+			continue
+		}
+		if net := w.NetAmount(); net <= 0 {
+			// 建单时挡过 fee >= amount，走到这里同样只能是数据被改过。
+			s.finishFailed(ctx, w, fmt.Sprintf("net amount %.8f is not positive", net))
+			continue
+		}
+
+		// 已有哈希：只欠一个链上的答案。同一哈希的单子（同一批广播的）
+		// 合并成一组，一次查询定一整组的生死——批量的终局本来就是同生共死。
+		if w.TxHash != nil {
+			key := *w.Network + "|" + *w.TxHash
+			group, ok := confirmIndex[key]
+			if !ok {
+				group = &payoutConfirmGroup{network: *w.Network, hash: *w.TxHash}
+				confirmIndex[key] = group
+				plan.confirms = append(plan.confirms, group)
+			}
+			group.orders = append(group.orders, w)
+			continue
+		}
+
+		key := *w.Network + "|" + *w.TokenAddress
+		var nonce *uint64
+		if w.ChainNonce != nil {
+			pinned := uint64(*w.ChainNonce)
+			nonce = &pinned
+			key = fmt.Sprintf("%s|%d", key, pinned)
+		}
+		group, ok := broadcastIndex[key]
+		if !ok {
+			group = &payoutGroup{network: *w.Network, token: *w.TokenAddress, nonce: nonce}
+			broadcastIndex[key] = group
+			plan.broadcasts = append(plan.broadcasts, group)
+		}
+		group.orders = append(group.orders, w)
+	}
+	return plan
+}
+
+// settleGroup 广播一组单子。一张走单笔转账，多张走批量合约（M5）。
+func (s *SupplierPayoutWorker) settleGroup(ctx context.Context, g *payoutGroup) {
+	if len(g.orders) == 1 {
+		s.settleSingle(ctx, g.orders[0])
 		return
 	}
-	net := w.NetAmount()
-	if net <= 0 {
-		// 建单时挡过 fee >= amount，走到这里同样只能是数据被改过。
-		s.finishFailed(ctx, w, fmt.Sprintf("net amount %.8f is not positive", net))
+	if !s.chain.SupportsBatch(g.network) {
+		if g.nonce != nil {
+			// 恢复期批次撞上被关掉的批量配置：整组共用一个 nonce，拆成单笔
+			// 每笔都需要自己的号，而换号 = 双付。只能原地等配置修回来，
+			// 并把话在 last_error 里说清楚——这是运维动作，不是抖动。
+			for _, w := range g.orders {
+				s.release(w, fmt.Sprintf(
+					"batch recovery blocked: %d orders share nonce %d but the batch contract is no longer configured",
+					len(g.orders), *g.nonce), supplierPayoutDisabledRetryDelay)
+			}
+			return
+		}
+		// 没配批量合约只是没有优化，不是故障：安静地退回逐笔。
+		for _, w := range g.orders {
+			if ctx.Err() != nil {
+				return
+			}
+			s.settleSingle(ctx, w)
+		}
 		return
 	}
 
-	// 已有哈希：这张单子只欠一个链上的答案。
-	if w.TxHash != nil {
-		s.confirm(ctx, w, *w.TxHash)
+	items := make([]ChainBatchItem, 0, len(g.orders))
+	for _, w := range g.orders {
+		items = append(items, ChainBatchItem{To: w.PayoutAccount, Amount: w.NetAmount()})
+	}
+
+	nonce := g.nonce
+	if nonce == nil {
+		// 额度检查必须在预留 nonce **之前**：approve 自己要占金库地址上的
+		// 一个号，顺序反了 approve 会把我们要用的号吃掉。
+		topUp, err := s.chain.EnsureBatchAllowance(ctx, ChainBatchParams{
+			Network: g.network, Token: g.token, Items: items,
+		})
+		if err != nil {
+			for _, w := range g.orders {
+				s.release(w, fmt.Sprintf("ensure batch allowance: %v", err), retryDelayFor(err))
+			}
+			return
+		}
+		if topUp != nil {
+			slog.Info("[SupplierPayout] batch allowance topped up",
+				"network", g.network, "tx_hash", topUp.TxHash)
+		}
+		fresh, err := s.chain.NextNonce(ctx, g.network)
+		if err != nil {
+			for _, w := range g.orders {
+				s.release(w, fmt.Sprintf("next nonce: %v", err), retryDelayFor(err))
+			}
+			return
+		}
+		nonce = &fresh
+	} else {
+		// 恢复期跳过额度检查：如果上一轮的批次其实已经上链，额度已被扣掉，
+		// 此刻补一笔 approve 会占掉一个新号却换不回任何东西；如果没上链，
+		// 额度原封未动。额度真不够的话批量交易会在链上明确 revert——
+		// 那是一个能走 failed → 运营的干净结局，好过在这里赌一次。
+	}
+
+	// 逐张钉同一个号。钉不上的两种含义分开走：已被别人处理 → 无声退出这一批；
+	// 库不可达 → 交还重试。剩下的照播——批量的组成允许缩水（同号安全：
+	// 链上最多认一笔），但绝不允许换号。
+	kept := make([]*SupplierWithdrawal, 0, len(g.orders))
+	keptItems := make([]ChainBatchItem, 0, len(g.orders))
+	for i, w := range g.orders {
+		if err := s.repo.BeginPayout(ctx, w.ID, *nonce); err != nil {
+			if errors.Is(err, ErrSupplierWithdrawalNotPending) {
+				slog.Info("[SupplierPayout] withdrawal resolved elsewhere before batch broadcast", "withdrawal_id", w.ID)
+				continue
+			}
+			s.release(w, fmt.Sprintf("persist nonce: %v", err), supplierPayoutRetryDelay)
+			continue
+		}
+		kept = append(kept, w)
+		keptItems = append(keptItems, items[i])
+	}
+	if len(kept) == 0 {
 		return
 	}
 
+	result, err := s.chain.TransferBatch(ctx, ChainBatchParams{
+		Network: g.network, Token: g.token, Items: keptItems, Nonce: nonce,
+	})
+	if err != nil {
+		// nonce 已钉进整组：留在 processing，下一轮按 nonce 重新聚成同一批重播。
+		for _, w := range kept {
+			s.release(w, fmt.Sprintf("batch broadcast: %v", err), retryDelayFor(err))
+		}
+		return
+	}
+
+	confirmable := make([]*SupplierWithdrawal, 0, len(kept))
+	for _, w := range kept {
+		if err := s.repo.RecordPayoutTx(ctx, w.ID, result.TxHash); err != nil {
+			// 这张的哈希没落库：不能带它进终局（一张没有 tx_hash 的 paid 单
+			// 在对账里是个洞）。它带着钉住的 nonce 回队，下一轮凭 nonce 归队、
+			// 重播被节点认成同一笔，哈希补上。
+			s.release(w, fmt.Sprintf("record tx hash: %v", err), supplierPayoutRetryDelay)
+			continue
+		}
+		if w.BroadcastedAt == nil {
+			now := time.Now()
+			w.BroadcastedAt = &now
+		}
+		confirmable = append(confirmable, w)
+	}
+	if len(confirmable) == 0 {
+		return
+	}
+	s.confirmMany(ctx, confirmable, g.network, result.TxHash)
+}
+
+// settleSingle 单笔转账：一张单子从（可能已钉过号的）待播状态走到确认。
+func (s *SupplierPayoutWorker) settleSingle(ctx context.Context, w *SupplierWithdrawal) {
 	// nonce：老单子复用落库的那个，新单子向节点要。顺序不能反——
 	// 落库的 nonce 意味着可能已有一笔交易占着它，换号就是双付。
 	var nonce uint64
@@ -248,7 +438,7 @@ func (s *SupplierPayoutWorker) settleOne(ctx context.Context, w *SupplierWithdra
 		// 该按建单那一刻的约定发——那才是供给者看到并同意过的东西。
 		Token:  *w.TokenAddress,
 		To:     w.PayoutAccount,
-		Amount: net,
+		Amount: w.NetAmount(),
 		Nonce:  &nonce,
 	})
 	if err != nil {
@@ -268,48 +458,60 @@ func (s *SupplierPayoutWorker) settleOne(ctx context.Context, w *SupplierWithdra
 		now := time.Now()
 		w.BroadcastedAt = &now
 	}
-	s.confirm(ctx, w, result.TxHash)
+	s.confirmMany(ctx, []*SupplierWithdrawal{w}, *w.Network, result.TxHash)
 }
 
-// confirm 等一笔交易的终态，等不到就交还租约。
-func (s *SupplierPayoutWorker) confirm(ctx context.Context, w *SupplierWithdrawal, txHash string) {
+// confirmMany 等一个哈希的终态，把答案套用到共享它的每张单子上。
+//
+// 一次查询定一整组：批量交易在链上 all-or-nothing，组里不存在"半成"。
+// 等不到时每张各自交还租约——放弃期限按**各自的** broadcasted_at 判，
+// 同一批的它们本来就相同，分开判只是不给"恰好共享哈希的异批单子"留混账的机会。
+func (s *SupplierPayoutWorker) confirmMany(ctx context.Context, orders []*SupplierWithdrawal, network, txHash string) {
 	waitCtx, cancel := context.WithTimeout(ctx, supplierPayoutConfirmWait)
-	confirmation, err := s.chain.WaitForConfirmation(waitCtx, *w.Network, txHash)
+	confirmation, err := s.chain.WaitForConfirmation(waitCtx, network, txHash)
 	cancel()
 	if err != nil {
 		// 「还不知道」。先看是不是已经等了太久——期限一到就转给运营，
 		// 期限没到就退避重试。
-		if w.BroadcastedAt != nil && time.Since(*w.BroadcastedAt) > supplierPayoutGiveUpAfter {
-			s.finishFailed(ctx, w, fmt.Sprintf(
-				"confirmation still unknown %s after first broadcast (tx %s) — VERIFY ON-CHAIN before refunding",
-				supplierPayoutGiveUpAfter, txHash))
-			return
+		for _, w := range orders {
+			if w.BroadcastedAt != nil && time.Since(*w.BroadcastedAt) > supplierPayoutGiveUpAfter {
+				s.finishFailed(ctx, w, fmt.Sprintf(
+					"confirmation still unknown %s after first broadcast (tx %s) — VERIFY ON-CHAIN before refunding",
+					supplierPayoutGiveUpAfter, txHash))
+				continue
+			}
+			s.release(w, fmt.Sprintf("confirm %s: %v", txHash, err), supplierPayoutRetryDelay)
 		}
-		s.release(w, fmt.Sprintf("confirm %s: %v", txHash, err), supplierPayoutRetryDelay)
 		return
 	}
 	switch confirmation.Status {
 	case ChainTxConfirmed:
-		paid, err := s.repo.FinishPayout(ctx, SupplierPayoutFinishParams{
-			ID: w.ID, Status: SupplierWithdrawalStatusPaid, TxHash: txHash,
-		})
-		if err != nil {
-			// 链上已成、库里没写上。下一轮会拿着同一个哈希再确认一次并重写——
-			// FinishPayout 的条件更新保证第二次写不会叠加任何东西。
-			s.release(w, fmt.Sprintf("finish paid: %v", err), supplierPayoutRetryDelay)
-			return
-		}
-		slog.Info("[SupplierPayout] withdrawal paid on-chain",
-			"withdrawal_id", w.ID, "tx_hash", txHash, "net", w.NetAmount())
-		if s.notifier != nil {
-			s.notifier.NotifyResolved(paid)
+		for _, w := range orders {
+			paid, err := s.repo.FinishPayout(ctx, SupplierPayoutFinishParams{
+				ID: w.ID, Status: SupplierWithdrawalStatusPaid, TxHash: txHash,
+			})
+			if err != nil {
+				// 链上已成、库里没写上。下一轮会拿着同一个哈希再确认一次并重写——
+				// FinishPayout 的条件更新保证第二次写不会叠加任何东西。
+				s.release(w, fmt.Sprintf("finish paid: %v", err), supplierPayoutRetryDelay)
+				continue
+			}
+			slog.Info("[SupplierPayout] withdrawal paid on-chain",
+				"withdrawal_id", w.ID, "tx_hash", txHash, "net", w.NetAmount())
+			if s.notifier != nil {
+				s.notifier.NotifyResolved(paid)
+			}
 		}
 	case ChainTxFailed:
-		// 链上明确 revert：钱确定没出去，但**不自动退款**（见状态常量的注释）。
-		s.finishFailed(ctx, w, fmt.Sprintf("transaction reverted on-chain (tx %s): %s", txHash, confirmation.Reason))
+		// 链上明确 revert：整组的钱都确定没出去，但**不自动退款**（见状态常量的注释）。
+		for _, w := range orders {
+			s.finishFailed(ctx, w, fmt.Sprintf("transaction reverted on-chain (tx %s): %s", txHash, confirmation.Reason))
+		}
 	default:
 		// 客户端违反了自己的约定。当成「还不知道」处理——保守的那一边。
-		s.release(w, fmt.Sprintf("confirm %s: unexpected status %q", txHash, confirmation.Status), supplierPayoutRetryDelay)
+		for _, w := range orders {
+			s.release(w, fmt.Sprintf("confirm %s: unexpected status %q", txHash, confirmation.Status), supplierPayoutRetryDelay)
+		}
 	}
 }
 
