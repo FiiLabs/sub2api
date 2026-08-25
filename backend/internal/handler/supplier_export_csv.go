@@ -123,8 +123,8 @@ func supplierWithdrawalCSVRow(row *service.SupplierWithdrawalExportRow) []string
 		csvTimePtr(row.ResolvedAt),
 		csvText(row.Network),
 		csvText(row.TokenSymbol),
-		row.FeeAmount,  // NUMERIC 原文，同 amount 不转义
-		row.NetAmount,  // 同上
+		row.FeeAmount, // NUMERIC 原文，同 amount 不转义
+		row.NetAmount, // 同上
 		csvText(row.TxHash),
 	}
 }

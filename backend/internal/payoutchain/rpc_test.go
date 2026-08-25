@@ -96,7 +96,8 @@ func TestEthCallSendsToAndDataAndReadsBackBytes(t *testing.T) {
 	assert.Equal(t, int64(18), decimals.Int64())
 
 	require.Len(t, *seen, 1)
-	params := (*seen)[0].Params[0].(map[string]any)
+	params, ok := (*seen)[0].Params[0].(map[string]any)
+	require.True(t, ok)
 	assert.Equal(t, "0x55d398326f99059ff775485246999027b3197955", params["to"])
 	assert.Equal(t, "0x313ce567", params["data"])
 	assert.Equal(t, "latest", (*seen)[0].Params[1])

@@ -94,7 +94,7 @@ func (c *rpcClient) call(ctx context.Context, out any, method string, params ...
 		// 传输失败——我们不知道节点看没看到。
 		return fmt.Errorf("payoutchain: %s: %w", method, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// 限一下读取量：一个配错的 URL 可能指向任何东西，而 io.ReadAll 对一个
 	// 无限流会一直读到进程内存耗尽。1 MiB 远大于任何一个我们会发的请求的回应。

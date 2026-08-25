@@ -220,7 +220,7 @@ func validateEVMAddress(address string) (string, error) {
 // 在说这件事——用错了不会报错，只会让每一个合法地址都被判成校验和不符。
 func eip55(lowerBody string) string {
 	hasher := sha3.NewLegacyKeccak256()
-	hasher.Write([]byte(lowerBody))
+	_, _ = hasher.Write([]byte(lowerBody)) // sha3 的 Write 从不报错
 	digest := hasher.Sum(nil)
 
 	out := []byte(lowerBody)

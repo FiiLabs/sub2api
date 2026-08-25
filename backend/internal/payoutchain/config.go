@@ -37,13 +37,13 @@ const (
 
 // 默认值。
 const (
-	defaultChainID       = 56 // BSC 主网
+	defaultChainID = 56 // BSC 主网
 	// defaultTokenSymbol 与 service 里那张链上渠道注册表上的 BSC-USDT 对上。
 	//
 	// 做成一个可覆盖的默认值而不是写死："这个金库配的是哪种币"必须是可问的——
 	// 建单时要拿它去核对渠道要的币种，而把 USDC 的合约地址填进一个只认 USDT 的
 	// 客户端里，是一件既不会报错也不会被发现的事，直到有人收到了错的币。
-	defaultTokenSymbol = "USDT"
+	defaultTokenSymbol   = "USDT"
 	defaultConfirmations = 3
 	// defaultFallbackFee 是估不出手续费时按每笔多少美元扣。
 	//

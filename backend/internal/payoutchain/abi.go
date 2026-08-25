@@ -41,7 +41,7 @@ const (
 // selector 取方法签名的 keccak256 前 4 字节。
 func selector(signature string) []byte {
 	hasher := sha3.NewLegacyKeccak256()
-	hasher.Write([]byte(signature))
+	_, _ = hasher.Write([]byte(signature)) // sha3 的 Write 从不报错
 	return hasher.Sum(nil)[:4]
 }
 
@@ -52,7 +52,7 @@ func selector(signature string) []byte {
 func keccak256(chunks ...[]byte) []byte {
 	hasher := sha3.NewLegacyKeccak256()
 	for _, chunk := range chunks {
-		hasher.Write(chunk)
+		_, _ = hasher.Write(chunk) // sha3 的 Write 从不报错
 	}
 	return hasher.Sum(nil)
 }

@@ -172,7 +172,8 @@ func TestTransferSignsWithTheNonceItWasGiven(t *testing.T) {
 	assert.Len(t, result.TxHash, 66)
 
 	// 广播出去的原始字节里，收款地址和金额都能对上。
-	raw := node.paramsOf("eth_sendRawTransaction")[0][0].(string)
+	raw, ok := node.paramsOf("eth_sendRawTransaction")[0][0].(string)
+	require.True(t, ok)
 	assert.Contains(t, raw, "a9059cbb", "应当是一次 ERC-20 transfer")
 	assert.Contains(t, raw, strings.TrimPrefix(addrRecipient, "0x"))
 	assert.Contains(t, raw, "ab54a98ca1890800", "12345678900000000000 的十六进制")
@@ -194,7 +195,9 @@ func TestTransferReusesTheGivenNonceByteForByteOnRetry(t *testing.T) {
 		})
 		require.NoError(t, err)
 		sent := node.paramsOf("eth_sendRawTransaction")
-		return result.TxHash, sent[len(sent)-1][0].(string)
+		rawParam, ok := sent[len(sent)-1][0].(string)
+		require.True(t, ok)
+		return result.TxHash, rawParam
 	}
 	firstHash, firstRaw := send()
 	secondHash, secondRaw := send()
@@ -534,7 +537,8 @@ func TestTransferBatchPacksEveryRecipient(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	raw := node.paramsOf("eth_sendRawTransaction")[0][0].(string)
+	raw, ok := node.paramsOf("eth_sendRawTransaction")[0][0].(string)
+	require.True(t, ok)
 	assert.Contains(t, raw, "c73a2d60", "应当是一次 disperseToken")
 	assert.Contains(t, raw, strings.TrimPrefix(addrRecipient, "0x"))
 	assert.Contains(t, raw, strings.ToLower(strings.TrimPrefix(addrBSCUSDT, "0x")))
@@ -595,7 +599,8 @@ func TestEnsureBatchAllowanceSkipsTheChainWhenTheAllowanceIsEnough(t *testing.T)
 	// 而那笔 gas 同样是从供给者收益里扣的。
 	node := newFakeNode().
 		onFunc("eth_call", func(call int, params []any) (any, *rpcError) {
-			data := params[0].(map[string]any)["data"].(string)
+			call0, _ := params[0].(map[string]any)
+			data, _ := call0["data"].(string)
 			if strings.HasPrefix(data, "0x313ce567") {
 				return decimals18, nil
 			}
@@ -618,7 +623,8 @@ func TestEnsureBatchAllowanceApprovesAndWaitsBeforeReturning(t *testing.T) {
 	// 整批因额度不足 revert，gas 照扣。
 	node := newFakeNode().
 		onFunc("eth_call", func(_ int, params []any) (any, *rpcError) {
-			data := params[0].(map[string]any)["data"].(string)
+			call0, _ := params[0].(map[string]any)
+			data, _ := call0["data"].(string)
 			if strings.HasPrefix(data, "0x313ce567") {
 				return decimals18, nil
 			}
@@ -640,7 +646,8 @@ func TestEnsureBatchAllowanceApprovesAndWaitsBeforeReturning(t *testing.T) {
 	assert.Equal(t, "USDT", topUp.Symbol)
 	assert.Len(t, topUp.TxHash, 66)
 
-	raw := node.paramsOf("eth_sendRawTransaction")[0][0].(string)
+	raw, ok := node.paramsOf("eth_sendRawTransaction")[0][0].(string)
+	require.True(t, ok)
 	assert.Contains(t, raw, "095ea7b3", "应当是一次 approve")
 	assert.Contains(t, raw, strings.ToLower(strings.TrimPrefix(addrOther, "0x")), "授权给批量合约")
 	assert.Contains(t, raw, strings.Repeat("f", 64), "补到无限额度")
@@ -650,7 +657,8 @@ func TestEnsureBatchAllowanceApprovesAndWaitsBeforeReturning(t *testing.T) {
 func TestEnsureBatchAllowanceReportsARevertedApprove(t *testing.T) {
 	node := newFakeNode().
 		onFunc("eth_call", func(_ int, params []any) (any, *rpcError) {
-			data := params[0].(map[string]any)["data"].(string)
+			call0, _ := params[0].(map[string]any)
+			data, _ := call0["data"].(string)
 			if strings.HasPrefix(data, "0x313ce567") {
 				return decimals18, nil
 			}

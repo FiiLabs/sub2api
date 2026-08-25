@@ -193,7 +193,7 @@ func (w *SupplierWithdrawal) Pending() bool {
 
 // OnChain 这张单子是不是由 worker 上链结算。
 //
-// 判据只有 Network 一个，且要求它非空**且非空串**：一条 network = '' 的行
+// 判据只有 Network 一个，且要求它非空**且非空串**：一条 network 为空串的行
 // 在数据库里是完全合法的，而它既不是"人工"也不是任何一条链——把它归到人工那边，
 // 是因为人工那条路上有人看着。
 func (w *SupplierWithdrawal) OnChain() bool {
