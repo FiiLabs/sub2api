@@ -167,16 +167,18 @@ describe('SupplyView withdrawal fee', () => {
     expect(wrapper.find('[data-testid="supply-withdrawal-fee-not-covered"]').exists()).toBe(false)
   })
 
-  it('says "manual payout" — never a zero fee — when the channel has no quote', async () => {
-    // onchain_channels 有它、onchain_fees 没它：会上链但此刻结算不了。
+  it('never shows a zero fee when the channel has no quote (M6b)', async () => {
+    // onchain_channels 有它、onchain_fees 没它：链上-only 之后这个组合只会
+    // 出现在配置热换的竞态窗口里。此时什么都不画——**绝不显示 0**，
+    // 0 元手续费是一个后端没做过的承诺。
     api.getWithdrawalOptions.mockResolvedValue(withdrawalOptions({ onchain_fees: [] }))
 
     const wrapper = await mountWithChannel('BSC-USDT')
 
+    expect(wrapper.find('[data-testid="supply-withdrawal-net-preview"]').exists()).toBe(false)
     const fee = wrapper.find('[data-testid="supply-withdrawal-fee"]')
-    expect(fee.exists()).toBe(true)
-    expect(wrapper.find('[data-testid="supply-withdrawal-fee-manual"]').exists()).toBe(true)
     expect(fee.text()).not.toContain('supply.withdrawal.fee.quote')
+    expect(fee.text()).not.toContain('0')
   })
 
   it('shows no fee block at all on a manual channel', async () => {

@@ -18,7 +18,6 @@ import (
 	_ "github.com/Wei-Shaw/sub2api/ent/runtime"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
-	"github.com/Wei-Shaw/sub2api/internal/payoutchain"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/setup"
@@ -144,15 +143,9 @@ func runMainServer() {
 		log.Println("⚠️  WARNING: Running in SIMPLE mode - billing and quota checks are DISABLED")
 	}
 
-	// APEXONE-EXT: 链上打款的启动自检。
-	//
-	// 只读配置、只问一次节点的 chain id，不动任何钱。放在这里是因为这些配置
-	// 的错误——密钥没注入、RPC 指向测试网、币地址写错——如果不在启动时说，
-	// 就要等到第一笔提现走到一半才暴露，那时候单子已经进了 processing。
-	//
-	// 出错不致命：提现走不通的代价远小于整个进程起不来（所有用户都登不上）。
-	// 真正的客户端在 M4 的 worker 里装配，这里只做一次可见性检查。
-	logPayoutChainStatus()
+	// APEXONE-EXT: 链上打款的启动自检从 M6 起并进了 payoutchain.Manager 的
+	// 首次 Reload（wire 装配时执行）：配置在控制台/数据库里，这里读不到。
+	// 状态照样进启动日志（[PayoutChain] client reloaded ...），管理端另有自检面板。
 
 	buildInfo := handler.BuildInfo{
 		Version:   Version,
@@ -198,32 +191,4 @@ func runMainServer() {
 	}
 
 	log.Println("Server exited")
-}
-
-// APEXONE-EXT: 把链上打款的当前状态打进启动日志。
-//
-// 三种可能的输出，运维一眼能分清：
-//
-//	on-chain payout is off ...        没配，提现不会广播（默认，也是最常见的）
-//	on-chain payout is MOCKED ...     假客户端，什么都不会真发出去
-//	on-chain payout is LIVE ...       真会动钱，后面跟着金库地址
-//
-// 日志里有金库地址但**没有私钥**——地址是公开信息（每笔链上交易都写着它），
-// 运维靠它在 BscScan 上盯余额；私钥连一次都不会被格式化进任何字符串。
-func logPayoutChainStatus() {
-	cfg, err := payoutchain.LoadConfig()
-	if err != nil {
-		log.Printf("⚠️  On-chain payout is misconfigured and stays OFF: %v", err)
-		return
-	}
-
-	// 给自检一个短超时：一个连不上的 RPC 不该把启动拖住。
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	resolved, err := payoutchain.Resolve(ctx, cfg, nil)
-	if err != nil {
-		log.Printf("⚠️  On-chain payout self-check failed: %v", err)
-	}
-	log.Printf("%s", resolved.Summary)
 }

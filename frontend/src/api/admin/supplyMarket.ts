@@ -182,6 +182,55 @@ export interface SupplyWithdrawalSettings {
   notify_email_max_len: number
 }
 
+/** 链上金库客户端此刻的装配状态（M6）。 */
+export interface SupplyPayoutChainStatus {
+  /** disabled | mock | live */
+  mode: string
+  summary: string
+  /** live 时非空。公开信息：每笔链上交易里都写着它 */
+  treasury?: string
+  /** 向节点核对链 ID 的结果；缺席 = 没核（disabled/mock） */
+  chain_verified?: boolean
+  error?: string
+  /** console | env | mock-env | none */
+  source: string
+  applied_at: string
+}
+
+/**
+ * 链上打款金库配置（M6）。响应里**永远没有私钥**，连密文都没有——
+ * 回显的只有 signer_configured 和 status.treasury（从私钥推导出的地址）。
+ */
+export interface SupplyPayoutChainSettings {
+  enabled: boolean
+  rpc_url: string
+  token_address: string
+  token_symbol: string
+  disperse_address: string
+  chain_id: number
+  native_usd: number
+  confirmations: number
+  fallback_fee: number
+  fee_multiplier: number
+  signer_configured: boolean
+  status: SupplyPayoutChainStatus
+}
+
+/** 保存金库配置的请求体。signer_key 留空 = 保留已存的那把。 */
+export interface SupplyPayoutChainPayload {
+  enabled: boolean
+  rpc_url: string
+  token_address: string
+  token_symbol: string
+  disperse_address: string
+  chain_id: number
+  native_usd: number
+  confirmations: number
+  fallback_fee: number
+  fee_multiplier: number
+  signer_key: string
+}
+
 export type SupplyWithdrawalPayload = Omit<
   SupplyWithdrawalSettings,
   | 'available'
@@ -589,6 +638,30 @@ async function updateWithdrawalSettings(
   return data
 }
 
+async function getPayoutChainSettings(): Promise<SupplyPayoutChainSettings> {
+  const { data } = await apiClient.get<SupplyPayoutChainSettings>('/admin/settings/supply-payout-chain')
+  return data
+}
+
+/** 保存即热换客户端：响应里的 status 是**换完之后**的装配结果。 */
+async function updatePayoutChainSettings(
+  payload: SupplyPayoutChainPayload
+): Promise<SupplyPayoutChainSettings> {
+  const { data } = await apiClient.put<SupplyPayoutChainSettings>(
+    '/admin/settings/supply-payout-chain',
+    payload
+  )
+  return data
+}
+
+/** 重新装配一次并向节点核链 ID——「测试连接」按钮。没有任何写入语义。 */
+async function verifyPayoutChain(): Promise<SupplyPayoutChainSettings> {
+  const { data } = await apiClient.post<SupplyPayoutChainSettings>(
+    '/admin/settings/supply-payout-chain/verify'
+  )
+  return data
+}
+
 async function listWithdrawals(
   params: {
     page?: number
@@ -790,6 +863,9 @@ export const adminSupplyMarketAPI = {
   getAgreementSettings,
   updateAgreementSettings,
   getWithdrawalSettings,
+  getPayoutChainSettings,
+  updatePayoutChainSettings,
+  verifyPayoutChain,
   updateWithdrawalSettings,
   listWithdrawals,
   markWithdrawalPaid,

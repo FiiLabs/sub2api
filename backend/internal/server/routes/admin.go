@@ -585,6 +585,11 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		adminSettings.GET("/supply-agreement", h.Admin.Setting.GetSupplyAgreementSettings)
 		adminSettings.PUT("/supply-agreement", h.Admin.Setting.UpdateSupplyAgreementSettings)
 		adminSettings.GET("/supply-withdrawal", h.Admin.Setting.GetSupplyWithdrawalSettings)
+		// APEXONE-EXT: 链上打款金库配置（M6）。私钥只进不出：PUT 收明文即加密，
+		// GET/verify 的响应里连密文都没有。
+		adminSettings.GET("/supply-payout-chain", h.Admin.Setting.GetSupplyPayoutChainSettings)
+		adminSettings.PUT("/supply-payout-chain", h.Admin.Setting.UpdateSupplyPayoutChainSettings)
+		adminSettings.POST("/supply-payout-chain/verify", h.Admin.Setting.VerifySupplyPayoutChain)
 		adminSettings.PUT("/supply-withdrawal", h.Admin.Setting.UpdateSupplyWithdrawalSettings)
 		adminSettings.GET("/supply-onboarding", h.Admin.Setting.GetSupplyOnboardingSettings)
 		adminSettings.PUT("/supply-onboarding", h.Admin.Setting.UpdateSupplyOnboardingSettings)

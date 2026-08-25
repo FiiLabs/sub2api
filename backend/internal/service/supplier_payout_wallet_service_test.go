@@ -174,6 +174,9 @@ func withdrawalServiceWithWallets(
 	svc := &SupplierWithdrawalService{
 		repo:     repo,
 		settings: &supplierWithdrawalSettingsStub{settings: onchainWithdrawalSettings()},
+		// M6b：渠道由金库能力派生，没有能结算的金库连渠道校验都过不去，
+		// 这批测试要测的是**过了渠道那道门之后**地址从哪来。
+		chain: NewMockChainClient(MockChainOptions{Fee: 0.3}),
 	}
 	if walletRepo != nil {
 		svc.addresses = NewSupplierPayoutWalletService(walletRepo)
@@ -249,62 +252,35 @@ func TestRequestFailsClosedWhenWalletServiceMissing(t *testing.T) {
 	assert.Zero(t, repo.calls)
 }
 
-// 人工渠道一点没变：仍然用手填的账号，仍然做非空与长度校验。
+// 人工渠道整个下线（M6b）：老白名单里的支付宝报"渠道无效"，一张单子都不建。
 //
-// 这条是那个"两条路径分岔点"的反面。少了它，一次让链上渠道更安全的改动
-// 会顺手把支付宝提现也变成"必须先绑一个 BSC 地址"。
-func TestRequestKeepsManualChannelBehaviour(t *testing.T) {
+// M1–M5 期间人工渠道是链上路径的兜底；链上-only 之后它就是一个必定失败的
+// 选项——运营没有任何人工打款的队列会接住它，而钱在建单那一刻已经扣走。
+func TestRequestRejectsManualChannels(t *testing.T) {
 	repo := &supplierWithdrawalRepoStub{}
 	svc := withdrawalServiceWithWallets(repo, &supplierPayoutWalletRepoStub{wallet: nil})
 
 	_, err := svc.Request(context.Background(), 7, SupplierWithdrawalRequest{
-		Amount: 100, PayoutChannel: "支付宝", PayoutAccount: "  zhang@example.com  ",
-	})
-	require.NoError(t, err, "人工渠道被链上渠道的绑定要求连累了")
-	assert.Equal(t, "zhang@example.com", repo.createParams.PayoutAccount)
-
-	// 空账号仍然被拒。
-	repo2 := &supplierWithdrawalRepoStub{}
-	svc2 := withdrawalServiceWithWallets(repo2, &supplierPayoutWalletRepoStub{})
-	_, err = svc2.Request(context.Background(), 7, SupplierWithdrawalRequest{
-		Amount: 100, PayoutChannel: "支付宝", PayoutAccount: "   ",
-	})
-	require.Error(t, err)
-	assert.Zero(t, repo2.calls)
-
-	// 超长账号仍然被拒。
-	repo3 := &supplierWithdrawalRepoStub{}
-	svc3 := withdrawalServiceWithWallets(repo3, &supplierPayoutWalletRepoStub{})
-	long := make([]rune, SupplierPayoutAccountMaxLen+1)
-	for i := range long {
-		long[i] = '账'
-	}
-	_, err = svc3.Request(context.Background(), 7, SupplierWithdrawalRequest{
-		Amount: 100, PayoutChannel: "支付宝", PayoutAccount: string(long),
-	})
-	require.Error(t, err)
-	assert.Zero(t, repo3.calls)
-}
-
-// 渠道白名单仍然排在取地址之前。
-//
-// 顺序有意义：一个没进白名单的链上渠道必须报"渠道不可用"，而不是先去查绑定、
-// 再报"你还没绑地址"——后者会让人去绑一个绑了也用不上的地址。
-func TestRequestChecksChannelWhitelistBeforeBinding(t *testing.T) {
-	repo := &supplierWithdrawalRepoStub{}
-	walletRepo := &supplierPayoutWalletRepoStub{}
-	svc := &SupplierWithdrawalService{
-		repo: repo,
-		settings: &supplierWithdrawalSettingsStub{settings: &SupplyWithdrawalSettings{
-			Enabled: true, MaxPending: 2, Channels: []string{"支付宝"},
-		}},
-		addresses: NewSupplierPayoutWalletService(walletRepo),
-	}
-
-	_, err := svc.Request(context.Background(), 7, SupplierWithdrawalRequest{
-		Amount: 100, PayoutChannel: "BSC-USDT", PayoutAccount: "x",
+		Amount: 100, PayoutChannel: "支付宝", PayoutAccount: "zhang@example.com",
 	})
 	assert.ErrorIs(t, err, ErrSupplierWithdrawalChannelInvalid)
+	assert.Zero(t, repo.calls, "人工渠道的单子建起来了——没有任何队列会接住它")
+}
+
+// 渠道校验仍然排在取地址之前。
+//
+// 顺序有意义：一个不存在/结算不了的渠道必须先报"渠道不可用"，而不是先去查
+// 绑定、再报"你还没绑地址"——后者会让人去绑一个绑了也用不上的地址。
+func TestRequestChecksChannelBeforeBinding(t *testing.T) {
+	repo := &supplierWithdrawalRepoStub{}
+	walletRepo := &supplierPayoutWalletRepoStub{getErr: errors.New("绑定表不该被碰到")}
+	svc := withdrawalServiceWithWallets(repo, walletRepo)
+
+	_, err := svc.Request(context.Background(), 7, SupplierWithdrawalRequest{
+		Amount: 100, PayoutChannel: "支付宝", PayoutAccount: "x",
+	})
+	assert.ErrorIs(t, err, ErrSupplierWithdrawalChannelInvalid,
+		"渠道都不认，错误却来自绑定查询——顺序反了")
 }
 
 // options 里带上链上渠道注册表，且是副本。

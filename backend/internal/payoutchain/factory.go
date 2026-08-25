@@ -20,7 +20,9 @@ package payoutchain
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -113,34 +115,38 @@ func build(cfg Config, httpClient *http.Client) (Resolved, error) {
 	}, nil
 }
 
-// ProvideChainClient 是 wire 的入口：读环境变量，交出该用的那个客户端。
+// ProvideChainManager 是 wire 的入口（M6 起）：造管理器并做第一次装配。
 //
 // # 为什么它不返回错误
 //
 // wire 的 provider 一报错，整个进程就起不来。而这里能出的错全都是"打款配好没"
-// 这一类的——RPC 地址写错、私钥没注入——它们不该让所有用户都登不上。
-// 配置有问题时交出 DisabledChainClient：提现走不通（且会说出来），其余照常。
-// 错误本身不会被吞掉，`main` 的启动自检会把它打进日志（见 logPayoutChainStatus）。
+// 这一类的——控制台没配、钥匙解不开、RPC 写错——它们不该让所有用户都登不上。
+// 首次 Reload 失败时 Holder 里留着 Disabled（拒绝一切），错误进启动日志与
+// Manager.Status，管理端的自检面板能看见。
 //
-// # 为什么它不问节点
+// # 首次 Reload 里那次 VerifyChain
 //
-// provider 跑在进程启动的关键路径上，而 VerifyChain 是一次可能超时的网络调用。
-// 链 ID 的确认留给自检那一次，它有自己的 5 秒超时，且失败不致命。
-func ProvideChainClient() service.SupplierChainClient {
-	cfg, err := LoadConfig()
-	if err != nil {
-		// LoadConfig 报错时 cfg 是零值，FallbackFee 也是 0。显式换成默认值：
-		// 那个数字会出现在提现表单的手续费预览里，而 0 在那里读起来像
-		// "这个渠道不收手续费"，不像"这套部署的打款没配好"。
-		cfg = Config{FallbackFee: defaultFallbackFee}
+// M2 时代 provider 刻意不触网、把核链留给 main 的自检。M6 的 Reload 自带
+// 8 秒超时的核链且失败不回滚，性质与当年的自检一致——于是自检并进了这里，
+// main 不再单独跑一份（两处各核一次、各打一条日志，迟早有一条骗人）。
+func ProvideChainManager(settingService *service.SettingService, encryptor service.SecretEncryptor) *Manager {
+	manager := NewManager(settingService, encryptor, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if status, err := manager.Reload(ctx); err != nil {
+		slog.Warn("[PayoutChain] initial load left payouts disabled", "error", err, "source", status.Source)
 	}
-	resolved, _ := build(cfg, nil)
-	return resolved.Client
+	return manager
+}
+
+// ProvideChainClientFromManager 把转发器交给业务侧。
+//
+// 只导出 SupplierChainClient 这一个面，不让 *Manager 进业务代码的依赖：
+// Mode/Status 是给管理端与日志的，业务里出现"如果是 mock 就……"的分支
+// 正是这个包最不想要的东西。管理端 handler 要 *Manager 时单独注入。
+func ProvideChainClientFromManager(manager *Manager) service.SupplierChainClient {
+	return manager.Client()
 }
 
 // ProviderSet 供 cmd/server 的 wire 装配。
-//
-// 只导出客户端本身，不导出 Resolved：Mode 与 Summary 是给启动日志的，
-// 让它们进 DI 图等于给了业务代码一个"如果是 mock 就……"的分支口，
-// 而那种分支正是这个包最不想要的东西。
-var ProviderSet = wire.NewSet(ProvideChainClient)
+var ProviderSet = wire.NewSet(ProvideChainManager, ProvideChainClientFromManager)

@@ -42,8 +42,8 @@ func boundWalletRepo() *supplierPayoutWalletRepoStub {
 
 // withdrawalServiceWithChain 造一个「绑定服务 + 链上客户端都装配好」的提现服务。
 //
-// chain 传 nil 就是「这套部署没接链上客户端」——那是 M1/M2 期间的形态，
-// 也是本文件里"退回人工工单"那几条的起点。
+// chain 传 nil 就是「这套部署没接链上客户端」——M6b（链上-only）之后
+// 那种部署的提现整体不可用，本文件里"结算不了一律拒绝"那几条测的就是它。
 func withdrawalServiceWithChain(
 	repo SupplierWithdrawalRepository,
 	walletRepo SupplierPayoutWalletRepository,
@@ -93,11 +93,11 @@ func TestRequestSnapshotsChainColumns(t *testing.T) {
 	assert.InDelta(t, 100.0, params.Amount, 1e-9, "amount 被写成了净额——扣款、退款、对账三条路径会一起偏")
 }
 
-// 人工渠道一列链上字段都不许带。
+// 老白名单里的人工渠道（支付宝）→ 渠道无效，一张单子都不建（M6b）。
 //
-// 少了这条，一次"给提现加上手续费"的改动会顺手把支付宝提现也扣掉一笔 gas——
-// 而那笔 gas 对应的链上交易根本不存在。
-func TestRequestLeavesManualChannelWithoutChainColumns(t *testing.T) {
+// M3 时这条测的是"人工单不带链上列"；链上-only 之后没有任何队列会接住
+// 一张人工单，让它建起来 = 钱扣进一张没人处理的单子。
+func TestRequestRejectsManualChannelsOutright(t *testing.T) {
 	repo := &supplierWithdrawalRepoStub{}
 	chain := NewMockChainClient(MockChainOptions{Fee: 0.3})
 	svc := withdrawalServiceWithChain(repo, boundWalletRepo(), chain)
@@ -105,35 +105,26 @@ func TestRequestLeavesManualChannelWithoutChainColumns(t *testing.T) {
 	_, err := svc.Request(context.Background(), 7, SupplierWithdrawalRequest{
 		Amount: 100, PayoutChannel: "支付宝", PayoutAccount: "zhang@example.com",
 	})
-	require.NoError(t, err)
-
-	params := repo.createParams
-	assert.Empty(t, params.Network)
-	assert.Empty(t, params.TokenSymbol)
-	assert.Empty(t, params.TokenAddress)
-	assert.Zero(t, params.FeeAmount, "支付宝提现被扣了一笔链上 gas，而那笔交易并不存在")
+	assert.ErrorIs(t, err, ErrSupplierWithdrawalChannelInvalid)
+	assert.Zero(t, repo.calls)
 }
 
 // ============================================================================
-// 不写：三种"此刻不上链"，全都退回人工工单，且都不是错误
+// 结算不了：三种形态一律拒绝建单，钱一分不扣（M6b 反转 M3 的"留白退人工"）
 // ============================================================================
 
-// 没接链上客户端 → 单子照建，只是走人工那条路。
+// 没接链上客户端 → NOT_CONFIGURED，一张单子都不建。
 //
-// 这条是 M3 最容易写反的一处。看起来"链上渠道 + 没有链上客户端"是个故障，
-// 该报 503；但 M1/M2 期间「BSC-USDT 进白名单、运营看着绑定地址手工转账」
-// 是一条完整可用的路径，M3 上线不该把它变成一个 5xx。
-//
-// 安全性不靠报错来保证，靠**留白**：没写 network，M4 的 worker 就捞不到它。
-func TestRequestFallsBackToManualWhenChainClientMissing(t *testing.T) {
+// M3 时这里退人工工单，理由是人工打款还是一条活路。M6b 把那条路下掉之后，
+// 一张四列留白的单子既不会被 worker 捞到、也没有人工队列接住——它只会
+// 安静地躺着，而钱在建单那一刻已经扣走。拒绝是唯一不吞钱的答案。
+func TestRequestRejectsWhenChainClientMissing(t *testing.T) {
 	repo := &supplierWithdrawalRepoStub{}
 	svc := withdrawalServiceWithChain(repo, boundWalletRepo(), nil)
 
 	_, err := svc.Request(context.Background(), 7, onchainRequest(100))
-	require.NoError(t, err, "没配金库把一条本来走得通的人工路径变成了 5xx")
-	assert.Equal(t, 1, repo.calls)
-	assert.Empty(t, repo.createParams.Network, "没有客户端却写了 network——worker 会捞到一张打不出去的单子")
-	assert.Zero(t, repo.createParams.FeeAmount, "人工全额打款却扣了 gas")
+	assert.ErrorIs(t, err, ErrSupplierWithdrawalNotConfigured)
+	assert.Zero(t, repo.calls, "结算不了却建了单——钱扣进了一张没人会处理的单子")
 }
 
 // 生产默认（DisabledChainClient）与"没有客户端"必须是同一个结果。
@@ -141,39 +132,36 @@ func TestRequestFallsBackToManualWhenChainClientMissing(t *testing.T) {
 // 两者在语义上是一件事——"这套部署此刻不上链"。如果只判了 nil 而没判
 // TokenAddress 的返回值，接上 wire 的那一刻（DisabledChainClient 是非 nil 的）
 // 行为就会静默地翻个面。
-func TestRequestFallsBackToManualOnDisabledChainClient(t *testing.T) {
+func TestRequestRejectsOnDisabledChainClient(t *testing.T) {
 	repo := &supplierWithdrawalRepoStub{}
 	svc := withdrawalServiceWithChain(repo, boundWalletRepo(), NewDisabledChainClient(0.5))
 
 	_, err := svc.Request(context.Background(), 7, onchainRequest(100))
-	require.NoError(t, err)
-	assert.Empty(t, repo.createParams.Network)
-	assert.Zero(t, repo.createParams.FeeAmount,
-		"金库拒绝广播，却按回落值扣了一笔 gas——这笔钱谁也没花出去")
+	assert.ErrorIs(t, err, ErrSupplierWithdrawalNotConfigured)
+	assert.Zero(t, repo.calls)
 }
 
-// 打款开着，但金库里是另一种币 → 同样退回人工，不能标成 USDT。
+// 打款开着，但金库里是另一种币 → 同样拒绝，不能标成 USDT 交给 worker。
 //
 // 这是"配置与注册表对不上"的那个缝：渠道说 USDT，金库配的是 USDC。
-// 把单子标成 USDT 再交给 worker，结果是有人收到了错的币；标成 USDC 又与
-// 供给者点的那个渠道对不上。唯一诚实的动作是让它走人工，让人看一眼。
-func TestRequestFallsBackToManualWhenVaultHoldsAnotherToken(t *testing.T) {
+// 把单子标成 USDT，worker 的 checkToken 会拒（§9.9），单子卡成 failed；
+// 标成 USDC 又与供给者点的渠道对不上。在建单这一刻拒绝，钱还没扣。
+func TestRequestRejectsWhenVaultHoldsAnotherToken(t *testing.T) {
 	repo := &supplierWithdrawalRepoStub{}
 	svc := withdrawalServiceWithChain(repo, boundWalletRepo(), NewMockChainClient(MockChainOptions{NoToken: true, Fee: 0.3}))
 
 	_, err := svc.Request(context.Background(), 7, onchainRequest(100))
-	require.NoError(t, err)
-	assert.Empty(t, repo.createParams.TokenAddress)
-	assert.Empty(t, repo.createParams.Network, "金库里是另一种币，单子却被标成了会自动打款")
+	assert.ErrorIs(t, err, ErrSupplierWithdrawalNotConfigured)
+	assert.Zero(t, repo.calls)
 }
 
-// 退回人工不等于放松收款地址那道门：没绑地址仍然拒绝建单。
+// 金库配好了也不放松收款地址那道门：没绑地址仍然拒绝建单。
 //
-// 两道门管的是两件事——地址来源（M1）与结算方式（M3）。合在一起判的话，
-// "没配金库"会顺带把"必须用绑定地址"也关掉，于是手填地址又溜回来了。
-func TestManualFallbackStillRequiresBoundAddress(t *testing.T) {
+// 两道门管的是两件事——地址来源（M1）与结算方式（M3/M6b）。
+// 合在一起判的话，"金库配好了"会顺带把"必须用绑定地址"也关掉。
+func TestRequestStillRequiresBoundAddress(t *testing.T) {
 	repo := &supplierWithdrawalRepoStub{}
-	svc := withdrawalServiceWithChain(repo, &supplierPayoutWalletRepoStub{wallet: nil}, nil)
+	svc := withdrawalServiceWithChain(repo, &supplierPayoutWalletRepoStub{wallet: nil}, NewMockChainClient(MockChainOptions{Fee: 0.3}))
 
 	_, err := svc.Request(context.Background(), 7, onchainRequest(100))
 	assert.ErrorIs(t, err, ErrSupplierPayoutWalletNotFound)

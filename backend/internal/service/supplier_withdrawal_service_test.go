@@ -119,10 +119,15 @@ func newWithdrawalService(
 	settings *SupplyWithdrawalSettings,
 	wallet supplierWithdrawalWalletReader,
 ) *SupplierWithdrawalService {
+	// M6b 起提现只剩链上一条路：默认装配一个能结算 BSC-USDT 的假金库
+	// （Fee 0.3）和一个已绑好地址的钱包，让这批测试聚焦在各自的边界上。
+	// 要测「结算不了」的形态，各测试自行覆盖 svc.chain。
 	return &SupplierWithdrawalService{
-		repo:     repo,
-		wallet:   wallet,
-		settings: &supplierWithdrawalSettingsStub{settings: settings},
+		repo:      repo,
+		wallet:    wallet,
+		settings:  &supplierWithdrawalSettingsStub{settings: settings},
+		chain:     NewMockChainClient(MockChainOptions{Fee: 0.3}),
+		addresses: NewSupplierPayoutWalletService(boundWalletRepo()),
 	}
 }
 
@@ -139,7 +144,7 @@ func TestGetWithdrawalOptionsSurvivesBrokenWalletAndCount(t *testing.T) {
 	assert.True(t, options.Available)
 	assert.Zero(t, options.AvailableCredit)
 	assert.Zero(t, options.PendingCount)
-	assert.Equal(t, []string{"USDT", "支付宝"}, options.Channels)
+	assert.Equal(t, []string{"BSC-USDT"}, options.Channels, "渠道由金库能力派生，不再来自白名单")
 	assert.Equal(t, "工作日 3 天内到账", options.Notice)
 }
 
@@ -166,15 +171,17 @@ func TestGetWithdrawalOptionsWhenClosed(t *testing.T) {
 	assert.False(t, options.Enabled)
 }
 
-// Channels 必须是副本：直接把配置里那个切片交出去，上层 append 一下就改了全进程的配置。
-func TestGetWithdrawalOptionsCopiesChannels(t *testing.T) {
-	settings := openWithdrawalSettings()
+// 老的渠道白名单（settings.Channels）不再参与：M6b 起「能选什么渠道」的唯一
+// 事实是「金库此刻能结算什么」。两个来源并存的话，白名单里配着 BSC-USDT、
+// 金库却换成了 USDC 的部署会给供给者一个必定失败的选项。
+func TestGetWithdrawalOptionsIgnoresTheLegacyWhitelist(t *testing.T) {
+	settings := openWithdrawalSettings() // 白名单里是 USDT/支付宝，全是老的人工渠道
 	svc := newWithdrawalService(&supplierWithdrawalRepoStub{}, settings, nil)
 
 	options, err := svc.GetOptions(context.Background(), 7)
 	require.NoError(t, err)
-	options.Channels[0] = "被改过的"
-	assert.Equal(t, "USDT", settings.Channels[0])
+	assert.Equal(t, []string{"BSC-USDT"}, options.Channels)
+	assert.NotContains(t, options.Channels, "支付宝", "人工渠道已下线，出现在列表里就是一个必定失败的选项")
 }
 
 // ============================================================================
@@ -193,13 +200,14 @@ func TestRequestWithdrawalAnswersSwitchBeforeFields(t *testing.T) {
 	assert.Zero(t, repo.calls)
 }
 
-// 开着但一个渠道都没配，报的是 NOT_CONFIGURED 而不是 CHANNEL_INVALID：
-// 对运营来说这两句话对应完全不同的动作。
+// 开着但金库结算不了任何渠道，报的是 NOT_CONFIGURED 而不是 CHANNEL_INVALID：
+// 对运营来说这两句话对应完全不同的动作（去配金库 vs 去看供给者填了什么）。
 func TestRequestWithdrawalDistinguishesNotConfiguredFromInvalidChannel(t *testing.T) {
 	repo := &supplierWithdrawalRepoStub{}
 	svc := newWithdrawalService(repo, &SupplyWithdrawalSettings{Enabled: true, MaxPending: 1}, nil)
+	svc.chain = NewMockChainClient(MockChainOptions{NoToken: true}) // 金库里没有这种币
 
-	_, err := svc.Request(context.Background(), 7, SupplierWithdrawalRequest{Amount: 100, PayoutChannel: "USDT"})
+	_, err := svc.Request(context.Background(), 7, SupplierWithdrawalRequest{Amount: 100, PayoutChannel: "BSC-USDT"})
 	require.ErrorIs(t, err, ErrSupplierWithdrawalNotConfigured)
 	assert.Zero(t, repo.calls)
 }
@@ -209,29 +217,26 @@ func TestRequestWithdrawalRejectsUnknownChannel(t *testing.T) {
 	svc := newWithdrawalService(repo, openWithdrawalSettings(), nil)
 
 	_, err := svc.Request(context.Background(), 7, SupplierWithdrawalRequest{
-		Amount: 100, PayoutChannel: "usdt", PayoutAccount: "0xabc",
+		Amount: 100, PayoutChannel: "bsc-usdt", PayoutAccount: "0xabc",
 	})
-	require.ErrorIs(t, err, ErrSupplierWithdrawalChannelInvalid, "渠道白名单区分大小写")
+	require.ErrorIs(t, err, ErrSupplierWithdrawalChannelInvalid, "渠道匹配完全相等，大小写不同就是另一个渠道")
 	assert.Zero(t, repo.calls)
 }
 
 func TestRequestWithdrawalFieldValidation(t *testing.T) {
+	// 收款账号的三种坏形态从这张表里消失了：链上渠道的账号来自绑定，
+	// 手填的内容被整个忽略（TestRequestUsesBoundAddressForOnchainChannel），
+	// 于是"账号为空/超长"在提现入口不再是一种可能。
 	cases := []struct {
 		name string
 		req  SupplierWithdrawalRequest
 	}{
-		{"收款账号为空", SupplierWithdrawalRequest{Amount: 100, PayoutChannel: "USDT"}},
-		{"收款账号全是空白", SupplierWithdrawalRequest{Amount: 100, PayoutChannel: "USDT", PayoutAccount: "   "}},
-		{"收款账号过长", SupplierWithdrawalRequest{
-			Amount: 100, PayoutChannel: "USDT",
-			PayoutAccount: strings.Repeat("x", SupplierPayoutAccountMaxLen+1),
-		}},
 		{"备注过长", SupplierWithdrawalRequest{
-			Amount: 100, PayoutChannel: "USDT", PayoutAccount: "0xabc",
+			Amount: 100, PayoutChannel: "BSC-USDT",
 			UserNote: strings.Repeat("x", SupplierWithdrawalNoteMaxLen+1),
 		}},
-		{"金额为 0", SupplierWithdrawalRequest{Amount: 0, PayoutChannel: "USDT", PayoutAccount: "0xabc"}},
-		{"金额为负", SupplierWithdrawalRequest{Amount: -1, PayoutChannel: "USDT", PayoutAccount: "0xabc"}},
+		{"金额为 0", SupplierWithdrawalRequest{Amount: 0, PayoutChannel: "BSC-USDT"}},
+		{"金额为负", SupplierWithdrawalRequest{Amount: -1, PayoutChannel: "BSC-USDT"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -244,15 +249,15 @@ func TestRequestWithdrawalFieldValidation(t *testing.T) {
 	}
 }
 
-// 长度按**字符**算而不是字节：一个 200 个汉字的收款账号在字节口径下早就超了 256，
-// 但它是一个完全合理的地址/姓名。
+// 长度按**字符**算而不是字节：一段 200 个汉字的备注在字节口径下早就超了上限，
+// 但它是一段完全合理的备注。
 func TestRequestWithdrawalCountsRunesNotBytes(t *testing.T) {
 	repo := &supplierWithdrawalRepoStub{}
 	svc := newWithdrawalService(repo, openWithdrawalSettings(), nil)
 
 	_, err := svc.Request(context.Background(), 7, SupplierWithdrawalRequest{
-		Amount: 100, PayoutChannel: "支付宝",
-		PayoutAccount: strings.Repeat("张", SupplierPayoutAccountMaxLen),
+		Amount: 100, PayoutChannel: "BSC-USDT",
+		UserNote: strings.Repeat("备", SupplierWithdrawalNoteMaxLen),
 	})
 	require.NoError(t, err)
 	assert.Equal(t, 1, repo.calls)
@@ -265,7 +270,7 @@ func TestRequestWithdrawalRejectsBelowMinimumInsteadOfClamping(t *testing.T) {
 	svc := newWithdrawalService(repo, openWithdrawalSettings(), nil)
 
 	_, err := svc.Request(context.Background(), 7, SupplierWithdrawalRequest{
-		Amount: 49.99, PayoutChannel: "USDT", PayoutAccount: "0xabc",
+		Amount: 49.99, PayoutChannel: "BSC-USDT",
 	})
 	require.ErrorIs(t, err, ErrSupplierWithdrawalBelowMinimum)
 	assert.Zero(t, repo.calls)
@@ -279,15 +284,19 @@ func TestRequestWithdrawalPassesSanitizedParams(t *testing.T) {
 	svc := newWithdrawalService(repo, openWithdrawalSettings(), nil)
 
 	_, err := svc.Request(context.Background(), 7, SupplierWithdrawalRequest{
-		Amount: 100, PayoutChannel: " USDT ", PayoutAccount: "  0xabc  ", UserNote: "  麻烦了  ",
+		Amount: 100, PayoutChannel: " BSC-USDT ", PayoutAccount: "  手填的一律作废  ", UserNote: "  麻烦了  ",
 	})
 	require.NoError(t, err)
 	assert.Equal(t, int64(7), repo.createParams.UserID)
 	assert.Equal(t, 100.0, repo.createParams.Amount)
-	assert.Equal(t, "USDT", repo.createParams.PayoutChannel)
-	assert.Equal(t, "0xabc", repo.createParams.PayoutAccount)
+	assert.Equal(t, "BSC-USDT", repo.createParams.PayoutChannel)
+	// 账号来自绑定，不是请求体。
+	assert.Equal(t, "0xde709f2102306220921060314715629080e2fb77", repo.createParams.PayoutAccount)
 	assert.Equal(t, "麻烦了", repo.createParams.UserNote)
 	assert.Equal(t, 2, repo.createParams.MaxPending)
+	// 链上-only：每一张建出来的单子都带完整快照。
+	assert.Equal(t, SupplierPayoutNetworkBSC, repo.createParams.Network)
+	assert.InDelta(t, 0.3, repo.createParams.FeeAmount, 1e-9)
 }
 
 // 起提额为 0 = 不设门槛，此时一分钱的申请也该放行（金额本身仍须为正）。
@@ -295,9 +304,12 @@ func TestRequestWithdrawalAllowsAnyPositiveAmountWhenNoMinimum(t *testing.T) {
 	settings := openWithdrawalSettings()
 	settings.MinAmount = 0
 	repo := &supplierWithdrawalRepoStub{}
+	svc := newWithdrawalService(repo, settings, nil)
+	// 手续费压到远低于金额：这条测的是起提额，不是 fee >= amount 那道闸。
+	svc.chain = NewMockChainClient(MockChainOptions{Fee: 0.001})
 
-	_, err := newWithdrawalService(repo, settings, nil).Request(context.Background(), 7, SupplierWithdrawalRequest{
-		Amount: 0.01, PayoutChannel: "USDT", PayoutAccount: "0xabc",
+	_, err := svc.Request(context.Background(), 7, SupplierWithdrawalRequest{
+		Amount: 0.01, PayoutChannel: "BSC-USDT",
 	})
 	require.NoError(t, err)
 	assert.Equal(t, 0.01, repo.createParams.Amount)
@@ -505,7 +517,7 @@ func TestWithdrawalServicePropagatesRepoErrors(t *testing.T) {
 		repo := &supplierWithdrawalRepoStub{createErr: ErrSupplierCreditInsufficient}
 		_, err := newWithdrawalService(repo, openWithdrawalSettings(), nil).
 			Request(context.Background(), 7, SupplierWithdrawalRequest{
-				Amount: 100, PayoutChannel: "USDT", PayoutAccount: "0xabc",
+				Amount: 100, PayoutChannel: "BSC-USDT",
 			})
 		require.ErrorIs(t, err, ErrSupplierCreditInsufficient)
 	})
@@ -557,7 +569,7 @@ func TestWithdrawalRequestNotifies(t *testing.T) {
 	svc, spy := newWithdrawalServiceWithNotifier(repo, openWithdrawalSettings())
 
 	_, err := svc.Request(context.Background(), 7, SupplierWithdrawalRequest{
-		Amount: 100, PayoutChannel: "USDT", PayoutAccount: "T-addr",
+		Amount: 100, PayoutChannel: "BSC-USDT",
 	})
 	require.NoError(t, err)
 	require.Len(t, spy.requested, 1, "新申请必须通知：运营不被叫过来，这张单可以躺三天")
@@ -575,12 +587,12 @@ func TestWithdrawalRequestDoesNotNotifyOnFailure(t *testing.T) {
 		{
 			name: "落库失败（撞未决单上限）",
 			repo: &supplierWithdrawalRepoStub{createErr: ErrSupplierWithdrawalTooManyPending},
-			req:  SupplierWithdrawalRequest{Amount: 100, PayoutChannel: "USDT", PayoutAccount: "T-addr"},
+			req:  SupplierWithdrawalRequest{Amount: 100, PayoutChannel: "BSC-USDT"},
 		},
 		{
 			name: "校验没过（低于起提额）",
 			repo: &supplierWithdrawalRepoStub{},
-			req:  SupplierWithdrawalRequest{Amount: 1, PayoutChannel: "USDT", PayoutAccount: "T-addr"},
+			req:  SupplierWithdrawalRequest{Amount: 1, PayoutChannel: "BSC-USDT"},
 		},
 		{
 			// 落库失败但仓储仍然回了一行。这一例钉的是**调用顺序**：通知必须在
@@ -588,7 +600,7 @@ func TestWithdrawalRequestDoesNotNotifyOnFailure(t *testing.T) {
 			// 供给者会以为自己的余额被扣了。
 			name: "落库失败但返回了半个结果",
 			repo: &supplierWithdrawalRepoStub{createErr: ErrSupplierWithdrawalTooManyPending, createRowOnErr: true},
-			req:  SupplierWithdrawalRequest{Amount: 100, PayoutChannel: "USDT", PayoutAccount: "T-addr"},
+			req:  SupplierWithdrawalRequest{Amount: 100, PayoutChannel: "BSC-USDT"},
 		},
 	}
 	for _, tc := range cases {
@@ -664,7 +676,7 @@ func TestWithdrawalWorksWithoutNotifier(t *testing.T) {
 	require.True(t, svc.notifier == nil) //nolint:testifylint // 见 TestNewWithdrawalServiceKeepsNilNotifierNil
 
 	_, err := svc.Request(context.Background(), 7, SupplierWithdrawalRequest{
-		Amount: 100, PayoutChannel: "USDT", PayoutAccount: "T-addr",
+		Amount: 100, PayoutChannel: "BSC-USDT",
 	})
 	assert.NoError(t, err)
 

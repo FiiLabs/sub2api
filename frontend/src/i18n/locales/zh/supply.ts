@@ -383,8 +383,43 @@ export default {
       noticePlaceholder: '到账时效、手续费、需要提供的信息……',
       noticeHint: '显示在供给者的提现表单上，纯文本，最多 {max} 字。',
       rejectNotice: '越界的参数会被直接拒绝而不是夹回：起提额被悄悄夹到上限，结果是所有人都提不了钱，而面板上看不出任何异常。',
+      channelsRetired: '收款渠道已改由下方「链上金库」的配置派生：金库能结算什么币，供给者就能提什么。旧的渠道白名单不再被读取。',
       save: '保存提现参数',
       saved: '提现参数已保存'
+    },
+
+    // 链上金库（M6）。私钥只进不出：这张卡上任何地方都不会回显私钥，
+    // 保存后能看到的只有从它推导出的金库地址。
+    payoutChain: {
+      title: '链上金库',
+      description: '提现由这里配置的金库自动上链打款。保存即生效，无需重启。',
+      statusLive: '打款客户端已装配（LIVE），链 ID 已与节点核对。',
+      statusUnverified: '客户端已装配，但链 ID 没核上或有告警——看下面的错误信息。',
+      statusOff: '链上打款未启用。供给者的提现入口整体不可用。',
+      enabled: '启用链上打款',
+      enabledHint: '开启并配好金库后，提现单由 worker 自动上链结算。关闭时供给者无法发起提现。',
+      rpcUrl: '节点 RPC 地址',
+      chainId: '链 ID',
+      chainIdHint: 'BSC 主网 56，测试网 97。保存时会向节点核对。',
+      tokenSymbol: '币种符号',
+      tokenAddress: '稳定币合约地址',
+      tokenAddressHint: '换这个地址等于换一种币：老单子上钉的是建单那一刻的合约，worker 会拒绝为它们发新配置的币（走 failed → 人工裁决）。',
+      disperseAddress: '批量合约地址（可选）',
+      disperseHint: '留空则逐笔转账。配上后同一轮的同币种单子合成一笔 disperseToken，省 gas。',
+      signerKey: '金库私钥',
+      signerKeyPlaceholder: '0x 开头的 64 位十六进制私钥',
+      signerKeyKeep: '已配置。留空保存 = 保持不变',
+      signerKeyHint: '私钥加密落库（AES-256-GCM），保存后不再回显；页面上能看到的只有推导出的金库地址。',
+      treasury: '金库地址：{address}',
+      confirmations: '确认数',
+      nativeUsd: 'BNB 美元价（0 = 不换算）',
+      nativeUsdHint: '手续费估算用的常数，不是喂价。填 0 时手续费按下面的兜底值收。',
+      fallbackFee: '兜底手续费（USD/笔）',
+      feeMultiplier: '手续费安全系数',
+      verify: '测试连接',
+      verifying: '正在核对…',
+      save: '保存并生效',
+      saved: '金库配置已保存并生效'
     },
 
     error: {

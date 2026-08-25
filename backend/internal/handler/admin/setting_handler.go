@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/Wei-Shaw/sub2api/internal/payoutchain"
 	"log/slog"
 	"regexp"
 	"strings"
@@ -62,6 +63,10 @@ type SettingHandler struct {
 	notificationEmailService *service.NotificationEmailService
 	totpService              *service.TotpService
 	userService              *service.UserService
+
+	// APEXONE-EXT: 链上打款金库配置（M6）。setter 注入，见 SetPayoutChain。
+	payoutChainManager *payoutchain.Manager
+	secretEncryptor    service.SecretEncryptor
 }
 
 // NewSettingHandler 创建系统设置处理器

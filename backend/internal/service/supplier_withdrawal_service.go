@@ -192,12 +192,17 @@ func (s *SupplierWithdrawalService) GetOptions(ctx context.Context, userID int64
 		return nil, infraerrors.BadRequest("INVALID_USER", "invalid user")
 	}
 	settings := s.settings.GetSupplyWithdrawalSettings(ctx)
+	// M6b 起渠道列表**由链上金库的能力派生**，settings.Channels 不再参与：
+	// 提现只剩链上一条路，「能选什么渠道」的唯一事实是「金库此刻能结算什么」。
+	// 两个来源并存的话，白名单里配着 BSC-USDT、金库却换成了 USDC 的部署会
+	// 给供给者一个必定失败的选项。
+	channels := s.settleableChannels()
 	out := &SupplierWithdrawalOptions{
-		Available:       settings.Available(),
+		Available:       settings.Enabled && len(channels) > 0,
 		Enabled:         settings.Enabled,
 		MinAmount:       settings.MinAmount,
 		MaxPending:      settings.MaxPending,
-		Channels:        append([]string(nil), settings.Channels...),
+		Channels:        channels,
 		Notice:          settings.Notice,
 		OnchainChannels: SupplierOnchainChannels(),
 		OnchainFees:     s.feeQuotes(ctx),
@@ -237,10 +242,14 @@ func (s *SupplierWithdrawalService) Request(ctx context.Context, userID int64, r
 	if !settings.Enabled {
 		return nil, ErrSupplierWithdrawalDisabled
 	}
-	if len(settings.Channels) == 0 {
+	// M6b：渠道判据 = 链上金库此刻能结算什么（与 GetOptions 同一个函数）。
+	// 「开着但金库没配好」回 NotConfigured——前端画的是"渠道维护中"，
+	// 指向平台配置而不是让供给者检查自己填了什么。
+	channels := s.settleableChannels()
+	if len(channels) == 0 {
 		return nil, ErrSupplierWithdrawalNotConfigured
 	}
-	if !settings.HasChannel(req.PayoutChannel) {
+	if !containsTrimmed(channels, req.PayoutChannel) {
 		return nil, ErrSupplierWithdrawalChannelInvalid
 	}
 
@@ -393,10 +402,35 @@ func (s *SupplierWithdrawalService) settleOnChain(onchain SupplierOnchainChannel
 	return s.chain.TokenAddress(onchain.Network, onchain.Token)
 }
 
+// settleableChannels 此刻真能提现的渠道 = 金库能结算的链上渠道（M6b 起唯一判据）。
+//
+// 顺序沿注册表：它是稳定的，前端下拉的顺序不该随一次配置热换而洗牌。
+func (s *SupplierWithdrawalService) settleableChannels() []string {
+	channels := []string{}
+	for _, channel := range SupplierOnchainChannels() {
+		if _, ok := s.settleOnChain(channel); ok {
+			channels = append(channels, channel.Channel)
+		}
+	}
+	return channels
+}
+
+// containsTrimmed 渠道匹配：完全相等，只 trim 首尾空格（与 §3.7 的老规矩一致）。
+func containsTrimmed(list []string, target string) bool {
+	trimmed := strings.TrimSpace(target)
+	for _, item := range list {
+		if item == trimmed {
+			return true
+		}
+	}
+	return false
+}
+
 // feeQuotes 给表单报一份「此刻哪些渠道会自动打款、各扣多少」。
 //
-// 只报真的能结算的那些（判据与建单同一个 settleOnChain），因此这份列表可能比
-// OnchainChannels 短——差集的含义是"这些渠道此刻走人工，全额到账"。
+// 只报真的能结算的那些（判据与建单同一个 settleOnChain）。M6b 起渠道列表
+// 本身就由同一判据派生，这份报价因此与 Channels 一一对应——估不出手续费的
+// 渠道是唯一的例外（见下）。
 //
 // 估不出手续费（NaN/无穷）的渠道**整条略过**，不报一个 0：报 0 是在说
 // "这个渠道不收手续费"，而真相是"我们算不出来"，那两句话对着一个正要点提交的人

@@ -378,6 +378,41 @@ export default {
       saved: 'Agreement saved'
     },
 
+    // On-chain treasury (M6). The key goes in and never comes back out:
+    // nothing on this card ever echoes the signer key; after saving, all you
+    // can see is the treasury address derived from it.
+    payoutChain: {
+      title: 'On-chain treasury',
+      description: 'Withdrawals are paid out on-chain by the treasury configured here. Saving takes effect immediately, no restart.',
+      statusLive: 'Payout client is assembled (LIVE); chain id verified against the node.',
+      statusUnverified: 'Client assembled, but the chain id could not be verified or there is a warning — see the error below.',
+      statusOff: 'On-chain payout is off. The withdrawal entry is unavailable to suppliers.',
+      enabled: 'Enable on-chain payout',
+      enabledHint: 'With the treasury configured, withdrawal requests are settled on-chain by the worker. While off, suppliers cannot request withdrawals.',
+      rpcUrl: 'Node RPC URL',
+      chainId: 'Chain ID',
+      chainIdHint: 'BSC mainnet is 56, testnet 97. Verified against the node on save.',
+      tokenSymbol: 'Token symbol',
+      tokenAddress: 'Stablecoin contract address',
+      tokenAddressHint: 'Changing this address changes the coin: old requests are pinned to the contract at creation time, and the worker refuses to pay them in the new coin (failed → operator).',
+      disperseAddress: 'Batch contract address (optional)',
+      disperseHint: 'Leave empty for one transfer per request. With it, same-coin requests in a round are combined into one disperseToken call.',
+      signerKey: 'Treasury signer key',
+      signerKeyPlaceholder: '64 hex characters, 0x prefix optional',
+      signerKeyKeep: 'Configured. Leave empty to keep it',
+      signerKeyHint: 'Stored encrypted (AES-256-GCM) and never echoed back; the only thing shown is the treasury address derived from it.',
+      treasury: 'Treasury address: {address}',
+      confirmations: 'Confirmations',
+      nativeUsd: 'BNB price in USD (0 = no conversion)',
+      nativeUsdHint: 'A constant for fee estimation, not a price feed. With 0, the fallback fee below is charged.',
+      fallbackFee: 'Fallback fee (USD per payout)',
+      feeMultiplier: 'Fee safety multiplier',
+      verify: 'Test connection',
+      verifying: 'Verifying…',
+      save: 'Save & apply',
+      saved: 'Treasury configuration saved and applied'
+    },
+
     // Withdrawal parameters. Every hint here describes what goes wrong when the
     // value is wrong, because this group fails silently: enabled with no channel
     // configured looks perfectly healthy on the dashboard and hard-rejects every
@@ -406,6 +441,8 @@ export default {
       noticePlaceholder: 'Processing time, fees, what information you need…',
       noticeHint: 'Displayed on the supplier withdrawal form. Plain text, at most {max} characters.',
       rejectNotice: 'Out-of-range values are rejected outright rather than clamped: a minimum silently clamped to the cap would lock everyone out of their money with nothing visibly wrong on this page.',
+      channelsRetired:
+        'Payout channels are now derived from the on-chain treasury card: whatever coin the treasury can settle is what suppliers can withdraw. The old channel whitelist is no longer read.',
       save: 'Save withdrawal settings',
       saved: 'Withdrawal settings saved'
     },

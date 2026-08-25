@@ -524,25 +524,12 @@
             </div>
           </div>
 
-          <div>
-            <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-              {{ t('supplyAdmin.withdrawal.channels') }}
-            </label>
-            <!-- 一行一个渠道，而不是逗号分隔：渠道名里可能有逗号（"银行卡（境内，储蓄）"），
-                 而换行不会。存的是**原样字符串**，供给者提交时按完全相等匹配。 -->
-            <textarea
-              v-model="withdrawalChannelsText"
-              class="input min-h-[6rem] font-mono text-xs"
-              :placeholder="t('supplyAdmin.withdrawal.channelsPlaceholder')"
-              data-testid="supply-withdrawal-channels"
-            ></textarea>
-            <p class="mt-1 text-xs text-amber-600 dark:text-amber-400">
-              {{
-                t('supplyAdmin.withdrawal.channelsHint', {
-                  max: withdrawalBounds.channels_max,
-                  len: withdrawalBounds.channel_max_len,
-                })
-              }}
+          <!-- M6b：渠道白名单已下线。「能选什么渠道」由链上金库的配置派生
+               （见下面那张卡），这里编辑一份不再被读的名单只会造出
+               「面板上看着配好了、实际全被忽略」的错觉。 -->
+          <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-900">
+            <p class="text-xs text-gray-600 dark:text-gray-300" data-testid="supply-withdrawal-channels-retired">
+              {{ t('supplyAdmin.withdrawal.channelsRetired') }}
             </p>
           </div>
 
@@ -599,6 +586,147 @@
             </button>
           </div>
         </div>
+
+        <!-- ===================== 链上金库（M6） ===================== -->
+        <!-- 第七张卡。私钥只进不出：输入框是 password 型、保存后回显的只有
+             推导出的金库地址；留空保存 = 沿用已存的那把。 -->
+        <div class="card space-y-4 p-6" data-testid="supply-payout-chain-card">
+          <div>
+            <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('supplyAdmin.payoutChain.title') }}</h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.payoutChain.description') }}</p>
+          </div>
+
+          <!-- 装配状态横幅：它回答「此刻真的能打款吗」，与下面「存了什么」是两个问题。 -->
+          <div class="rounded-lg border p-3" :class="payoutChainBanner.box" data-testid="supply-payout-chain-status">
+            <p class="text-xs font-medium" :class="payoutChainBanner.text">{{ payoutChainBanner.headline }}</p>
+            <p class="mt-1 break-all font-mono text-xs text-gray-500 dark:text-gray-400">{{ payoutChainStatus?.summary }}</p>
+            <p v-if="payoutChainStatus?.error" class="mt-1 text-xs text-red-600 dark:text-red-400">
+              {{ payoutChainStatus.error }}
+            </p>
+          </div>
+
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.payoutChain.enabled') }}</p>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.payoutChain.enabledHint') }}</p>
+            </div>
+            <Toggle v-model="payoutChainForm.enabled" data-testid="supply-payout-chain-enabled" />
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div class="sm:col-span-2">
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('supplyAdmin.payoutChain.rpcUrl') }}
+              </label>
+              <input v-model="payoutChainForm.rpc_url" class="input font-mono text-xs" type="text"
+                placeholder="https://bsc-dataseed.bnbchain.org" data-testid="supply-payout-chain-rpc" />
+            </div>
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('supplyAdmin.payoutChain.chainId') }}
+              </label>
+              <input v-model.number="payoutChainForm.chain_id" class="input" type="number" min="1"
+                data-testid="supply-payout-chain-chain-id" />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.payoutChain.chainIdHint') }}</p>
+            </div>
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('supplyAdmin.payoutChain.tokenSymbol') }}
+              </label>
+              <input v-model="payoutChainForm.token_symbol" class="input" type="text" placeholder="USDT"
+                data-testid="supply-payout-chain-token-symbol" />
+            </div>
+            <div class="sm:col-span-2">
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('supplyAdmin.payoutChain.tokenAddress') }}
+              </label>
+              <input v-model="payoutChainForm.token_address" class="input font-mono text-xs" type="text"
+                placeholder="0x…" data-testid="supply-payout-chain-token-address" />
+              <p class="mt-1 text-xs text-amber-600 dark:text-amber-400">{{ t('supplyAdmin.payoutChain.tokenAddressHint') }}</p>
+            </div>
+            <div class="sm:col-span-2">
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('supplyAdmin.payoutChain.disperseAddress') }}
+              </label>
+              <input v-model="payoutChainForm.disperse_address" class="input font-mono text-xs" type="text"
+                placeholder="0x…" data-testid="supply-payout-chain-disperse" />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.payoutChain.disperseHint') }}</p>
+            </div>
+            <div class="sm:col-span-2">
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('supplyAdmin.payoutChain.signerKey') }}
+              </label>
+              <input
+                v-model="payoutChainSignerInput"
+                class="input font-mono text-xs"
+                type="password"
+                autocomplete="off"
+                :placeholder="
+                  payoutChainSignerConfigured
+                    ? t('supplyAdmin.payoutChain.signerKeyKeep')
+                    : t('supplyAdmin.payoutChain.signerKeyPlaceholder')
+                "
+                data-testid="supply-payout-chain-signer"
+              />
+              <p class="mt-1 text-xs text-amber-600 dark:text-amber-400">{{ t('supplyAdmin.payoutChain.signerKeyHint') }}</p>
+              <p
+                v-if="payoutChainStatus?.treasury"
+                class="mt-1 break-all font-mono text-xs text-gray-500 dark:text-gray-400"
+                data-testid="supply-payout-chain-treasury"
+              >
+                {{ t('supplyAdmin.payoutChain.treasury', { address: payoutChainStatus.treasury }) }}
+              </p>
+            </div>
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('supplyAdmin.payoutChain.confirmations') }}
+              </label>
+              <input v-model.number="payoutChainForm.confirmations" class="input" type="number" min="1"
+                data-testid="supply-payout-chain-confirmations" />
+            </div>
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('supplyAdmin.payoutChain.nativeUsd') }}
+              </label>
+              <input v-model.number="payoutChainForm.native_usd" class="input" type="number" min="0" step="0.01"
+                data-testid="supply-payout-chain-native-usd" />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.payoutChain.nativeUsdHint') }}</p>
+            </div>
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('supplyAdmin.payoutChain.fallbackFee') }}
+              </label>
+              <input v-model.number="payoutChainForm.fallback_fee" class="input" type="number" min="0" step="0.01"
+                data-testid="supply-payout-chain-fallback-fee" />
+            </div>
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('supplyAdmin.payoutChain.feeMultiplier') }}
+              </label>
+              <input v-model.number="payoutChainForm.fee_multiplier" class="input" type="number" min="1" step="0.1"
+                data-testid="supply-payout-chain-fee-multiplier" />
+            </div>
+          </div>
+
+          <div class="flex justify-end gap-2">
+            <button
+              class="btn btn-secondary"
+              :disabled="verifyingPayoutChain"
+              data-testid="supply-payout-chain-verify"
+              @click="verifyPayoutChain"
+            >
+              {{ verifyingPayoutChain ? t('supplyAdmin.payoutChain.verifying') : t('supplyAdmin.payoutChain.verify') }}
+            </button>
+            <button
+              class="btn btn-primary"
+              :disabled="savingPayoutChain"
+              data-testid="supply-payout-chain-save"
+              @click="savePayoutChain"
+            >
+              {{ t('supplyAdmin.payoutChain.save') }}
+            </button>
+          </div>
+        </div>
       </template>
     </div>
   </AppLayout>
@@ -611,6 +739,9 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import {
   adminSupplyMarketAPI,
+  type SupplyPayoutChainPayload,
+  type SupplyPayoutChainSettings,
+  type SupplyPayoutChainStatus,
   type SupplyPoolPayload,
   type SupplyPoolSettings,
   type SupplyProbationPayload,
@@ -741,15 +872,6 @@ const withdrawalBounds = reactive({
  * 而换行不会。getter 里不做 trim/过滤——那会让运营正在敲的空行当场消失，
  * 光标跳走；清理留到 setter，也就是真正要存的那一刻。
  */
-const withdrawalChannelsText = computed({
-  get: () => withdrawalForm.channels.join('\n'),
-  set: (value: string) => {
-    withdrawalForm.channels = value
-      .split('\n')
-      .map(line => line.trim())
-      .filter(line => line !== '')
-  },
-})
 
 /** 运营收件人的文本形态。同 withdrawalChannelsText：一行一个，清理留到 setter。 */
 const withdrawalNotifyEmailsText = computed({
@@ -780,13 +902,8 @@ const withdrawalStatus = computed(() => {
       message: 'supplyAdmin.withdrawal.closedNotice',
     }
   }
-  if (withdrawalForm.channels.length === 0) {
-    return {
-      box: 'border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-900/20',
-      text: 'text-red-700 dark:text-red-300',
-      message: 'supplyAdmin.withdrawal.noChannelNotice',
-    }
-  }
+  // 「有没有能结算的渠道」看金库那张卡的 status，不再在这里判：
+  // 判据只能有一个来源，两处各判一份迟早给出两个答案。
   if (withdrawalForm.notify_emails.length === 0) {
     return {
       box: 'border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-900/20',
@@ -1051,6 +1168,102 @@ async function saveWithdrawal(): Promise<void> {
   }
 }
 
+// ============================================================================
+// 链上金库（M6）
+// ============================================================================
+
+const savingPayoutChain = ref(false)
+const verifyingPayoutChain = ref(false)
+const payoutChainStatus = ref<SupplyPayoutChainStatus | null>(null)
+const payoutChainSignerConfigured = ref(false)
+// 私钥输入框独立于表单：它是只写字段，回显永远为空，
+// 留空保存 = 后端沿用已存的那把。
+const payoutChainSignerInput = ref('')
+const payoutChainForm = reactive<Omit<SupplyPayoutChainPayload, 'signer_key'>>({
+  enabled: false,
+  rpc_url: '',
+  token_address: '',
+  token_symbol: 'USDT',
+  disperse_address: '',
+  chain_id: 56,
+  native_usd: 0,
+  confirmations: 3,
+  fallback_fee: 0.5,
+  fee_multiplier: 1.5,
+})
+
+/** 状态横幅：live 且核过链 = 绿；live 但核不上/有错 = 琥珀；其余 = 灰。 */
+const payoutChainBanner = computed(() => {
+  const status = payoutChainStatus.value
+  if (status?.mode === 'live' && status.chain_verified && !status.error) {
+    return {
+      box: 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-900/20',
+      text: 'text-emerald-700 dark:text-emerald-300',
+      headline: t('supplyAdmin.payoutChain.statusLive'),
+    }
+  }
+  if (status?.mode === 'live') {
+    return {
+      box: 'border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-900/20',
+      text: 'text-amber-700 dark:text-amber-300',
+      headline: t('supplyAdmin.payoutChain.statusUnverified'),
+    }
+  }
+  return {
+    box: 'border-gray-200 bg-gray-50 dark:border-dark-700 dark:bg-dark-900',
+    text: 'text-gray-600 dark:text-gray-300',
+    headline: t('supplyAdmin.payoutChain.statusOff'),
+  }
+})
+
+function applyPayoutChain(settings: SupplyPayoutChainSettings): void {
+  payoutChainForm.enabled = settings.enabled
+  payoutChainForm.rpc_url = settings.rpc_url
+  payoutChainForm.token_address = settings.token_address
+  payoutChainForm.token_symbol = settings.token_symbol
+  payoutChainForm.disperse_address = settings.disperse_address
+  payoutChainForm.chain_id = settings.chain_id
+  payoutChainForm.native_usd = settings.native_usd
+  payoutChainForm.confirmations = settings.confirmations
+  payoutChainForm.fallback_fee = settings.fallback_fee
+  payoutChainForm.fee_multiplier = settings.fee_multiplier
+  payoutChainSignerConfigured.value = settings.signer_configured
+  payoutChainStatus.value = settings.status
+}
+
+async function loadPayoutChain(): Promise<void> {
+  applyPayoutChain(await adminSupplyMarketAPI.getPayoutChainSettings())
+}
+
+/** 保存即热换。私钥输入框在成功后**立即清空**——它不该在页面上多留一秒。 */
+async function savePayoutChain(): Promise<void> {
+  savingPayoutChain.value = true
+  try {
+    const saved = await adminSupplyMarketAPI.updatePayoutChainSettings({
+      ...payoutChainForm,
+      signer_key: payoutChainSignerInput.value.trim(),
+    })
+    payoutChainSignerInput.value = ''
+    applyPayoutChain(saved)
+    appStore.showSuccess(t('supplyAdmin.payoutChain.saved'))
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('supplyAdmin.error.saveFailed')))
+  } finally {
+    savingPayoutChain.value = false
+  }
+}
+
+async function verifyPayoutChain(): Promise<void> {
+  verifyingPayoutChain.value = true
+  try {
+    applyPayoutChain(await adminSupplyMarketAPI.verifyPayoutChain())
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('supplyAdmin.error.loadFailed')))
+  } finally {
+    verifyingPayoutChain.value = false
+  }
+}
+
 onMounted(async () => {
   try {
     await Promise.all([
@@ -1058,6 +1271,7 @@ onMounted(async () => {
       loadPool(),
       loadProbation(),
       loadOnboarding(),
+      loadPayoutChain(),
       loadAgreement(),
       loadWithdrawal(),
     ])

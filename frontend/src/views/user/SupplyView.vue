@@ -190,10 +190,9 @@
                 </select>
               </div>
 
-              <!-- 收款账号有两副面孔，取决于选中的渠道是不是链上渠道。
-                   链上渠道的地址来自**绑定**，不来自这张表单：一串手填的、未经
-                   校验的字符被当成链上地址打出去，是这整套绑定机制要消灭的东西。
-                   所以那种情况下这里根本不该存在一个自由输入框。 -->
+              <!-- 收款地址只有一个来源：绑定（M6b 起提现只剩链上渠道）。
+                   这张表单上**不存在**自由输入收款账号的地方——一串手填的、
+                   未经校验的字符被当成链上地址打出去，正是绑定机制要消灭的东西。 -->
               <div v-if="selectedOnchainChannel" class="sm:col-span-2" data-testid="supply-payout-wallet">
                 <label class="input-label">
                   {{
@@ -238,9 +237,6 @@
                       {{ t('supply.withdrawal.fee.notCovered') }}
                     </p>
                   </template>
-                  <p v-else class="text-gray-500 dark:text-dark-400" data-testid="supply-withdrawal-fee-manual">
-                    {{ t('supply.withdrawal.fee.manualFallback') }}
-                  </p>
                 </div>
 
                 <!-- 已绑定：默认只读地显示那一串，不摊在可编辑的输入框里。
@@ -326,22 +322,6 @@
                     {{ t('supply.withdrawal.wallet.hint') }}
                   </p>
                 </div>
-              </div>
-
-              <div v-else class="sm:col-span-2">
-                <label class="input-label" for="withdrawal-account">{{ t('supply.withdrawal.accountLabel') }}</label>
-                <input
-                  id="withdrawal-account"
-                  v-model="withdrawalForm.payout_account"
-                  class="input"
-                  type="text"
-                  autocomplete="off"
-                  :placeholder="t('supply.withdrawal.accountPlaceholder')"
-                  data-testid="supply-withdrawal-account"
-                />
-                <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">
-                  {{ t('supply.withdrawal.accountHint') }}
-                </p>
               </div>
 
               <div class="sm:col-span-2">
@@ -1191,18 +1171,12 @@ async function submitWithdrawal(): Promise<void> {
     return
   }
 
-  // 链上渠道的收款账号来自绑定，**不**来自这张表单里的任何一个输入框。
-  // 这里用 boundPayoutWallet 而不是 payout_account，是为了让「手填的一串字符
-  // 被当成链上地址送出去」这件事在前端就没有路径——后端会用同一条规则覆盖它
-  // （ResolvePayoutAddress），但那时单子已经建了一半。
-  const onchain = selectedOnchainChannel.value
-  const payoutAccount = onchain
-    ? boundPayoutWallet.value?.address ?? ''
-    : withdrawalForm.value.payout_account.trim()
+  // 收款账号只来自绑定（M6b 起提现只剩链上渠道），**不**来自任何输入框。
+  // 后端会用同一条规则覆盖手填内容（ResolvePayoutAddress），但等它兜底时
+  // 单子已经建了一半——前端必须让这条路径根本不存在。
+  const payoutAccount = boundPayoutWallet.value?.address ?? ''
   if (!payoutAccount) {
-    appStore.showError(
-      onchain ? t('supply.error.payoutWalletRequired') : t('supply.error.withdrawalAccountRequired')
-    )
+    appStore.showError(t('supply.error.payoutWalletRequired'))
     return
   }
 

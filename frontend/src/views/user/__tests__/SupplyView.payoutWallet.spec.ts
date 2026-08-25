@@ -114,12 +114,13 @@ describe('SupplyView payout wallet', () => {
     expect(wrapper.find('[data-testid="supply-withdrawal-account"]').exists()).toBe(false)
   })
 
-  it('keeps the free-text field for a manual channel', async () => {
-    // 反面同样要证：绝大多数渠道（支付宝、银行卡）本来就该手填，
-    // 把它们也变成"请先绑定"会让提现整体不可用。
+  it('has no free-text account field anywhere on the form (M6b)', async () => {
+    // 人工渠道已整体下线：这张表单上不存在任何一个能手填收款账号的输入框。
+    // 后端的渠道列表只会给出链上渠道，但即便 API 塞回一个别的字符串，
+    // 表单也只能画出"没有绑定块"，绝不能画出一个自由输入框。
     const wrapper = await mountWithChannel('支付宝')
 
-    expect(wrapper.find('[data-testid="supply-withdrawal-account"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="supply-withdrawal-account"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="supply-payout-wallet"]').exists()).toBe(false)
   })
 
@@ -213,16 +214,19 @@ describe('SupplyView payout wallet', () => {
   // **每一次真实提交**都在 .trim() 上抛 TypeError，按钮看起来毫无反应。
   it('survives the number that v-model actually writes into the amount field', async () => {
     api.requestWithdrawal.mockResolvedValue({ id: 1 })
+    api.getPayoutWallets.mockResolvedValue({
+      channels: [],
+      wallets: [{ id: 1, network: 'bsc', address: BOUND, created_at: '', updated_at: '' }],
+    })
 
-    const wrapper = await mountWithChannel('支付宝')
+    const wrapper = await mountWithChannel('BSC-USDT')
     await wrapper.find('[data-testid="supply-withdrawal-amount"]').setValue('50')
-    await wrapper.find('[data-testid="supply-withdrawal-account"]').setValue('alipay@example.com')
     await wrapper.find('[data-testid="supply-withdrawal-submit"]').trigger('click')
     await flushPromises()
 
     expect(showError).not.toHaveBeenCalled()
     expect(api.requestWithdrawal).toHaveBeenCalledWith(
-      expect.objectContaining({ amount: 50, payout_account: 'alipay@example.com' })
+      expect.objectContaining({ amount: 50, payout_account: BOUND })
     )
   })
 
