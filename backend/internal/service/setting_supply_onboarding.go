@@ -109,6 +109,13 @@ const (
 // 两个字段都以 **0 = 不限** 为约定。0 在这里是一个有意义的取值而不是「没填」——
 // 见 handler 侧用指针接收的理由。
 type SupplyOnboardingSettings struct {
+	// RelayEnabled 允许供给者自助提交「URL + API Key」形态的中转账号（M7）。
+	//
+	// 默认关，与其它开关同一条上线策略。单独一个开关而不是跟着总开关走：
+	// 中转把信任模型翻了个面（消费者的 prompt 会流经供给者的服务器），
+	// 开不开它是一个独立的产品决定，不是接入功能的一个子项。
+	RelayEnabled bool `json:"relay_enabled"`
+
 	// MaxAccountsPerUser 一个人名下最多能有几个未解绑的供给账号。
 	//
 	// 数的是**当下**的账号数，不是历史累计：解绑一个号就腾出一个位置。

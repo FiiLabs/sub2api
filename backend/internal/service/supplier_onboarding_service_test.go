@@ -82,6 +82,9 @@ type supplierOnboardingRepoStub struct {
 	findAgreementErr           error
 	latestAgreementErr         error
 	latestAgreement            *SupplierAgreementAcceptance
+
+	relayEndpoints map[string]int64
+	relayFindErr   error
 }
 
 // acceptAgreement 给替身补一条同意记录，供门禁用例摆场景。
@@ -268,6 +271,17 @@ func (r *supplierOnboardingRepoStub) ScrubAccountCredentials(_ context.Context, 
 	r.record("ScrubAccountCredentials")
 	r.scrubCalls = append(r.scrubCalls, [2]int64{accountID, userID})
 	return r.scrubErr
+}
+
+// relayEndpoints 已存在的中转端点，键 "baseURL|apiKey" → 账号 id（M7 查重桩）。
+func (r *supplierOnboardingRepoStub) FindAccountIDByRelayEndpoint(_ context.Context, _ string, baseURL, apiKey string) (int64, error) {
+	if r.relayFindErr != nil {
+		return 0, r.relayFindErr
+	}
+	if id, ok := r.relayEndpoints[baseURL+"|"+apiKey]; ok {
+		return id, nil
+	}
+	return 0, nil
 }
 
 func (r *supplierOnboardingRepoStub) FindAccountIDByUpstreamIdentity(_ context.Context, _ string, key SupplierIdentityKey, value string) (int64, error) {

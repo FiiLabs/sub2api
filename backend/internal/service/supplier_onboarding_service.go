@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -100,6 +101,10 @@ type SupplierOnboardingService struct {
 	settings    supplierSettingsReader
 	// incidents 失效熔断的判据来源。可选，见 SetIncidentGuard。
 	incidents supplierIncidentGuard
+
+	// relayProbeClient 中转提交时探测用的 HTTP 客户端。nil = 默认（15s 超时）。
+	// 单独一个字段是给测试注桩用的——探测是真实网络调用，单测不该出网。
+	relayProbeClient *http.Client
 }
 
 // supplierIncidentGuard 是「这个人最近坏掉的号是不是太多了」这一个判断。
@@ -346,16 +351,25 @@ func (s *SupplierOnboardingService) CompleteOAuth(ctx context.Context, input *Co
 		// 走既有的错误状态机，那条路径有告警、有错误信息，比静默暂停可诊断。
 		AutoPauseOnExpired: false,
 	}
+	return s.finalizeSupplyAccount(ctx, account, input.UserID, input.ClientIP, groupID)
+}
+
+// finalizeSupplyAccount 把一个准备好的账号真正挂进供给池：建行 → 写归属 →
+// 记来源 → 绑分组。OAuth 与中转（M7）两条接入路径共用——这段的失败语义
+// 是逐步推进不回滚的（理由见各步注释），两条路径各抄一份迟早漂成两套语义。
+func (s *SupplierOnboardingService) finalizeSupplyAccount(
+	ctx context.Context, account *Account, userID int64, clientIP string, groupID int64,
+) (*SupplierAccountView, error) {
 	if err := s.accountRepo.Create(ctx, account); err != nil {
 		return nil, fmt.Errorf("create supply account: %w", err)
 	}
 
-	if err := s.repo.SetAccountOwner(ctx, account.ID, input.UserID); err != nil {
+	if err := s.repo.SetAccountOwner(ctx, account.ID, userID); err != nil {
 		// 归属没写上，这个号就是个无主的孤儿。它现在 schedulable=false 且未绑分组，
 		// 服务不了任何请求，但留着只会让管理员在账号列表里看到一条来历不明的记录。
 		// 补偿失败也只能记日志——此时能做的都做了，剩下的是运维的事。
 		slog.Error("[SupplierOnboarding] failed to set account owner, orphan account left behind",
-			"account_id", account.ID, "user_id", input.UserID, "error", err)
+			"account_id", account.ID, "user_id", userID, "error", err)
 		return nil, fmt.Errorf("set supply account owner: %w", err)
 	}
 
@@ -365,9 +379,9 @@ func (s *SupplierOnboardingService) CompleteOAuth(ctx context.Context, input *Co
 	// 失败不中断接入，只记日志。这不是随手兜底——号已经建出来、已经有主了，此刻
 	// 返回错误也不会撤销这两件事，只会让供给者看到一个"失败了"、实际却挂上了的号。
 	// 代价是每 IP 那道闸少数了这一个，日志里有据可查；收益是不会有半失败的接入。
-	if err := s.repo.RecordAccountOrigin(ctx, account.ID, input.UserID, strings.TrimSpace(input.ClientIP)); err != nil {
+	if err := s.repo.RecordAccountOrigin(ctx, account.ID, userID, strings.TrimSpace(clientIP)); err != nil {
 		slog.Error("[SupplierOnboarding] failed to record account origin, per-IP limit will undercount",
-			"account_id", account.ID, "user_id", input.UserID, "error", err)
+			"account_id", account.ID, "user_id", userID, "error", err)
 	}
 
 	// 绑分组放在最后：绑上之后它就在供给池里了，只是还不可调度。

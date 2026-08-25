@@ -468,6 +468,9 @@ func (h *SettingHandler) UpdateSupplyWithdrawalSettings(c *gin.Context) {
 
 // SupplyOnboardingSettingsResponse 是接入数量上限的对外形态。
 type SupplyOnboardingSettingsResponse struct {
+	// RelayEnabled 「URL + API Key」中转接入开关（M7）。
+	RelayEnabled bool `json:"relay_enabled"`
+
 	MaxAccountsPerUser int `json:"max_accounts_per_user"`
 	MaxAccountsPerIP   int `json:"max_accounts_per_ip"`
 
@@ -492,6 +495,7 @@ func newSupplyOnboardingSettingsResponse(s *service.SupplyOnboardingSettings) Su
 	if s == nil {
 		return resp
 	}
+	resp.RelayEnabled = s.RelayEnabled
 	resp.MaxAccountsPerUser = s.MaxAccountsPerUser
 	resp.MaxAccountsPerIP = s.MaxAccountsPerIP
 	resp.UserCapEnabled = s.MaxAccountsPerUser > 0
@@ -514,6 +518,8 @@ func (h *SettingHandler) GetSupplyOnboardingSettings(c *gin.Context) {
 type UpdateSupplyOnboardingSettingsRequest struct {
 	MaxAccountsPerUser *int `json:"max_accounts_per_user"`
 	MaxAccountsPerIP   *int `json:"max_accounts_per_ip"`
+	// RelayEnabled 同样用指针：漏传不该把一个开着的中转入口静默关掉。
+	RelayEnabled *bool `json:"relay_enabled"`
 }
 
 // UpdateSupplyOnboardingSettings 写接入数量上限
@@ -532,9 +538,16 @@ func (h *SettingHandler) UpdateSupplyOnboardingSettings(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	current := h.settingService.GetSupplyOnboardingSettings(ctx)
-	settings := &service.SupplyOnboardingSettings{
-		MaxAccountsPerUser: current.MaxAccountsPerUser,
-		MaxAccountsPerIP:   current.MaxAccountsPerIP,
+	// 从 current 整体拷贝而不是逐字段抄：早先这里只抄了两个字段，
+	// 于是失效熔断那两项（max_incidents_per_user / incident_window_hours）
+	// 在每一次保存接入上限时被**静默清零**——闸关了，面板上看不出任何异常。
+	// 整体拷贝让「结构体加了字段、这里忘了抄」这类事故从根上不可能。
+	settings := &service.SupplyOnboardingSettings{}
+	if current != nil {
+		*settings = *current
+	}
+	if req.RelayEnabled != nil {
+		settings.RelayEnabled = *req.RelayEnabled
 	}
 	if req.MaxAccountsPerUser != nil {
 		if *req.MaxAccountsPerUser < 0 {

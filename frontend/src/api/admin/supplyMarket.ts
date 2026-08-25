@@ -101,6 +101,13 @@ export type SupplyAgreementPayload = Omit<
 
 export interface SupplyOnboardingSettings {
   /**
+   * 「URL + API Key」中转接入开关（M7）。默认关。
+   *
+   * 单独一个开关：中转把信任模型翻了个面——消费者的请求会被转发到
+   * **供给者控制的服务器**，prompt 对供给者可见。开它之前协议文本要跟上。
+   */
+  relay_enabled: boolean
+  /**
    * 一个人名下最多能有几个未解绑的供给账号。**0 = 不限**。
    *
    * 数的是当下的账号数而不是历史累计：解绑一个号就腾出一个位置。

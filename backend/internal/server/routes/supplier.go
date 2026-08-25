@@ -47,6 +47,9 @@ func RegisterSupplierRoutes(
 		// 免得有人用它刷会话表。
 		supply.POST("/oauth/start", panelRateLimiter.Heavy(), h.Supplier.StartOAuth)
 		supply.POST("/oauth/complete", panelRateLimiter.Heavy(), h.Supplier.CompleteOAuth)
+		// APEXONE-EXT: 中转接入（M7）。Heavy 限流与 OAuth 同档：它会向
+		// 供给者填的端点发一次真实探测，被脚本刷等于让平台替人打压测。
+		supply.POST("/accounts/relay", panelRateLimiter.Heavy(), h.Supplier.SubmitRelayAccount)
 
 		supply.GET("/wallet", h.Supplier.GetWallet)
 		supply.GET("/ledger", h.Supplier.ListLedger)

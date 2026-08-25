@@ -180,6 +180,11 @@ type SupplierOnboardingRepository interface {
 	// DeleteExpiredSessions 清理过期未消费的会话，返回删除行数。
 	DeleteExpiredSessions(ctx context.Context, limit int) (int64, error)
 
+	// FindAccountIDByRelayEndpoint 按 (base_url, api_key) 查已有的中转账号（M7 查重）。
+	// 查全部 apikey 账号——含管理员手动加的自营号：同一个端点挂两次，
+	// 两个账号会按同一份供给各算各的分成。没有命中返回 0。
+	FindAccountIDByRelayEndpoint(ctx context.Context, platform, baseURL, apiKey string) (int64, error)
+
 	// SetAccountOwner 把账号归属写到 accounts.owner_user_id。
 	SetAccountOwner(ctx context.Context, accountID int64, userID int64) error
 	// GetAccountOwner 读归属；返回 0 表示自营账号（owner_user_id IS NULL）。

@@ -267,6 +267,8 @@ func TestSupplierRoutes_HeavyRateLimitManifest(t *testing.T) {
 	sort.Strings(got)
 
 	assert.Equal(t, []string{
+		// M7：中转提交会向供给者填的端点发真实探测，被脚本刷 = 平台替人压测。
+		"POST /accounts/relay",
 		"POST /oauth/complete",
 		"POST /oauth/start",
 		"POST /withdrawals",

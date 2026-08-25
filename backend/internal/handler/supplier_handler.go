@@ -69,6 +69,9 @@ type SupplierStatusResponse struct {
 	Enabled bool `json:"enabled"`
 	// SettlementEnabled 结算是否开启（挂上来的号产生的用量是否入账）。
 	SettlementEnabled bool `json:"settlement_enabled"`
+	// RelayEnabled 「URL + API Key」中转接入开没开（M7）。前端靠它决定
+	// 接入卡画不画第二个标签页。
+	RelayEnabled bool `json:"relay_enabled"`
 }
 
 // GetStatus 返回自助接入是否开放。
@@ -83,6 +86,7 @@ func (h *SupplierHandler) GetStatus(c *gin.Context) {
 	resp := SupplierStatusResponse{}
 	if h.onboardingService != nil {
 		resp.Enabled = h.onboardingService.IsEnabled(c.Request.Context())
+		resp.RelayEnabled = h.onboardingService.RelayEnabled(c.Request.Context())
 	}
 	if h.creditService != nil {
 		resp.SettlementEnabled = h.creditService.IsEnabled(c.Request.Context())
@@ -217,6 +221,49 @@ func (h *SupplierHandler) CompleteOAuth(c *gin.Context) {
 		Name:      req.Name,
 		// 刻意不从请求体读：来源 IP 是限额的判据，让客户端自己填等于让它自己
 		// 决定算在哪个网络头上——那道闸就不存在了。
+		ClientIP: c.ClientIP(),
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, view)
+}
+
+// SupplierSubmitRelayRequest 是中转接入的请求体（M7）。
+type SupplierSubmitRelayRequest struct {
+	BaseURL string `json:"base_url"`
+	APIKey  string `json:"api_key"`
+	Name    string `json:"name"`
+}
+
+// SubmitRelayAccount 供给者提交一个 Anthropic 兼容中转端点。
+// POST /api/v1/user/supply/accounts/relay
+//
+// 与 CompleteOAuth 同一副骨架：身份从 JWT、来源 IP 从连接，请求体里
+// 只有他真正要交的三样东西。API Key 在这条路径上只进内存与 credentials，
+// 不进任何日志（探测失败的日志里也只有状态码与响应片段）。
+func (h *SupplierHandler) SubmitRelayAccount(c *gin.Context) {
+	userID, ok := h.currentUserID(c)
+	if !ok {
+		return
+	}
+	if h.onboardingService == nil {
+		response.ErrorFrom(c, service.ErrSupplierOnboardingDisabled)
+		return
+	}
+
+	var req SupplierSubmitRelayRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request body")
+		return
+	}
+
+	view, err := h.onboardingService.SubmitRelay(c.Request.Context(), &service.SupplierRelaySubmission{
+		UserID:   userID,
+		BaseURL:  req.BaseURL,
+		APIKey:   req.APIKey,
+		Name:     req.Name,
 		ClientIP: c.ClientIP(),
 	})
 	if err != nil {

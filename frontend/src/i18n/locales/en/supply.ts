@@ -119,6 +119,26 @@ export default {
       drainUntil: 'Draining until {time}'
     },
 
+    // Relay onboarding (M7). trustNotice is the one sentence that must never be
+    // cut: the platform forwards consumer requests to the supplier's server,
+    // and that has to be said BEFORE they hand over an endpoint.
+    relay: {
+      title: 'Or: connect an API relay',
+      description: 'Provide an Anthropic-compatible /v1/messages endpoint and its API key; the platform forwards requests to it and you earn a share of the usage.',
+      trustNotice: 'Note: once connected, the platform forwards user request content to the server you provide. You are obliged to handle that data properly — this is also part of the supplier agreement.',
+      baseUrlLabel: 'Endpoint (base URL)',
+      baseUrlHint: 'Must be https, without a path suffix — the platform appends /v1/messages itself.',
+      apiKeyLabel: 'API key',
+      nameLabel: 'Name this account (optional)',
+      namePlaceholder: 'Defaults to the endpoint host',
+      submit: 'Submit & verify',
+      submitting: 'Verifying the endpoint…',
+      probeHint: 'On submit, one minimal real request (claude-3-5-haiku, 1 token) is sent to verify reachability and the key.',
+      submitted: 'Connected. This account is now in review.',
+      failed: 'Failed to connect',
+      fieldsRequired: 'Both the base URL and the API key are required'
+    },
+
     state: {
       pending_review: 'In review',
       active: 'Live',
@@ -339,6 +359,9 @@ export default {
     // stop different things, and the operator needs to know how wide the second
     // one's blast radius is before turning it on.
     onboarding: {
+      relayEnabled: 'Allow “URL + API key” relay onboarding',
+      relayEnabledHint: 'When on, suppliers can self-submit Anthropic-compatible relay endpoints, going through the same review and settlement as subscription accounts.',
+      relayTrustWarning: 'Turning this on means accepting that consumer request content is forwarded to supplier-controlled servers. Make sure the supplier agreement spells out the data-handling obligations.',
       title: 'Onboarding limits',
       description: 'How many supply accounts one person, and one egress network, may connect. 0 means unlimited for both.',
       maxPerUser: 'Max accounts per user',

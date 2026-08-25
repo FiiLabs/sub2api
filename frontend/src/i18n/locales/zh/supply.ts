@@ -112,6 +112,25 @@ export default {
       drainUntil: '排空期至 {time}'
     },
 
+    // 中转接入（M7）。trustNotice 是这一组唯一不能删的句子：平台会把消费者
+    // 请求转发到供给者填的服务器上，这必须在他交出端点**之前**说清。
+    relay: {
+      title: '或：接入 API 中转',
+      description: '填一个 Anthropic 兼容的 /v1/messages 端点和它的 API Key，平台把请求转发过去、按用量给你分成。',
+      trustNotice: '注意：接入后，平台会把用户的请求内容转发到你填的服务器。你有义务妥善处理这些数据——这也写在供给者协议里。',
+      baseUrlLabel: '端点地址（Base URL）',
+      baseUrlHint: '必须是 https。不含路径后缀，平台会自动拼 /v1/messages。',
+      apiKeyLabel: 'API Key',
+      nameLabel: '给这个号起个名字（可选）',
+      namePlaceholder: '留空则用端点域名',
+      submit: '提交并验证',
+      submitting: '正在验证端点…',
+      probeHint: '提交时会向端点发送一条最小的真实请求（claude-3-5-haiku，1 token）验证连通性与 Key。',
+      submitted: '接入成功，已进入观察期。',
+      failed: '接入失败',
+      fieldsRequired: '端点地址与 API Key 都要填'
+    },
+
     state: {
       pending_review: '观察期',
       active: '已上线',
@@ -321,6 +340,9 @@ export default {
     // APEXONE-EXT: 接入上限。两道闸的文案分开写，因为它们挡的不是同一件事，
     // 而运营需要在配之前就知道第二道的误伤面有多大。
     onboarding: {
+      relayEnabled: '开放「URL + API Key」中转接入',
+      relayEnabledHint: '开启后，供给者可以自助提交 Anthropic 兼容中转端点，与订阅号走同一套观察期与结算。',
+      relayTrustWarning: '开启即接受：消费者的请求内容会被转发到供给者控制的服务器。请确认供给者协议已写明数据处理义务。',
       title: '接入上限',
       description: '一个人、一个出口网络最多能往平台挂几个供给账号。两道闸都是 0 = 不限。',
       maxPerUser: '每人最多账号数',

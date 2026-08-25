@@ -703,3 +703,17 @@ M4 的 worker 逐单打款，每张一笔 gas；M5 把同一轮里**同链同币
 **§9.10 补记三（2026-08-25）：加密钥匙首启自动生成并落盘，零手动配置。** `totp.encryption_key` 没配时不再每次启动随机一把（那正是补记二之后撞上的第二个坑：私钥密文在重启后集体变孤儿，症状 `message authentication failed`），而是**首次启动生成一次、写进数据目录的 `totp_encryption.key`（0600）**，之后每次启动读回同一把——密文的寿命不再取决于进程的寿命，运维一行都不用配。刻意落文件而不是数据库：这把钥匙护着的密文就躺在库里（金库私钥、收款账号、TOTP），钥匙进库等于把锁和钥匙锁进同一个抽屉，一份 pg_dump 同时带走两者。三条命门各有测试钉着：重启读回**同一把**；**坏文件不覆盖**（那可能是一把被截断的真钥匙，覆盖等于把已有密文永久变成孤儿——退临时钥匙 + durable=false，让 Seal 的门挡住新的私钥保存）；目录只读时退回老行为（临时钥匙 + durable=false）。路径优先级跟着配置文件走（CONFIG_FILE 的目录 > DATA_DIR > /app/data > .）：钥匙躺在 config.yaml 旁边，备份数据目录时自然一起带走。
 
 **§9.10 补记四（2026-08-25）：资金事务的隔离级由代码自己声明。** 现网事故：普通用户打开控制台随机 500，错误 `pq: could not serialize access due to concurrent update`（40001）。根因不在代码路径而在服务器：那台 Postgres 的 postgresql.conf 把 `default_transaction_isolation` 拧到了 `serializable`，浏览器并发加载 wallet 与 withdrawals/options 时两个事务碰同一行钱包，其一被序列化冲突打死。这套资金代码的正确性建立在「FOR UPDATE + 条件更新 + 唯一索引」上、按 READ COMMITTED 设计——隔离级是设计前提，就该由代码自己声明：两个仓储的 withTx 改为显式 `BeginTx(…, LevelReadCommitted)`，从此不受服务器默认摆布。部署侧同时用 `ALTER DATABASE sub2api SET default_transaction_isolation TO 'read committed'` 把这一个库改回（只动库级不动实例级——那台老容器上的其它库可能有人刻意要 serializable）。回归测试的教训值得记：并发锤复现不了微秒级的冲突窗口（锤了 40 对都绿），换成**确定性构造**（事务内先读钉住快照 → 事务外提交同行更新 → 事务内再写）后，变异（退回 `client.Tx(ctx)`）红在与生产一字不差的错误上；两个仓储的 withTx 是两份代码，各配一条孪生测试。
+
+### 9.11 中转接入——URL + API Key（M7，2026-08-25）
+
+第二条自助接入路径：供给者提交一个 **Anthropic 兼容中转端点**（base URL + API Key），平台把消费者请求转发过去、按用量分成。地基是现成的——账号模型原生支持 `apikey` 类型（管理员一直能手动加），网关调度、计费、观察期探测对它一视同仁；M7 补的只是自助入口和它带来的两个新问题。
+
+**信任模型翻面，是本里程碑所有安全动作的出发点（用户拍板接受）。** OAuth 号的请求直达 Anthropic；中转号的请求打到**供给者控制的服务器**，消费者的 prompt 对供给者可见——这是中转供给的固有性质，技术上无法规避，产品上必须说出来：供给侧表单在提交按钮**之前**放信任提示（「平台会把用户的请求内容转发到你填的服务器」），管理端开关旁边放对称的警告（提醒协议文本要写明数据处理义务）。反过来平台侧多了一个攻击面：供给者填的 URL 是让平台服务器去连的地址——**SSRF**。`normalizeRelayBaseURL` 是这条路径唯一的闸，拒绝的每一类对应一种攻击姿势：非 https、userinfo/query/fragment、localhost 与 `.localhost` 子域、环回/私网/链路本地（含 169.254 云元数据段）/未指定/组播的 IP 字面量。边界写明：DNS rebinding（公网域名解析到内网）这里不挡，那要在拨号时按解析结果再判，属传输层。归一化（host 小写、去尾斜杠）让查重键只有一种写法。
+
+**管理端开关 `supply_onboarding_settings.relay_enabled`，默认关（用户追加的要求）。** 单独一个开关而不是跟总开关走：开它是一个独立的信任模型决定。用户状态接口下发 `relay_enabled`，前端靠它决定整个中转表单**存不存在**——一个点了每步都失败的表单比没有表单糟糕得多。
+
+**编排顺序：开关 → 协议 → 容量 → URL/Key 形状 → 查重 → 探测 → 建号**，每一步排错各有各的事故（探测排查重前 = 替人免费打压测并向重复端点泄探测流量；建号排探测前 = 把一个死端点挂进观察期）。查重键是 `(base_url, api_key)` 组合——中转没有上游身份，端点+钥匙就是身份；同端点不同 key、同 key 不同端点都是独立供给（转售分发、限速分片是真实形态）；查全部账号含管理员手动加的自营号。提交时**当场探测**（对端点发一条 1 token 的真实请求，只认 200）：OAuth 有 token 交换兜真伪，中转没有，不当场验的话一个抄错一位的 key 要等观察期第一次探测才暴露。建号复用 `finalizeSupplyAccount`（从 CompleteOAuth 抽出的共享收尾：建行→归属→来源→绑组），观察期/探测/结算与 OAuth 号完全同机。
+
+**顺手修掉一个既有 bug**：`UpdateSupplyOnboardingSettings` 保存时只手抄两个字段，`max_incidents_per_user` / `incident_window_hours`（失效熔断闸）在每一次保存接入上限时被**静默清零**。改成从 current 整体拷贝再覆写——「结构体加了字段、这里忘了抄」从根上不可能。这也是给 relay_enabled 让路时发现的：同一个坑再踩一次就是中转开关被随手保存关掉。
+
+**验证**：服务层 20+ 用例（SSRF 表逐类、编排顺序逐步、key 形状、fail-closed 查重）；真库钉 jsonb 查重的四种命中形态；前端 3 条（开关关=入口不存在、提交 trim+成功清 key、空字段不出网）；针对性变异 5/5 红（放行 http/私网/localhost、探测非 200 放行、查重排探测后）；Heavy 限流哨兵名单明确加入 `POST /accounts/relay`。全量 unit/integration/lint/前端 1634 绿。

@@ -22,6 +22,7 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -841,4 +842,60 @@ func TestSupplierOnboarding_OriginIPCountIgnoresEmptyIP(t *testing.T) {
 	count, err = repo.CountAccountsByOriginIP(txCtx, "   ")
 	require.NoError(t, err)
 	require.Zero(t, count)
+}
+
+// 中转查重（M7）：键是 (base_url, api_key) 组合，两者各差一个字符都算另一份供给。
+//
+// 只有真库能证的点在 jsonb：credentials->>'base_url' 这条路径对「键不存在」
+// 「值是 null」「值是数字」的行为，sqlmock 里全是我以为的行为。
+func TestSupplierOnboarding_FindAccountIDByRelayEndpoint(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewSupplierOnboardingRepository(client)
+
+	stamp := time.Now().UnixNano()
+	existing := mustCreateAccount(t, client, &service.Account{
+		Name:     fmt.Sprintf("relay-%d", stamp),
+		Platform: service.PlatformAnthropic,
+		Type:     service.AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"base_url": "https://relay.example.com/api",
+			"api_key":  "sk-relay-abc",
+		},
+	})
+	// 一个没有这两个键的 OAuth 号：jsonb 路径取不到值时必须是「不命中」，不是报错。
+	mustCreateAccount(t, client, &service.Account{
+		Name:     fmt.Sprintf("oauth-%d", stamp),
+		Platform: service.PlatformAnthropic,
+		Type:     service.AccountTypeSetupToken,
+		Credentials: map[string]any{
+			"access_token": "tok",
+		},
+	})
+
+	t.Run("组合完全一致才命中", func(t *testing.T) {
+		id, err := repo.FindAccountIDByRelayEndpoint(txCtx, service.PlatformAnthropic,
+			"https://relay.example.com/api", "sk-relay-abc")
+		require.NoError(t, err)
+		assert.Equal(t, existing.ID, id)
+	})
+	t.Run("同端点不同 key 不命中", func(t *testing.T) {
+		id, err := repo.FindAccountIDByRelayEndpoint(txCtx, service.PlatformAnthropic,
+			"https://relay.example.com/api", "sk-relay-DIFFERENT")
+		require.NoError(t, err)
+		assert.Zero(t, id, "同一个端点配两把 key 是两份供给（限速分片），合并算一份会漏掉真复用")
+	})
+	t.Run("同 key 不同端点不命中", func(t *testing.T) {
+		id, err := repo.FindAccountIDByRelayEndpoint(txCtx, service.PlatformAnthropic,
+			"https://other.example.com", "sk-relay-abc")
+		require.NoError(t, err)
+		assert.Zero(t, id)
+	})
+	t.Run("空参不查库直接回零", func(t *testing.T) {
+		id, err := repo.FindAccountIDByRelayEndpoint(txCtx, service.PlatformAnthropic, "", "")
+		require.NoError(t, err)
+		assert.Zero(t, id)
+	})
 }

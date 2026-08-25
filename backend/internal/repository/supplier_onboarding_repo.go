@@ -277,6 +277,40 @@ WHERE deleted_at IS NULL
   AND LOWER(credentials->>'email_address') = LOWER($2)
 LIMIT 1`
 
+// supplierAccountFindByRelayEndpointSQL 中转账号查重（M7）。
+//
+// 键是 (base_url, api_key) 组合而不是单独的 key：同一把 key 在两个不同端点
+// 上是两份供给（转售商常这么发），同一个端点配两把 key 也是（限速分片）。
+// 刻意**不**限定 type='apikey'：credentials 里同时有这两个键的只有 apikey
+// 账号，而多一个条件就多一个「新类型忘了改这里」的静默放行位。
+const supplierAccountFindByRelayEndpointSQL = `
+SELECT id
+FROM accounts
+WHERE deleted_at IS NULL
+  AND platform = $1
+  AND credentials->>'base_url' = $2
+  AND credentials->>'api_key' = $3
+LIMIT 1`
+
+func (r *supplierOnboardingRepository) FindAccountIDByRelayEndpoint(ctx context.Context, platform, baseURL, apiKey string) (int64, error) {
+	if strings.TrimSpace(baseURL) == "" || strings.TrimSpace(apiKey) == "" {
+		return 0, nil
+	}
+	rows, err := r.client.QueryContext(ctx, supplierAccountFindByRelayEndpointSQL, platform, baseURL, apiKey)
+	if err != nil {
+		return 0, fmt.Errorf("find account by relay endpoint: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		return 0, rows.Err()
+	}
+	var id int64
+	if err := rows.Scan(&id); err != nil {
+		return 0, err
+	}
+	return id, rows.Err()
+}
+
 func (r *supplierOnboardingRepository) SetAccountOwner(ctx context.Context, accountID int64, userID int64) error {
 	result, err := r.client.ExecContext(ctx, supplierAccountSetOwnerSQL, accountID, userID)
 	if err != nil {

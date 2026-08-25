@@ -308,6 +308,20 @@
           </div>
 
           <div class="space-y-4">
+            <!-- 中转接入开关（M7）。放在这张卡而不是单独一张：它管的同样是
+                 「谁能把什么挂进来」。红色提示写明信任模型的翻面——
+                 开关一开，消费者的 prompt 就会流经供给者的服务器。 -->
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.onboarding.relayEnabled') }}</p>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.onboarding.relayEnabledHint') }}</p>
+                <p v-if="onboardingForm.relay_enabled" class="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                  {{ t('supplyAdmin.onboarding.relayTrustWarning') }}
+                </p>
+              </div>
+              <Toggle v-model="onboardingForm.relay_enabled" data-testid="supply-onboarding-relay-enabled" />
+            </div>
+
             <div>
               <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
                 {{ t('supplyAdmin.onboarding.maxPerUser') }}
@@ -817,6 +831,8 @@ const probationBounds = reactive({
 // 每 IP 那道默认是 0（关着）不是笔误——见 api 层那两段注释：这道闸开小了会静默地
 // 挡住整个 NAT 后面的人，该由运营看过真实 IP 分布之后再打开。
 const onboardingForm = reactive<SupplyOnboardingPayload>({
+  // 中转接入默认关（M7）：开它是一个独立的信任模型决定，见卡片上的警告。
+  relay_enabled: false,
   max_accounts_per_user: 5,
   max_accounts_per_ip: 0,
 })
@@ -969,6 +985,7 @@ function applyProbationBounds(settings: SupplyProbationSettings): void {
 
 async function loadOnboarding(): Promise<void> {
   const settings = await adminSupplyMarketAPI.getOnboardingSettings()
+  onboardingForm.relay_enabled = settings.relay_enabled
   onboardingForm.max_accounts_per_user = settings.max_accounts_per_user
   onboardingForm.max_accounts_per_ip = settings.max_accounts_per_ip
   applyOnboardingBounds(settings)
@@ -991,6 +1008,7 @@ async function saveOnboarding(): Promise<void> {
   savingOnboarding.value = true
   try {
     const saved = await adminSupplyMarketAPI.updateOnboardingSettings({
+      relay_enabled: onboardingForm.relay_enabled,
       max_accounts_per_user: onboardingForm.max_accounts_per_user,
       max_accounts_per_ip: onboardingForm.max_accounts_per_ip,
     })

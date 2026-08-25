@@ -604,6 +604,71 @@
               </div>
             </div>
             </div>
+
+            <!-- ===== 中转接入（M7），管理端开关控制 =====
+                 与 OAuth 并排的第二条路：填一个 Anthropic 兼容端点 + API Key。
+                 信任提示必须在提交按钮之前：平台会把**消费者的请求**转发到他
+                 填的服务器上，这件事得在他交出端点之前说清，而不是写进事后条款。 -->
+            <div
+              v-if="status.relay_enabled"
+              class="mt-6 border-t border-gray-100 pt-4 dark:border-dark-800"
+              data-testid="supply-relay-section"
+            >
+              <h4 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('supply.relay.title') }}</h4>
+              <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">{{ t('supply.relay.description') }}</p>
+              <p class="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-700 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-300">
+                {{ t('supply.relay.trustNotice') }}
+              </p>
+
+              <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                <div class="sm:col-span-2">
+                  <label class="input-label" for="relay-base-url">{{ t('supply.relay.baseUrlLabel') }}</label>
+                  <input
+                    id="relay-base-url"
+                    v-model="relayForm.base_url"
+                    class="input font-mono text-xs"
+                    type="text"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="https://relay.example.com"
+                    data-testid="supply-relay-base-url"
+                  />
+                  <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">{{ t('supply.relay.baseUrlHint') }}</p>
+                </div>
+                <div class="sm:col-span-2">
+                  <label class="input-label" for="relay-api-key">{{ t('supply.relay.apiKeyLabel') }}</label>
+                  <input
+                    id="relay-api-key"
+                    v-model="relayForm.api_key"
+                    class="input font-mono text-xs"
+                    type="password"
+                    autocomplete="off"
+                    data-testid="supply-relay-api-key"
+                  />
+                </div>
+                <div class="sm:col-span-2">
+                  <label class="input-label" for="relay-name">{{ t('supply.relay.nameLabel') }}</label>
+                  <input
+                    id="relay-name"
+                    v-model="relayForm.name"
+                    class="input"
+                    type="text"
+                    :placeholder="t('supply.relay.namePlaceholder')"
+                    data-testid="supply-relay-name"
+                  />
+                </div>
+              </div>
+
+              <button
+                class="btn btn-primary mt-3"
+                :disabled="submittingRelay"
+                data-testid="supply-relay-submit"
+                @click="submitRelay"
+              >
+                {{ submittingRelay ? t('supply.relay.submitting') : t('supply.relay.submit') }}
+              </button>
+              <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">{{ t('supply.relay.probeHint') }}</p>
+            </div>
           </template>
         </div>
 
@@ -852,6 +917,10 @@ const agreementChecked = ref(false)
 const agreement = ref<SupplyAgreement>({ version: '', published: false, accepted: false })
 
 const pendingAuth = ref<StartOAuthResponse | null>(null)
+
+// 中转接入（M7）。key 是 password 框、提交成功即清空——凭证不多留一秒。
+const submittingRelay = ref(false)
+const relayForm = ref({ base_url: '', api_key: '', name: '' })
 const authCode = ref('')
 const accountName = ref('')
 
@@ -1254,6 +1323,30 @@ async function refreshAll(): Promise<void> {
     await loadAll()
   } finally {
     refreshing.value = false
+  }
+}
+
+async function submitRelay(): Promise<void> {
+  const baseURL = relayForm.value.base_url.trim()
+  const apiKey = relayForm.value.api_key.trim()
+  if (!baseURL || !apiKey) {
+    appStore.showError(t('supply.relay.fieldsRequired'))
+    return
+  }
+  submittingRelay.value = true
+  try {
+    await supplyAPI.submitRelayAccount({
+      base_url: baseURL,
+      api_key: apiKey,
+      name: relayForm.value.name.trim() || undefined,
+    })
+    appStore.showSuccess(t('supply.relay.submitted'))
+    relayForm.value = { base_url: '', api_key: '', name: '' }
+    accounts.value = await supplyAPI.listAccounts()
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('supply.relay.failed')))
+  } finally {
+    submittingRelay.value = false
   }
 }
 

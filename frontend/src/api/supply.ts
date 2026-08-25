@@ -13,6 +13,8 @@ export interface SupplyStatus {
   enabled: boolean
   /** 结算是否开启（挂上来的号产生的用量是否入账） */
   settlement_enabled: boolean
+  /** 「URL + API Key」中转接入开没开（M7）。决定接入卡画不画第二个标签页 */
+  relay_enabled?: boolean
 }
 
 /** 下线通道。graceful 可在排空窗内取消，immediate 直接进终态、不可撤销。 */
@@ -377,6 +379,19 @@ async function getWithdrawalOptions(): Promise<SupplyWithdrawalOptions> {
  *
  * 低于起提额的金额后端**拒绝**而不是夹到起提额，所以这里的错误要原样弹出去。
  */
+/**
+ * 提交一个 Anthropic 兼容中转端点（M7）。
+ * 提交成功即进观察期，与 OAuth 接入的号走完全相同的探测与结算。
+ */
+async function submitRelayAccount(payload: {
+  base_url: string
+  api_key: string
+  name?: string
+}): Promise<SupplyAccount> {
+  const { data } = await apiClient.post<SupplyAccount>('/user/supply/accounts/relay', payload)
+  return data
+}
+
 async function requestWithdrawal(payload: {
   amount: number
   payout_channel: string
@@ -458,6 +473,7 @@ export const supplyAPI = {
   detachAccount,
   getWallet,
   listLedger,
+  submitRelayAccount,
   getWithdrawalOptions,
   requestWithdrawal,
   listWithdrawals,
