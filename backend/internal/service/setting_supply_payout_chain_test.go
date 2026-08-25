@@ -32,10 +32,20 @@ func TestSealSupplyPayoutSignerKeyValidatesShapeFirst(t *testing.T) {
 
 	t.Run("64 位十六进制放行，0x 可选", func(t *testing.T) {
 		for _, key := range []string{payoutTestKey, "0x" + payoutTestKey, "  " + payoutTestKey + "  "} {
-			sealed, err := SealSupplyPayoutSignerKey(enc, key)
+			sealed, err := SealSupplyPayoutSignerKey(enc, key, true)
 			require.NoError(t, err)
 			assert.True(t, strings.HasPrefix(sealed, "enc.v1:"), "落库形态必须带版本前缀")
 		}
+	})
+
+	t.Run("加密钥匙没固定时拒绝封存", func(t *testing.T) {
+		// totp.encryption_key 没配 = 每次启动随机一把。用它封的私钥在下一次
+		// 重启后解不开（message authentication failed），而保存那一刻一切正常
+		// ——上线第一天就撞上了这个形态。宁可当场拒绝。
+		_, err := SealSupplyPayoutSignerKey(enc, payoutTestKey, false)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "totp.encryption_key",
+			"错误必须点名该配哪一项，否则运维只能对着密码学报错猜")
 	})
 
 	t.Run("粘错的东西在加密之前被拒", func(t *testing.T) {
@@ -47,7 +57,7 @@ func TestSealSupplyPayoutSignerKeyValidatesShapeFirst(t *testing.T) {
 			"空串":   "",
 		} {
 			t.Run(name, func(t *testing.T) {
-				_, err := SealSupplyPayoutSignerKey(enc, bad)
+				_, err := SealSupplyPayoutSignerKey(enc, bad, true)
 				require.Error(t, err)
 				// 错误消息里不许出现输入内容——它可能就是一把差一位的真私钥。
 				if bad != "" {
@@ -60,7 +70,7 @@ func TestSealSupplyPayoutSignerKeyValidatesShapeFirst(t *testing.T) {
 
 func TestOpenSupplyPayoutSignerKeyRoundTripsAndFailsLoud(t *testing.T) {
 	enc := passthroughEncryptor{}
-	sealed, err := SealSupplyPayoutSignerKey(enc, payoutTestKey)
+	sealed, err := SealSupplyPayoutSignerKey(enc, payoutTestKey, true)
 	require.NoError(t, err)
 
 	plain, err := OpenSupplyPayoutSignerKey(enc, sealed)

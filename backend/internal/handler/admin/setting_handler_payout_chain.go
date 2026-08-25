@@ -22,12 +22,17 @@ import (
 )
 
 // SetPayoutChain 注入热换管理器与加密器（与其它可选依赖同一个 setter 模式）。
-func (h *SettingHandler) SetPayoutChain(manager *payoutchain.Manager, encryptor service.SecretEncryptor) {
+//
+// encryptionKeyDurable = totp.encryption_key 是固定配置的（而不是每次启动随机
+// 生成）。不固定时保存私钥会被拒——用随机钥匙封存的私钥在下一次重启后
+// 就解不开了，那种"保存成功"是个定时炸弹。
+func (h *SettingHandler) SetPayoutChain(manager *payoutchain.Manager, encryptor service.SecretEncryptor, encryptionKeyDurable bool) {
 	if h == nil {
 		return
 	}
 	h.payoutChainManager = manager
 	h.secretEncryptor = encryptor
+	h.payoutChainKeyDurable = encryptionKeyDurable
 }
 
 // SupplyPayoutChainSettingsResponse 是金库配置的对外形态。没有私钥，连密文都没有。
@@ -108,7 +113,7 @@ func (h *SettingHandler) UpdateSupplyPayoutChainSettings(c *gin.Context) {
 	sealed := h.settingService.SupplyPayoutChainSignerCiphertext(c.Request.Context())
 	if req.SignerKey != "" {
 		var err error
-		sealed, err = service.SealSupplyPayoutSignerKey(h.secretEncryptor, req.SignerKey)
+		sealed, err = service.SealSupplyPayoutSignerKey(h.secretEncryptor, req.SignerKey, h.payoutChainKeyDurable)
 		if err != nil {
 			response.BadRequest(c, err.Error())
 			return

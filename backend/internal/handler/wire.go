@@ -158,13 +158,14 @@ func ProvideSettingHandler(settingService *service.SettingService, buildInfo Bui
 }
 
 // ProvideAdminSettingHandler creates admin.SettingHandler with notification template APIs.
-func ProvideAdminSettingHandler(settingService *service.SettingService, emailService *service.EmailService, turnstileService *service.TurnstileService, aliyunCaptchaService *service.AliyunCaptchaService, opsService *service.OpsService, paymentConfigService *service.PaymentConfigService, paymentService *service.PaymentService, userAttributeService *service.UserAttributeService, notificationEmailService *service.NotificationEmailService, totpService *service.TotpService, userService *service.UserService, payoutChainManager *payoutchain.Manager, secretEncryptor service.SecretEncryptor) *admin.SettingHandler {
+func ProvideAdminSettingHandler(settingService *service.SettingService, emailService *service.EmailService, turnstileService *service.TurnstileService, aliyunCaptchaService *service.AliyunCaptchaService, opsService *service.OpsService, paymentConfigService *service.PaymentConfigService, paymentService *service.PaymentService, userAttributeService *service.UserAttributeService, notificationEmailService *service.NotificationEmailService, totpService *service.TotpService, userService *service.UserService, payoutChainManager *payoutchain.Manager, secretEncryptor service.SecretEncryptor, cfg *config.Config) *admin.SettingHandler {
 	h := admin.NewSettingHandler(settingService, emailService, turnstileService, opsService, paymentConfigService, paymentService, userAttributeService)
 	h.SetNotificationEmailService(notificationEmailService)
 	h.SetAliyunCaptchaService(aliyunCaptchaService)
 	h.SetStepUpDeps(totpService, userService)
-	// APEXONE-EXT: 链上打款金库配置（M6）。
-	h.SetPayoutChain(payoutChainManager, secretEncryptor)
+	// APEXONE-EXT: 链上打款金库配置（M6）。第三个参数见 SetPayoutChain：
+	// 加密钥匙没固定时拒绝保存私钥，免得存一个重启即失效的密文。
+	h.SetPayoutChain(payoutChainManager, secretEncryptor, cfg.Totp.EncryptionKeyConfigured)
 	return h
 }
 

@@ -143,7 +143,15 @@ func (s *SupplyPayoutChainSettings) sanitize() {
 //
 // 形状校验在加密**之前**：一段粘错的东西（比如助记词、比如地址）不该被
 // 成功加密存进去——那会把「配错了」推迟到第一次打款才发现。
-func SealSupplyPayoutSignerKey(encryptor SecretEncryptor, plaintext string) (string, error) {
+//
+// keyDurable = 加密钥匙是不是固定配置的（totp.encryption_key）。没配时进程
+// 每次启动**随机生成**一把——用它加密的私钥在下一次重启后就再也解不开，
+// 症状是 "message authentication failed"，而保存那一刻一切正常。宁可当场
+// 拒绝，也不给一个必然会过期的成功。
+func SealSupplyPayoutSignerKey(encryptor SecretEncryptor, plaintext string, keyDurable bool) (string, error) {
+	if !keyDurable {
+		return "", fmt.Errorf("refusing to store the treasury key: totp.encryption_key is auto-generated on every boot, so the sealed key would become unreadable after the next restart — set a fixed totp.encryption_key (64 hex chars, or env TOTP_ENCRYPTION_KEY) first")
+	}
 	trimmed := strings.TrimSpace(plaintext)
 	if !supplyPayoutSignerKeyPattern.MatchString(trimmed) {
 		// 错误消息里没有输入内容——它可能就是一把差一位的真私钥。
@@ -171,7 +179,8 @@ func OpenSupplyPayoutSignerKey(encryptor SecretEncryptor, sealed string) (string
 	if err != nil {
 		// 与收款账号同一条规矩：解不开必须炸，不能返回空串——空私钥往下走
 		// 会在构造客户端时被拒，但错误会说成"没配私钥"，把运维引去重新粘一遍。
-		return "", fmt.Errorf("unseal signer key (key mismatch or corrupt ciphertext): %w", err)
+		// 提示里点名最常见的成因：加密钥匙没固定、重启后换了一把。
+		return "", fmt.Errorf("unseal signer key (key mismatch or corrupt ciphertext — most likely totp.encryption_key is not fixed and changed on restart; set a fixed key and re-paste the treasury key): %w", err)
 	}
 	return plain, nil
 }

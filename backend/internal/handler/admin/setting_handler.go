@@ -65,8 +65,9 @@ type SettingHandler struct {
 	userService              *service.UserService
 
 	// APEXONE-EXT: 链上打款金库配置（M6）。setter 注入，见 SetPayoutChain。
-	payoutChainManager *payoutchain.Manager
-	secretEncryptor    service.SecretEncryptor
+	payoutChainManager    *payoutchain.Manager
+	secretEncryptor       service.SecretEncryptor
+	payoutChainKeyDurable bool
 }
 
 // NewSettingHandler 创建系统设置处理器
