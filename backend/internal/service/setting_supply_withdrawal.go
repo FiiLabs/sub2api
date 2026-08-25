@@ -74,14 +74,15 @@ type SupplyWithdrawalSettings struct {
 	Channels []string `json:"channels"`
 	// Notice 打款时效、手续费、工作日等告知，展示在申请表单上。按纯文本渲染。
 	Notice string `json:"notice"`
-	// NotifyEmails 新申请到达时通知谁。空 = 不通知任何人。
+	// NotifyEmails 打款异常时通知谁。空 = 不通知任何人。
 	//
-	// **这个字段为空是一个真实的坏状态**，而不是"没配就是不想要"：提现开着、
-	// 供给者的钱在提交那一刻已经扣走，而没有一个人会被告知有单要处理。运营下次
-	// 打开后台可能是三天后。因此管理端在「开着提现 + 这里为空」时要画出来。
+	// M6b（链上-only）后它唯一的消费者是 NotifyPayoutFailed：worker 把打不动的
+	// 单子停靠到 failed、钱扣着等人工裁决——没人收到这封信，那笔钱就卡在一张
+	// 没人知道的单子上。「新申请」的运营邮件已停发（自动结算下每单一封只会
+	// 被过滤）。**这个字段为空仍是坏状态**，管理端照旧画出来。
 	//
 	// 与账号配额告警的收件人（SettingKeyAccountQuotaNotifyEmails）刻意分开：
-	// 收提现单的是财务，收配额告警的是运维，合成一份的下场是两边都开始过滤邮件。
+	// 收打款异常的是财务，收配额告警的是运维，合成一份的下场是两边都开始过滤邮件。
 	NotifyEmails []string `json:"notify_emails"`
 }
 

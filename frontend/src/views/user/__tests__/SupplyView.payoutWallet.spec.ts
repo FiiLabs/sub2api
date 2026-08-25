@@ -124,6 +124,19 @@ describe('SupplyView payout wallet', () => {
     expect(wrapper.find('[data-testid="supply-payout-wallet"]').exists()).toBe(false)
   })
 
+  it('auto-selects the only channel and hides the dropdown', async () => {
+    // 链上-only 后列表里通常只剩一个渠道：让人"选择"一个没有选择的下拉是噪音。
+    // 自动选中 + 一行说明，绑定块直接出现。
+    api.getWithdrawalOptions.mockResolvedValue(withdrawalOptions({ channels: ['BSC-USDT'] }))
+
+    const wrapper = mountSupplyView()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="supply-withdrawal-channel"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="supply-withdrawal-single-channel"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="supply-payout-wallet"]').exists()).toBe(true)
+  })
+
   it('does not ask for a binding before a channel is chosen', async () => {
     // 还没选渠道时催人绑地址，是在替他做一个他还没做的决定。
     const wrapper = mountSupplyView()

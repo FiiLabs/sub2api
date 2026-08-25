@@ -1,13 +1,14 @@
 // APEXONE-EXT: 双边市场——提现通知。
 //
 // 提现是整条供给链路上**唯一一个钱先离开、结果后到**的动作：供给者点下申请的
-// 那一刻余额就少了一块，而这笔钱什么时候变成到账、会不会被拒，取决于一个人什么
-// 时候打开后台。没有通知的话，这个功能在两端各有一个静默失败：
+// 那一刻余额就少了一块。链上-only（M6b）后 worker 自动结算，通知的分工变成：
 //
-//   - 供给者侧：余额少了，单子挂在那里，他唯一能做的是每天回来刷一次页面。
-//   - 运营侧：**没有任何人被告知有单要处理**。后台不会自己弹出来。
+//   - 供给者侧：扣款回执（书面凭证）+ 终态通知（到账/被拒）。
+//   - 运营侧：**只在打款失败时**被叫来（NotifyPayoutFailed）——failed 单的钱
+//     扣着等人工裁决，没人收到这封信，它就卡在一张没人知道的单子上。
+//     「新申请」那封已停发：自动结算下每单一封只会训练财务过滤这个发件人。
 //
-// 因此这里的四封信不是"体验优化"，它们是这个功能能运转的必要条件。
+// 因此这里的三封信不是"体验优化"，它们是这个功能能运转的必要条件。
 //
 // # 三条实现约束
 //
@@ -97,10 +98,13 @@ func withdrawalNeedsResolvedNotice(status string) bool {
 // 对外的三个入口。全部异步、全部 nil 安全。
 // ============================================================================
 
-// NotifyRequested 新申请到达：给运营发"有单要处理"，给供给者发一封扣款回执。
+// NotifyRequested 新申请到达：给供给者发一封扣款回执。
 //
-// 两封信一起发而不是只发给运营：供给者的可用余额在这一刻少了一块，一封写明
-// 「扣了多少、为什么、什么情况下会退回」的邮件是他唯一的书面凭证。
+// M6b 之前这里还给运营发一封「有单要处理」——那是人工打款时代的命脉：
+// 钱在提交时已扣，没人被叫来就永远没人处理。链上-only 后 worker 几分钟内
+// 自动结算，每单一封「新申请」只会训练财务过滤这个发件人。运营现在唯一
+// 需要被叫来的时刻是打款失败（NotifyPayoutFailed），用的是同一份收件人。
+// 供给者的回执不变：他的可用余额在这一刻少了一块，这封信是唯一的书面凭证。
 func (n *SupplierWithdrawalNotifier) NotifyRequested(w *SupplierWithdrawal) {
 	if !n.ready() || w == nil {
 		return
@@ -149,20 +153,8 @@ func (n *SupplierWithdrawalNotifier) notifyRequested(w *SupplierWithdrawal) {
 	defer cancel()
 
 	siteName := n.siteName(ctx)
-	settings := n.settings.GetSupplyWithdrawalSettings(ctx)
 
-	// 运营侧。收件人为空时记一条 Warn 而不是静默返回：这正是那个「提现开着但
-	// 没人收通知」的坏状态，日志是它在运行期唯一的痕迹。
-	if settings != nil && len(settings.NotifyEmails) > 0 {
-		subject := fmt.Sprintf("[%s] 新的提现申请 / New withdrawal request #%d", siteName, w.ID)
-		body := buildSupplierWithdrawalAdminEmail(siteName, w)
-		n.send(ctx, settings.NotifyEmails, subject, body, "withdrawal_id", w.ID)
-	} else {
-		slog.Warn("[SupplierWithdrawalNotifier] 提现申请无人收到通知：supply_withdrawal_settings.notify_emails 为空",
-			"withdrawal_id", w.ID, "amount", w.Amount)
-	}
-
-	// 供给者侧的扣款回执。
+	// 只发供给者的扣款回执（运营那封已停发，见 NotifyRequested 顶部）。
 	email, name := n.supplierContact(ctx, w.UserID)
 	if email == "" {
 		return
@@ -299,23 +291,6 @@ func withdrawalEmailRow(label, value string) string {
 func buildSupplierWithdrawalEmail(colorFrom, colorTo, siteName, headline, subHeadline, rows, notice string) string {
 	return fmt.Sprintf(supplierWithdrawalEmailTemplate,
 		colorFrom, colorTo, html.EscapeString(siteName), html.EscapeString(headline), html.EscapeString(subHeadline), rows, notice)
-}
-
-// buildSupplierWithdrawalAdminEmail 运营收到的那封：只说"有一张多少钱的单"。
-//
-// **刻意不含收款账号**（见文件头第 3 条）。运营去后台处理时那里有全量信息，
-// 邮件的职责只是把人叫过去。
-func buildSupplierWithdrawalAdminEmail(siteName string, w *SupplierWithdrawal) string {
-	rows := withdrawalEmailRow("单号 / Request", fmt.Sprintf("#%d", w.ID)) +
-		withdrawalEmailRow("金额 / Amount", fmt.Sprintf("%.2f", w.Amount)) +
-		withdrawalEmailRow("收款方式 / Channel", w.PayoutChannel) +
-		withdrawalEmailRow("申请时间 / Submitted", w.CreatedAt.Format("2006-01-02 15:04:05 MST"))
-	notice := `<p>金额已从供给者的可用余额中扣除，正在等待处理。</p>
-            <p>The amount has already left the supplier's available balance and is awaiting review.</p>
-            <p>请到「供给运营」页处理这张单子。收款账号在后台可见，出于隐私不在邮件中呈现。</p>
-            <p>Handle it on the Supply Operations page. Payout details are shown there, not in this email.</p>`
-	return buildSupplierWithdrawalEmail("#f59e0b", "#d97706", siteName,
-		"新的提现申请", "New withdrawal request", rows, notice)
 }
 
 // buildSupplierWithdrawalReceiptEmail 供给者收到的扣款回执。

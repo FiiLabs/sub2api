@@ -112,18 +112,19 @@ func notifySettings(emails ...string) *withdrawalNotifySettingsStub {
 }
 
 // ============================================================================
-// 新申请：运营 + 供给者各一封
+// 新申请：只有供给者的扣款回执（M6b 起运营那封停发）
 // ============================================================================
 
-func TestNotifyRequestedGoesToBothSides(t *testing.T) {
+// 运营收件人配了也**不**收「新申请」——自动结算下那封信只会被过滤。
+// 运营被叫来的唯一时刻是打款失败（TestNotifyPayoutFailed* 那组）。
+func TestNotifyRequestedOnlyReceiptsTheSupplier(t *testing.T) {
 	email := &withdrawalEmailSenderStub{}
 	n := newTestNotifier(email, &withdrawalUserReaderStub{user: supplierUser()}, notifySettings("ops@example.com", "finance@example.com"))
 
 	n.notifyRequested(testWithdrawal())
 
-	assert.ElementsMatch(t,
-		[]string{"ops@example.com", "finance@example.com", "supplier@example.com"},
-		email.recipients())
+	assert.Equal(t, []string{"supplier@example.com"}, email.recipients(),
+		"运营收到了新申请邮件——每单一封的下场是财务把这个发件人整个过滤掉")
 }
 
 // 收款账号是 PII，而邮件会被转发、被搜索、被留在收件箱十年。运营需要它时后台看得到。
@@ -155,19 +156,9 @@ func TestNotifyRequestedReceiptExplainsDeduction(t *testing.T) {
 	assert.Contains(t, body, "退回可用余额", "必须同时说明什么情况下退回，否则只有坏消息")
 }
 
-// 没配运营收件人时，供给者那封照常发。这是那个坏状态下唯一还能工作的部分——
-// 让它跟着一起哑掉，等于因为运营没配邮箱而扣了供给者的钱且不给回执。
-func TestNotifyRequestedStillReceiptsWhenNoAdminEmails(t *testing.T) {
-	email := &withdrawalEmailSenderStub{}
-	n := newTestNotifier(email, &withdrawalUserReaderStub{user: supplierUser()}, notifySettings())
-
-	n.notifyRequested(testWithdrawal())
-
-	assert.Equal(t, []string{"supplier@example.com"}, email.recipients())
-}
-
-// 供给者没绑邮箱（或查不到）时，运营那封照常发。反过来说也一样：两边互不拖累。
-func TestNotifyRequestedStillAlertsAdminsWhenSupplierUnreachable(t *testing.T) {
+// 供给者没绑邮箱（或查不到）时，一封信都不发、也不报错——
+// 回执是尽力而为的凭证，不是建单的前置条件。
+func TestNotifyRequestedSendsNothingWhenSupplierUnreachable(t *testing.T) {
 	cases := []struct {
 		name  string
 		users supplierWithdrawalUserReader
@@ -181,7 +172,7 @@ func TestNotifyRequestedStillAlertsAdminsWhenSupplierUnreachable(t *testing.T) {
 			email := &withdrawalEmailSenderStub{}
 			n := newTestNotifier(email, tc.users, notifySettings("ops@example.com"))
 			n.notifyRequested(testWithdrawal())
-			assert.Equal(t, []string{"ops@example.com"}, email.recipients())
+			assert.Empty(t, email.recipients())
 		})
 	}
 }
@@ -283,6 +274,11 @@ func TestNotifySurvivesSMTPFailure(t *testing.T) {
 	n := newTestNotifier(email, &withdrawalUserReaderStub{user: supplierUser()}, notifySettings("ops@example.com", "finance@example.com"))
 
 	assert.NotPanics(t, func() { n.notifyRequested(testWithdrawal()) })
+	// 多收件人的"一封失败不中断后面"由 failed 告警那条路覆盖（它发给整个
+	// 运营收件人列表）；新申请现在只有供给者一封。
+	failed := testWithdrawal()
+	failed.Status = SupplierWithdrawalStatusFailed
+	assert.NotPanics(t, func() { n.notifyPayoutFailed(failed) })
 	assert.Len(t, email.sent, 3, "一封失败不能中断后面的收件人")
 }
 

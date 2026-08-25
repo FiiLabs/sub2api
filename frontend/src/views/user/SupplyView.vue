@@ -174,10 +174,19 @@
 
               <div>
                 <label class="input-label" for="withdrawal-channel">{{ t('supply.withdrawal.channelLabel') }}</label>
-                <!-- 渠道是 select 而不是自由输入：后端按**完全相等**校验白名单
-                     （只 trim 首尾空白），手打的 "usdt" 会被拒，而那个错误看起来
-                     像系统在刁难人。 -->
+                <!-- 只有一个渠道时不画下拉（onMounted 已自动选中）：
+                     让人"选择"一个没有选择的下拉是噪音。多渠道（将来加链/加币）
+                     时下拉回来。渠道仍是 select 而不是自由输入：后端按**完全
+                     相等**校验，手打的 "usdt" 会被拒，而那个错误像系统在刁难人。 -->
+                <p
+                  v-if="withdrawalOptions.channels.length === 1"
+                  class="input flex items-center text-gray-700 dark:text-gray-300"
+                  data-testid="supply-withdrawal-single-channel"
+                >
+                  {{ t('supply.withdrawal.singleChannel', { channel: withdrawalOptions.channels[0] }) }}
+                </p>
                 <select
+                  v-else
                   id="withdrawal-channel"
                   v-model="withdrawalForm.payout_channel"
                   class="input"
