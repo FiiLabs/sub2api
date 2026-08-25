@@ -99,9 +99,12 @@ func DefaultSupplyWithdrawalSettings() *SupplyWithdrawalSettings {
 	}
 }
 
-// Available 提现此刻是否真的可用：开关开着，且至少配了一个收款渠道。
+// Available 提现开关是否开着（M6b 起它只答这一半，见方法内注释）。
 func (s *SupplyWithdrawalSettings) Available() bool {
-	return s != nil && s.Enabled && len(s.Channels) > 0
+	// M6b 起渠道由金库能力派生，这里看不到金库——「真能提吗」由
+	// SupplierWithdrawalService.GetOptions 用 settleableChannels 回答；
+	// 这个方法只剩「开关开没开」这一半，供管理端设置卡显示。
+	return s != nil && s.Enabled
 }
 
 // HasChannel 渠道是否在白名单里。比对前两边都 TrimSpace，但**区分大小写**——
@@ -259,10 +262,9 @@ func (s *SupplyWithdrawalSettings) validate() error {
 	s.Channels = sanitizeWithdrawalChannels(s.Channels)
 	s.NotifyEmails = sanitizeWithdrawalNotifyEmails(s.NotifyEmails)
 	s.Notice = strings.TrimSpace(s.Notice)
-	// 开着开关却一个渠道都没有，是一个只会在供给者点下申请时才暴露的错。
-	if s.Enabled && len(s.Channels) == 0 {
-		return fmt.Errorf("at least one payout channel is required before withdrawals can be enabled")
-	}
+	// M6b 起不再要求渠道：渠道由链上金库的能力派生（settleableChannels），
+	// 这份白名单只是还躺在旧 JSON 里的遗留字段。「开着但金库没配好」的坏状态
+	// 改由金库那张卡的 status 说话，这里拦不到也不该拦。
 	return nil
 }
 

@@ -87,18 +87,19 @@ func TestDefaultSupplyWithdrawalIsClosed(t *testing.T) {
 	assert.Equal(t, SupplyWithdrawalMaxPendingDefault, settings.MaxPending)
 }
 
-// 开关和渠道各自都不足以让提现可用。这是 Available 存在的全部理由——
-// 「开了但没配渠道」是最容易发生、也最难在界面上看出来的那种配错。
-func TestSupplyWithdrawalAvailableNeedsBothSwitchAndChannel(t *testing.T) {
+// Available 只答「开关开没开」（M6b）：渠道由金库能力派生，这个方法看不到
+// 金库——「真能提吗」由 GetOptions 用 settleableChannels 回答。老白名单
+// 有没有、有几个，都不该影响它。
+func TestSupplyWithdrawalAvailableIsJustTheSwitch(t *testing.T) {
 	cases := []struct {
 		name     string
 		settings *SupplyWithdrawalSettings
 		want     bool
 	}{
 		{"nil", nil, false},
-		{"关着但配了渠道", &SupplyWithdrawalSettings{Channels: []string{"USDT"}}, false},
-		{"开着但没渠道", &SupplyWithdrawalSettings{Enabled: true}, false},
-		{"都齐了", &SupplyWithdrawalSettings{Enabled: true, Channels: []string{"USDT"}}, true},
+		{"关着但白名单里有遗留渠道", &SupplyWithdrawalSettings{Channels: []string{"USDT"}}, false},
+		{"开着（白名单为空）", &SupplyWithdrawalSettings{Enabled: true}, true},
+		{"开着（白名单有遗留值也不加分）", &SupplyWithdrawalSettings{Enabled: true, Channels: []string{"USDT"}}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -219,26 +220,18 @@ func TestSetSupplyWithdrawalRejectsOutOfRange(t *testing.T) {
 	}
 }
 
-// 开着开关却一个渠道都没有是个只在供给者点下申请时才暴露的错，必须在保存时就挡住。
-func TestSetSupplyWithdrawalRejectsEnabledWithoutChannel(t *testing.T) {
-	cases := []struct {
-		name     string
-		channels []string
-	}{
-		{"一个都没填", nil},
-		{"填的全是空白", []string{"  ", ""}},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			repo := &supplyWithdrawalSettingRepoStub{}
-			err := newWithdrawalSettingService(t, repo).SetSupplyWithdrawalSettings(
-				context.Background(),
-				&SupplyWithdrawalSettings{Enabled: true, MaxPending: 1, Channels: tc.channels},
-			)
-			require.Error(t, err)
-			assert.Empty(t, repo.setKey)
-		})
-	}
+// 开着且渠道为空必须能保存（M6b）：渠道由链上金库派生，这份白名单只是
+// 旧 JSON 里的遗留字段——管理端的保存请求恒带空列表，在这里拒绝等于
+// 把整张设置卡锁死（上线后第一天就撞上了：保存报
+// "at least one payout channel is required"）。
+func TestSetSupplyWithdrawalAllowsEnabledWithoutChannel(t *testing.T) {
+	repo := &supplyWithdrawalSettingRepoStub{}
+	err := newWithdrawalSettingService(t, repo).SetSupplyWithdrawalSettings(
+		context.Background(),
+		&SupplyWithdrawalSettings{Enabled: true, MaxPending: 1},
+	)
+	require.NoError(t, err)
+	assert.NotEmpty(t, repo.setKey, "开着 + 空渠道被拒——设置卡从此一次都保存不了")
 }
 
 // 关着的时候没渠道是允许的：先把文案和起提额配好、最后再开开关，是一个正常的顺序。
