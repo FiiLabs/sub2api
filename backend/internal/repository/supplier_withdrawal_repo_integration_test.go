@@ -17,8 +17,12 @@ package repository
 import (
 	"bytes"
 	"context"
+	stdsql "database/sql"
 	"testing"
 	"time"
+
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -1107,4 +1111,56 @@ func TestSupplierWithdrawal_ProcessingAndFailedCountAsPending(t *testing.T) {
 	})
 	assert.ErrorIs(t, err, service.ErrSupplierWithdrawalTooManyPending,
 		"failed 不占名额的话，一张卡住的链上单会放开整个闸门")
+}
+
+// 提现仓储的资金事务同样显式 READ COMMITTED——与
+// TestSupplierCredit_WalletTxSurvivesSerializableServerDefault 同一个事故、
+// 同一个修法、同一套确定性构造（快照钉住 → 并发提交 → 事务内再写）。
+// 单独一条而不是共用：两个仓储的 withTx 是两份代码，谁被单独改回
+// r.client.Tx(ctx) 都得有自己的红灯。
+func TestSupplierWithdrawal_TxSurvivesSerializableServerDefault(t *testing.T) {
+	serializableDB, err := stdsql.Open("postgres", integrationDSN+"&default_transaction_isolation=serializable")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = serializableDB.Close() })
+	require.NoError(t, serializableDB.Ping())
+
+	drv := entsql.OpenDB(dialect.Postgres, serializableDB)
+	client := dbent.NewClient(dbent.Driver(drv))
+	repo := &supplierWithdrawalRepository{client: client, cipher: payoutAccountCipher{encryptor: testPayoutEncryptor()}}
+
+	ctx := context.Background()
+	userID := mustCreateSupplier(t, integrationEntClient, "serializable-wd")
+	t.Cleanup(func() {
+		_, _ = integrationDB.Exec("DELETE FROM supplier_credits WHERE user_id = $1", userID)
+		_, _ = integrationDB.Exec("DELETE FROM users WHERE id = $1", userID)
+	})
+	_, err = integrationDB.Exec(
+		"INSERT INTO supplier_credits (user_id, created_at, updated_at) VALUES ($1, NOW(), NOW())", userID)
+	require.NoError(t, err)
+
+	snapshotPinned := make(chan struct{})
+	concurrentDone := make(chan struct{})
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- repo.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+			rows, err := txClient.QueryContext(txCtx,
+				"SELECT available_credit FROM supplier_credits WHERE user_id = $1", userID)
+			if err != nil {
+				return err
+			}
+			_ = rows.Close()
+			close(snapshotPinned)
+			<-concurrentDone
+			_, err = txClient.ExecContext(txCtx,
+				"UPDATE supplier_credits SET updated_at = NOW() WHERE user_id = $1", userID)
+			return err
+		})
+	}()
+
+	<-snapshotPinned
+	_, err = integrationDB.Exec("UPDATE supplier_credits SET updated_at = NOW() WHERE user_id = $1", userID)
+	require.NoError(t, err)
+	close(concurrentDone)
+
+	require.NoError(t, <-errCh)
 }

@@ -13,6 +13,7 @@ package repository
 
 import (
 	"context"
+	stdsql "database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -801,7 +802,12 @@ func (r *supplierWithdrawalRepository) withTx(ctx context.Context, fn func(txCtx
 		return fn(ctx, tx.Client())
 	}
 
-	tx, err := r.client.Tx(ctx)
+	// 显式 READ COMMITTED：这套资金事务的正确性建立在「锁 + 条件更新 + 唯一索引」
+	// 上，不依赖更高的隔离级；而依赖服务器默认值曾真实炸过——一台
+	// default_transaction_isolation=serializable 的库上，浏览器并发打开控制台
+	// 就让两个碰同一行钱包的事务互相 40001（could not serialize access），
+	// 普通用户看到 500。隔离级是这段代码的设计前提，就该由这段代码自己声明。
+	tx, err := r.client.BeginTx(ctx, &stdsql.TxOptions{Isolation: stdsql.LevelReadCommitted})
 	if err != nil {
 		return fmt.Errorf("begin supplier withdrawal transaction: %w", err)
 	}

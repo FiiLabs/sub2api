@@ -13,9 +13,13 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"testing"
 	"time"
+
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -412,4 +416,75 @@ VALUES ($1, 'accrue', 2.0, $2, $3, 4.0, 0.5, NOW() - INTERVAL '1 hour', NOW(), N
 		"SELECT available_credit::double precision FROM supplier_credits WHERE user_id = $1", supplierID))
 	require.Zero(t, querySingleFloat(t, txCtx, client,
 		"SELECT frozen_credit::double precision FROM supplier_credits WHERE user_id = $1", supplierID))
+}
+
+// 服务器默认隔离级是 serializable 的部署上，控制台的并发钱包读不再 500。
+//
+// 真实事故（2026-08-25）：一台 postgresql.conf 里写着
+// default_transaction_isolation='serializable' 的库上，浏览器并发加载
+// wallet 与 withdrawals/options，两个事务碰同一行钱包，其一被 40001
+// （could not serialize access due to concurrent update）打死。修法是资金
+// 事务显式 BEGIN READ COMMITTED——正确性本来就建立在「锁 + 条件更新 +
+// 唯一索引」上，隔离级是设计前提，该由代码自己声明，不该由服务器配置代答。
+//
+// 复现不靠碰运气的并发锤（那种窗口只有微秒级，锤不红），而是确定性构造
+// 序列化冲突的最小形状：事务内先读钉住快照 → 事务外提交一次同行更新 →
+// 事务内再写同一行。serializable 下这必然 40001；read committed 下必然成功。
+// 把修复退回 r.client.Tx(ctx)（继承连接默认），这条测试立刻红。
+func TestSupplierCredit_WalletTxSurvivesSerializableServerDefault(t *testing.T) {
+	serializableDB, err := sql.Open("postgres", integrationDSN+"&default_transaction_isolation=serializable")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = serializableDB.Close() })
+	require.NoError(t, serializableDB.Ping())
+
+	// 确认这条连接真的在 serializable 上——否则整条测试在测一个不存在的环境。
+	var level string
+	require.NoError(t, serializableDB.QueryRow("show default_transaction_isolation").Scan(&level))
+	require.Equal(t, "serializable", level)
+
+	drv := entsql.OpenDB(dialect.Postgres, serializableDB)
+	client := dbent.NewClient(dbent.Driver(drv))
+	// 直接构造具体类型：要测的正是 withTx 里 BeginTx 的隔离级声明。
+	repo := &supplierCreditRepository{client: client}
+
+	// 不走 testEntTx：外层事务会让 withTx 复用它，绕开要测的那次 BeginTx。
+	ctx := context.Background()
+	userID := mustCreateSupplier(t, integrationEntClient, "serializable-wallet")
+	t.Cleanup(func() {
+		_, _ = integrationDB.Exec("DELETE FROM supplier_credits WHERE user_id = $1", userID)
+		_, _ = integrationDB.Exec("DELETE FROM users WHERE id = $1", userID)
+	})
+	_, err = integrationDB.Exec(
+		"INSERT INTO supplier_credits (user_id, created_at, updated_at) VALUES ($1, NOW(), NOW())", userID)
+	require.NoError(t, err)
+
+	snapshotPinned := make(chan struct{})
+	concurrentDone := make(chan struct{})
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- repo.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+			// 1. 读一下那一行：把本事务的快照钉在并发提交**之前**。
+			rows, err := txClient.QueryContext(txCtx,
+				"SELECT available_credit FROM supplier_credits WHERE user_id = $1", userID)
+			if err != nil {
+				return err
+			}
+			_ = rows.Close()
+			// 2. 让外面的连接对同一行提交一次更新。
+			close(snapshotPinned)
+			<-concurrentDone
+			// 3. 再写同一行。serializable：40001；read committed：照常。
+			_, err = txClient.ExecContext(txCtx,
+				"UPDATE supplier_credits SET updated_at = NOW() WHERE user_id = $1", userID)
+			return err
+		})
+	}()
+
+	<-snapshotPinned
+	_, err = integrationDB.Exec("UPDATE supplier_credits SET updated_at = NOW() WHERE user_id = $1", userID)
+	require.NoError(t, err)
+	close(concurrentDone)
+
+	require.NoError(t, <-errCh,
+		"资金事务从连接继承了 serializable——控制台的并发钱包读又会开始随机 500")
 }

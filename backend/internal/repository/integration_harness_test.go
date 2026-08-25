@@ -35,7 +35,11 @@ const (
 )
 
 var (
-	integrationDB        *sql.DB
+	integrationDB *sql.DB
+	// integrationDSN 让个别测试能带着**不同的连接参数**另开一条连接——
+	// 比如把 default_transaction_isolation 拧到 serializable，复现
+	// 「服务器默认隔离级不是 read committed」那类部署环境。
+	integrationDSN       string
 	integrationEntClient *dbent.Client
 	integrationRedis     *redisclient.Client
 
@@ -91,6 +95,7 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
+	integrationDSN = dsn
 	integrationDB, err = openSQLWithRetry(ctx, dsn, 30*time.Second)
 	if err != nil {
 		log.Printf("failed to open sql db: %v", err)
