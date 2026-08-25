@@ -10,6 +10,7 @@ import (
 	"net/textproto"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -1836,16 +1837,22 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 		cfg.Gateway.UserMessageQueue.Mode = ""
 	}
 
-	// Auto-generate TOTP encryption key if not set (32 bytes = 64 hex chars for AES-256)
+	// TOTP/收款账号/金库私钥共用的 AES-256 加密钥匙（32 字节 = 64 hex）。
+	// 没显式配置时**首次启动生成一次并落盘**（数据目录里的 totp_encryption.key），
+	// 之后每次启动读回同一把——密文的寿命因此不再取决于进程的寿命。
+	//
+	// 刻意落**文件**而不是数据库：这把钥匙护着的密文就躺在数据库里
+	// （金库私钥、收款账号、TOTP 密钥），钥匙进库等于把锁和钥匙锁进同一个
+	// 抽屉——一份 pg_dump 同时带走两者，加密退化成摆设。文件不进库备份，
+	// 「脱库不泄密」这条语义才保得住。
 	cfg.Totp.EncryptionKey = strings.TrimSpace(cfg.Totp.EncryptionKey)
 	if cfg.Totp.EncryptionKey == "" {
-		key, err := generateJWTSecret(32) // Reuse the same random generation function
-		if err != nil {
-			return nil, fmt.Errorf("generate totp encryption key error: %w", err)
+		key, durable := loadOrPersistTotpEncryptionKey()
+		if key == "" {
+			return nil, fmt.Errorf("generate totp encryption key error")
 		}
 		cfg.Totp.EncryptionKey = key
-		cfg.Totp.EncryptionKeyConfigured = false
-		slog.Warn("TOTP encryption key auto-generated. Consider setting a fixed key for production.")
+		cfg.Totp.EncryptionKeyConfigured = durable
 	} else {
 		cfg.Totp.EncryptionKeyConfigured = true
 	}
@@ -1898,6 +1905,66 @@ func configureConfigSource(setConfigFile, addConfigPath func(string)) {
 	addConfigPath(".")
 	addConfigPath("./config")
 	addConfigPath("/etc/sub2api")
+}
+
+// totpKeyFileName 自动生成的加密钥匙的落盘文件名。
+const totpKeyFileName = "totp_encryption.key"
+
+// totpKeyFileDir 钥匙文件放哪。与 configureConfigSource 的找配置顺序同一套
+// 优先级——钥匙就该躺在 config.yaml 旁边，备份/迁移数据目录时自然被一起带走。
+func totpKeyFileDir() string {
+	if configFile := strings.TrimSpace(os.Getenv("CONFIG_FILE")); configFile != "" {
+		return filepath.Dir(configFile)
+	}
+	if dataDir := strings.TrimSpace(os.Getenv("DATA_DIR")); dataDir != "" {
+		return dataDir
+	}
+	if info, err := os.Stat("/app/data"); err == nil && info.IsDir() {
+		return "/app/data"
+	}
+	return "."
+}
+
+// loadOrPersistTotpEncryptionKey 读回（或生成并落盘）自动管理的加密钥匙。
+//
+// 返回 (key, durable)。durable = 这把钥匙能活过重启——它决定控制台允不允许
+// 保存金库私钥（SealSupplyPayoutSignerKey 的 keyDurable 门）。三种结局：
+//
+//	文件在且合法      → 读回，durable=true
+//	文件不在          → 生成 + 0600 落盘，durable=true；写不进去（只读文件系统）
+//	                    则退回进程内随机，durable=false + Warn——老行为，
+//	                    但金库私钥的保存会被挡住，不会再造出重启即失效的密文
+//	文件在但内容不合法 → **不覆盖**（它可能只是被截断/改坏的一把真钥匙，
+//	                    覆盖等于把已有密文永久变成孤儿），退回进程内随机 +
+//	                    Error 日志指去修文件
+func loadOrPersistTotpEncryptionKey() (string, bool) {
+	path := filepath.Join(totpKeyFileDir(), totpKeyFileName)
+
+	if raw, err := os.ReadFile(path); err == nil {
+		key := strings.TrimSpace(string(raw))
+		if decoded, err := hex.DecodeString(key); err == nil && len(decoded) == 32 {
+			return key, true
+		}
+		slog.Error("TOTP encryption key file exists but is not a valid 64-hex key; refusing to overwrite it — restore or delete the file",
+			"path", path)
+		key, genErr := generateJWTSecret(32)
+		if genErr != nil {
+			return "", false
+		}
+		return key, false
+	}
+
+	key, err := generateJWTSecret(32)
+	if err != nil {
+		return "", false
+	}
+	if writeErr := os.WriteFile(path, []byte(key+"\n"), 0o600); writeErr != nil {
+		slog.Warn("TOTP encryption key auto-generated but could not be persisted; it will change on restart. Set totp.encryption_key or make the data dir writable.",
+			"path", path, "error", writeErr)
+		return key, false
+	}
+	slog.Info("TOTP encryption key generated and persisted", "path", path)
+	return key, true
 }
 
 func setDefaults() {
