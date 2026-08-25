@@ -148,3 +148,6 @@ output/
 
 # Vitest / Vite cache at repo root
 .vite/
+
+# 自动生成的加密钥匙（config 包的单测在包目录里也会落一份）——绝不入库
+totp_encryption.key

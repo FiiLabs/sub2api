@@ -19,7 +19,11 @@ func resetViperWithJWTSecret(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
 	t.Setenv("CONFIG_FILE", "")
-	t.Setenv("DATA_DIR", "")
+	// DATA_DIR 指向临时目录而不是清空：清空会让加密钥匙的落盘逻辑
+	// （loadOrPersistTotpEncryptionKey）落回 "."，往**包目录**里写
+	// totp_encryption.key——它进过一次仓库。临时目录里没有 config.yaml，
+	// 对这些测试的配置发现语义没有影响。
+	t.Setenv("DATA_DIR", t.TempDir())
 	t.Setenv("JWT_SECRET", strings.Repeat("x", 32))
 }
 
@@ -334,7 +338,7 @@ func TestLoadForBootstrapAllowsMissingJWTSecret(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
 	t.Setenv("CONFIG_FILE", "")
-	t.Setenv("DATA_DIR", "")
+	t.Setenv("DATA_DIR", t.TempDir()) // 同 resetViperWithJWTSecret：别往包目录洒钥匙文件
 	t.Setenv("JWT_SECRET", "")
 
 	cfg, err := LoadForBootstrap()
