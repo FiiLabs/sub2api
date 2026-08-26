@@ -208,10 +208,7 @@ export interface SupplyPayoutChainSettings {
   token_symbol: string
   disperse_address: string
   chain_id: number
-  native_usd: number
   confirmations: number
-  fallback_fee: number
-  fee_multiplier: number
   signer_configured: boolean
   status: SupplyPayoutChainStatus
 }
@@ -224,10 +221,7 @@ export interface SupplyPayoutChainPayload {
   token_symbol: string
   disperse_address: string
   chain_id: number
-  native_usd: number
   confirmations: number
-  fallback_fee: number
-  fee_multiplier: number
   signer_key: string
 }
 

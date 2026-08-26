@@ -157,68 +157,6 @@ func TestToTokenAmountRefusesWhatItCannotPayExactly(t *testing.T) {
 	})
 }
 
-// SanitizeChainFee 的全部输入分区。
-//
-// 它是建单那条路径上唯一一个「决定要不要落库」的判断（见 applyChainSnapshot），
-// 而它的两类返回值对应两种完全不同的后果：回真 = 这个数会被写进 fee_amount 并
-// 从供给者的收益里扣掉；回假 = 这笔申请当场 503。把"算不出来"错判成 0 是这里
-// 最贵的一种错——它没有任何症状，只是让金库开始替所有人垫 gas。
-func TestSanitizeChainFeePartitionsUsableFromUnusable(t *testing.T) {
-	t.Run("落库不了的值一律回假，且不夹带一个 0 当结果", func(t *testing.T) {
-		for name, fee := range map[string]float64{
-			"NaN": math.NaN(),
-			"正无穷": math.Inf(1),
-			"负无穷": math.Inf(-1),
-			// 负手续费的现实来源是「币价配成了负数」或一次减法写反。
-			// 它落库后 net = amount - fee 会**大于** amount——平台倒贴。
-			"负数": -0.00000001,
-		} {
-			t.Run(name, func(t *testing.T) {
-				value, ok := SanitizeChainFee(fee)
-				assert.False(t, ok)
-				assert.Zero(t, value, "回假时还给了一个非零值，调用方一旦忘了看 ok 就会把它扣掉")
-			})
-		}
-	})
-
-	t.Run("零是一个合法的手续费", func(t *testing.T) {
-		// 与"算不出来"必须分得开：0 的正当来源是配置里的回落值被设成了 0，
-		// 那是运营的决定（平台承担 gas），不是故障。
-		value, ok := SanitizeChainFee(0)
-		assert.True(t, ok)
-		assert.Zero(t, value)
-	})
-
-	t.Run("收敛到账本的 8 位，四舍五入", func(t *testing.T) {
-		for _, tc := range []struct {
-			raw  float64
-			want float64
-		}{
-			{0.123456789123, 0.12345679}, // 第 9 位是 9，进位
-			{0.123456781, 0.12345678},    // 第 9 位是 1，舍去
-			{0.000000004, 0},             // 比账本精度还小 —— 收敛成 0，但仍然可用
-			{1.5, 1.5},                   // 位数够短的原样返回
-		} {
-			value, ok := SanitizeChainFee(tc.raw)
-			require.True(t, ok)
-			assert.Equal(t, tc.want, value)
-		}
-	})
-
-	t.Run("收敛过的值再收敛一次是它自己", func(t *testing.T) {
-		// 幂等是"服务算的 net 与数据库那一行算的 net 相等"这句话的另一种说法：
-		// 落库是一次 DECIMAL(20,8) 的收敛，如果我们这一次收敛的结果还能被它再改一次，
-		// 那两个数就还是对不上。
-		for _, raw := range []float64{0.123456789123, 1e-9, 12.345678915, 999999.99999999} {
-			once, ok := SanitizeChainFee(raw)
-			require.True(t, ok)
-			twice, ok := SanitizeChainFee(once)
-			require.True(t, ok)
-			assert.Equal(t, once, twice)
-		}
-	})
-}
-
 // 假客户端的 TokenAddress：默认给一个显然是假的地址，NoToken 时恒假。
 //
 // 这两个分支是 M3 建单路径上的开关——前者让单子带着链上四项落库，
@@ -240,15 +178,7 @@ func TestMockChainTokenAddressSwitchesTheSettlementPath(t *testing.T) {
 
 func TestDisabledChainClientRefusesEverything(t *testing.T) {
 	ctx := context.Background()
-	client := NewDisabledChainClient(0.5)
-
-	t.Run("手续费仍然给得出", func(t *testing.T) {
-		// 链上渠道能不能选是管理员的白名单说了算，而白名单可以先于金库配好。
-		// 这一路要是也报错，提现页面会整个画不出来。
-		fee := client.EstimateFee(ctx, SupplierPayoutNetworkBSC)
-		assert.Equal(t, 0.5, fee.Amount)
-		assert.False(t, fee.Estimated, "回落值必须自报家门，否则没人分得清它和真估算")
-	})
+	client := NewDisabledChainClient()
 
 	t.Run("每一个会动钱的方法都拒绝", func(t *testing.T) {
 		_, err := client.NextNonce(ctx, SupplierPayoutNetworkBSC)

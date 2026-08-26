@@ -120,13 +120,13 @@ func newWithdrawalService(
 	wallet supplierWithdrawalWalletReader,
 ) *SupplierWithdrawalService {
 	// M6b 起提现只剩链上一条路：默认装配一个能结算 BSC-USDT 的假金库
-	// （Fee 0.3）和一个已绑好地址的钱包，让这批测试聚焦在各自的边界上。
+	// 和一个已绑好地址的钱包，让这批测试聚焦在各自的边界上。
 	// 要测「结算不了」的形态，各测试自行覆盖 svc.chain。
 	return &SupplierWithdrawalService{
 		repo:      repo,
 		wallet:    wallet,
 		settings:  &supplierWithdrawalSettingsStub{settings: settings},
-		chain:     NewMockChainClient(MockChainOptions{Fee: 0.3}),
+		chain:     NewMockChainClient(MockChainOptions{}),
 		addresses: NewSupplierPayoutWalletService(boundWalletRepo()),
 	}
 }
@@ -296,7 +296,6 @@ func TestRequestWithdrawalPassesSanitizedParams(t *testing.T) {
 	assert.Equal(t, 2, repo.createParams.MaxPending)
 	// 链上-only：每一张建出来的单子都带完整快照。
 	assert.Equal(t, SupplierPayoutNetworkBSC, repo.createParams.Network)
-	assert.InDelta(t, 0.3, repo.createParams.FeeAmount, 1e-9)
 }
 
 // 起提额为 0 = 不设门槛，此时一分钱的申请也该放行（金额本身仍须为正）。
@@ -305,8 +304,6 @@ func TestRequestWithdrawalAllowsAnyPositiveAmountWhenNoMinimum(t *testing.T) {
 	settings.MinAmount = 0
 	repo := &supplierWithdrawalRepoStub{}
 	svc := newWithdrawalService(repo, settings, nil)
-	// 手续费压到远低于金额：这条测的是起提额，不是 fee >= amount 那道闸。
-	svc.chain = NewMockChainClient(MockChainOptions{Fee: 0.001})
 
 	_, err := svc.Request(context.Background(), 7, SupplierWithdrawalRequest{
 		Amount: 0.01, PayoutChannel: "BSC-USDT",

@@ -141,42 +141,10 @@ type SupplierWithdrawalOptions struct {
 	// 白名单（决定"能不能选"），这一份是代码里的注册表（决定"选了怎么结算"）。
 	// 合成一个数组，等于让人以为改配置就能改一个渠道打到哪条链上。
 	OnchainChannels []SupplierOnchainChannel `json:"onchain_channels"`
-	// OnchainFees 此刻**真的会自动打款**的那些渠道，各自要收多少 gas。
-	//
-	// 它与 OnchainChannels 是两个问题的答案，故意不合并：
-	//   - OnchainChannels 是代码里的注册表——「这个渠道如果走通了，是哪条链的哪种币」。
-	//   - OnchainFees 是此刻的运行时事实——「金库配好了没、这一笔要扣多少」。
-	//
-	// 一个渠道出现在上面那份里、却没出现在这一份里，含义是明确的：它此刻退化成
-	// 人工打款（没配金库，或金库里是另一种币），全额到账、慢一点。前端要靠这个
-	// 差集决定写不写「预计实到」那一行——按注册表画一个手续费数字出来，
-	// 在没配金库的部署上就是凭空造了一笔并不存在的扣款。
-	//
-	// 空数组而不是 null：前端对两者的处理迟早会有一处漏掉。
-	OnchainFees []SupplierWithdrawalFeeQuote `json:"onchain_fees"`
 	// AvailableCredit 此刻可提的余额（钱包的可用区）。
 	AvailableCredit float64 `json:"available_credit"`
 	// PendingCount 已挂着的未决单数。
 	PendingCount int64 `json:"pending_count"`
-}
-
-// SupplierWithdrawalFeeQuote 是一个链上渠道此刻的手续费报价。
-//
-// **报价不是承诺**：真正扣多少以建单那一刻重算的为准，落在单子的 fee_amount 上。
-// 两者之间差着一次 gas 价格波动，而把报价锁住（比如缓存 5 分钟然后照它扣）
-// 只会让「界面上写的」和「链上真花的」在一个更长的窗口里对不上。
-// 界面该说的是"预计"，不是"将会"。
-type SupplierWithdrawalFeeQuote struct {
-	// Channel 渠道名，与 OnchainChannels 里的逐字相等，前端拿它做键。
-	Channel string `json:"channel"`
-	// Fee 手续费，与 amount 同一个计价单位。已按落库精度收敛过
-	// （SanitizeChainFee），所以界面上显示的数与将来单子上那一列是同一种数。
-	Fee float64 `json:"fee"`
-	// Estimated 为假 = 这是配置里的保守回落值，不是真的问过链。
-	//
-	// 报出来是为了让降级可见：一个回落值和一个真实估算长得一模一样，
-	// 都是一个正数，而「今天手续费怎么一整天都一样」只有靠它才答得上来。
-	Estimated bool `json:"estimated"`
 }
 
 // GetOptions 读申请表单需要的全部信息。
@@ -205,7 +173,6 @@ func (s *SupplierWithdrawalService) GetOptions(ctx context.Context, userID int64
 		Channels:        channels,
 		Notice:          settings.Notice,
 		OnchainChannels: SupplierOnchainChannels(),
-		OnchainFees:     s.feeQuotes(ctx),
 	}
 	if s.wallet != nil {
 		if wallet, err := s.wallet.EnsureWallet(ctx, userID); err == nil && wallet != nil {
@@ -271,9 +238,6 @@ func (s *SupplierWithdrawalService) Request(ctx context.Context, userID int64, r
 		return nil, ErrSupplierWithdrawalBelowMinimum
 	}
 
-	// 链上快照放在最后一步：它是这条路径上唯一可能触网的动作（估 gas），
-	// 而上面每一道校验都能在不花任何代价的情况下否掉这次申请。
-	// 反过来先估价再校验金额，等于让每一次填错金额都去问一次链。
 	params := SupplierWithdrawalCreateParams{
 		UserID:        userID,
 		Amount:        req.Amount,
@@ -282,9 +246,7 @@ func (s *SupplierWithdrawalService) Request(ctx context.Context, userID int64, r
 		UserNote:      note,
 		MaxPending:    settings.MaxPending,
 	}
-	if err := s.applyChainSnapshot(ctx, &params, onchain); err != nil {
-		return nil, err
-	}
+	s.applyChainSnapshot(&params, onchain)
 
 	created, err := s.repo.Create(ctx, params)
 	if err != nil {
@@ -343,11 +305,11 @@ func (s *SupplierWithdrawalService) resolveOnchainAccount(
 	return account, SupplierOnchainChannel{}, nil
 }
 
-// applyChainSnapshot 把「这张单子发哪个合约的币、扣多少 gas」钉在建单参数上。
+// applyChainSnapshot 把「这张单子发哪个合约的币」钉在建单参数上。
 //
 // # 什么都不写，是一个正常结果
 //
-// 三种情况下这个函数原样返回、四列全留零值，于是单子就是 229 那种人工工单：
+// 三种情况下这个函数原样返回、几列全留零值，于是单子就是 229 那种人工工单：
 // 渠道压根不是链上渠道、这套部署没接链上客户端、客户端说它结算不了这种币
 // （没配金库，或金库里是另一种币）。
 //
@@ -357,37 +319,25 @@ func (s *SupplierWithdrawalService) resolveOnchainAccount(
 // 反过来，只要没写 network，M4 的 worker 就永远捞不到这张单子，也就不存在
 // 「钱扣了、worker 打不出去」那种卡死。留白比报错既更安全也更少破坏。
 //
-// # 写了就必须四列齐全
+// # 写了就必须几列齐全
 //
-// 一旦决定写，network / token_symbol / token_address / fee_amount 是一组，
-// 缺一不可：worker 靠 network 捞单、靠 token_address 决定发哪个合约的币。
-// 只写一半会留下一批捞得到、却打不出去的半成品行——这正是 M1 当初决定
-// 一个字段都不写的理由。
+// 一旦决定写，network / token_symbol / token_address 是一组，缺一不可：
+// worker 靠 network 捞单、靠 token_address 决定发哪个合约的币。只写一半会留下
+// 一批捞得到、却打不出去的半成品行——这正是 M1 当初决定一个字段都不写的理由。
+//
+// 手续费不在快照里：链上 gas 由金库承担（BSC 上每笔几美分），供给者全额到账。
+// FeeAmount 留零值——它作为列还在，是为了历史单子上的快照仍然可读。
+// 防粉尘提现靠的是提现参数里的起提门槛，不是手续费。
 func (s *SupplierWithdrawalService) applyChainSnapshot(
-	ctx context.Context, params *SupplierWithdrawalCreateParams, onchain SupplierOnchainChannel,
-) error {
+	params *SupplierWithdrawalCreateParams, onchain SupplierOnchainChannel,
+) {
 	token, ok := s.settleOnChain(onchain)
 	if !ok {
-		return nil
+		return
 	}
-
-	fee, ok := SanitizeChainFee(s.chain.EstimateFee(ctx, onchain.Network).Amount)
-	if !ok {
-		return ErrSupplierWithdrawalFeeUnavailable
-	}
-	// fee >= amount 时链上实发为零或负数。必须在**建单之前**拦住：让它建起来，
-	// 供给者的钱会先从可用区扣走，然后 worker 发现没得可发，于是一笔钱卡在一张
-	// 推不动的单子上。取 >= 而不是 >，是因为发 0 也要烧一次 gas，
-	// 而那笔 gas 是平台白花的。
-	if fee >= params.Amount {
-		return ErrSupplierWithdrawalFeeExceedsAmount
-	}
-
 	params.Network = onchain.Network
 	params.TokenSymbol = onchain.Token
 	params.TokenAddress = token
-	params.FeeAmount = fee
-	return nil
 }
 
 // settleOnChain 回答「这个渠道此刻真的会自动打款吗」，是的话给出合约地址。
@@ -424,35 +374,6 @@ func containsTrimmed(list []string, target string) bool {
 		}
 	}
 	return false
-}
-
-// feeQuotes 给表单报一份「此刻哪些渠道会自动打款、各扣多少」。
-//
-// 只报真的能结算的那些（判据与建单同一个 settleOnChain）。M6b 起渠道列表
-// 本身就由同一判据派生，这份报价因此与 Channels 一一对应——估不出手续费的
-// 渠道是唯一的例外（见下）。
-//
-// 估不出手续费（NaN/无穷）的渠道**整条略过**，不报一个 0：报 0 是在说
-// "这个渠道不收手续费"，而真相是"我们算不出来"，那两句话对着一个正要点提交的人
-// 意味着完全相反的两件事。建单时同一个条件会给出 503，届时他会知道。
-func (s *SupplierWithdrawalService) feeQuotes(ctx context.Context) []SupplierWithdrawalFeeQuote {
-	quotes := []SupplierWithdrawalFeeQuote{}
-	for _, channel := range SupplierOnchainChannels() {
-		if _, ok := s.settleOnChain(channel); !ok {
-			continue
-		}
-		estimate := s.chain.EstimateFee(ctx, channel.Network)
-		fee, ok := SanitizeChainFee(estimate.Amount)
-		if !ok {
-			continue
-		}
-		quotes = append(quotes, SupplierWithdrawalFeeQuote{
-			Channel:   channel.Channel,
-			Fee:       fee,
-			Estimated: estimate.Estimated,
-		})
-	}
-	return quotes
 }
 
 // Cancel 供给者撤回自己的未决单，钱退回可用区。

@@ -95,8 +95,6 @@ func TestSupplyPayoutChainSettingsValidate(t *testing.T) {
 			TokenSymbol:   "USDT",
 			ChainID:       56,
 			Confirmations: 3,
-			FallbackFee:   0.5,
-			FeeMultiplier: 1.5,
 		}
 	}
 	require.NoError(t, valid().validate())
@@ -112,11 +110,6 @@ func TestSupplyPayoutChainSettingsValidate(t *testing.T) {
 	t.Run("零确认拒绝", func(t *testing.T) {
 		s := valid()
 		s.Confirmations = 0
-		require.Error(t, s.validate())
-	})
-	t.Run("安全系数小于 1 拒绝", func(t *testing.T) {
-		s := valid()
-		s.FeeMultiplier = 0.9
 		require.Error(t, s.validate())
 	})
 	t.Run("坏的合约地址拒绝", func(t *testing.T) {

@@ -435,11 +435,11 @@ func TestSupplierExport_CarriesChainColumns(t *testing.T) {
 	chain := byID[onchain.ID]
 	assert.Equal(t, "bsc", chain.Network)
 	assert.Equal(t, "USDT", chain.TokenSymbol)
-	// NUMERIC 原文，不经过 float64——建单传的 0.3 落库后就是这个形态。
-	assert.Equal(t, "0.30000000", chain.FeeAmount)
-	// net 由数据库算：amount(30) - fee(0.3)。与服务层同数由
+	// NUMERIC 原文，不经过 float64——免手续费改版后建单一律落 0。
+	assert.Equal(t, "0.00000000", chain.FeeAmount)
+	// net 由数据库算：免手续费后 = amount(30)。与服务层同数由
 	// TestSupplierWithdrawal_ChainSnapshotRoundTrips 钉着。
-	assert.Equal(t, "29.70000000", chain.NetAmount)
+	assert.Equal(t, "30.00000000", chain.NetAmount)
 	assert.Equal(t, "0xchain-hash", chain.TxHash)
 	assert.Equal(t, "0xchain-hash", chain.ExternalRef, "paid 的链上单里 external_ref 与 tx_hash 同源")
 

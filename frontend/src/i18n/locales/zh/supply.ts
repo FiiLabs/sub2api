@@ -230,14 +230,9 @@ export default {
         unbindSuccess: '收款地址已解绑。'
       },
 
-      // 手续费。三件事必须说清：从提现金额**里面**扣（不是额外收）、
-      // 报价不是承诺（落库的是提交那一刻重新估的数）、拿不到报价 ≠ 免费
-      // （那是渠道此刻自动结算不了，会转人工打款）。
+      // 手续费。免手续费改版后新单不再收 gas（金库承担），
+      // line 只用于历史单子（fee_amount > 0 的旧记录）的展示。
       fee: {
-        quote: '当前网络手续费约 {fee}，从提现金额中扣除；以提交那一刻的估算为准。',
-        fixed: '网络手续费 {fee}（平台配置的固定值），从提现金额中扣除。',
-        netPreview: '按此金额申请，预计到账 {net}。',
-        notCovered: '金额必须大于手续费，否则申请会被直接拒绝。',
         line: '手续费 {fee} · 到账 {net}',
         auto: '自动打款 · {network}'
       },
@@ -414,7 +409,6 @@ export default {
       signerKeyKeep: '已配置。留空保存 = 保持不变',
       signerKeyHint: '私钥加密落库（AES-256-GCM），保存后不再回显；页面上能看到的只有推导出的金库地址。',
       treasury: '金库地址：{address}',
-      fallbackFee: '兜底手续费（USD/笔）',
       verify: '测试连接',
       verifying: '正在核对…',
       save: '保存并生效',

@@ -82,7 +82,7 @@ func Resolve(ctx context.Context, cfg Config, httpClient *http.Client) (Resolved
 // 这种不一致查起来会要命，因为日志本身就是排查的起点。
 func build(cfg Config, httpClient *http.Client) (Resolved, error) {
 	disabled := Resolved{
-		Client:  service.NewDisabledChainClient(cfg.FallbackFee),
+		Client:  service.NewDisabledChainClient(),
 		Mode:    ModeDisabled,
 		Summary: fmt.Sprintf("on-chain payout is off (%s is not set); withdrawals will not be broadcast", envEnabled),
 	}
@@ -92,7 +92,7 @@ func build(cfg Config, httpClient *http.Client) (Resolved, error) {
 	}
 	if cfg.Mock {
 		return Resolved{
-			Client:  service.NewMockChainClient(service.MockChainOptions{Fee: cfg.FallbackFee}),
+			Client:  service.NewMockChainClient(service.MockChainOptions{}),
 			Mode:    ModeMock,
 			Summary: fmt.Sprintf("on-chain payout is MOCKED (%s is on): nothing will be broadcast", envMock),
 		}, nil

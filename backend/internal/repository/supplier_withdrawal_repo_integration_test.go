@@ -628,15 +628,11 @@ func TestSupplierWithdrawal_LegacyPlaintextPayoutAccountStillReadable(t *testing
 }
 
 // ============================================================================
-// 链上快照四列（M3）
+// 链上快照列（M3；免手续费改版后 fee_amount 恒 0）
 // ============================================================================
 
-// 四列写进去、读出来、且**库里那一行算出的 net 与服务层是同一个数**。
-//
-// 最后一条是这组测试的重心：fee_amount 落在 DECIMAL(20,8) 上，服务层若不把
-// 估算值收敛到 8 位就交给这里，这一列会替我们做一次没人看见的截断——
-// 于是「按内存里的 fee 算的 net」与「按库里这一行算的 net」不是同一个数，
-// 而 M4 的 worker 打款读的是库里那一行。这种分岔只有真 Postgres 能证伪，
+// 快照列写进去、读出来、且**库里那一行算出的 net 与服务层是同一个数**
+// （免手续费后 net = amount，fee_amount 落 0）。这种分岔只有真 Postgres 能证伪，
 // sqlmock 里的 DECIMAL 是我以为的 DECIMAL。
 func TestSupplierWithdrawal_ChainSnapshotRoundTrips(t *testing.T) {
 	ctx := context.Background()
@@ -648,8 +644,6 @@ func TestSupplierWithdrawal_ChainSnapshotRoundTrips(t *testing.T) {
 	seedSupplierWallet(t, txCtx, client, userID, 100)
 	repo := withdrawalRepoOn(client)
 
-	// 手续费取一个把 8 位小数占满的值：截断类回归只在最后几位现形。
-	const fee = 0.12345678
 	const tokenAddress = "0x55d398326f99059ff775485246999027b3197955"
 	w, err := repo.Create(txCtx, service.SupplierWithdrawalCreateParams{
 		UserID:        userID,
@@ -659,24 +653,23 @@ func TestSupplierWithdrawal_ChainSnapshotRoundTrips(t *testing.T) {
 		Network:       "bsc",
 		TokenSymbol:   "USDT",
 		TokenAddress:  tokenAddress,
-		FeeAmount:     fee,
 		MaxPending:    1,
 	})
 	require.NoError(t, err)
 
-	// 建单的回读四列齐全。
+	// 建单的回读几列齐全。
 	require.NotNil(t, w.Network)
 	assert.Equal(t, "bsc", *w.Network)
 	require.NotNil(t, w.TokenSymbol)
 	assert.Equal(t, "USDT", *w.TokenSymbol)
 	require.NotNil(t, w.TokenAddress)
 	assert.Equal(t, tokenAddress, *w.TokenAddress)
-	assert.Equal(t, fee, w.FeeAmount, "fee 回读时变了——多半是列精度或扫描类型")
+	assert.Zero(t, w.FeeAmount, "免手续费改版后新单的 fee_amount 恒 0")
 
-	// 库里那一行：fee 一位不丢，net 与服务层同一个数。
+	// 库里那一行：fee 恒 0，net 与总额同一个数。
 	storedFee := querySingleFloat(t, txCtx, client,
 		"SELECT fee_amount::double precision FROM supplier_withdrawals WHERE id = $1", w.ID)
-	assert.Equal(t, fee, storedFee, "DECIMAL(20,8) 截断了 fee——服务层没收敛就落库")
+	assert.Zero(t, storedFee)
 	storedNet := querySingleFloat(t, txCtx, client,
 		"SELECT (amount - fee_amount)::double precision FROM supplier_withdrawals WHERE id = $1", w.ID)
 	assert.Equal(t, w.NetAmount(), storedNet, "按库里算的 net 与服务层不是同一个数")
@@ -688,7 +681,6 @@ func TestSupplierWithdrawal_ChainSnapshotRoundTrips(t *testing.T) {
 	require.Len(t, items, 1)
 	require.NotNil(t, items[0].Network)
 	assert.Equal(t, "bsc", *items[0].Network)
-	assert.Equal(t, fee, items[0].FeeAmount)
 
 	// 快照在终态推进后原样还在：审批只改状态，不动这四列。
 	resolved, err := repo.Resolve(txCtx, service.SupplierWithdrawalResolveParams{
@@ -697,7 +689,7 @@ func TestSupplierWithdrawal_ChainSnapshotRoundTrips(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resolved.TokenAddress)
 	assert.Equal(t, tokenAddress, *resolved.TokenAddress)
-	assert.Equal(t, fee, resolved.FeeAmount)
+	assert.Zero(t, resolved.FeeAmount)
 }
 
 // 人工单三列落 NULL、fee 落 0——不是空串，不是别的哨兵值。
@@ -757,7 +749,6 @@ func createOnchainWithdrawal(t *testing.T, txCtx context.Context, repo service.S
 		Network:       "bsc",
 		TokenSymbol:   "USDT",
 		TokenAddress:  "0x55d398326f99059ff775485246999027b3197955",
-		FeeAmount:     0.3,
 		MaxPending:    10,
 	})
 	require.NoError(t, err)

@@ -221,7 +221,8 @@ func (r *supplierWithdrawalRepository) Create(ctx context.Context, params servic
 			nullableTrimmedString(params.Network),
 			nullableTrimmedString(params.TokenSymbol),
 			nullableTrimmedString(params.TokenAddress),
-			params.FeeAmount,
+			// fee_amount 恒 0：免手续费改版后 gas 由金库承担，列保留给历史单子对账。
+			0.0,
 		)
 		if err != nil {
 			return fmt.Errorf("insert supplier withdrawal: %w", err)

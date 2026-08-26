@@ -30,7 +30,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"math"
 	"math/big"
 	"strconv"
 	"strings"
@@ -65,29 +64,6 @@ var (
 	ErrSupplierPayoutChainNoBatch = infraerrors.ServiceUnavailable(
 		"SUPPLIER_PAYOUT_CHAIN_NO_BATCH", "batch payout contract is not configured for this network")
 )
-
-// ChainFeeEstimate 是一笔转账的手续费估算。
-type ChainFeeEstimate struct {
-	// Amount 折算成计价单位（与提现单的 amount 同一个单位）的手续费。
-	//
-	// 这是唯一会被写进单子、扣供给者钱的字段。它是**估算**：真实花费要等回执
-	// 里的 gasUsed，而那时钱已经打出去了。M3 因此按估算收费并留安全系数，
-	// 多收的那一点是平台承担波动的对价，少收了平台自己贴——两个方向都不追溯，
-	// 因为追溯要给一张已经终态的单子改金额。
-	Amount float64
-	// GasPriceWei / GasLimit 只为排查留档：同一个 Amount 可能来自完全不同的两组数，
-	// 而「手续费怎么突然贵了」这个问题只有拆开这两项才答得出来。
-	//
-	// GasPriceWei 是十进制字符串而不是数字：wei 的量级放得下 uint64，但它会进日志
-	// 和 JSON，而 JSON 的数字在前端是 float64，超过 2^53 就开始悄悄丢低位。
-	GasPriceWei string
-	GasLimit    uint64
-	// Estimated 为假表示这是回落值（RPC 不可用、没配币价），不是真的问过链。
-	//
-	// 单拎一个布尔出来，是因为回落值和真实估算长得一模一样：都是一个正数。
-	// 没有它，「今天手续费怎么一整天都是 0.5」就没人答得上来是巧合还是节点挂了。
-	Estimated bool
-}
 
 // ChainTransferParams 是一次单笔转账。
 type ChainTransferParams struct {
@@ -152,16 +128,10 @@ type ChainConfirmation struct {
 // SupplierChainClient 是链上打款能力的全部出口。
 //
 // 方法分三类，读的时候按这个分类看会清楚很多：
-//   - 问链要信息：EstimateFee、NextNonce、WaitForConfirmation
+//   - 问链要信息：NextNonce、WaitForConfirmation
 //   - 往链上写：Transfer、TransferBatch、EnsureBatchAllowance
 //   - 纯本地判断：SupportsBatch
 type SupplierChainClient interface {
-	// EstimateFee 估一笔转账的手续费。
-	//
-	// **不返回错误**是刻意的。这个值出现在提现预览里，而一次 RPC 抖动不该让
-	// 供给者看到一个"提现暂时不可用"——他会以为是自己的账号出了问题。取不到时
-	// 回落到配置里的保守值并把 Estimated 置假，让降级是可见的而不是可感的。
-	EstimateFee(ctx context.Context, network string) ChainFeeEstimate
 	// TokenAddress 回答「这条链上的这种币，合约地址是多少」。
 	//
 	// 同步、不触网：它读的是配置，而调用点在**建单事务之前**——那里不该有一次
@@ -211,39 +181,6 @@ type SupplierChainClient interface {
 // 取 8 是因为提现单的金额列是 DECIMAL(20,8)：库里存得下的精度就是这么多，
 // 再多的位数不来自任何真实数据，只来自 float64 表示误差的尾巴。
 const ChainAmountScale = 8
-
-// SanitizeChainFee 把一个手续费估算值收敛成可以落库的形态。
-//
-// 返回值：收敛后的金额，以及"这个估算值本身是不是可信的"。
-//
-// # 为什么要收敛
-//
-// fee_amount 是 DECIMAL(20,8)。估算值来自一串浮点乘法（gasPrice × gasLimit ÷ 1e18
-// × 币价 × 安全系数），小数位可以有二十几位。不收敛就落库，数据库会替我们截断，
-// 于是**服务算出来的 net 与按库里那一行算出来的 net 不是同一个数**——而 M4 打款时
-// 读的是库里那一行。差值只有 1e-9 量级，但两个本该相等的数不相等，
-// 是一类会在对账时耗掉一整天的问题。
-//
-// 方向取四舍五入而不是向上取整：在 1e-8 美元这个量级上，多收还是少收都不是钱，
-// 而"服务与数据库算出同一个数"才是要的东西。
-//
-// # 为什么非有限值要回假，而不是当成 0
-//
-// 当成 0 就是"这笔提现不收手续费"，而它真实的含义是"链上客户端算出了一个不是数的东西"。
-// 前者静默地让金库替所有人垫 gas，后者是个配置故障——必须让它以故障的形态出现。
-func SanitizeChainFee(fee float64) (float64, bool) {
-	if math.IsNaN(fee) || math.IsInf(fee, 0) || fee < 0 {
-		return 0, false
-	}
-	if fee == 0 {
-		return 0, true
-	}
-	rounded, err := strconv.ParseFloat(strconv.FormatFloat(fee, 'f', ChainAmountScale, 64), 64)
-	if err != nil {
-		return 0, false
-	}
-	return rounded, true
-}
 
 // ToTokenAmount 把计价单位的金额换算成代币最小单位。
 //
@@ -311,22 +248,11 @@ func ToTokenAmount(amount float64, decimals int) (*big.Int, error) {
 //
 // 见文件头。它存在的全部意义是让「没配好金库」这件事在第一次尝试广播时就
 // 大声说出来，而不是变成一串标着 paid、链上查无此笔的单子。
-type DisabledChainClient struct {
-	// FallbackFee EstimateFee 的回落值。
-	//
-	// 即便打款关着，提现预览里那个手续费数字仍然要能画出来——链上渠道要不要
-	// 出现在选项里是管理员的白名单说了算，而白名单可以先于金库配好。
-	FallbackFee float64
-}
+type DisabledChainClient struct{}
 
 // NewDisabledChainClient 造一个拒绝广播的客户端。
-func NewDisabledChainClient(fallbackFee float64) *DisabledChainClient {
-	return &DisabledChainClient{FallbackFee: fallbackFee}
-}
-
-// EstimateFee 返回回落值，Estimated 恒为假。
-func (c *DisabledChainClient) EstimateFee(context.Context, string) ChainFeeEstimate {
-	return ChainFeeEstimate{Amount: c.FallbackFee}
+func NewDisabledChainClient() *DisabledChainClient {
+	return &DisabledChainClient{}
 }
 
 // TokenAddress 恒假：没配金库就没有合约地址，而**猜一个**会让建单成功、
@@ -374,7 +300,6 @@ func (c *DisabledChainClient) WaitForConfirmation(context.Context, string, strin
 type MockChainClient struct {
 	mu sync.Mutex
 
-	fee     float64
 	outcome string
 	batch   bool
 	// token 假的合约地址，见 MockChainTokenAddress。空串 = TokenAddress 恒回假。
@@ -399,8 +324,6 @@ type MockChainClient struct {
 
 // MockChainOptions 是 MockChainClient 的初始状态。
 type MockChainOptions struct {
-	// Fee EstimateFee 返回的金额。
-	Fee float64
 	// Outcome WaitForConfirmation 的结果，空 = confirmed。
 	Outcome string
 	// NoBatch 为真时 SupportsBatch 返回假。
@@ -431,7 +354,6 @@ func NewMockChainClient(opts MockChainOptions) *MockChainClient {
 		token = ""
 	}
 	return &MockChainClient{
-		fee:     opts.Fee,
 		outcome: outcome,
 		batch:   !opts.NoBatch,
 		token:   token,
@@ -454,20 +376,6 @@ func (m *MockChainClient) TokenAddress(string, string) (string, bool) {
 		return "", false
 	}
 	return m.token, true
-}
-
-// EstimateFee 返回配置的固定值。Estimated 为真——它模拟的是"问过链了"。
-func (m *MockChainClient) EstimateFee(context.Context, string) ChainFeeEstimate {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return ChainFeeEstimate{Amount: m.fee, GasPriceWei: "1000000000", GasLimit: 100000, Estimated: true}
-}
-
-// SetFee 改手续费。
-func (m *MockChainClient) SetFee(fee float64) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.fee = fee
 }
 
 // SetOutcome 改 WaitForConfirmation 的结果。

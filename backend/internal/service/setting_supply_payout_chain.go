@@ -59,14 +59,8 @@ type SupplyPayoutChainSettings struct {
 	DisperseAddress string `json:"disperse_address"`
 	// ChainID 链 ID。主网 56，测试网 97。
 	ChainID uint64 `json:"chain_id"`
-	// NativeUSD 一个 BNB 值多少美元（配置常数，不是喂价）。0 = 不换算。
-	NativeUSD float64 `json:"native_usd"`
 	// Confirmations 几个确认算终态。
 	Confirmations uint64 `json:"confirmations"`
-	// FallbackFee 估不出手续费时每笔扣多少美元。
-	FallbackFee float64 `json:"fallback_fee"`
-	// FeeMultiplier 估算值的安全系数。
-	FeeMultiplier float64 `json:"fee_multiplier"`
 }
 
 // DefaultSupplyPayoutChainSettings 返回「关闭」状态的默认配置。
@@ -77,8 +71,6 @@ func DefaultSupplyPayoutChainSettings() *SupplyPayoutChainSettings {
 		TokenSymbol:   "USDT",
 		ChainID:       56,
 		Confirmations: 3,
-		FallbackFee:   0.5,
-		FeeMultiplier: 1.5,
 	}
 }
 
@@ -87,16 +79,6 @@ func (s *SupplyPayoutChainSettings) validate() error {
 	if s.Confirmations == 0 {
 		// 0 个确认 = 进了内存池就算成功，而内存池里的交易会被重组掉。
 		return fmt.Errorf("confirmations must be at least 1")
-	}
-	if s.FallbackFee < 0 {
-		return fmt.Errorf("fallback fee must not be negative")
-	}
-	if s.FeeMultiplier < 1 {
-		// 小于 1 的系数是在赌 gas 价只会跌。
-		return fmt.Errorf("fee safety multiplier must be at least 1")
-	}
-	if s.NativeUSD < 0 {
-		return fmt.Errorf("native token USD price must not be negative")
 	}
 	if !s.Enabled {
 		// 关着的时候链上参数都用不到——允许分步填写。

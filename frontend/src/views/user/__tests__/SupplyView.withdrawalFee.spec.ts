@@ -1,16 +1,15 @@
 /**
- * APEXONE-EXT: 提现手续费在界面上的两次亮相——表单里的预告，和单据列表里的事后账。
+ * APEXONE-EXT: 提现手续费在界面上的呈现——免手续费改版后只剩「事后账」。
  *
- * 这个 spec 盯的两条性质，失守时都不报任何错：
+ * 表单里的手续费预告已随免手续费改版整体移除（gas 由金库承担，全额到账），
+ * 这个 spec 盯的是剩下的两条性质，失守时都不报任何错：
  *
- *   1. **拿不到报价绝不显示 0。** onchain_fees 是「此刻真能自动结算的渠道」的
- *      差集式子集：一个渠道可以在 onchain_channels 里、却不在 onchain_fees 里
- *      （没接客户端 / 金库没配 / 估不出）。那种渠道该说的是「转人工打款」，
- *      而一个 0 元手续费读起来是一个承诺——后端没做过这个承诺。
- *
- *   2. **到账金额用后端给的 net_amount，不在前端重算。** amount - fee 是一条
- *      关于钱的公式，抄进 TypeScript 就有了第二份，两份迟早在某次改动里分岔。
- *      列表上那行「手续费 X · 到账 Y」必须来自响应里的字段。
+ *   1. **表单里不再出现任何手续费文案。** 一个残留的「手续费 X」读起来是
+ *      一笔仍会发生的扣款——后端已经不扣了。
+ *   2. **历史单列表照旧显示当年的 fee/net，且用后端给的 net_amount，不在前端
+ *      重算。** 免费之前的旧单子上真扣过钱，那行「手续费 X · 到账 Y」必须
+ *      还原当年的快照；amount - fee 抄进 TypeScript 就有了第二份公式，
+ *      两份迟早在某次改动里分岔。
  */
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -72,12 +71,11 @@ function withdrawalOptions(overrides: Record<string, unknown> = {}) {
     available_credit: 500,
     pending_count: 0,
     onchain_channels: [{ channel: 'BSC-USDT', network: 'bsc', token_symbol: 'USDT' }],
-    onchain_fees: [{ channel: 'BSC-USDT', fee: 0.3, estimated: true }],
     ...overrides,
   }
 }
 
-/** 一张走了链上的已打款单，fee/net 都来自后端。 */
+/** 一张免费之前走了链上的已打款单，fee/net 都来自后端的历史快照。 */
 function onchainWithdrawal(overrides: Record<string, unknown> = {}) {
   return {
     id: 11,
@@ -106,14 +104,6 @@ function mountSupplyView() {
   })
 }
 
-async function mountWithChannel(channel: string) {
-  const wrapper = mountSupplyView()
-  await flushPromises()
-  await wrapper.find('[data-testid="supply-withdrawal-channel"]').setValue(channel)
-  await flushPromises()
-  return wrapper
-}
-
 describe('SupplyView withdrawal fee', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -130,61 +120,19 @@ describe('SupplyView withdrawal fee', () => {
     })
   })
 
-  it('quotes the fee for a settleable on-chain channel', async () => {
-    const wrapper = await mountWithChannel('BSC-USDT')
-
-    const fee = wrapper.find('[data-testid="supply-withdrawal-fee"]')
-    expect(fee.exists()).toBe(true)
-    expect(fee.text()).toContain('supply.withdrawal.fee.quote')
-    expect(fee.text()).toContain('0.30')
-  })
-
-  it('previews the net using amount minus the quoted fee', async () => {
-    const wrapper = await mountWithChannel('BSC-USDT')
+  it('shows no fee copy anywhere on the request form', async () => {
+    // 免手续费后表单里不该残留任何「手续费」文案——残留的那一句读起来
+    // 是一笔仍会发生的扣款，而后端已经不扣了。
+    const wrapper = mountSupplyView()
+    await flushPromises()
+    await wrapper.find('[data-testid="supply-withdrawal-channel"]').setValue('BSC-USDT')
+    await flushPromises()
     await wrapper.find('[data-testid="supply-withdrawal-amount"]').setValue('100')
     await flushPromises()
 
-    const preview = wrapper.find('[data-testid="supply-withdrawal-net-preview"]')
-    expect(preview.exists()).toBe(true)
-    expect(preview.text()).toContain('99.70')
-  })
-
-  it('warns instead of previewing when the fee eats the whole amount', async () => {
-    // 与后端建单时的 fee >= amount 拒绝是同一条线，提前画在表单上——
-    // 等提交了才打回来，他已经填完了所有东西。
-    const wrapper = await mountWithChannel('BSC-USDT')
-    await wrapper.find('[data-testid="supply-withdrawal-amount"]').setValue('0.3')
-    await flushPromises()
-
-    expect(wrapper.find('[data-testid="supply-withdrawal-net-preview"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="supply-withdrawal-fee-not-covered"]').exists()).toBe(true)
-  })
-
-  it('stays quiet about coverage while the amount field is still empty', async () => {
-    // 表单还空着就先警告「金额盖不住手续费」，读起来像已经做错了什么。
-    const wrapper = await mountWithChannel('BSC-USDT')
-
-    expect(wrapper.find('[data-testid="supply-withdrawal-fee-not-covered"]').exists()).toBe(false)
-  })
-
-  it('never shows a zero fee when the channel has no quote (M6b)', async () => {
-    // onchain_channels 有它、onchain_fees 没它：链上-only 之后这个组合只会
-    // 出现在配置热换的竞态窗口里。此时什么都不画——**绝不显示 0**，
-    // 0 元手续费是一个后端没做过的承诺。
-    api.getWithdrawalOptions.mockResolvedValue(withdrawalOptions({ onchain_fees: [] }))
-
-    const wrapper = await mountWithChannel('BSC-USDT')
-
-    expect(wrapper.find('[data-testid="supply-withdrawal-net-preview"]').exists()).toBe(false)
-    const fee = wrapper.find('[data-testid="supply-withdrawal-fee"]')
-    expect(fee.text()).not.toContain('supply.withdrawal.fee.quote')
-    expect(fee.text()).not.toContain('0')
-  })
-
-  it('shows no fee block at all on a manual channel', async () => {
-    const wrapper = await mountWithChannel('支付宝')
-
     expect(wrapper.find('[data-testid="supply-withdrawal-fee"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="supply-withdrawal-net-preview"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="supply-withdrawal-fee-not-covered"]').exists()).toBe(false)
   })
 
   it('renders fee and net on the list from the response, not from arithmetic', async () => {
@@ -206,19 +154,11 @@ describe('SupplyView withdrawal fee', () => {
     expect(line.text()).toContain('42.42')
   })
 
-  it('keeps manual rows clean — no fee line, no auto-payout badge', async () => {
+  it('keeps fee-free rows clean — no fee line on a zero-fee withdrawal', async () => {
+    // 免费改版后的新单 fee_amount 恒 0：那行「手续费 X · 到账 Y」不该出现，
+    // 出现一句「手续费 0.00」等于告诉他这里本来要收钱。
     api.listWithdrawals.mockResolvedValue({
-      items: [
-        onchainWithdrawal({
-          id: 12,
-          payout_channel: '支付宝',
-          payout_account: 'alipay@example.com',
-          fee_amount: 0,
-          net_amount: 100,
-          network: undefined,
-          token_symbol: undefined,
-        }),
-      ],
+      items: [onchainWithdrawal({ id: 12, fee_amount: 0, net_amount: 100 })],
       total: 1,
       page: 1,
       pages: 1,
@@ -228,9 +168,6 @@ describe('SupplyView withdrawal fee', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="supply-withdrawal-fee-12"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="supply-withdrawal-12"]').text()).not.toContain(
-      'supply.withdrawal.fee.auto'
-    )
   })
 
   it('marks on-chain rows as auto payout', async () => {

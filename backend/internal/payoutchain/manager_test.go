@@ -59,8 +59,6 @@ func consoleSettings() *service.SupplyPayoutChainSettings {
 		TokenSymbol:   "USDT",
 		ChainID:       56,
 		Confirmations: 3,
-		FallbackFee:   0.5,
-		FeeMultiplier: 1.5,
 	}
 }
 

@@ -213,43 +213,6 @@ func (c *Client) currentGasPrice(ctx context.Context) (*big.Int, error) {
 	return price, nil
 }
 
-// EstimateFee 估一笔转账要花多少（折成美元）。
-func (c *Client) EstimateFee(ctx context.Context, network string) service.ChainFeeEstimate {
-	fallback := service.ChainFeeEstimate{
-		Amount:   c.cfg.FallbackFee,
-		GasLimit: gasERC20Transfer,
-	}
-	if err := c.checkNetwork(network); err != nil {
-		return fallback
-	}
-	// 没配 BNB 价就没法换算成美元。这不是故障，是明确选择不接喂价——
-	// 直接用配置里的那个固定值，并且如实说它不是估出来的。
-	if c.cfg.NativeUSD <= 0 {
-		return fallback
-	}
-	price, err := c.currentGasPrice(ctx)
-	if err != nil {
-		return fallback
-	}
-
-	// wei → 美元：gasPrice × gasLimit / 1e18 × BNB 单价 × 安全系数。
-	// 这里用浮点是合适的：结果本来就是个估值，而且它会经过
-	// service.ToTokenAmount 的定点换算才变成真金额。
-	cost := new(big.Float).SetInt(new(big.Int).Mul(price, big.NewInt(gasERC20Transfer)))
-	cost.Quo(cost, big.NewFloat(1e18))
-	native, _ := cost.Float64()
-	amount := native * c.cfg.NativeUSD * c.cfg.FeeMultiplier
-	if amount <= 0 {
-		return fallback
-	}
-	return service.ChainFeeEstimate{
-		Amount:      amount,
-		GasPriceWei: price.String(),
-		GasLimit:    gasERC20Transfer,
-		Estimated:   true,
-	}
-}
-
 // TokenAddress 回答"这条链上的这种币，合约地址是多少"。
 //
 // 只在**建单**那一刻被调用一次，把地址快照进单子（迁移 234）。此后打款一律读单子上

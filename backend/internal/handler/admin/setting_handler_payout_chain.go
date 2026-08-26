@@ -37,16 +37,13 @@ func (h *SettingHandler) SetPayoutChain(manager *payoutchain.Manager, encryptor 
 
 // SupplyPayoutChainSettingsResponse 是金库配置的对外形态。没有私钥，连密文都没有。
 type SupplyPayoutChainSettingsResponse struct {
-	Enabled         bool    `json:"enabled"`
-	RPCURL          string  `json:"rpc_url"`
-	TokenAddress    string  `json:"token_address"`
-	TokenSymbol     string  `json:"token_symbol"`
-	DisperseAddress string  `json:"disperse_address"`
-	ChainID         uint64  `json:"chain_id"`
-	NativeUSD       float64 `json:"native_usd"`
-	Confirmations   uint64  `json:"confirmations"`
-	FallbackFee     float64 `json:"fallback_fee"`
-	FeeMultiplier   float64 `json:"fee_multiplier"`
+	Enabled         bool   `json:"enabled"`
+	RPCURL          string `json:"rpc_url"`
+	TokenAddress    string `json:"token_address"`
+	TokenSymbol     string `json:"token_symbol"`
+	DisperseAddress string `json:"disperse_address"`
+	ChainID         uint64 `json:"chain_id"`
+	Confirmations   uint64 `json:"confirmations"`
 
 	// SignerConfigured 私钥配过没有。界面靠它决定输入框的占位文案是
 	// 「粘贴私钥」还是「已配置，留空保持不变」。
@@ -66,10 +63,7 @@ func (h *SettingHandler) payoutChainResponse(c *gin.Context) SupplyPayoutChainSe
 		TokenSymbol:      settings.TokenSymbol,
 		DisperseAddress:  settings.DisperseAddress,
 		ChainID:          settings.ChainID,
-		NativeUSD:        settings.NativeUSD,
 		Confirmations:    settings.Confirmations,
-		FallbackFee:      settings.FallbackFee,
-		FeeMultiplier:    settings.FeeMultiplier,
 		SignerConfigured: h.settingService.SupplyPayoutChainSignerCiphertext(c.Request.Context()) != "",
 	}
 	if h.payoutChainManager != nil {
@@ -86,16 +80,13 @@ func (h *SettingHandler) GetSupplyPayoutChainSettings(c *gin.Context) {
 
 // UpdateSupplyPayoutChainSettingsRequest 更新金库配置请求。
 type UpdateSupplyPayoutChainSettingsRequest struct {
-	Enabled         bool    `json:"enabled"`
-	RPCURL          string  `json:"rpc_url"`
-	TokenAddress    string  `json:"token_address"`
-	TokenSymbol     string  `json:"token_symbol"`
-	DisperseAddress string  `json:"disperse_address"`
-	ChainID         uint64  `json:"chain_id"`
-	NativeUSD       float64 `json:"native_usd"`
-	Confirmations   uint64  `json:"confirmations"`
-	FallbackFee     float64 `json:"fallback_fee"`
-	FeeMultiplier   float64 `json:"fee_multiplier"`
+	Enabled         bool   `json:"enabled"`
+	RPCURL          string `json:"rpc_url"`
+	TokenAddress    string `json:"token_address"`
+	TokenSymbol     string `json:"token_symbol"`
+	DisperseAddress string `json:"disperse_address"`
+	ChainID         uint64 `json:"chain_id"`
+	Confirmations   uint64 `json:"confirmations"`
 	// SignerKey 明文私钥。空 = 保留已存的那把。
 	SignerKey string `json:"signer_key"`
 }
@@ -128,10 +119,7 @@ func (h *SettingHandler) UpdateSupplyPayoutChainSettings(c *gin.Context) {
 		TokenSymbol:     req.TokenSymbol,
 		DisperseAddress: req.DisperseAddress,
 		ChainID:         req.ChainID,
-		NativeUSD:       req.NativeUSD,
 		Confirmations:   req.Confirmations,
-		FallbackFee:     req.FallbackFee,
-		FeeMultiplier:   req.FeeMultiplier,
 	}
 	if err := h.settingService.SetSupplyPayoutChainSettings(c.Request.Context(), settings); err != nil {
 		response.BadRequest(c, err.Error())

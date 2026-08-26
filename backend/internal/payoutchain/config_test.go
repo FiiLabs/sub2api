@@ -18,8 +18,7 @@ func setEnv(t *testing.T, values map[string]string) {
 	// 先把所有相关变量清空，免得跑测试的机器上恰好设了其中某一个。
 	for _, name := range []string{
 		envEnabled, envMock, envRPCURL, envSignerKey, envTokenAddress,
-		envTokenSymbol, envDisperse, envChainID, envNativeUSD, envConfirmations,
-		envFallbackFee, envFeeMultiplier,
+		envTokenSymbol, envDisperse, envChainID, envConfirmations,
 	} {
 		t.Setenv(name, "")
 	}
@@ -39,8 +38,6 @@ func TestLoadConfigDefaultsToOffAndStillLoads(t *testing.T) {
 	assert.False(t, cfg.Mock)
 	assert.Equal(t, uint64(defaultChainID), cfg.ChainID)
 	assert.Equal(t, uint64(defaultConfirmations), cfg.Confirmations)
-	assert.Equal(t, defaultFallbackFee, cfg.FallbackFee)
-	assert.Equal(t, defaultFeeMultiplier, cfg.FeeMultiplier)
 }
 
 func TestLoadConfigReadsAFullSetup(t *testing.T) {
@@ -51,10 +48,7 @@ func TestLoadConfigReadsAFullSetup(t *testing.T) {
 		envTokenAddress:  addrBSCUSDT,
 		envDisperse:      addrOther,
 		envChainID:       "56",
-		envNativeUSD:     "612.5",
 		envConfirmations: "5",
-		envFallbackFee:   "0.4",
-		envFeeMultiplier: "2",
 	})
 
 	cfg, err := LoadConfig()
@@ -62,9 +56,6 @@ func TestLoadConfigReadsAFullSetup(t *testing.T) {
 	assert.True(t, cfg.Enabled)
 	assert.Equal(t, uint64(56), cfg.ChainID)
 	assert.Equal(t, uint64(5), cfg.Confirmations)
-	assert.Equal(t, 612.5, cfg.NativeUSD)
-	assert.Equal(t, 0.4, cfg.FallbackFee)
-	assert.Equal(t, 2.0, cfg.FeeMultiplier)
 }
 
 func TestEnabledWithoutTheEssentialsIsAnError(t *testing.T) {
@@ -115,9 +106,6 @@ func TestMalformedNumbersAreRejectedInsteadOfSilentlyDefaulting(t *testing.T) {
 		{envChainID, "fifty-six"},
 		{envChainID, "0x38"}, // 十六进制不收，只认十进制
 		{envConfirmations, "many"},
-		{envNativeUSD, "$600"},
-		{envFallbackFee, "cheap"},
-		{envFeeMultiplier, "1.5x"},
 	} {
 		t.Run(tc.name+"="+tc.value, func(t *testing.T) {
 			setEnv(t, map[string]string{tc.name: tc.value})
@@ -132,17 +120,6 @@ func TestSelfInconsistentSettingsAreRejected(t *testing.T) {
 	t.Run("零个确认", func(t *testing.T) {
 		// "进了内存池就算成功"——而内存池里的交易会被重组掉。
 		setEnv(t, map[string]string{envConfirmations: "0"})
-		_, err := LoadConfig()
-		require.Error(t, err)
-	})
-	t.Run("安全系数小于 1", func(t *testing.T) {
-		// 把估算值往下压，等于赌 gas 价只会跌。
-		setEnv(t, map[string]string{envFeeMultiplier: "0.8"})
-		_, err := LoadConfig()
-		require.Error(t, err)
-	})
-	t.Run("负的回落手续费", func(t *testing.T) {
-		setEnv(t, map[string]string{envFallbackFee: "-1"})
 		_, err := LoadConfig()
 		require.Error(t, err)
 	})
@@ -192,7 +169,7 @@ func TestEnabledFlagOnlyAcceptsExplicitTruths(t *testing.T) {
 func TestResolvePicksTheSafeClientWhenNothingIsConfigured(t *testing.T) {
 	// 默认必须落在"拒绝"而不是"假装成功"：后者会把工单安静地标成已付、
 	// 把供给者余额清零，而链上什么都没发生，也没有一条错误日志。
-	resolved, err := Resolve(context.Background(), Config{FallbackFee: 0.5}, nil)
+	resolved, err := Resolve(context.Background(), Config{}, nil)
 	require.NoError(t, err)
 	assert.Equal(t, ModeDisabled, resolved.Mode)
 
@@ -200,21 +177,18 @@ func TestResolvePicksTheSafeClientWhenNothingIsConfigured(t *testing.T) {
 		Network: "bsc", To: addrRecipient, Amount: 1,
 	})
 	assert.ErrorIs(t, err, service.ErrSupplierPayoutChainDisabled)
-
-	// 手续费仍然给得出——提现预览不该因为打款没配好而整页报错。
-	assert.Equal(t, 0.5, resolved.Client.EstimateFee(context.Background(), "bsc").Amount)
 }
 
 func TestResolveIgnoresAStrayMockFlag(t *testing.T) {
 	// PAYOUT_MOCK 被误抄进生产配置是会发生的事。它单独出现时必须无效——
 	// 要两个变量同时抄错，生产环境才会假装打款。
-	resolved, err := Resolve(context.Background(), Config{Mock: true, FallbackFee: 0.5}, nil)
+	resolved, err := Resolve(context.Background(), Config{Mock: true}, nil)
 	require.NoError(t, err)
 	assert.Equal(t, ModeDisabled, resolved.Mode, "只设 mock 而没设 enabled，应当落到拒绝")
 }
 
 func TestResolveGivesTheMockOnlyWhenBothFlagsAreOn(t *testing.T) {
-	resolved, err := Resolve(context.Background(), Config{Enabled: true, Mock: true, FallbackFee: 0.5}, nil)
+	resolved, err := Resolve(context.Background(), Config{Enabled: true, Mock: true}, nil)
 	require.NoError(t, err)
 	assert.Equal(t, ModeMock, resolved.Mode)
 	assert.Contains(t, resolved.Summary, "MOCK", "启动日志里必须大声说这是假的")
@@ -232,7 +206,7 @@ func TestResolveFallsBackToDisabledWhenTheLiveClientCannotBeBuilt(t *testing.T) 
 	resolved, err := Resolve(context.Background(), Config{
 		Enabled: true, RPCURL: "https://x.example/",
 		SignerKey: "not-a-key", TokenAddress: addrBSCUSDT,
-		ChainID: 56, Confirmations: 3, FeeMultiplier: 1, FallbackFee: 0.5,
+		ChainID: 56, Confirmations: 3,
 	}, nil)
 	require.Error(t, err)
 	require.NotNil(t, resolved.Client, "出错也要给一个能用的客户端")
@@ -248,7 +222,6 @@ func TestResolveSummaryNeverCarriesTheKey(t *testing.T) {
 	resolved, err := Resolve(context.Background(), Config{
 		Enabled: true, RPCURL: client.cfg.RPCURL, SignerKey: keyBSC,
 		TokenAddress: addrBSCUSDT, ChainID: 56, Confirmations: 3,
-		FeeMultiplier: 1, FallbackFee: 0.5,
 	}, nil)
 	require.NoError(t, err)
 	assert.Equal(t, ModeLive, resolved.Mode)
@@ -267,7 +240,6 @@ func TestResolveReportsAChainIDMismatchWithoutRefusingToStart(t *testing.T) {
 	resolved, err := Resolve(context.Background(), Config{
 		Enabled: true, RPCURL: client.cfg.RPCURL, SignerKey: keyBSC,
 		TokenAddress: addrBSCUSDT, ChainID: 56, Confirmations: 3,
-		FeeMultiplier: 1, FallbackFee: 0.5,
 	}, nil)
 	require.Error(t, err)
 	assert.Equal(t, ModeLive, resolved.Mode)

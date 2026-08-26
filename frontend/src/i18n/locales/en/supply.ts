@@ -235,16 +235,9 @@ export default {
         unbindSuccess: 'Payout address unbound.'
       },
 
-      // Fees. Three things have to be explicit: the fee comes out of the
-      // withdrawal amount (it is not charged on top), a quote is not a promise
-      // (what lands on the request is re-estimated at submission), and "no
-      // quote" does not mean "free" — it means the channel cannot settle
-      // on-chain right now and the request will be paid out manually.
+      // Fees. Withdrawals are fee-free now (the treasury covers gas);
+      // `line` only renders on historical requests where fee_amount > 0.
       fee: {
-        quote: 'Current network fee ≈ {fee}, deducted from the withdrawal amount; the estimate at submission time is what counts.',
-        fixed: 'Network fee {fee} (a configured fallback value), deducted from the withdrawal amount.',
-        netPreview: 'At this amount you would receive about {net}.',
-        notCovered: 'The amount must exceed the network fee, or the request is rejected outright.',
         line: 'fee {fee} · net {net}',
         auto: 'auto payout · {network}'
       },
@@ -408,7 +401,6 @@ export default {
       signerKeyKeep: 'Configured. Leave empty to keep it',
       signerKeyHint: 'Stored encrypted (AES-256-GCM) and never echoed back; the only thing shown is the treasury address derived from it.',
       treasury: 'Treasury address: {address}',
-      fallbackFee: 'Fallback fee (USD per payout)',
       verify: 'Test connection',
       verifying: 'Verifying…',
       save: 'Save & apply',

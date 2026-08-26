@@ -51,9 +51,9 @@ type clientBox struct {
 //
 // 初始值不是 nil 而是 Disabled：Manager 第一次 Reload 之前（进程刚起、数据库
 // 还没读到）到达的调用必须收到明确拒绝，而不是空指针崩溃。
-func NewHolder(fallbackFee float64) *Holder {
+func NewHolder() *Holder {
 	h := &Holder{}
-	h.current.Store(&clientBox{client: service.NewDisabledChainClient(fallbackFee)})
+	h.current.Store(&clientBox{client: service.NewDisabledChainClient()})
 	return h
 }
 
@@ -67,9 +67,6 @@ func (h *Holder) swap(client service.SupplierChainClient) {
 
 // SupplierChainClient 的全部方法：纯转发，不加任何逻辑——加了就意味着
 // 有一层行为在真客户端的测试覆盖之外。
-func (h *Holder) EstimateFee(ctx context.Context, network string) service.ChainFeeEstimate {
-	return h.get().EstimateFee(ctx, network)
-}
 func (h *Holder) TokenAddress(network, symbol string) (string, bool) {
 	return h.get().TokenAddress(network, symbol)
 }
@@ -136,7 +133,7 @@ func NewManager(settings SettingsSource, encryptor service.SecretEncryptor, http
 		settings:   settings,
 		encryptor:  encryptor,
 		httpClient: httpClient,
-		holder:     NewHolder(defaultFallbackFee),
+		holder:     NewHolder(),
 	}
 	m.status.Store(&Status{
 		Mode:      ModeDisabled,
@@ -237,10 +234,7 @@ func (m *Manager) assembleConfig(ctx context.Context) (Config, string, error) {
 		TokenSymbol:     stored.TokenSymbol,
 		DisperseAddress: stored.DisperseAddress,
 		ChainID:         stored.ChainID,
-		NativeUSD:       stored.NativeUSD,
 		Confirmations:   stored.Confirmations,
-		FallbackFee:     stored.FallbackFee,
-		FeeMultiplier:   stored.FeeMultiplier,
 	}
 	if stored.Enabled {
 		sealed := m.settings.SupplyPayoutChainSignerCiphertext(ctx)

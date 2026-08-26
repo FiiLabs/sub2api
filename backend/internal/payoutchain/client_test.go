@@ -108,8 +108,6 @@ func (n *fakeNode) start(t *testing.T, tweak func(*Config)) *Client {
 		TokenSymbol:   "USDT",
 		ChainID:       56,
 		Confirmations: 3,
-		FallbackFee:   0.5,
-		FeeMultiplier: 1.5,
 	}
 	if tweak != nil {
 		tweak(&cfg)
@@ -375,49 +373,6 @@ func TestTokenDecimalsRefusesAnImplausibleAnswer(t *testing.T) {
 			assert.Zero(t, node.countOf("eth_sendRawTransaction"))
 		})
 	}
-}
-
-func TestEstimateFeeFallsBackVisiblyInsteadOfFailing(t *testing.T) {
-	ctx := context.Background()
-
-	t.Run("估到了", func(t *testing.T) {
-		node := newFakeNode().on("eth_gasPrice", "0x3b9aca00") // 1 Gwei
-		client := node.start(t, func(c *Config) { c.NativeUSD = 600 })
-
-		got := client.EstimateFee(ctx, "bsc")
-		assert.True(t, got.Estimated)
-		assert.Equal(t, "1000000000", got.GasPriceWei)
-		assert.Equal(t, uint64(gasERC20Transfer), got.GasLimit)
-		// 1e9 wei × 100000 gas = 1e14 wei = 0.0001 BNB；×600 美元 ×1.5 = 0.09
-		assert.InDelta(t, 0.09, got.Amount, 1e-9)
-	})
-
-	t.Run("节点挂了也要给得出一个数", func(t *testing.T) {
-		// 一次 RPC 抖动不该让供给者在提现页看到"暂时不可用"——他会以为
-		// 是自己的账号出了问题。回落，但把 Estimated 置假让降级可见。
-		client := newFakeNode().start(t, func(c *Config) { c.NativeUSD = 600 })
-
-		got := client.EstimateFee(ctx, "bsc")
-		assert.False(t, got.Estimated)
-		assert.Equal(t, 0.5, got.Amount)
-	})
-
-	t.Run("没配 BNB 价就用固定值", func(t *testing.T) {
-		// 明确选择不接喂价——多一个会挂、会被操纵的外部依赖，
-		// 换来的只是一笔小手续费更准一点。
-		node := newFakeNode().on("eth_gasPrice", "0x3b9aca00")
-		client := node.start(t, func(c *Config) { c.NativeUSD = 0 })
-
-		got := client.EstimateFee(ctx, "bsc")
-		assert.False(t, got.Estimated)
-		assert.Equal(t, 0.5, got.Amount)
-		assert.Zero(t, node.countOf("eth_gasPrice"), "不换算就不必问价")
-	})
-
-	t.Run("别的链也回落而不是炸", func(t *testing.T) {
-		client := newFakeNode().start(t, nil)
-		assert.Equal(t, 0.5, client.EstimateFee(ctx, "ethereum").Amount)
-	})
 }
 
 func TestWaitForConfirmationTellsApartTheThreeOutcomes(t *testing.T) {

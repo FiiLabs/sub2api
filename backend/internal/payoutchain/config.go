@@ -29,10 +29,7 @@ const (
 	envTokenSymbol   = "PAYOUT_BSC_TOKEN_SYMBOL"
 	envDisperse      = "PAYOUT_BSC_DISPERSE_ADDRESS"
 	envChainID       = "PAYOUT_BSC_CHAIN_ID"
-	envNativeUSD     = "PAYOUT_BSC_NATIVE_USD"
 	envConfirmations = "PAYOUT_BSC_CONFIRMATIONS"
-	envFallbackFee   = "PAYOUT_BSC_FALLBACK_FEE"
-	envFeeMultiplier = "PAYOUT_FEE_SAFETY_MULTIPLIER"
 )
 
 // 默认值。
@@ -45,14 +42,6 @@ const (
 	// 客户端里，是一件既不会报错也不会被发现的事，直到有人收到了错的币。
 	defaultTokenSymbol   = "USDT"
 	defaultConfirmations = 3
-	// defaultFallbackFee 是估不出手续费时按每笔多少美元扣。
-	//
-	// BSC 上一笔 ERC-20 转账大约 0.1~0.3 美元。0.5 是个保守值：宁可多扣一点
-	// 让金库不亏，也不要少扣到金库慢慢被 gas 耗干——那种亏损没有对账入口，
-	// 会一直到金库转不动账才被发现。
-	defaultFallbackFee = 0.5
-	// defaultFeeMultiplier 给估算值留的余量。gas 价在广播那一刻可能比估的时候高。
-	defaultFeeMultiplier = 1.5
 )
 
 // Config 是链上打款需要的全部配置。
@@ -79,18 +68,8 @@ type Config struct {
 	// DisperseAddress 批量发放合约。留空则退化为逐笔转账。
 	DisperseAddress string
 	ChainID         uint64
-	// NativeUSD 一个 BNB 值多少美元。
-	//
-	// 这是个**配置里的常数，不是喂价**：手续费只是从供给者收益里扣的一小笔，
-	// 为它接一个预言机意味着多一个会挂、会被操纵、会让提现链路整条不可用的
-	// 外部依赖。填 0 表示不换算，直接用 FallbackFee。
-	NativeUSD float64
 	// Confirmations 认为一笔交易到终态需要多少个确认。
 	Confirmations uint64
-	// FallbackFee 估不出来时按每笔多少美元扣。
-	FallbackFee float64
-	// FeeMultiplier 估算值的安全系数。
-	FeeMultiplier float64
 }
 
 // LoadConfig 从环境变量读配置。
@@ -108,8 +87,6 @@ func LoadConfig() (Config, error) {
 		DisperseAddress: envString(envDisperse),
 		ChainID:         defaultChainID,
 		Confirmations:   defaultConfirmations,
-		FallbackFee:     defaultFallbackFee,
-		FeeMultiplier:   defaultFeeMultiplier,
 	}
 
 	if symbol := strings.TrimSpace(envString(envTokenSymbol)); symbol != "" {
@@ -121,15 +98,6 @@ func LoadConfig() (Config, error) {
 		return Config{}, err
 	}
 	if cfg.Confirmations, err = envUint(envConfirmations, defaultConfirmations); err != nil {
-		return Config{}, err
-	}
-	if cfg.NativeUSD, err = envFloat(envNativeUSD, 0); err != nil {
-		return Config{}, err
-	}
-	if cfg.FallbackFee, err = envFloat(envFallbackFee, defaultFallbackFee); err != nil {
-		return Config{}, err
-	}
-	if cfg.FeeMultiplier, err = envFloat(envFeeMultiplier, defaultFeeMultiplier); err != nil {
 		return Config{}, err
 	}
 
@@ -144,16 +112,6 @@ func (c Config) validate() error {
 	if c.Confirmations == 0 {
 		// 0 个确认意味着"进了内存池就算成功"，而内存池里的交易会被重组掉。
 		return fmt.Errorf("payoutchain: %s must be at least 1", envConfirmations)
-	}
-	if c.FallbackFee < 0 {
-		return fmt.Errorf("payoutchain: %s must not be negative", envFallbackFee)
-	}
-	if c.FeeMultiplier < 1 {
-		// 小于 1 的系数会把估算值往下压，那是在赌 gas 价只会跌。
-		return fmt.Errorf("payoutchain: %s must be at least 1", envFeeMultiplier)
-	}
-	if c.NativeUSD < 0 {
-		return fmt.Errorf("payoutchain: %s must not be negative", envNativeUSD)
 	}
 
 	if !c.Enabled || c.Mock {
@@ -208,18 +166,6 @@ func envUint(name string, fallback uint64) (uint64, error) {
 		// 不静默回落到默认值：一个写错的 chain id 静默变成 56，
 		// 会让本来要发到测试网的交易签成主网的。
 		return 0, fmt.Errorf("payoutchain: %s must be a whole number, got %q", name, raw)
-	}
-	return value, nil
-}
-
-func envFloat(name string, fallback float64) (float64, error) {
-	raw := envString(name)
-	if raw == "" {
-		return fallback, nil
-	}
-	value, err := strconv.ParseFloat(raw, 64)
-	if err != nil {
-		return 0, fmt.Errorf("payoutchain: %s must be a number, got %q", name, raw)
 	}
 	return value, nil
 }

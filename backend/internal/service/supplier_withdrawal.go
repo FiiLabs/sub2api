@@ -45,24 +45,6 @@ var (
 	// ErrSupplierWithdrawalBelowMinimum 低于起提额。
 	ErrSupplierWithdrawalBelowMinimum = infraerrors.BadRequest(
 		"SUPPLIER_WITHDRAWAL_BELOW_MINIMUM", "amount is below the minimum withdrawal")
-	// ErrSupplierWithdrawalFeeExceedsAmount 手续费吃掉了整笔金额。
-	//
-	// 链上渠道的 gas 从供给者收益里扣（链上实发 = amount - fee）。fee ≥ amount 时
-	// 实发为零或负数——**必须在建单之前**拦住：让这张单子建起来，供给者的钱会被
-	// 从可用区扣走，然后 worker 发现没得可发，于是一笔钱卡在一张永远推不动的单子上。
-	//
-	// 4xx 而不是 5xx：这不是故障，是"你提的太少了"，而正确的动作在调用方手里
-	// （提多一点，或者等 gas 便宜一点）。运营的对应动作是把起提额调高。
-	ErrSupplierWithdrawalFeeExceedsAmount = infraerrors.BadRequest(
-		"SUPPLIER_WITHDRAWAL_FEE_EXCEEDS_AMOUNT", "the network fee is not covered by this amount")
-	// ErrSupplierWithdrawalFeeUnavailable 手续费估算不是一个能落库的数。
-	//
-	// 5xx 而不是 4xx：调用方没做错任何事，是链上客户端算出了 NaN / 无穷 / 负数
-	// （币价配成 0 之类）。把它当成 0 放行，就是静默地让金库替所有人垫 gas；
-	// 把它落库，DECIMAL(20,8) 那一列会替我们做一次没人看见的截断。
-	// 两种都不如让这笔申请当场失败——它指向运维，而运维改完配置这条路就通了。
-	ErrSupplierWithdrawalFeeUnavailable = infraerrors.ServiceUnavailable(
-		"SUPPLIER_WITHDRAWAL_FEE_UNAVAILABLE", "the network fee cannot be determined right now")
 	// ErrSupplierWithdrawalTooManyPending 未决单已达上限。
 	ErrSupplierWithdrawalTooManyPending = infraerrors.BadRequest(
 		"SUPPLIER_WITHDRAWAL_TOO_MANY_PENDING", "too many pending withdrawals")
@@ -154,8 +136,8 @@ type SupplierWithdrawal struct {
 	TokenAddress *string `json:"token_address,omitempty"`
 	// FeeAmount gas 手续费，从 Amount **内部**切分出来（链上实发 = Amount - FeeAmount）。
 	//
-	// Amount 仍然是从可用区扣走的总额，这一条不能改：ledger 的 withdraw 流水、
-	// 退款、对账导出全部按 Amount 走。于是退款时按 Amount 全额退——gas 还没花出去。
+	// 免手续费改版后新单恒为 0（gas 由金库承担）；字段与列保留，是为了
+	// 免费之前那些已终态的历史单子仍然能按当年的快照对账。
 	FeeAmount float64 `json:"fee_amount"`
 
 	// ---- worker 执行留痕（M4）。人工单与还没被 worker 碰过的单子上全是 nil。----
@@ -218,13 +200,12 @@ type SupplierWithdrawalCreateParams struct {
 	PayoutChannel string
 	PayoutAccount string
 	UserNote      string
-	// Network / TokenSymbol / TokenAddress / FeeAmount 链上结算的四项快照，
-	// 人工渠道全传零值。它们由服务层在建单**之前**定下来（渠道注册表 + 链上客户端），
+	// Network / TokenSymbol / TokenAddress 链上结算的快照，人工渠道全传零值。
+	// 它们由服务层在建单**之前**定下来（渠道注册表 + 链上客户端），
 	// 不让仓储自己去查：一条 SQL 依赖一次 RPC 调用，事务就会被一次网络抖动拖住。
 	Network      string
 	TokenSymbol  string
 	TokenAddress string
-	FeeAmount    float64
 	// MaxPending 允许的未决单上限，由服务层从设置里读出来传进来。
 	//
 	// 不让仓储自己去读设置：那会让一条 SQL 依赖一个带缓存的服务，

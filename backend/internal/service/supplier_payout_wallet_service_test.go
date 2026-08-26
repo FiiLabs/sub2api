@@ -176,7 +176,7 @@ func withdrawalServiceWithWallets(
 		settings: &supplierWithdrawalSettingsStub{settings: onchainWithdrawalSettings()},
 		// M6b：渠道由金库能力派生，没有能结算的金库连渠道校验都过不去，
 		// 这批测试要测的是**过了渠道那道门之后**地址从哪来。
-		chain: NewMockChainClient(MockChainOptions{Fee: 0.3}),
+		chain: NewMockChainClient(MockChainOptions{}),
 	}
 	if walletRepo != nil {
 		svc.addresses = NewSupplierPayoutWalletService(walletRepo)

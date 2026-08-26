@@ -588,13 +588,6 @@
                 {{ t('supplyAdmin.payoutChain.treasury', { address: payoutChainStatus.treasury }) }}
               </p>
             </div>
-            <div>
-              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                {{ t('supplyAdmin.payoutChain.fallbackFee') }}
-              </label>
-              <input v-model.number="payoutChainForm.fallback_fee" class="input" type="number" min="0" step="0.01"
-                data-testid="supply-payout-chain-fallback-fee" />
-            </div>
           </div>
 
           <div class="flex justify-end gap-2">
@@ -1071,10 +1064,7 @@ const payoutChainForm = reactive<Omit<SupplyPayoutChainPayload, 'signer_key'>>({
   token_symbol: 'USDT',
   disperse_address: '',
   chain_id: 56,
-  native_usd: 0,
   confirmations: 3,
-  fallback_fee: 0.5,
-  fee_multiplier: 1.5,
 })
 
 /** 状态横幅：live 且核过链 = 绿；live 但核不上/有错 = 琥珀；其余 = 灰。 */
@@ -1108,10 +1098,7 @@ function applyPayoutChain(settings: SupplyPayoutChainSettings): void {
   payoutChainForm.token_symbol = settings.token_symbol
   payoutChainForm.disperse_address = settings.disperse_address
   payoutChainForm.chain_id = settings.chain_id
-  payoutChainForm.native_usd = settings.native_usd
   payoutChainForm.confirmations = settings.confirmations
-  payoutChainForm.fallback_fee = settings.fallback_fee
-  payoutChainForm.fee_multiplier = settings.fee_multiplier
   payoutChainSignerConfigured.value = settings.signer_configured
   payoutChainStatus.value = settings.status
 }

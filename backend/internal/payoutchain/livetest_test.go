@@ -91,11 +91,6 @@ func TestLiveBSCTestnet(t *testing.T) {
 	_, unknownToken := client.TokenAddress(service.SupplierPayoutNetworkBSC, "NOPE")
 	assert.False(t, unknownToken, "不认识的币种也肯结算——建单的唯一判据失效")
 
-	fee := client.EstimateFee(ctx, service.SupplierPayoutNetworkBSC)
-	t.Logf("fee estimate: %.6f USD (estimated=%v gasPrice=%s gasLimit=%d)",
-		fee.Amount, fee.Estimated, fee.GasPriceWei, fee.GasLimit)
-	require.True(t, fee.Amount > 0)
-
 	require.True(t, client.SupportsBatch(service.SupplierPayoutNetworkBSC),
 		"配了 disperse 地址却说不支持批量")
 
