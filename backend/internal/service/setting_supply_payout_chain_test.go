@@ -127,10 +127,15 @@ func TestSupplyPayoutChainSettingsValidate(t *testing.T) {
 // 真 SettingService 的读路径**必须**抹掉私钥——上一轮变异矩阵抓出这条纪律
 // 只在桩上成立（G4 GREEN）：桩自己做了抹除，真实现里那一行删掉也测不出来。
 // 这里喂一份带密文的真 JSON，走真的 GetSupplyPayoutChainSettings。
+//
+// 这份 JSON 同时是免手续费改版的**迁移夹具**：fallback_fee / native_usd /
+// fee_multiplier 三个键已从结构体上删掉，而任何一个免费之前保存过配置的部署，
+// 库里那一行就长这样。它们必须被安静忽略——解析报错会让整套打款配置读不出来，
+// 于是一次纯删字段的重构把生产的金库降级成 Disabled。
 func TestGetSupplyPayoutChainSettingsNeverReturnsTheKey(t *testing.T) {
 	stored := `{"enabled":true,"rpc_url":"https://node","signer_key":"enc.v1:sealed-secret",` +
 		`"token_address":"0x55d398326f99059ff775485246999027b3197955","token_symbol":"USDT",` +
-		`"chain_id":56,"confirmations":3,"fallback_fee":0.5,"fee_multiplier":1.5}`
+		`"chain_id":56,"confirmations":3,"fallback_fee":0.5,"native_usd":600,"fee_multiplier":1.5}`
 	svc := NewSettingService(&settingRepoStub{values: map[string]string{
 		SettingKeySupplyPayoutChain: stored,
 	}}, nil)
@@ -139,6 +144,11 @@ func TestGetSupplyPayoutChainSettingsNeverReturnsTheKey(t *testing.T) {
 	assert.True(t, storedFlag)
 	assert.Empty(t, settings.SignerKey, "读路径把私钥（哪怕是密文）吐出去了——它会进任何一个调用方的 JSON 响应")
 	assert.Equal(t, "https://node", settings.RPCURL, "抹钥匙不该把别的字段也抹了")
+
+	// 存量部署的旧键不影响其余字段——迁移期这一条比什么都重要。
+	assert.Equal(t, uint64(56), settings.ChainID, "旧费率键把解析带偏了，整份金库配置会退回默认（关）")
+	assert.Equal(t, uint64(3), settings.Confirmations)
+	assert.Equal(t, "USDT", settings.TokenSymbol)
 
 	// 密文只从专用通道拿。
 	assert.Equal(t, "enc.v1:sealed-secret", svc.SupplyPayoutChainSignerCiphertext(context.Background()))

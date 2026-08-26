@@ -723,3 +723,15 @@ M4 的 worker 逐单打款，每张一笔 gas；M5 把同一轮里**同链同币
 七张卡 36 个输入项砍到 **15 个**。原则：面板上只留运营真会碰的（开关、分成、冻结窗、观察时长、起提额、告警收件人、金库四件套……），工程参数**从面板收起但 settings 字段原样保留生效**——默认值即推荐值，API 手工可调，存过的旧值继续尊重；零行为风险、随时可逆。收起的十项：观察期的探测间隔/达标次数/排空窗/探测模型（纯工程节奏，调错的坑大于灵活性），金库的确认数/安全系数/BNB 价/币种符号（工程常数），提现的每人未决单上限（「一张就够」是设计结论不是运营变量），接入的每 IP 上限（§3.7 写明默认必须关、看过数据才配——不该摆在面板上诱惑人填）。观察期卡留了一句说明指路 settings API。彻底剥离的只有一个死参数：提现渠道白名单 channels（M6b 后代码不读它）从管理端 API 的请求/响应与前端类型删除，后端 struct 字段保留兼容旧 JSON、保存时结转现值不洗掉。
 
 **§9.11 补记（2026-08-26）：探测模型不能钉死在某个年份上——第二次被真实世界纠正。** 用户拿一套真实中转（api.apex1.us 的 key）测 M7 接入被拒，排查发现端点完全健康（sonnet-4-5/haiku-4-5 全 200），是我们的提交时探测写死了 `claude-3-5-haiku-20241022`——真实中转只路由当代模型（订阅号的正常形态），探测自己撞 503 把健康端点拒了。修法：提交时探测复用观察期的 `probe_model` 设置（同一个号提交时和进观察期后必须被同一根尺子量，否则会出现「提交被拒、观察期却探测得过」或反过来），空则回落 `claude-sonnet-4-5`（与 AccountTestService 的 Claude 默认一字不差）。与 §9.9 的 6 位精度 USDT 同一类教训：凡是「写死一个上游世界的取值」的地方，真实世界迟早换代。
+
+### 9.13 提现免手续费——费率三参数整体下线（2026-08-26）
+
+**§9.6 建立的「手续费从 `amount` 内部切出去」这套机制，本轮整体拆除。** 起因是 §9.12 把 `native_usd`（BNB 喂价）从面板收起后暴露的一个事实：没有币价就换算不出美元，`EstimateFee` 的估算分支**永远走不到**，那个叫「兜底手续费」的参数实际上是唯一且固定的每笔收费——名字已经不成立。而 BSC 上一笔 ERC-20 转账只有几美分，让金库承担、供给者全额到账，是更简单也更好讲的产品形态。防粉尘提现改由起提门槛 `min_amount` 独自负责（它本来就在，且是运营真会碰的那类参数）。
+
+**拆的是一整条链，不是一个字段。** `fallback_fee` / `native_usd` / `fee_multiplier` 从 settings 结构、`payoutchain.Config`、管理端请求/响应四处删除；`SupplierChainClient` 接口去掉 `EstimateFee`，连带 `ChainFeeEstimate`、`SanitizeChainFee`（§9.6 那段关于 8 位收敛的推理随之作废——没有浮点估算值要落库了）、真客户端里的 gas→美元换算、`DisabledChainClient.FallbackFee`、`NewHolder(fallbackFee)` 的入参、以及 `ErrSupplierWithdrawalFeeExceedsAmount` / `ErrSupplierWithdrawalFeeUnavailable` 两个错误码。建单侧 `applyChainSnapshot` 从「四列一组」缩成三列（`network`/`token_symbol`/`token_address`），且**不再返回 error**——它唯一的失败来源就是估价。提现 options 去掉 `onchain_fees`，§9.6 里那条「差集语义」的前端判据随之消失。净删 808 行。
+
+**`fee_amount` 这一列刻意保留。** 免费之前已终态的单子上真扣过钱，那份快照必须还能读——对账口径不能因为一次产品改动而失去历史。新单一律写 0（在仓储的 INSERT 里钉死，不靠列默认值，理由同 §9.6）；`NetAmount()` 保留派生语义（现在恒等于 `amount`）；前端列表对 `fee_amount > 0` 的旧单子照旧渲染「手续费 X · 到账 Y」，新单不出现这一行。**存量 settings JSON 里的三个旧键靠 `json.Unmarshal` 静默忽略**——这条单独钉了测试（`TestGetSupplyPayoutChainSettingsNeverReturnsTheKey` 的夹具里保留三个旧键并断言其余字段解析正常）：一次纯删字段的重构如果让整份金库配置解析失败，生产的 LIVE 会被降级成 Disabled，而症状是"什么都没改却打不了款"。
+
+**验证**：后端 55 包 unit + integration + golangci-lint 零告警，前端 vue-tsc + 1629 vitest 全绿。`SupplyView.withdrawalFee.spec.ts` 重写——表单侧四条报价/预览用例作废，换成一条「表单里不该出现任何手续费文案」的反向断言（残留一句「手续费 X」读起来是一笔仍会发生的扣款），列表侧保留「用响应的 net_amount 而不是前端重算」那条（喂一个不等于 `amount - fee` 的假 net 来证明）。真链复验：BSC 测试网提现单 `fee_amount = 0`、净额等于全额，tx `0x29f2952f…`（block 127294478）收款方实收一分未扣，提交到确认约 30 秒。
+
+**代价写在明处**：金库从此承担全部 gas（BSC 上约 $0.01–0.03/笔），签名地址的 BNB 消耗变快，运维需要盯水位——这是用一笔可量化的平台成本，换掉一个既讲不清楚又算不准的用户侧扣款。
