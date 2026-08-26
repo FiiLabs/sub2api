@@ -192,3 +192,40 @@ func TestSupplyOverflow_ConcurrentConsumersNeverExceedQuota(t *testing.T) {
 	require.Equal(t, int64(attempts-limit), usage.DeniedCount,
 		fmt.Sprintf("每一次被拒都要留痕，%d 次尝试里应有 %d 次被拒", attempts, attempts-limit))
 }
+
+// 三个计数在真库里**互不串台**（迁移 236）。
+//
+// sqlmock 只能证明"我发了这条 SQL"，证明不了这三列在同一行上各自独立地累加。
+// 而这正是这一列的全部价值所在：三个数字类型相同、含义相反
+// （保险生效了 / 被预算挡住了 / 不够赔），任何一次串台都会让面板给出
+// 与事实相反的建议，且没有任何症状。
+func TestSupplyOverflow_ExhaustedCountIsIndependentOfTheOtherTwo(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	counter := NewSupplyOverflowCounter(client)
+	day := nextOverflowDay(t)
+
+	// 先只记「兜底也空了」——此时当日还没有任何一行。
+	// 这一步同时钉住 INSERT 分支：第一次记录时不能因为缺行而丢掉。
+	require.NoError(t, counter.RecordOverflowExhausted(txCtx, day))
+	require.NoError(t, counter.RecordOverflowExhausted(txCtx, day))
+
+	usage, err := counter.GetDailyOverflowUsage(txCtx, day)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), usage.ExhaustedCount)
+	require.Zero(t, usage.OverflowCount, "记兜底耗尽却把溢出数也加了——面板会以为平台在花钱供货")
+	require.Zero(t, usage.DeniedCount, "记兜底耗尽却把配额拒绝数也加了——运营会去调预算，而该做的是加账号")
+
+	// 再叠一次真实溢出：走的是 UPDATE 分支，不能把已有的 exhausted 抹掉。
+	allowed, err := counter.TryConsumeDailyOverflow(txCtx, day, 0)
+	require.NoError(t, err)
+	require.True(t, allowed)
+
+	usage, err = counter.GetDailyOverflowUsage(txCtx, day)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), usage.OverflowCount)
+	require.Equal(t, int64(2), usage.ExhaustedCount, "溢出计数的 upsert 把兜底耗尽数覆盖掉了")
+	require.Zero(t, usage.DeniedCount)
+}

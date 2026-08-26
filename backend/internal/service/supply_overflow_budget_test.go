@@ -24,6 +24,14 @@ type stubOverflowCounter struct {
 	calls      []int // 每次 TryConsumeDailyOverflow 收到的 limit
 	daysSeen   []string
 	usageCalls int
+
+	// exhaustedErr 让「统计写失败」这条路可测——它必须不改变任何行为。
+	exhaustedErr error
+	// exhaustedCalls 记 RecordOverflowExhausted 被调了几次。
+	// 只看返回值分不清「没调」和「调了但吞了错」，而这两者差着一个丢失的经营信号。
+	exhaustedCalls int
+	// exhaustedDays 记每次收到的日期，钉住「用的是平台时区的今天」。
+	exhaustedDays []string
 }
 
 func (s *stubOverflowCounter) TryConsumeDailyOverflow(_ context.Context, day time.Time, limit int) (bool, error) {
@@ -35,6 +43,12 @@ func (s *stubOverflowCounter) TryConsumeDailyOverflow(_ context.Context, day tim
 func (s *stubOverflowCounter) GetDailyOverflowUsage(_ context.Context, _ time.Time) (*SupplyOverflowUsage, error) {
 	s.usageCalls++
 	return s.usage, s.usageErr
+}
+
+func (s *stubOverflowCounter) RecordOverflowExhausted(_ context.Context, day time.Time) error {
+	s.exhaustedCalls++
+	s.exhaustedDays = append(s.exhaustedDays, day.Format("2006-01-02"))
+	return s.exhaustedErr
 }
 
 // withOverflowCounter 装上计数器并保证测试结束后卸掉。
@@ -173,4 +187,111 @@ func TestSetSupplyPoolSettings_ClampsNegativeDailyLimitToUnlimited(t *testing.T)
 	require.NoError(t, svc.SetSupplyPoolSettings(context.Background(), settings))
 	assert.Equal(t, 0, settings.DailyOverflowLimit)
 	assert.Contains(t, repo.setValue, `"daily_overflow_limit":0`)
+}
+
+// ============================================================================
+// 兜底池也耗尽的计数（迁移 236）
+// ============================================================================
+//
+// 这三条盯的是同一件事的三个面：它**数得到**、它**只在该数的时候数**、
+// 以及它**数不进去也不能改变任何行为**。
+//
+// 为什么值得单独测：这个计数是「该不该加兜底账号」的唯一依据（见定价方案 §9.5）。
+// 它漏数一次，没有任何症状——面板上少一个数，而运营据此以为兜底容量够用。
+
+func TestSelectAccountWithLoadAwareness_CountsWhenOverflowPoolIsAlsoEmpty(t *testing.T) {
+	// 两个池都空：请求注定失败，但这一刻正是要被数下来的那一刻。
+	repo := newGroupAwareAccountRepo(map[int64][]Account{
+		testSupplyGroupID:    {},
+		testFirstPartyGroupI: {},
+	})
+	svc, groupRepo := newOverflowGateway(t, repo, overflowLimitedJSON(5))
+	counter := &stubOverflowCounter{allowed: true}
+	withOverflowCounter(t, counter)
+
+	groupID := testSupplyGroupID
+	_, err := svc.SelectAccountWithLoadAwareness(
+		overflowCtx(t, groupRepo, testSupplyGroupID), &groupID, "", "claude-sonnet-4-6", nil, "", 0)
+
+	require.ErrorIs(t, err, ErrNoAvailableAccounts)
+	assert.Contains(t, repo.listedGroups, testFirstPartyGroupI, "得真的去兜底池找过，才谈得上兜底池也空了")
+	assert.Equal(t, 1, counter.exhaustedCalls, "消费者拿到了错误却没被数下来——加兜底账号的依据就此丢失")
+	require.Len(t, counter.exhaustedDays, 1)
+	assert.Equal(t, timezone.Now().Format("2006-01-02"), counter.exhaustedDays[0],
+		"日期不是平台时区的今天，跨时区部署的日报会错位")
+}
+
+func TestSelectAccountWithLoadAwareness_DoesNotCountWhenOverflowSucceeds(t *testing.T) {
+	// 溢出成功 = 保险生效了，用户什么都没感觉到。数进去会让「保险不够赔」
+	// 这个信号被「保险正常工作」的次数淹掉，而两者要的处置完全相反。
+	repo := newGroupAwareAccountRepo(map[int64][]Account{
+		testSupplyGroupID:    {},
+		testFirstPartyGroupI: {supplyPoolAccount(1, testFirstPartyGroupI)},
+	})
+	svc, groupRepo := newOverflowGateway(t, repo, overflowLimitedJSON(5))
+	counter := &stubOverflowCounter{allowed: true}
+	withOverflowCounter(t, counter)
+
+	groupID := testSupplyGroupID
+	_, err := svc.SelectAccountWithLoadAwareness(
+		overflowCtx(t, groupRepo, testSupplyGroupID), &groupID, "", "claude-sonnet-4-6", nil, "", 0)
+
+	require.NoError(t, err)
+	assert.Zero(t, counter.exhaustedCalls)
+}
+
+func TestSelectAccountWithLoadAwareness_DoesNotCountWhenBudgetBlockedTheOverflow(t *testing.T) {
+	// 配额挡住 ≠ 兜底池空了。前者已经有 denied_count 在数，且处置是「调预算」；
+	// 后者的处置是「加账号」。混进同一个计数里，面板就再也分不出该做哪件事。
+	repo := newGroupAwareAccountRepo(map[int64][]Account{
+		testSupplyGroupID:    {},
+		testFirstPartyGroupI: {},
+	})
+	svc, groupRepo := newOverflowGateway(t, repo, overflowLimitedJSON(5))
+	counter := &stubOverflowCounter{allowed: false}
+	withOverflowCounter(t, counter)
+
+	groupID := testSupplyGroupID
+	_, err := svc.SelectAccountWithLoadAwareness(
+		overflowCtx(t, groupRepo, testSupplyGroupID), &groupID, "", "claude-sonnet-4-6", nil, "", 0)
+
+	require.ErrorIs(t, err, ErrNoAvailableAccounts)
+	assert.Zero(t, counter.exhaustedCalls, "配额拦下的那次被记成了兜底耗尽——两种处置会被混为一谈")
+}
+
+func TestRecordSupplyOverflowExhausted_FailureChangesNothing(t *testing.T) {
+	// 统计写失败必须是完全无声的：这一步发生在请求已经注定失败之后，
+	// 为一次统计写失败再叠一层错误，没有任何人受益。
+	repo := newGroupAwareAccountRepo(map[int64][]Account{
+		testSupplyGroupID:    {},
+		testFirstPartyGroupI: {},
+	})
+	svc, groupRepo := newOverflowGateway(t, repo, overflowLimitedJSON(5))
+	counter := &stubOverflowCounter{allowed: true, exhaustedErr: errors.New("db down")}
+	withOverflowCounter(t, counter)
+
+	groupID := testSupplyGroupID
+	_, err := svc.SelectAccountWithLoadAwareness(
+		overflowCtx(t, groupRepo, testSupplyGroupID), &groupID, "", "claude-sonnet-4-6", nil, "", 0)
+
+	// 拿回的仍然是原本那个错误，不是数据库的错误。
+	require.ErrorIs(t, err, ErrNoAvailableAccounts)
+	assert.NotContains(t, err.Error(), "db down")
+	assert.Equal(t, 1, counter.exhaustedCalls)
+}
+
+func TestRecordSupplyOverflowExhausted_NoCounterIsNotAFailure(t *testing.T) {
+	// 计数器没装（单实例部署没接上 provider、单测里）不该让请求路径出任何岔子。
+	repo := newGroupAwareAccountRepo(map[int64][]Account{
+		testSupplyGroupID:    {},
+		testFirstPartyGroupI: {},
+	})
+	svc, groupRepo := newOverflowGateway(t, repo, overflowLimitedJSON(0))
+	SetSupplyOverflowCounter(nil)
+
+	groupID := testSupplyGroupID
+	_, err := svc.SelectAccountWithLoadAwareness(
+		overflowCtx(t, groupRepo, testSupplyGroupID), &groupID, "", "claude-sonnet-4-6", nil, "", 0)
+
+	assert.ErrorIs(t, err, ErrNoAvailableAccounts)
 }

@@ -54,8 +54,19 @@ ON CONFLICT (day) DO UPDATE
 SET denied_count = supply_overflow_daily.denied_count + 1,
     updated_at = NOW()`
 
+// supplyOverflowExhaustedSQL 记一次「溢出了，但兜底池也空了」（迁移 236）。
+//
+// 形状与 denySQL 相同、语义正交：那个数的是「配额把我们拦住了」，这个数的是
+// 「我们放行了，但没货」。前者是平台在省钱，后者是**用户拿到了一个错误**。
+const supplyOverflowExhaustedSQL = `
+INSERT INTO supply_overflow_daily (day, overflow_count, denied_count, exhausted_count)
+VALUES ($1, 0, 0, 1)
+ON CONFLICT (day) DO UPDATE
+SET exhausted_count = supply_overflow_daily.exhausted_count + 1,
+    updated_at = NOW()`
+
 const supplyOverflowUsageSQL = `
-SELECT overflow_count, denied_count
+SELECT overflow_count, denied_count, exhausted_count
 FROM supply_overflow_daily
 WHERE day = $1`
 
@@ -126,7 +137,7 @@ func (r *supplyOverflowRepository) GetDailyOverflowUsage(ctx context.Context, da
 
 	// 当日无记录 = 今天还没溢出过，返回零值而不是错误。
 	if rows.Next() {
-		if err := rows.Scan(&usage.OverflowCount, &usage.DeniedCount); err != nil {
+		if err := rows.Scan(&usage.OverflowCount, &usage.DeniedCount, &usage.ExhaustedCount); err != nil {
 			return nil, fmt.Errorf("scan supply overflow usage: %w", err)
 		}
 	}
@@ -134,6 +145,17 @@ func (r *supplyOverflowRepository) GetDailyOverflowUsage(ctx context.Context, da
 		return nil, fmt.Errorf("read supply overflow usage: %w", err)
 	}
 	return usage, nil
+}
+
+// RecordOverflowExhausted 见 service.SupplyOverflowCounter。
+func (r *supplyOverflowRepository) RecordOverflowExhausted(ctx context.Context, day time.Time) error {
+	if r == nil || r.client == nil {
+		return fmt.Errorf("supply overflow counter unavailable")
+	}
+	if _, err := r.client.ExecContext(ctx, supplyOverflowExhaustedSQL, supplyOverflowDayKey(day)); err != nil {
+		return fmt.Errorf("record exhausted overflow: %w", err)
+	}
+	return nil
 }
 
 // supplyOverflowDayKey 取平台时区下的自然日。

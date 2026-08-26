@@ -139,17 +139,59 @@ func TestGetDailyOverflowUsageReturnsZeroForDayWithoutRow(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestGetDailyOverflowUsageReadsBothCounters(t *testing.T) {
+// 三个计数一次读齐，且**各归各位**。
+//
+// 三个数字类型相同、含义完全不同（保险生效了 / 被预算挡住了 / 不够赔），
+// 而 Scan 的顺序错了不会报任何错——只会让面板上的建议指向相反的处置。
+// 所以这里刻意给三个互不相同的值。
+func TestGetDailyOverflowUsageReadsAllThreeCounters(t *testing.T) {
 	client, mock := newSupplierCreditMock(t)
 
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT overflow_count, denied_count")).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT overflow_count, denied_count, exhausted_count")).
 		WithArgs("2026-08-18").
-		WillReturnRows(sqlmock.NewRows([]string{"overflow_count", "denied_count"}).AddRow(int64(31), int64(4)))
+		WillReturnRows(sqlmock.NewRows([]string{"overflow_count", "denied_count", "exhausted_count"}).
+			AddRow(int64(31), int64(4), int64(7)))
 
 	usage, err := NewSupplyOverflowCounter(client).
 		GetDailyOverflowUsage(context.Background(), overflowDay(t))
 	require.NoError(t, err)
 	require.Equal(t, int64(31), usage.OverflowCount)
 	require.Equal(t, int64(4), usage.DeniedCount)
+	require.Equal(t, int64(7), usage.ExhaustedCount)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// 记一次「兜底池也空了」走的是 exhausted_count 那一列，不是另外两列。
+//
+// 写错列的后果是静默的：面板上「保险不够赔」的次数永远是 0，
+// 而运营据此以为兜底容量够用——恰恰在它不够用的时候。
+func TestRecordOverflowExhaustedTouchesOnlyItsOwnColumn(t *testing.T) {
+	client, mock := newSupplierCreditMock(t)
+
+	mock.ExpectExec(regexp.QuoteMeta("SET exhausted_count = supply_overflow_daily.exhausted_count + 1")).
+		WithArgs("2026-08-18").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	err := NewSupplyOverflowCounter(client).
+		RecordOverflowExhausted(context.Background(), overflowDay(t))
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// 写失败要**如实回错**，由 service 层决定吞不吞。
+//
+// 分层的理由：仓储不知道调用点在哪条路径上。同一个写失败在失败路径上该被吞掉
+// （见 recordSupplyOverflowExhausted），换个调用点可能就该炸——把"吞"写死在这里，
+// 就等于替所有未来的调用方做了决定。
+func TestRecordOverflowExhaustedReportsWriteFailure(t *testing.T) {
+	client, mock := newSupplierCreditMock(t)
+
+	mock.ExpectExec(regexp.QuoteMeta("SET exhausted_count")).
+		WithArgs("2026-08-18").
+		WillReturnError(errors.New("db down"))
+
+	err := NewSupplyOverflowCounter(client).
+		RecordOverflowExhausted(context.Background(), overflowDay(t))
+	require.Error(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())
 }

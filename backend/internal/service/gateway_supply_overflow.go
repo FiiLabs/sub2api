@@ -81,6 +81,9 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 			"overflow_group_id", overflowGroupID,
 			"model", requestedModel,
 			"error", overflowErr)
+		// 这一刻消费者会拿到 "No available accounts"。数下来（迁移 236）——
+		// 它是「兜底账号够不够」的唯一信号，只留一条日志等于没人会回答这个问题。
+		recordSupplyOverflowExhausted(ctx)
 		// 还回**原始**错误：请求打的是消费者自己的分组，报一个指向自营池的错误
 		// 会把排查的人引到错误的池子上去。溢出池的失败已经单独记在上面那条日志里。
 		return result, err

@@ -38,6 +38,14 @@ type SupplyOverflowCounter interface {
 	TryConsumeDailyOverflow(ctx context.Context, day time.Time, limit int) (allowed bool, err error)
 	// GetDailyOverflowUsage 读当日计数，不改动任何计数。
 	GetDailyOverflowUsage(ctx context.Context, day time.Time) (*SupplyOverflowUsage, error)
+	// RecordOverflowExhausted 记一次「溢出了，但兜底池也空了」。
+	//
+	// 与前两个计数正交：那两个说的是溢出这条路上发生了什么，这个说的是
+	// **用户拿到了一个错误**。它是「该不该加兜底账号」的唯一信号。
+	//
+	// 不返回给调用方任何判定——写失败只记日志。这一步发生在请求已经注定失败
+	// 之后，为一次统计写失败再叠一层错误没有任何人受益。
+	RecordOverflowExhausted(ctx context.Context, day time.Time) error
 }
 
 // SupplyOverflowUsage 是管理端要看的当日读数。
@@ -49,6 +57,13 @@ type SupplyOverflowUsage struct {
 	// DeniedCount 当日因配额已满而未溢出的次数。持续为正说明配额正在生效（省钱），
 	// 同时也说明供给侧规模已经明显跟不上需求。
 	DeniedCount int64 `json:"denied_count"`
+	// ExhaustedCount 当日「溢出了但兜底池也空了」的次数——消费者真正拿到
+	// "No available accounts" 的那一刻。
+	//
+	// 三个计数对应三种完全不同的处置：OverflowCount 涨（保险生效了，什么都不用做）、
+	// DeniedCount 涨（保险被预算挡住了，调 daily_overflow_limit）、
+	// ExhaustedCount 涨（**保险不够赔，加兜底账号**）。
+	ExhaustedCount int64 `json:"exhausted_count"`
 }
 
 // supplyOverflowCounterHolder 是进程级的计数器句柄。
@@ -102,6 +117,31 @@ func allowSupplyOverflow(ctx context.Context, limit int) bool {
 	}
 	return allowed
 }
+
+// recordSupplyOverflowExhausted 记一次「溢出了但兜底池也空了」。
+//
+// 与 allowSupplyOverflow 相反，这里**没有任何判定要做**：请求在调用它之前就已经
+// 注定失败了。所以计数器没装、写失败，都只是少了一个统计数，绝不改变任何行为——
+// 为一次统计写失败再叠一层错误，没有任何人受益。
+//
+// 用 context.WithoutCancel：客户端此刻多半正在断开（他刚拿到一个错误），
+// 而这个计数恰恰在那种时刻最该被记下来。跟着请求 ctx 一起被取消的话，
+// 越是集中爆发的耗尽，越是数不到。
+func recordSupplyOverflowExhausted(ctx context.Context) {
+	counter := loadSupplyOverflowCounter()
+	if counter == nil {
+		return
+	}
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), supplyOverflowRecordTimeout)
+	defer cancel()
+	if err := counter.RecordOverflowExhausted(writeCtx, timezone.Now()); err != nil {
+		slog.Warn("[SupplyPool] failed to record an exhausted overflow", "error", err)
+	}
+}
+
+// supplyOverflowRecordTimeout 统计写的上限。短：它挂在失败路径上，
+// 而失败路径本身就是要尽快把错误还给调用方的。
+const supplyOverflowRecordTimeout = 2 * time.Second
 
 // GetSupplyOverflowUsage 给管理端读当日溢出读数。
 //
