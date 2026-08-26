@@ -337,18 +337,8 @@ export default {
       minObservation: 'Minimum observation (minutes)',
       minObservationHint:
         'Counted from the moment the account is connected. ANDed with the success count: no matter how well the probes go, this much time still has to pass. Max {max} minutes.',
-      requiredSuccesses: 'Consecutive successes required',
-      requiredSuccessesHint:
-        'One failure resets the counter and surfaces the reason to the supplier. Max {max}.',
-      probeInterval: 'Probe interval (minutes)',
-      probeIntervalHint:
-        "Every probe is a real upstream request billed to the supplier's own quota — too short an interval spends their quota on probes. Range {min}–{max} minutes.",
-      probeModel: 'Probe model ID',
-      probeModelPlaceholder: 'Leave empty to use the platform default test model',
-      probeModelHint: 'Pick a cheap small model. This affects probing only, never real scheduling.',
-      drainWindow: 'Drain window (minutes)',
-      drainWindowHint:
-        'How long after a supplier takes an account offline before it reaches the final state. This is not a hard drain — the platform cannot interrupt requests already streaming, and the window doubles as the supplier\'s chance to change their mind. Set 0 and "take offline" becomes immediate. Max {max} minutes.',
+      advancedTucked:
+        'Engineering knobs (probe interval, required passes, drain window, probe model) are tucked away: the defaults are the recommendation, and the settings API still accepts manual overrides.',
       clampNotice:
         'Out-of-range values in this group are clamped and saved (not rejected). After saving, the form shows what is actually stored.',
       save: 'Save review settings',
@@ -367,9 +357,6 @@ export default {
       maxPerUser: 'Max accounts per user',
       maxPerUserHint:
         'Counts currently connected accounts — detaching one frees a slot. This gate is only a polite guardrail: registering a second user bypasses it. Set 0 for unlimited. Max {max}.',
-      maxPerIp: 'Max accounts per source IP',
-      maxPerIpHint:
-        'Matched on the exact egress IP seen at connection time, summed across users. This is the gate with real friction: accounts are free, changing networks is not. Defaults to 0 (unlimited). Max {max}.',
       ipWarning:
         'This gate is on. Carrier-grade NAT, campus and office networks put hundreds of unrelated real users behind one address; anyone it blocks simply sees "cannot connect" and will not file a report. Look at your actual IP distribution first, then set a number far larger than one household.',
       clampNotice:
@@ -412,7 +399,6 @@ export default {
       rpcUrl: 'Node RPC URL',
       chainId: 'Chain ID',
       chainIdHint: 'BSC mainnet is 56, testnet 97. Verified against the node on save.',
-      tokenSymbol: 'Token symbol',
       tokenAddress: 'Stablecoin contract address',
       tokenAddressHint: 'Changing this address changes the coin: old requests are pinned to the contract at creation time, and the worker refuses to pay them in the new coin (failed → operator).',
       disperseAddress: 'Batch contract address (optional)',
@@ -422,11 +408,7 @@ export default {
       signerKeyKeep: 'Configured. Leave empty to keep it',
       signerKeyHint: 'Stored encrypted (AES-256-GCM) and never echoed back; the only thing shown is the treasury address derived from it.',
       treasury: 'Treasury address: {address}',
-      confirmations: 'Confirmations',
-      nativeUsd: 'BNB price in USD (0 = no conversion)',
-      nativeUsdHint: 'A constant for fee estimation, not a price feed. With 0, the fallback fee below is charged.',
       fallbackFee: 'Fallback fee (USD per payout)',
-      feeMultiplier: 'Fee safety multiplier',
       verify: 'Test connection',
       verifying: 'Verifying…',
       save: 'Save & apply',
@@ -448,8 +430,6 @@ export default {
       enabledHint: 'When off, balances keep accruing but no new request can be submitted. Requests already in flight are unaffected.',
       minAmount: 'Minimum amount',
       minAmountHint: 'A request below this is **rejected**, not rounded up to it. Max {max}.',
-      maxPending: 'Pending requests per supplier',
-      maxPendingHint: 'How many unresolved requests one supplier may hold at once. Max {max}.',
       notifyEmails: 'Payout-failure alert recipients',
       // A bare @ is vue-i18n linked-message syntax; it must be escaped as {'@'}.
       notifyEmailsPlaceholder: "finance{'@'}example.com\nops{'@'}example.com",

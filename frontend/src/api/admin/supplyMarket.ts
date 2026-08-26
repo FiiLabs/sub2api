@@ -146,11 +146,6 @@ export interface SupplyWithdrawalSettings {
   min_amount: number
   /** 每人同时挂着的未决单上限。 */
   max_pending: number
-  /**
-   * 收款渠道白名单。**大小写敏感**：供给者提交的渠道要与这里的字符串完全相等
-   * （只 trim 首尾空白），所以 "USDT" 和 "usdt" 是两个渠道。
-   */
-  channels: string[]
   /** 给供给者看的说明（到账时效、手续费等），纯文本。 */
   notice: string
 
@@ -182,8 +177,6 @@ export interface SupplyWithdrawalSettings {
   /** 后端下发的边界值，前端不要另抄一份。 */
   min_amount_max: number
   max_pending_cap: number
-  channels_max: number
-  channel_max_len: number
   notice_max_len: number
   notify_emails_max: number
   notify_email_max_len: number
@@ -244,8 +237,8 @@ export type SupplyWithdrawalPayload = Omit<
   | 'notify_configured'
   | 'min_amount_max'
   | 'max_pending_cap'
-  | 'channels_max'
-  | 'channel_max_len'
+ 
+ 
   | 'notice_max_len'
   | 'notify_emails_max'
   | 'notify_email_max_len'

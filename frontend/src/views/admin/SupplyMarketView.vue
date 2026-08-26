@@ -215,77 +215,14 @@
               </p>
             </div>
 
-            <div>
-              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                {{ t('supplyAdmin.probation.requiredSuccesses') }}
-              </label>
-              <input
-                v-model.number="probationForm.required_successes"
-                type="number"
-                step="1"
-                min="1"
-                :max="probationBounds.required_successes_max"
-                class="input"
-                data-testid="supply-probation-required-successes"
-              />
-              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                {{ t('supplyAdmin.probation.requiredSuccessesHint', { max: probationBounds.required_successes_max }) }}
-              </p>
-            </div>
 
-            <div>
-              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                {{ t('supplyAdmin.probation.probeInterval') }}
-              </label>
-              <input
-                v-model.number="probationForm.probe_interval_minutes"
-                type="number"
-                step="1"
-                :min="probationBounds.probe_interval_minutes_min"
-                :max="probationBounds.probe_interval_minutes_max"
-                class="input"
-                data-testid="supply-probation-probe-interval"
-              />
-              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                {{
-                  t('supplyAdmin.probation.probeIntervalHint', {
-                    min: probationBounds.probe_interval_minutes_min,
-                    max: probationBounds.probe_interval_minutes_max,
-                  })
-                }}
-              </p>
-            </div>
 
-            <div>
-              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                {{ t('supplyAdmin.probation.probeModel') }}
-              </label>
-              <input
-                v-model.trim="probationForm.probe_model"
-                type="text"
-                class="input"
-                :placeholder="t('supplyAdmin.probation.probeModelPlaceholder')"
-                data-testid="supply-probation-probe-model"
-              />
-              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.probation.probeModelHint') }}</p>
-            </div>
 
-            <div>
-              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                {{ t('supplyAdmin.probation.drainWindow') }}
-              </label>
-              <input
-                v-model.number="probationForm.drain_window_minutes"
-                type="number"
-                step="1"
-                min="0"
-                :max="probationBounds.drain_window_minutes_max"
-                class="input"
-                data-testid="supply-probation-drain-window"
-              />
-              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                {{ t('supplyAdmin.probation.drainWindowHint', { max: probationBounds.drain_window_minutes_max }) }}
-              </p>
+
+            <!-- 探测间隔/达标次数/排空窗/探测模型是工程参数，已从面板收起：
+                 默认值即推荐值，settings API 仍可手工调（字段与行为原样保留）。 -->
+            <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-900">
+              <p class="text-xs text-gray-600 dark:text-gray-300">{{ t('supplyAdmin.probation.advancedTucked') }}</p>
             </div>
 
             <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-900">
@@ -340,23 +277,6 @@
               </p>
             </div>
 
-            <div>
-              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                {{ t('supplyAdmin.onboarding.maxPerIp') }}
-              </label>
-              <input
-                v-model.number="onboardingForm.max_accounts_per_ip"
-                type="number"
-                step="1"
-                min="0"
-                :max="onboardingBounds.max_accounts_per_ip_cap"
-                class="input"
-                data-testid="supply-onboarding-max-per-ip"
-              />
-              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                {{ t('supplyAdmin.onboarding.maxPerIpHint', { max: onboardingBounds.max_accounts_per_ip_cap }) }}
-              </p>
-            </div>
 
             <!-- 每 IP 那道闸开着时才提示。这段警示不是可有可无的礼貌话：
                  被它挡住的人看到的只是"挂不上号"，不会有人来报障。 -->
@@ -520,22 +440,6 @@
               </p>
             </div>
 
-            <div>
-              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                {{ t('supplyAdmin.withdrawal.maxPending') }}
-              </label>
-              <input
-                v-model.number="withdrawalForm.max_pending"
-                type="number"
-                min="1"
-                :max="withdrawalBounds.max_pending_cap"
-                class="input"
-                data-testid="supply-withdrawal-max-pending"
-              />
-              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                {{ t('supplyAdmin.withdrawal.maxPendingHint', { max: withdrawalBounds.max_pending_cap }) }}
-              </p>
-            </div>
           </div>
 
           <!-- M6b：渠道白名单已下线。「能选什么渠道」由链上金库的配置派生
@@ -643,13 +547,6 @@
                 data-testid="supply-payout-chain-chain-id" />
               <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.payoutChain.chainIdHint') }}</p>
             </div>
-            <div>
-              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                {{ t('supplyAdmin.payoutChain.tokenSymbol') }}
-              </label>
-              <input v-model="payoutChainForm.token_symbol" class="input" type="text" placeholder="USDT"
-                data-testid="supply-payout-chain-token-symbol" />
-            </div>
             <div class="sm:col-span-2">
               <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
                 {{ t('supplyAdmin.payoutChain.tokenAddress') }}
@@ -693,32 +590,10 @@
             </div>
             <div>
               <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                {{ t('supplyAdmin.payoutChain.confirmations') }}
-              </label>
-              <input v-model.number="payoutChainForm.confirmations" class="input" type="number" min="1"
-                data-testid="supply-payout-chain-confirmations" />
-            </div>
-            <div>
-              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                {{ t('supplyAdmin.payoutChain.nativeUsd') }}
-              </label>
-              <input v-model.number="payoutChainForm.native_usd" class="input" type="number" min="0" step="0.01"
-                data-testid="supply-payout-chain-native-usd" />
-              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.payoutChain.nativeUsdHint') }}</p>
-            </div>
-            <div>
-              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
                 {{ t('supplyAdmin.payoutChain.fallbackFee') }}
               </label>
               <input v-model.number="payoutChainForm.fallback_fee" class="input" type="number" min="0" step="0.01"
                 data-testid="supply-payout-chain-fallback-fee" />
-            </div>
-            <div>
-              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                {{ t('supplyAdmin.payoutChain.feeMultiplier') }}
-              </label>
-              <input v-model.number="payoutChainForm.fee_multiplier" class="input" type="number" min="1" step="0.1"
-                data-testid="supply-payout-chain-fee-multiplier" />
             </div>
           </div>
 
@@ -866,7 +741,6 @@ const withdrawalForm = reactive<SupplyWithdrawalPayload>({
   enabled: false,
   min_amount: 100,
   max_pending: 3,
-  channels: [],
   notice: '',
   notify_emails: [],
 })
@@ -874,8 +748,6 @@ const withdrawalForm = reactive<SupplyWithdrawalPayload>({
 const withdrawalBounds = reactive({
   min_amount_max: 1000000,
   max_pending_cap: 20,
-  channels_max: 20,
-  channel_max_len: 64,
   notice_max_len: 1000,
   notify_emails_max: 10,
   notify_email_max_len: 254,
@@ -1145,14 +1017,10 @@ function applyWithdrawal(settings: SupplyWithdrawalSettings): void {
   withdrawalForm.enabled = settings.enabled
   withdrawalForm.min_amount = settings.min_amount
   withdrawalForm.max_pending = settings.max_pending
-  withdrawalForm.channels = [...(settings.channels ?? [])]
   withdrawalForm.notice = settings.notice ?? ''
   withdrawalForm.notify_emails = [...(settings.notify_emails ?? [])]
   if (settings.min_amount_max > 0) withdrawalBounds.min_amount_max = settings.min_amount_max
   if (settings.max_pending_cap > 0) withdrawalBounds.max_pending_cap = settings.max_pending_cap
-  if (settings.channels_max > 0) withdrawalBounds.channels_max = settings.channels_max
-  if (settings.channel_max_len > 0) withdrawalBounds.channel_max_len = settings.channel_max_len
-  if (settings.notice_max_len > 0) withdrawalBounds.notice_max_len = settings.notice_max_len
   if (settings.notify_emails_max > 0) withdrawalBounds.notify_emails_max = settings.notify_emails_max
   if (settings.notify_email_max_len > 0) withdrawalBounds.notify_email_max_len = settings.notify_email_max_len
 }
@@ -1173,7 +1041,6 @@ async function saveWithdrawal(): Promise<void> {
       enabled: withdrawalForm.enabled,
       min_amount: withdrawalForm.min_amount,
       max_pending: withdrawalForm.max_pending,
-      channels: withdrawalForm.channels,
       notice: withdrawalForm.notice,
       notify_emails: withdrawalForm.notify_emails,
     })

@@ -354,26 +354,22 @@ func (h *SettingHandler) UpdateSupplyAgreementSettings(c *gin.Context) {
 
 // SupplyWithdrawalSettingsResponse 是提现参数的对外形态。
 type SupplyWithdrawalSettingsResponse struct {
-	Enabled    bool     `json:"enabled"`
-	MinAmount  float64  `json:"min_amount"`
-	MaxPending int      `json:"max_pending"`
-	Channels   []string `json:"channels"`
-	Notice     string   `json:"notice"`
+	Enabled    bool    `json:"enabled"`
+	MinAmount  float64 `json:"min_amount"`
+	MaxPending int     `json:"max_pending"`
+	Notice     string  `json:"notice"`
 
 	// NotifyEmails 新申请到达时通知谁。见 service.SupplyWithdrawalSettings 的
 	// 同名字段：这个列表为空 + 提现开着，是一个真实的坏状态。
 	NotifyEmails []string `json:"notify_emails"`
 
-	// Available = 开着 **且** 至少配了一个渠道。开关开着却一个渠道都没配是一种
-	// 静默失效：面板显示"已开启"，供给者点提现却被硬拒。把这个布尔一起下发，
-	// 运营在设置页就能看见自己配漏了，而不是等供给者来报。
+	// Available 提现开关是否开着（M6b 起渠道由链上金库派生，这里只答开关；
+	// 「真能提吗」看金库卡的 status）。
 	Available bool `json:"available"`
 
 	// 边界值随配置下发，理由同结算参数的 *_max。
 	MinAmountMax  float64 `json:"min_amount_max"`
 	MaxPendingCap int     `json:"max_pending_cap"`
-	ChannelsMax   int     `json:"channels_max"`
-	ChannelMaxLen int     `json:"channel_max_len"`
 	NoticeMaxLen  int     `json:"notice_max_len"`
 
 	NotifyEmailsMax   int `json:"notify_emails_max"`
@@ -388,10 +384,7 @@ func newSupplyWithdrawalSettingsResponse(s *service.SupplyWithdrawalSettings) Su
 	resp := SupplyWithdrawalSettingsResponse{
 		MinAmountMax:  service.SupplyWithdrawalMinAmountMax,
 		MaxPendingCap: service.SupplyWithdrawalMaxPendingCap,
-		ChannelsMax:   service.SupplyWithdrawalChannelsMax,
-		ChannelMaxLen: service.SupplyWithdrawalChannelMaxLen,
 		NoticeMaxLen:  service.SupplyWithdrawalNoticeMaxLen,
-		Channels:      []string{},
 
 		NotifyEmailsMax:   service.SupplyWithdrawalNotifyEmailsMax,
 		NotifyEmailMaxLen: service.SupplyWithdrawalNotifyEmailMaxLen,
@@ -403,9 +396,6 @@ func newSupplyWithdrawalSettingsResponse(s *service.SupplyWithdrawalSettings) Su
 	resp.Enabled = s.Enabled
 	resp.MinAmount = s.MinAmount
 	resp.MaxPending = s.MaxPending
-	if len(s.Channels) > 0 {
-		resp.Channels = append([]string(nil), s.Channels...)
-	}
 	if len(s.NotifyEmails) > 0 {
 		resp.NotifyEmails = append([]string(nil), s.NotifyEmails...)
 	}
@@ -427,11 +417,10 @@ func (h *SettingHandler) GetSupplyWithdrawalSettings(c *gin.Context) {
 // Channels 用 []string 而不是指针：一个不传 channels 的请求就是把渠道清空，
 // 而清空渠道 = 关掉提现入口，这是一个运营应当能一步做到的动作。
 type UpdateSupplyWithdrawalSettingsRequest struct {
-	Enabled    bool     `json:"enabled"`
-	MinAmount  float64  `json:"min_amount"`
-	MaxPending int      `json:"max_pending"`
-	Channels   []string `json:"channels"`
-	Notice     string   `json:"notice"`
+	Enabled    bool    `json:"enabled"`
+	MinAmount  float64 `json:"min_amount"`
+	MaxPending int     `json:"max_pending"`
+	Notice     string  `json:"notice"`
 	// NotifyEmails 同理：不传等于清空收件人。
 	NotifyEmails []string `json:"notify_emails"`
 }
@@ -449,11 +438,14 @@ func (h *SettingHandler) UpdateSupplyWithdrawalSettings(c *gin.Context) {
 		return
 	}
 
+	// Channels 结转库里现值：字段在 settings 里还活着（兼容旧 JSON），
+	// 只是不再被读、也不再暴露编辑面——保存别把它洗掉。
+	current := h.settingService.GetSupplyWithdrawalSettings(c.Request.Context())
 	settings := &service.SupplyWithdrawalSettings{
 		Enabled:      req.Enabled,
 		MinAmount:    req.MinAmount,
 		MaxPending:   req.MaxPending,
-		Channels:     req.Channels,
+		Channels:     current.Channels,
 		Notice:       req.Notice,
 		NotifyEmails: req.NotifyEmails,
 	}
