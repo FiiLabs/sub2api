@@ -462,6 +462,73 @@ export interface SupplyIncidentSummary {
   top: SupplyIncidentRate[]
 }
 
+/** 产出榜上的一行。只含他人挂的号，所以 owner_user_id 恒非零。 */
+export interface SupplyHealthAccount {
+  account_id: number
+  name: string
+  owner_user_id: number
+  /** 窗口内产出的牌价等值。 */
+  list_value: number
+  /** 折算成 30 天的产出——可以直接拿去和产能估算比，不必先在脑子里换算窗口。 */
+  monthly_output: number
+  supplier_earned: number
+  requests: number
+}
+
+/**
+ * 定价与供给健康度。三组读数各答一个问题：钱（赚不赚钱）、自检（配的东西真的在跑吗）、
+ * 供给（供给者赚得到钱吗）。
+ *
+ * 这份读数刻意没有分页：中位数、兜底占比这些跨行的派生量在分页的数据上算不出来。
+ */
+export interface SupplyMarketHealth {
+  window_days: number
+
+  // ---- 钱 ----
+  /** 官方牌价等值流水，是下面所有比率的分母。 */
+  list_value: number
+  /** 平台营收 = 消费者实付。与 list_value 差着一个倍率，混用会把收入虚报数倍。 */
+  revenue: number
+  supplier_payout: number
+  /** 毛利 = revenue − supplier_payout。**不含**兜底订阅费与基础设施等固定成本。 */
+  gross_margin: number
+
+  // ---- 配置自检 ----
+  /** 从真实扣款反推的倍率。与 configured_multiplier 对不上时信这个。 */
+  effective_multiplier: number
+  /** 供给池分组此刻配的倍率。0 = 没配供给池，此时无从对照。 */
+  configured_multiplier: number
+  effective_share: number
+  configured_share: number
+
+  // ---- 兜底 ----
+  overflow_list_value: number
+  /** 兜底承接比例。持续偏高说明共享供给不足，该去拉供给者而不是加兜底账号。 */
+  overflow_share: number
+  /** 当日「溢出了但兜底池也空了」的次数。非零才说明兜底账号真的不够用。 */
+  exhausted_today: number
+
+  // ---- 供给 ----
+  /** 已按窗口内产出降序排好，前端不要再排一遍。 */
+  supply_accounts: SupplyHealthAccount[]
+  /** 折月产出的**中位数**。产出分布极不均匀，平均值会把「多数人赚不到钱」藏起来。 */
+  median_monthly_output: number
+  supplier_count: number
+}
+
+/**
+ * 读定价与供给健康度。
+ *
+ * 窗口越界后端**夹回默认值而不是报错**（见 supply_market_health_handler.go）：
+ * 这个参数来自界面上一个切换器，坏值要的是「给我看默认那档」而不是一页错误。
+ */
+async function getHealth(windowDays?: number): Promise<SupplyMarketHealth> {
+  const { data } = await apiClient.get<SupplyMarketHealth>('/admin/supply/health', {
+    params: windowDays ? { window_days: windowDays } : undefined,
+  })
+  return data
+}
+
 async function getOverview(windowDays?: number): Promise<SupplyMarketOverview> {
   const { data } = await apiClient.get<SupplyMarketOverview>('/admin/supply/overview', {
     params: windowDays ? { window_days: windowDays } : undefined,
@@ -838,6 +905,7 @@ async function exportLedger(
 }
 
 export const adminSupplyMarketAPI = {
+  getHealth,
   getOverview,
   listSuppliers,
   listAccounts,

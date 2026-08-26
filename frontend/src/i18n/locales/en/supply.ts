@@ -281,6 +281,66 @@ export default {
     title: 'Two-sided market',
     description: 'Configure supplier revenue share, supply-pool routing, probation, agreement and withdrawals. Each group saves separately.',
 
+    // Pricing and supply health (read-only). Deliberately above the settings
+    // cards: whether any parameter below is right can only be answered by these
+    // numbers, which are derived from the money that actually moved — not by
+    // whatever the input boxes say.
+    health: {
+      title: 'Pricing & supply health',
+      description: 'Whether the multiplier, the share and the fallback are set right can only be read back from the money that moved. Everything on this card is read-only.',
+      window: 'Window',
+      windowDays: 'Last {days} days',
+      loadFailed: 'Failed to load health readings',
+      retry: 'Reload',
+      listValue: 'Volume, last {days} days (list-price equivalent)',
+      listValueHint: 'Platform revenue (what consumers actually paid): {revenue}',
+      grossMargin: 'Gross margin',
+      grossMarginHint: 'Revenue {revenue} − supplier share {payout}. Excludes fallback subscriptions, servers and other fixed costs; to see whether those are covered, compare this against your monthly fixed spend.',
+      medianOutput: 'Median monthly output per supply account',
+      medianOutputHint: '{suppliers} suppliers · {accounts} accounts producing. Median rather than mean: one or two heavy accounts pull the mean up and hide the fact that most suppliers earn almost nothing — which is exactly what precedes supply churn.',
+      overflowShare: 'Fallback-served share',
+      overflowShareHint: 'Platform-owned accounts served {value} of list-price equivalent. A high number means shared supply is thin and you should recruit suppliers; it does not mean the fallback accounts are running out.',
+
+      selfCheck: {
+        title: 'Configuration self-check',
+        multiplier: 'Multiplier',
+        share: 'Revenue share',
+        effective: 'Effective {value}',
+        configured: 'Configured {value}',
+        aligned: 'aligned',
+        drift: 'off by {drift}',
+        noPool: 'no supply group configured, nothing to compare against',
+        noShare: 'share configured as 0, nothing to compare against',
+        // The causes are ordered by how often they happen: after a pricing
+        // change this highlight stays on for a whole window, and copy that only
+        // mentions "keys bound to another group" sends the operator hunting for
+        // an incident that never occurred.
+        mismatch:
+          'The effective values differ from the configured ones. Two common causes: (1) the window spans a parameter change, so old and new billing are mixed inside it — expected right after a repricing, and it converges over time; (2) some consumer keys are bound to a different group, which uses its own multiplier. Switch to the 7-day window and see whether it converges to tell the two apart.'
+      },
+
+      exhausted: {
+        title: '{count} requests today hit an empty supply pool AND an empty fallback pool.',
+        body: 'Those consumers got "no available account" on the spot. This is the only signal that justifies adding fallback accounts — a high fallback-served share does not; that only means the fallback is being used.'
+      },
+
+      accounts: {
+        title: 'Supply account output',
+        description: 'Sorted by output in the window, descending. Accounts producing under $1500 a month land in the lowest band of the pricing plan, where the prescribed action is to raise the multiplier or suppliers will not stay.',
+        name: 'Account',
+        monthlyOutput: 'Monthly output',
+        earned: 'Supplier earnings',
+        requests: 'Requests',
+        low: 'below expectation',
+        empty: 'No supply account produced anything in this window.'
+      },
+
+      empty: {
+        title: 'No volume in this window.',
+        body: 'With no usage there is no multiplier or share to read back, so the tiles and the self-check stay hidden. Try a longer window, or come back once the first requests have run.'
+      }
+    },
+
     settlement: {
       title: 'Settlement',
       description: 'Decides how much suppliers earn and when they can touch it.',

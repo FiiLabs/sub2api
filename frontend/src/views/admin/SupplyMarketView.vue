@@ -21,6 +21,237 @@
       </div>
 
       <template v-else>
+        <!-- ===================== 定价与供给健康度（只读） =====================
+             排在所有配置卡之前：下面每一个参数配得对不对，只能由这张卡上「从钱
+             反推出来」的读数回答，而不是由输入框里写着什么回答。运营改分成之前
+             先看见实测产出，是这一页唯一能防住「照着一个没实测过的假设调价」的地方。 -->
+        <div class="card space-y-4 p-6" data-testid="supply-health-card">
+          <div class="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('supplyAdmin.health.title') }}</h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.health.description') }}</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <label class="text-sm text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.health.window') }}</label>
+              <select
+                v-model.number="healthWindowDays"
+                class="input w-auto"
+                data-testid="supply-health-window"
+                @change="loadHealth()"
+              >
+                <option v-for="days in HEALTH_WINDOW_CHOICES" :key="days" :value="days">
+                  {{ t('supplyAdmin.health.windowDays', { days }) }}
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <div v-if="healthLoading" class="flex items-center justify-center py-10">
+            <div class="h-6 w-6 animate-spin rounded-full border-b-2 border-primary-600"></div>
+          </div>
+
+          <!-- 读数拉不到时说出来并给一个重试。静默留白会被读成「这个窗口没数据」，
+               而那两件事该采取的动作完全相反。 -->
+          <div
+            v-else-if="!health"
+            class="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-900"
+            data-testid="supply-health-error"
+          >
+            <p class="text-sm text-gray-600 dark:text-gray-300">{{ t('supplyAdmin.health.loadFailed') }}</p>
+            <button class="btn btn-secondary btn-sm mt-2" data-testid="supply-health-retry" @click="loadHealth()">
+              {{ t('supplyAdmin.health.retry') }}
+            </button>
+          </div>
+
+          <template v-else>
+            <!-- 兜底告警放在空状态**之前**：供给池与兜底池同时空掉时请求是被拒的，
+                 不产生任何用量——那恰恰是这张卡显示「窗口内没有流水」的时刻，
+                 把告警塞进有数据的分支等于让它在最该出现的时候消失。 -->
+            <div
+              v-if="health.exhausted_today > 0"
+              class="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-900/40 dark:bg-red-900/20"
+              data-testid="supply-health-exhausted"
+            >
+              <p class="text-xs font-medium text-red-700 dark:text-red-300">
+                {{ t('supplyAdmin.health.exhausted.title', { count: health.exhausted_today }) }}
+              </p>
+              <p class="mt-1 text-xs text-red-600 dark:text-red-400">{{ t('supplyAdmin.health.exhausted.body') }}</p>
+            </div>
+
+            <!-- 没有流水时四格与自检整块不画：那些比率的分母是流水，画出来只会是
+                 一排 0 和一个必然越界的偏差，读者会以为参数配错了。 -->
+            <div
+              v-if="!healthHasTraffic"
+              class="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-900"
+              data-testid="supply-health-empty"
+            >
+              <p class="text-sm text-gray-600 dark:text-gray-300">{{ t('supplyAdmin.health.empty.title') }}</p>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.health.empty.body') }}</p>
+            </div>
+
+            <template v-else>
+              <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-700" data-testid="supply-health-list-value">
+                  <p class="text-sm text-gray-500 dark:text-gray-400">
+                    {{ t('supplyAdmin.health.listValue', { days: health.window_days }) }}
+                  </p>
+                  <p class="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">
+                    {{ formatCurrency(health.list_value) }}
+                  </p>
+                  <!-- 牌价等值与实付并排：两者差着一个倍率，只报前者会把营收虚报数倍。 -->
+                  <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">
+                    {{ t('supplyAdmin.health.listValueHint', { revenue: formatCurrency(health.revenue) }) }}
+                  </p>
+                </div>
+
+                <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-700" data-testid="supply-health-gross-margin">
+                  <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.health.grossMargin') }}</p>
+                  <p class="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">
+                    {{ formatCurrency(health.gross_margin) }}
+                  </p>
+                  <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">
+                    {{
+                      t('supplyAdmin.health.grossMarginHint', {
+                        revenue: formatCurrency(health.revenue),
+                        payout: formatCurrency(health.supplier_payout),
+                      })
+                    }}
+                  </p>
+                </div>
+
+                <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-700" data-testid="supply-health-median-output">
+                  <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.health.medianOutput') }}</p>
+                  <p class="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">
+                    {{ formatCurrency(health.median_monthly_output) }}
+                  </p>
+                  <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">
+                    {{
+                      t('supplyAdmin.health.medianOutputHint', {
+                        suppliers: health.supplier_count,
+                        accounts: health.supply_accounts.length,
+                      })
+                    }}
+                  </p>
+                </div>
+
+                <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-700" data-testid="supply-health-overflow-share">
+                  <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.health.overflowShare') }}</p>
+                  <p class="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">
+                    {{ formatPercent(health.overflow_share) }}
+                  </p>
+                  <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">
+                    {{ t('supplyAdmin.health.overflowShareHint', { value: formatCurrency(health.overflow_list_value) }) }}
+                  </p>
+                </div>
+              </div>
+
+              <!-- 配置自检。两格并排是因为它们是同一个问题的两半：钱进来时用的倍率、
+                   钱出去时用的分成，只对上一半说明不了任何事。 -->
+              <div class="space-y-2 border-t border-gray-100 pt-4 dark:border-dark-700">
+                <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.health.selfCheck.title') }}</p>
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <div
+                    class="rounded-lg border p-3"
+                    :class="multiplierCheck.mismatched ? HEALTH_DRIFT_BOX : HEALTH_PLAIN_BOX"
+                    data-testid="supply-health-check-multiplier"
+                  >
+                    <p class="text-xs font-medium text-gray-700 dark:text-gray-300">
+                      {{ t('supplyAdmin.health.selfCheck.multiplier') }}
+                    </p>
+                    <p class="mt-1 text-sm text-gray-900 dark:text-white">
+                      {{ t('supplyAdmin.health.selfCheck.effective', { value: formatRatio(health.effective_multiplier) }) }}
+                      ·
+                      {{ t('supplyAdmin.health.selfCheck.configured', { value: formatRatio(health.configured_multiplier) }) }}
+                    </p>
+                    <p class="mt-1 text-xs" :class="multiplierCheck.mismatched ? HEALTH_DRIFT_TEXT : HEALTH_PLAIN_TEXT">
+                      {{ checkStateLabel(multiplierCheck, 'supplyAdmin.health.selfCheck.noPool') }}
+                    </p>
+                  </div>
+
+                  <div
+                    class="rounded-lg border p-3"
+                    :class="shareCheck.mismatched ? HEALTH_DRIFT_BOX : HEALTH_PLAIN_BOX"
+                    data-testid="supply-health-check-share"
+                  >
+                    <p class="text-xs font-medium text-gray-700 dark:text-gray-300">
+                      {{ t('supplyAdmin.health.selfCheck.share') }}
+                    </p>
+                    <p class="mt-1 text-sm text-gray-900 dark:text-white">
+                      {{ t('supplyAdmin.health.selfCheck.effective', { value: formatRatio(health.effective_share) }) }}
+                      ·
+                      {{ t('supplyAdmin.health.selfCheck.configured', { value: formatRatio(health.configured_share) }) }}
+                    </p>
+                    <p class="mt-1 text-xs" :class="shareCheck.mismatched ? HEALTH_DRIFT_TEXT : HEALTH_PLAIN_TEXT">
+                      {{ checkStateLabel(shareCheck, 'supplyAdmin.health.selfCheck.noShare') }}
+                    </p>
+                  </div>
+                </div>
+
+                <!-- 长解释只出现一次而不是在两格里各抄一遍：它对两者是同一段话，
+                     而重复的长句会让人跳过它——跳过的正是「调价后属正常」那一句。 -->
+                <div
+                  v-if="multiplierCheck.mismatched || shareCheck.mismatched"
+                  class="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/40 dark:bg-amber-900/20"
+                  data-testid="supply-health-mismatch"
+                >
+                  <p class="text-xs text-amber-700 dark:text-amber-300">{{ t('supplyAdmin.health.selfCheck.mismatch') }}</p>
+                </div>
+              </div>
+
+              <!-- 产出榜。这张表回答定价方案压着的那个未实测假设：一个号一个月
+                   到底产出多少牌价等值。 -->
+              <div class="space-y-2 border-t border-gray-100 pt-4 dark:border-dark-700">
+                <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.health.accounts.title') }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.health.accounts.description') }}</p>
+
+                <p
+                  v-if="!health.supply_accounts.length"
+                  class="py-6 text-center text-sm text-gray-400"
+                  data-testid="supply-health-accounts-empty"
+                >
+                  {{ t('supplyAdmin.health.accounts.empty') }}
+                </p>
+                <div v-else class="overflow-x-auto">
+                  <!-- 后端已按产出降序排好，这里不再排：再排一次意味着「哪个是榜首」
+                       有两个来源，而两边的口径迟早会分叉。 -->
+                  <table class="min-w-full text-left text-sm">
+                    <thead class="text-xs uppercase text-gray-400 dark:text-dark-500">
+                      <tr>
+                        <th class="px-3 py-2">{{ t('supplyAdmin.health.accounts.name') }}</th>
+                        <th class="px-3 py-2 text-right">{{ t('supplyAdmin.health.accounts.monthlyOutput') }}</th>
+                        <th class="px-3 py-2 text-right">{{ t('supplyAdmin.health.accounts.earned') }}</th>
+                        <th class="px-3 py-2 text-right">{{ t('supplyAdmin.health.accounts.requests') }}</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100 dark:divide-dark-800">
+                      <tr
+                        v-for="account in health.supply_accounts"
+                        :key="account.account_id"
+                        :class="isLowOutput(account.monthly_output) ? 'text-gray-400 dark:text-dark-500' : ''"
+                        :data-testid="`supply-health-account-${account.account_id}`"
+                      >
+                        <td class="px-3 py-3">
+                          <span>{{ account.name }}</span>
+                          <span
+                            v-if="isLowOutput(account.monthly_output)"
+                            class="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500 dark:bg-dark-800 dark:text-dark-400"
+                            :data-testid="`supply-health-account-low-${account.account_id}`"
+                          >
+                            {{ t('supplyAdmin.health.accounts.low') }}
+                          </span>
+                        </td>
+                        <td class="px-3 py-3 text-right">{{ formatCurrency(account.monthly_output) }}</td>
+                        <td class="px-3 py-3 text-right">{{ formatCurrency(account.supplier_earned) }}</td>
+                        <td class="px-3 py-3 text-right">{{ account.requests }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </template>
+          </template>
+        </div>
+
         <!-- ===================== 结算参数 ===================== -->
         <div class="card space-y-4 p-6">
           <div>
@@ -621,6 +852,7 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import {
   adminSupplyMarketAPI,
+  type SupplyMarketHealth,
   type SupplyPayoutChainPayload,
   type SupplyPayoutChainSettings,
   type SupplyPayoutChainStatus,
@@ -636,6 +868,7 @@ import {
   type SupplyWithdrawalSettings,
 } from '@/api/admin/supplyMarket'
 import { useAppStore } from '@/stores/app'
+import { formatCurrency } from '@/utils/format'
 import { extractApiErrorMessage } from '@/utils/apiError'
 
 const { t } = useI18n()
@@ -1136,7 +1369,117 @@ async function verifyPayoutChain(): Promise<void> {
   }
 }
 
+// ============================================================================
+// 定价与供给健康度（只读）
+// ============================================================================
+
+/** 与后端 supplyHealthMaxWindowDays（90）一致。更长的窗对定价没有意义：跨季度的
+    混合读数已经说不清"现在的参数跑成什么样"。 */
+const HEALTH_WINDOW_CHOICES = [7, 30, 90] as const
+
+/**
+ * 「低于预期」的线：折月产出 $1500。
+ *
+ * 这个数不是拍的，它是定价方案里那张调参表的最低一档（< $1500 → 倍率提到 0.22，
+ * 否则供给者留不住）。标灰的意义就是把落在那一档的号一眼挑出来。
+ */
+const HEALTH_LOW_MONTHLY_OUTPUT = 1500
+
+/**
+ * 自检偏差的阈值：相对差 5%。
+ *
+ * 定得比"任何差异都报"松，是因为这块高亮在调价后会持续亮满一个窗口（窗口内新旧
+ * 计费混合），而一个几乎常亮的提示等于没有提示。
+ */
+const HEALTH_DEVIATION_THRESHOLD = 0.05
+
+// 偏差与常态两套配色抽成常量：模板里 box/text 各引用一次，写死会让改配色时漏掉一处，
+// 而漏掉的症状是"框是琥珀色但字还是灰的"。
+const HEALTH_DRIFT_BOX = 'border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-900/20'
+const HEALTH_DRIFT_TEXT = 'text-amber-700 dark:text-amber-300'
+const HEALTH_PLAIN_BOX = 'border-gray-200 bg-gray-50 dark:border-dark-700 dark:bg-dark-900'
+const HEALTH_PLAIN_TEXT = 'text-gray-500 dark:text-gray-400'
+
+const health = ref<SupplyMarketHealth | null>(null)
+const healthLoading = ref(true)
+const healthWindowDays = ref<number>(30)
+
+/** 没有流水就没有可反推的比率——分母是它。 */
+const healthHasTraffic = computed(() => (health.value?.list_value ?? 0) > 0)
+
+function isLowOutput(monthlyOutput: number): boolean {
+  return monthlyOutput < HEALTH_LOW_MONTHLY_OUTPUT
+}
+
+/** 后端理论上不会给出 NaN/Infinity，但这几个数全是除出来的，兜一层比在面板上写 NaN 好。 */
+function formatRatio(value: number): string {
+  return Number.isFinite(value) ? value.toFixed(3) : '—'
+}
+
+function formatPercent(value: number): string {
+  return Number.isFinite(value) ? `${(value * 100).toFixed(1)}%` : '—'
+}
+
+interface HealthCheck {
+  /** 有没有可对照的配置值。false 时不做任何偏差判断。 */
+  comparable: boolean
+  mismatched: boolean
+  drift: number
+}
+
+/**
+ * 一行自检的判定。
+ *
+ * configured ≤ 0 时**不比较**：倍率为 0 的含义是「没配供给池」而不是「配了 0 倍」，
+ * 拿它当分母算出的相对差必然越界，于是那块高亮会在一个根本没开供给池的站点上
+ * 长亮不灭——而那里没有任何东西需要修。分成同理（0 = 结算基本没在跑）。
+ */
+function healthCheck(effective: number, configured: number): HealthCheck {
+  if (!Number.isFinite(effective) || !Number.isFinite(configured) || configured <= 0) {
+    return { comparable: false, mismatched: false, drift: 0 }
+  }
+  const drift = Math.abs(effective - configured) / configured
+  return { comparable: true, mismatched: drift > HEALTH_DEVIATION_THRESHOLD, drift }
+}
+
+const multiplierCheck = computed(() =>
+  healthCheck(health.value?.effective_multiplier ?? 0, health.value?.configured_multiplier ?? 0)
+)
+
+const shareCheck = computed(() =>
+  healthCheck(health.value?.effective_share ?? 0, health.value?.configured_share ?? 0)
+)
+
+/** 格内那一行短状态。长成因只说一次（见模板里那块琥珀横幅），这里只回答"差了多少"。 */
+function checkStateLabel(check: HealthCheck, noBaselineKey: string): string {
+  if (!check.comparable) return t(noBaselineKey)
+  if (!check.mismatched) return t('supplyAdmin.health.selfCheck.aligned')
+  return t('supplyAdmin.health.selfCheck.drift', { drift: formatPercent(check.drift) })
+}
+
+/**
+ * 拉健康度读数。
+ *
+ * 失败时把 health 清成 null 而不是留着上一个窗口的数：切窗口失败后继续显示旧数，
+ * 读者会以为那是新窗口的读数，而这张卡的全部用途就是照着它调价。
+ */
+async function loadHealth(): Promise<void> {
+  healthLoading.value = true
+  try {
+    health.value = await adminSupplyMarketAPI.getHealth(healthWindowDays.value)
+  } catch (error) {
+    health.value = null
+    appStore.showError(extractApiErrorMessage(error, t('supplyAdmin.health.loadFailed')))
+  } finally {
+    healthLoading.value = false
+  }
+}
+
 onMounted(async () => {
+  // 健康度与七组配置分开加载：它是只读读数，服务没接线（后端 503）时不该把整页
+  // 配置一起挡在加载失败上——那七组参数照样改得动。
+  void loadHealth()
+
   try {
     await Promise.all([
       loadSettlement(),
