@@ -870,6 +870,8 @@ var ProviderSet = wire.NewSet(
 	// 它是下面接入/生命周期两个 Provide 的入参，被那两个拉起来。
 	NewSupplierIncidentNotifier,
 	NewSupplierIncidentService,
+	// APEXONE-EXT: 双边市场——定价与供给健康度（只读看板）。
+	NewSupplyMarketHealthService,
 	// APEXONE-EXT: 双边市场——供给者自助接入 + 观察期/排空推进任务。
 	ProvideSupplierOnboardingService,
 	ProvideSupplierLifecycleService,

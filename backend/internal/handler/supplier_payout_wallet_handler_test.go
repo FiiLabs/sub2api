@@ -113,7 +113,7 @@ func payoutWalletRouterOn(repo service.SupplierPayoutWalletRepository, userID in
 	if repo != nil {
 		walletService = service.NewSupplierPayoutWalletService(repo)
 	}
-	h := NewSupplierHandler(nil, nil, nil, nil, nil, nil, walletService)
+	h := NewSupplierHandler(nil, nil, nil, nil, nil, nil, walletService, nil)
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

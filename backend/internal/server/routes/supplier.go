@@ -130,5 +130,8 @@ func registerSupplyMarketRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		// 一个更长的静态路径，两者不冲突（这里没有 :id 参数段），顺序只是可读性。
 		supply.GET("/incidents", h.Supplier.Admin.ListIncidents)
 		supply.GET("/incidents/summary", h.Supplier.Admin.GetIncidentSummary)
+
+		// 定价与供给健康度。只读看板，回答「倍率和分成配得对不对」。
+		supply.GET("/health", h.Supplier.Admin.GetSupplyMarketHealth)
 	}
 }

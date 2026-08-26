@@ -138,6 +138,8 @@ var ProviderSet = wire.NewSet(
 	NewSupplierExportRepository,
 	// APEXONE-EXT: 双边市场——供给号失效事件台账仓储。
 	NewSupplierIncidentRepository,
+	// APEXONE-EXT: 双边市场——定价健康度的聚合读侧。只读，不参与任何写路径。
+	NewSupplyMarketHealthRepository,
 	NewUserPlatformQuotaRepository,     // T14: user × platform quota
 	NewUserPlatformQuotaServiceAdapter, // T14: adapter → service.UserPlatformQuotaRepository
 

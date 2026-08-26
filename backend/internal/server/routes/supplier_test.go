@@ -161,7 +161,7 @@ func TestSupplyMarketRoutes_AreUnderAdminGroup(t *testing.T) {
 	RegisterAdminRoutes(router.Group("/api/v1"), supplierTestHandlers(), adminAuth, auditLog, stepUp, nil, nil)
 
 	routes := supplierRoutePaths(t, router, "/api/v1/admin/supply")
-	require.Len(t, routes, 11, "管理端供给侧路由数变了，改动前先读 §3.6 与 routes/supplier.go 顶部")
+	require.Len(t, routes, 12, "管理端供给侧路由数变了，改动前先读 §3.6 与 routes/supplier.go 顶部")
 
 	for _, route := range routes {
 		t.Run(route.Method+" "+route.Path, func(t *testing.T) {

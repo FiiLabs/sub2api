@@ -42,6 +42,11 @@ type SupplierAdminHandler struct {
 	// incidentService 供给号失效事件（supplier_incident_handler.go）。只读，
 	// 与看板同类。边界写在 §3.10。
 	incidentService *service.SupplierIncidentService
+	// healthService 定价与供给健康度（supply_market_health_handler.go）。只读。
+	//
+	// 可为 nil：这是一块给人看的经营读数，它没装配好不该让同一个 handler 上
+	// 其余那些真会动钱的接口（打款、拒绝）跟着起不来。端点自己回 503。
+	healthService *service.SupplyMarketHealthService
 }
 
 // NewSupplierAdminHandler 构造运营视图 handler。
@@ -50,12 +55,14 @@ func NewSupplierAdminHandler(
 	withdrawalService *service.SupplierWithdrawalService,
 	exportService *service.SupplierExportService,
 	incidentService *service.SupplierIncidentService,
+	healthService *service.SupplyMarketHealthService,
 ) *SupplierAdminHandler {
 	return &SupplierAdminHandler{
 		adminService:      adminService,
 		withdrawalService: withdrawalService,
 		exportService:     exportService,
 		incidentService:   incidentService,
+		healthService:     healthService,
 	}
 }
 
