@@ -228,7 +228,7 @@ func normalizeRelayBaseURL(raw string) (string, error) {
 }
 
 // relayProbeModel 提交时探测用哪个模型：观察期配了 probe_model 就用它
-//（同一个号提交时和进观察期后必须被同一根尺子量），没配用平台默认。
+// （同一个号提交时和进观察期后必须被同一根尺子量），没配用平台默认。
 func (s *SupplierOnboardingService) relayProbeModel(ctx context.Context) string {
 	if settings := s.probationSettings(ctx); settings != nil {
 		if model := strings.TrimSpace(settings.ProbeModel); model != "" {
