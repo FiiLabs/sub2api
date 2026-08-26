@@ -125,7 +125,7 @@ export default {
       namePlaceholder: '留空则用端点域名',
       submit: '提交并验证',
       submitting: '正在验证端点…',
-      probeHint: '提交时会向端点发送一条最小的真实请求（claude-3-5-haiku，1 token）验证连通性与 Key。',
+      probeHint: '提交时会向端点发送一条最小的真实请求（1 token，与观察期探测同一模型，默认 claude-sonnet-4-5）验证连通性与 Key。',
       submitted: '接入成功，已进入观察期。',
       failed: '接入失败',
       fieldsRequired: '端点地址与 API Key 都要填'

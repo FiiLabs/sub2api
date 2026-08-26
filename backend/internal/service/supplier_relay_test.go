@@ -14,6 +14,7 @@ package service
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -26,11 +27,16 @@ import (
 type stubRoundTripper struct {
 	status   int
 	requests []*http.Request
+	bodies   []string
 	err      error
 }
 
 func (rt *stubRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	rt.requests = append(rt.requests, req)
+	if req.Body != nil {
+		raw, _ := io.ReadAll(req.Body)
+		rt.bodies = append(rt.bodies, string(raw))
+	}
 	if rt.err != nil {
 		return nil, rt.err
 	}
@@ -154,6 +160,38 @@ func TestSubmitRelayCreatesAPIKeyAccountInProbation(t *testing.T) {
 	require.Len(t, probe.requests, 1)
 	assert.Equal(t, "https://relay.example.com/api/v1/messages", probe.requests[0].URL.String())
 	assert.Equal(t, "sk-relay-0123456789", probe.requests[0].Header.Get("x-api-key"))
+	// 探测模型 = 平台默认（观察期没配 probe_model 时）。第一版写死过一个
+	// 2024 年的老模型，真实中转只路由当代模型，探测自己撞 503 把健康端点拒了。
+	require.Len(t, probe.bodies, 1)
+	assert.Contains(t, probe.bodies[0], supplierRelayFallbackProbeModel)
+	assert.NotContains(t, probe.bodies[0], "claude-3-5-haiku", "又钉回那个会过时的老模型了")
+}
+
+// 观察期配了 probe_model → 提交时探测用同一个：同一个号提交时和进观察期后
+// 必须被同一根尺子量，否则会出现「提交被拒、观察期却探测得过」或反过来。
+func TestSubmitRelayProbesWithTheProbationModel(t *testing.T) {
+	repo := &supplierOnboardingRepoStub{}
+	store := newSupplierAccountStoreStub()
+	probe := &stubRoundTripper{status: http.StatusOK}
+	settingRepo := &supplyPoolSettingRepoStub{
+		value:           enabledSupplyPoolJSON(),
+		agreementValue:  publishedAgreementJSON(),
+		onboardingValue: relayOnboardingJSON(),
+		probationValue:  `{"enabled":true,"probe_model":"claude-custom-probe"}`,
+	}
+	repo.agreementAcceptedByDefault = true
+	svc := &SupplierOnboardingService{
+		repo:             repo,
+		accountRepo:      store,
+		oauth:            &supplierOAuthStub{},
+		settings:         newSupplyPoolSettingService(t, settingRepo),
+		relayProbeClient: &http.Client{Transport: probe},
+	}
+
+	_, err := svc.SubmitRelay(context.Background(), relaySubmission())
+	require.NoError(t, err)
+	require.Len(t, probe.bodies, 1)
+	assert.Contains(t, probe.bodies[0], "claude-custom-probe")
 }
 
 // 开关关着 → 明确的「不收中转」，而不是笼统的「不收供给」。

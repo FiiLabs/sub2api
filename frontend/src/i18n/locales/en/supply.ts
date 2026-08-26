@@ -133,7 +133,7 @@ export default {
       namePlaceholder: 'Defaults to the endpoint host',
       submit: 'Submit & verify',
       submitting: 'Verifying the endpoint…',
-      probeHint: 'On submit, one minimal real request (claude-3-5-haiku, 1 token) is sent to verify reachability and the key.',
+      probeHint: 'On submit, one minimal real request (1 token, same model as the review-period probe, claude-sonnet-4-5 by default) is sent to verify reachability and the key.',
       submitted: 'Connected. This account is now in review.',
       failed: 'Failed to connect',
       fieldsRequired: 'Both the base URL and the API key are required'

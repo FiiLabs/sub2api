@@ -63,10 +63,15 @@ const (
 	supplierRelayKeyMaxLen = 512
 	// supplierRelayBaseURLMaxLen 与 credentials jsonb 里合理的存储上限对齐。
 	supplierRelayBaseURLMaxLen = 256
-	// supplierRelayProbeModel 提交时探测用的模型。挑一个所有 Anthropic 兼容
-	// 中转都该有的小模型：探测的问题是「端点通不通、key 对不对」，
-	// 不是「模型全不全」。表单提示里写明了会用它探测。
-	supplierRelayProbeModel = "claude-3-5-haiku-20241022"
+	// supplierRelayFallbackProbeModel 观察期没配 probe_model 时的探测模型。
+	// 与 AccountTestService 的 Claude 默认（claude-sonnet-4-5）一字不差——
+	// 提交时探测与观察期探测必须是同一判据，否则一个端点会「提交时被拒、
+	// 观察期却探测得过」或反过来。
+	//
+	// 教训（2026-08-26，第二次被真实世界纠正）：第一版在这里写死了
+	// claude-3-5-haiku-20241022，一个真实中转只路由当代模型（订阅号的正常
+	// 形态），探测自己撞 503 把健康端点拒了。探测模型不能钉死在某个年份上。
+	supplierRelayFallbackProbeModel = "claude-sonnet-4-5"
 	// supplierRelayProbeTimeout 探测超时。一个 15 秒都答不上一条 1 token 请求的
 	// 中转，进了池子也只会把消费者的请求拖死。
 	supplierRelayProbeTimeout = 15 * time.Second
@@ -138,7 +143,7 @@ func (s *SupplierOnboardingService) SubmitRelay(ctx context.Context, input *Supp
 
 	// 提交时当场探测。OAuth 路径有 token 交换兜真伪；中转没有——不验的话，
 	// 一个抄错一位的 key 要等观察期第一次探测才暴露，而供给者早已关掉页面。
-	if err := s.probeRelay(ctx, baseURL, apiKey); err != nil {
+	if err := s.probeRelay(ctx, baseURL, apiKey, s.relayProbeModel(ctx)); err != nil {
 		return nil, err
 	}
 
@@ -222,14 +227,25 @@ func normalizeRelayBaseURL(raw string) (string, error) {
 	return parsed.String(), nil
 }
 
+// relayProbeModel 提交时探测用哪个模型：观察期配了 probe_model 就用它
+//（同一个号提交时和进观察期后必须被同一根尺子量），没配用平台默认。
+func (s *SupplierOnboardingService) relayProbeModel(ctx context.Context) string {
+	if settings := s.probationSettings(ctx); settings != nil {
+		if model := strings.TrimSpace(settings.ProbeModel); model != "" {
+			return model
+		}
+	}
+	return supplierRelayFallbackProbeModel
+}
+
 // probeRelay 对端点打一条最小的真实请求（1 token）。
 //
 // 只认 HTTP 200：401/403 是 key 错，404 是路径错，5xx 是端点坏——
 // 对提交的人全都是「回去改你填的东西」，所以归成同一个 4xx，
 // 细节进日志不进响应（响应会被脚本重放，日志才是给排查看的）。
-func (s *SupplierOnboardingService) probeRelay(ctx context.Context, baseURL, apiKey string) error {
+func (s *SupplierOnboardingService) probeRelay(ctx context.Context, baseURL, apiKey, model string) error {
 	body, err := json.Marshal(map[string]any{
-		"model":      supplierRelayProbeModel,
+		"model":      model,
 		"max_tokens": 1,
 		"messages": []map[string]string{
 			{"role": "user", "content": "ping"},
