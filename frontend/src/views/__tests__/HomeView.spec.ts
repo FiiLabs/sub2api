@@ -89,8 +89,8 @@ describe('HomeView ApexOne landing content', () => {
 
     // Hero
     expect(text).toContain('Data privacy you can verify. Powered by TEE')
-    expect(text).toContain('Claude Fable 5 Live Today')
-    expect(text).toContain('0.5x official API price')
+    expect(text).toContain('Claude Fable 5 Is Live')
+    expect(text).toContain('22% of official API pricing')
     expect(text).toContain('TEE Privacy Protection')
     expect(text).toContain('Hermes')
     expect(text).toContain('Client Support')
@@ -100,7 +100,7 @@ describe('HomeView ApexOne landing content', () => {
     expect(text).toContain('plaintext never touches our hands')
 
     // Comparison table
-    expect(text).toContain('Half the Price. None of the Snooping.')
+    expect(text).toContain('22% of the Price. None of the Snooping.')
     expect(text).toContain('Opaque Gateway')
     expect(text).toContain('Official API')
     // 这三行在 proof-solo 上被改写过（tee-control 原文是
@@ -111,8 +111,21 @@ describe('HomeView ApexOne landing content', () => {
     expect(text).toContain('Policy only')
 
     // Conservative availability wording
-    expect(text).toContain('Availability Design Target')
+    expect(text).toContain('Availability design goal')
     expect(text).toContain('Automatic failover')
+
+    // 三条供货通道的数据流向分别陈述:中转通道不在 TEE 密封内,这条披露必须留在页面上
+    expect(text).toContain('Platform-owned accounts')
+    expect(text).toContain('never through any provider device')
+    expect(text).toContain('which is outside the TEE seal')
+
+    // 供给侧区块:分成比例可以承诺,收入金额不能——这句免责是这一段的底线
+    expect(text).toContain('Turn idle subscription quota into income.')
+    expect(text).toContain('Current revenue share: 80%')
+    expect(text).toContain('not any particular amount of income')
+    expect(text).toContain('demand still building')
+    expect(text).toContain('USDT paid on-chain')
+    expect(text).toContain('72-hour hold')
 
     // Pricing & CTA
     expect(text).toContain('ApexOne — Pay As You Go')
@@ -128,7 +141,21 @@ describe('HomeView ApexOne landing content', () => {
     expect(text).not.toContain('90-day availability')
     expect(text).not.toContain('Uptime SLA')
     expect(text).not.toContain('99.99% Uptime')
+    // 任何具体可用性数字都是一句我们没有赔付条款兜底的承诺
+    expect(text).not.toContain('99.9')
     expect(text).not.toContain('availability target')
+    // 价格对比只与「官方 API」比。规则与理由写在 i18n/locales/*/home.ts 顶部——
+    // 这里刻意不列竞品名单：把名单写进仓库，本身就违反了那条规则。
+    expect(text).toContain('Official API')
+    // 旧的五折口径:改价后任何残留都是价格错标
+    expect(text).not.toContain('Half the price')
+    expect(text).not.toContain('50%')
+    expect(text).not.toContain('0.5x')
+    // 带时效的上线措辞过一天就是假的
+    expect(text).not.toContain('Live Today')
+    // 供给侧不承诺具体收入
+    expect(text.toLowerCase()).not.toContain('per month')
+    expect(text).not.toContain('guaranteed income')
     expect(text).not.toContain('GPT-5')
     expect(text).not.toContain('Anthropic 4.x')
     expect(text).not.toContain('never silently swapped')

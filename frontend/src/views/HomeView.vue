@@ -36,6 +36,10 @@
           <router-link to="/proof" :class="outlineBtn">
             {{ t('home.landing.hero.verifyPrivacy') }}
           </router-link>
+          <!-- 双边市场的另一半:供给侧入口。锚点而非 /supply,那条路要登录 -->
+          <a href="#supply" :class="outlineBtn" @click.prevent="scrollToSupply">
+            {{ t('home.landing.hero.shareSubscription') }}
+          </a>
         </div>
         <div class="mx-auto grid max-w-3xl grid-cols-2 gap-2 md:grid-cols-4">
           <div v-for="stat in heroStats" :key="stat.label" :class="cardClass" class="p-4 text-center">
@@ -239,9 +243,9 @@
             </h3>
             <p class="text-fluid-sm text-gray-500 dark:text-dark-400">{{ t('home.landing.personal.privacy.desc') }}</p>
             <div class="mt-3 space-y-1.5">
-              <div v-for="point in privacyPoints" :key="point" :class="checkItemClass">
-                <span class="mt-px font-bold text-primary-600 dark:text-primary-400">✓</span>
-                <span>{{ point }}</span>
+              <div v-for="point in privacyPoints" :key="point.text" :class="checkItemClass">
+                <span class="mt-px font-bold text-primary-600 dark:text-primary-400">{{ point.mark }}</span>
+                <span>{{ point.text }}</span>
               </div>
             </div>
           </div>
@@ -256,7 +260,11 @@
               <div v-for="(cell, i) in uptimeCells" :key="i" class="h-5 min-w-0 flex-1 rounded-[2px] sm:rounded-[3px]"
                 :class="cell.warn ? 'bg-amber-400' : 'bg-primary-500 opacity-85'"></div>
             </div>
-            <div class="mt-2.5 text-fluid-xl font-bold text-primary-600 dark:text-primary-400">99.99%</div>
+            <!-- 这里原来钉着一个 99.99% 的可用性数字。我们没有对应的 SLA 赔付条款,
+                 印在首页上就是一句兑现不了的承诺,换成讲机制。 -->
+            <div class="mt-2.5 text-fluid-xl font-bold text-primary-600 dark:text-primary-400">
+              {{ t('home.landing.personal.uptime.headline') }}
+            </div>
             <div class="text-fluid-2xs text-gray-400 dark:text-dark-500">
               {{ t('home.landing.personal.uptime.window') }}
             </div>
@@ -315,6 +323,81 @@
         </div>
       </section>
 
+      <!-- SUPPLY — 供给侧入口。hero / 底部 CTA 的次要按钮都锚到这里 -->
+      <section id="supply" class="mx-auto mt-14 max-w-5xl scroll-mt-24">
+        <div v-reveal class="reveal-item">
+          <span :class="eyebrowClass">{{ t('home.landing.supply.eyebrow') }}</span>
+          <h2 :class="headingClass" class="mt-1.5">{{ t('home.landing.supply.title') }}</h2>
+          <p :class="subClass" class="mb-6 mt-2 max-w-3xl">{{ t('home.landing.supply.subtitle') }}</p>
+        </div>
+
+        <!-- 怎么运作 -->
+        <h3 class="mb-3 text-fluid-base font-semibold text-gray-900 dark:text-white">
+          {{ t('home.landing.supply.howItWorks.title') }}
+        </h3>
+        <div class="grid gap-4 md:grid-cols-3">
+          <div v-for="(step, index) in supplySteps" :key="step.title" v-reveal :class="cardClass"
+            class="reveal-item p-5" :style="{ transitionDelay: `${index * 70}ms` }">
+            <div class="mb-2 font-mono text-fluid-2xs font-semibold text-primary-600 dark:text-primary-400">
+              0{{ index + 1 }}
+            </div>
+            <h4 class="mb-1 text-fluid-base font-semibold text-gray-900 dark:text-white">{{ step.title }}</h4>
+            <p class="text-fluid-sm text-gray-500 dark:text-dark-400">{{ step.desc }}</p>
+          </div>
+        </div>
+
+        <!-- 收益怎么算 / 收益怎么拿 -->
+        <div class="mt-4 grid gap-4 md:grid-cols-2">
+          <div v-reveal :class="cardClass" class="reveal-item p-5">
+            <div class="mb-3 text-xl">📈</div>
+            <h3 class="mb-1 text-fluid-base font-semibold text-gray-900 dark:text-white">
+              {{ t('home.landing.supply.earnings.title') }}
+            </h3>
+            <div :class="checkItemClass" class="mt-3 font-mono">
+              <span>{{ t('home.landing.supply.earnings.formula') }}</span>
+            </div>
+            <div class="mt-2.5 text-fluid-xl font-bold text-primary-600 dark:text-primary-400">
+              {{ t('home.landing.supply.earnings.ratio') }}
+            </div>
+            <!-- 早期供给者最容易受伤的就是收入预期。这句刻意不做成红色警告框——
+                 它是如实说明,不是风险提示;但字号不缩,免得被当成小字免责条款。 -->
+            <p class="mt-3 border-l-2 border-gray-200 pl-3 text-fluid-sm leading-relaxed text-gray-400 dark:border-dark-700 dark:text-dark-500">
+              {{ t('home.landing.supply.earnings.disclaimer') }}
+            </p>
+          </div>
+
+          <div v-reveal :class="cardClass" class="reveal-item p-5" style="transition-delay: 70ms">
+            <div class="mb-3 text-xl">💸</div>
+            <h3 class="mb-3 text-fluid-base font-semibold text-gray-900 dark:text-white">
+              {{ t('home.landing.supply.payout.title') }}
+            </h3>
+            <div class="space-y-1.5">
+              <div v-for="point in supplyPayoutPoints" :key="point" :class="checkItemClass">
+                <span class="mt-px font-bold text-primary-600 dark:text-primary-400">✓</span>
+                <span>{{ point }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 供给者视角的隐私:他不经手数据,这也是共享订阅能成立的前提 -->
+        <div v-reveal :class="cardClass" class="reveal-item mt-4 p-5">
+          <div class="mb-3 text-xl">🛡</div>
+          <h3 class="mb-1 text-fluid-base font-semibold text-gray-900 dark:text-white">
+            {{ t('home.landing.supply.privacy.title') }}
+          </h3>
+          <p class="max-w-3xl text-fluid-sm text-gray-500 dark:text-dark-400">
+            {{ t('home.landing.supply.privacy.desc') }}
+          </p>
+        </div>
+
+        <div class="mt-6 flex justify-center">
+          <router-link :to="supplyTarget" :class="outlineBtn">
+            {{ t('home.landing.supply.cta') }}
+          </router-link>
+        </div>
+      </section>
+
       <!-- PROMO VIDEO — 未配置链接时整段不渲染 -->
       <section v-if="promoVideoUrl" id="why" class="mx-auto mt-14 max-w-5xl">
         <div v-reveal class="reveal-item text-center">
@@ -344,6 +427,9 @@
             <router-link to="/proof" :class="outlineBtn">
               {{ t('home.landing.cta.secondary') }}
             </router-link>
+            <a href="#supply" :class="outlineBtn" @click.prevent="scrollToSupply">
+              {{ t('home.landing.cta.supply') }}
+            </a>
           </div>
           <div class="mt-7 flex flex-wrap justify-center gap-2">
             <span v-for="pill in ctaPills" :key="pill"
@@ -390,7 +476,9 @@ const outlineBtn =
 
 // HERO stats
 const heroStats = computed(() => [
-  { value: '50%', label: t('home.landing.hero.stats.discount') },
+  // 数值保持语言中立（百分号各语言通用），折扣说法只出现在文案里——
+  // 把「1.8折」写进 value 会让英文页面显示中文。
+  { value: '22%', label: t('home.landing.hero.stats.discount') },
   { value: '100%', label: t('home.landing.hero.stats.attested') },
   { value: 'Fable 5', label: t('home.landing.hero.stats.claude') },
   { value: 'Hermes', label: t('home.landing.hero.stats.hermes') }
@@ -431,10 +519,13 @@ const compareRows = computed(() =>
 
 const uptimeCells = Array.from({ length: 25 }, (_, i) => ({ warn: i === 11 }))
 
+// 三条供货通道的数据流向不同,必须分开陈述:自营和共享订阅的请求确实不出 TEE,
+// 但 API 中转通道会走到供给者自己的服务端点上。中转那条用 → 而不是 ✓——它是
+// 如实披露"请求会去哪",把它也画成对勾等于把一条限制说成一项卖点。
 const privacyPoints = computed(() => [
-  t('home.landing.personal.privacy.points.tdx'),
-  t('home.landing.personal.privacy.points.noRead'),
-  t('home.landing.personal.privacy.points.attestation')
+  { mark: '✓', text: t('home.landing.personal.privacy.points.owned') },
+  { mark: '✓', text: t('home.landing.personal.privacy.points.shared') },
+  { mark: '→', text: t('home.landing.personal.privacy.points.relay') }
 ])
 
 const uptimePoints = computed(() => [
@@ -453,6 +544,20 @@ const pricingPlans = computed(() => [
     featured: true,
     features: [1, 2, 3, 4, 5, 6].map((i) => t(`home.landing.pricing.personal.features.f${i}`))
   }
+])
+
+// SUPPLY
+const supplySteps = computed(() =>
+  (['s1', 's2', 's3'] as const).map((key) => ({
+    title: t(`home.landing.supply.howItWorks.${key}.title`),
+    desc: t(`home.landing.supply.howItWorks.${key}.desc`)
+  }))
+)
+
+const supplyPayoutPoints = computed(() => [
+  t('home.landing.supply.payout.chain'),
+  t('home.landing.supply.payout.fee'),
+  t('home.landing.supply.payout.freeze')
 ])
 
 // PROMO VIDEO
@@ -504,6 +609,13 @@ const isAuthenticated = computed(() => authStore.isAuthenticated)
 const isAdmin = computed(() => authStore.isAdmin)
 const dashboardPath = computed(() => (isAdmin.value ? '/admin/dashboard' : '/dashboard'))
 const ctaTarget = computed(() => (isAuthenticated.value ? dashboardPath.value : '/login'))
+// /supply 是 requiresAuth 的,未登录直接跳过去只会被守卫弹回登录页
+const supplyTarget = computed(() => (isAuthenticated.value ? '/supply' : '/login'))
+
+// 与 Header 的锚点导航保持同一种滚动手感
+function scrollToSupply() {
+  document.getElementById('supply')?.scrollIntoView({ behavior: 'smooth' })
+}
 
 onMounted(() => {
   authStore.checkAuth()

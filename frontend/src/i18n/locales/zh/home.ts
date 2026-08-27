@@ -1,4 +1,13 @@
 // 旧版(tee-control)营销首页/页头/页脚的 home.* 文案,整体覆盖 upstream landing 里的 home 块
+//
+// ## 硬规则：价格对比只与「官方 API」比
+//
+// 本文件（以及整个仓库、所有会进 GitHub 的文档）**不得出现任何第三方服务的名字**，
+// 也不得出现"比某某网关便宜""市面上最低"这类指向具体对手的暗示。对比列里那个
+// 「不透明网关」是**类别**不是某一家，可以留。
+//
+// 这不是文案偏好：点名对手会把我们的定价决策暴露成对某一家的应激反应，
+// 也给了对方一个现成的比较框架。竞品分析放在仓库之外的运营文档里，不进代码。
 export default {
   home: {
     viewOnGithub: '在 GitHub 上查看',
@@ -18,112 +27,24 @@ export default {
       proof: '证明',
       document: '文档'
     },
-    // 新增：面向用户的价值主张
-    heroSubtitle: '一个密钥，畅用多个 AI 模型',
-    heroDescription: '无需管理多个订阅账号，一站式接入 Claude、GPT、Gemini 等主流 AI 服务',
-    tags: {
-      subscriptionToApi: '订阅转 API',
-      stickySession: '会话保持',
-      realtimeBilling: '按量计费'
-    },
-    // 用户痛点区块
-    painPoints: {
-      title: '你是否也遇到这些问题？',
-      items: {
-        expensive: {
-          title: '订阅费用高',
-          desc: '每个 AI 服务都要单独订阅，每月支出越来越多'
-        },
-        complex: {
-          title: '多账号难管理',
-          desc: '不同平台的账号、密钥分散各处，管理起来很麻烦'
-        },
-        unstable: {
-          title: '服务不稳定',
-          desc: '单一账号容易触发限制，影响正常使用'
-        },
-        noControl: {
-          title: '用量无法控制',
-          desc: '不知道钱花在哪了，也无法限制团队成员的使用'
-        }
-      }
-    },
-    // 解决方案区块
-    solutions: {
-      title: '我们帮你解决',
-      subtitle: '简单三步，开始省心使用 AI'
-    },
-    features: {
-      unifiedGateway: '一键接入',
-      unifiedGatewayDesc: '获取一个 API 密钥，即可调用所有已接入的 AI 模型，无需分别申请。',
-      multiAccount: '稳定可靠',
-      multiAccountDesc: '智能调度多个上游账号，自动切换和负载均衡，告别频繁报错。',
-      balanceQuota: '用多少付多少',
-      balanceQuotaDesc: '按实际使用量计费，支持设置配额上限，团队用量一目了然。'
-    },
-    // 优势对比
-    comparison: {
-      title: '为什么选择我们？',
-      headers: {
-        feature: '对比项',
-        official: '官方订阅',
-        us: '本平台'
-      },
-      items: {
-        pricing: {
-          feature: '付费方式',
-          official: '固定月费，用不完也付',
-          us: '按量付费，用多少付多少'
-        },
-        models: {
-          feature: '模型选择',
-          official: '单一服务商',
-          us: '多模型随意切换'
-        },
-        management: {
-          feature: '账号管理',
-          official: '每个服务单独管理',
-          us: '统一密钥，一站管理'
-        },
-        stability: {
-          feature: '服务稳定性',
-          official: '单账号易触发限制',
-          us: '多账号池，自动切换'
-        },
-        control: {
-          feature: '用量控制',
-          official: '无法限制',
-          us: '可设配额、查明细'
-        }
-      }
-    },
-    providers: {
-      title: '已支持的 AI 模型',
-      description: '一个 API，多种选择',
-      supported: '已支持',
-      soon: '即将推出',
-      claude: 'Claude',
-      gemini: 'Gemini',
-      antigravity: 'Antigravity',
-      more: '更多'
-    },
-    // CTA 区块
-    cta: {
-      title: '准备好开始了吗？',
-      description: '注册即可获得免费试用额度，体验一站式 AI 服务',
-      button: '免费注册'
-    },
     landing: {
       hero: {
-        badge: 'Claude Fable 5 今日上线',
+        // 不写"今日/本周"这类带时效的词:首页文案改一次要走一次发版,
+        // 而"今日上线"过了当天就是假的。
+        badge: 'Claude Fable 5 已上线',
         title: '隐私不靠承诺，靠验证。TEE 加密路由',
         subtitle:
-          '通过 TEE 加密网关调用 Claude 等前沿模型——数据全程私密，每次调用可验证，价格仅为官方 API 的一半。',
+          '通过 TEE 加密网关调用 Claude 等前沿模型——数据全程私密，每次调用可验证，价格低至官方 API 的 2.2 折。',
         verifyPrivacy: '验证隐私',
+        // 供给侧入口:锚点到本页的 #supply,不直接跳 /supply——那条路要登录,
+        // 未登录用户点过去只会看到登录页,不知道自己错过了什么。
+        shareSubscription: '共享订阅赚钱',
         stats: {
-          discount: '官方 API 价格的一半',
+          // 与数值卡片拼成「22% / 官方 API 价格」。标签里不要再写一遍「2.2 折」——
+          // 那会让同一张卡上出现两种单位，读者得先换算才知道说的是一件事。
+          discount: '官方 API 价格',
           attested: 'TEE 隐私保护',
-          claude: '今日上线',
+          claude: '已上线',
           hermes: '客户端支持'
         }
       },
@@ -132,14 +53,17 @@ export default {
         title: '我们不卖你的数据——因为我们根本拿不到。',
         subtitle:
           '不同于不透明网关，ApexOne 的每一次请求都经过可验证的 TEE 路由，明文从不经过我们的手。',
-        caption: '明文只在已认证的 TEE 内解密——ApexOne 运营方、日志和基础设施都读不到。'
+        // 三种供货通道里有一种(供给者自填 URL 的 API 中转)不在 TEE 密封内,
+        // 所以这句必须带通道限定,不能写成全称判断。
+        caption:
+          '平台自营与共享订阅通道的明文只在已认证的 TEE 内解密——ApexOne 运营方、日志和基础设施都读不到；供给者自填的 API 中转通道会把请求转发到该供给者的服务端点，不在这层密封之内。'
       },
       personal: {
         eyebrow: '// ApexOne',
-        title: '价格砍半，窥探为零。',
+        title: '价格 2.2 折，窥探为零。',
         subtitle: '价格、隐私、可靠性，一张表看明白。',
         compare: {
-          note: '基于官方 API 计费价格，ApexOne 按其 50% 计费。',
+          note: '基于官方 API 计费价格，ApexOne 按其 22% 计费。',
           cols: {
             opaque: '不透明网关',
             official: '官方 API',
@@ -162,26 +86,29 @@ export default {
               label: '真实模型，完整精度',
               opaque: '⚠️ 无法验证',
               official: '✅ 是',
-              apexone: '✅ 已认证，今日可用'
+              apexone: '✅ 已认证，现已可用'
             },
             failover: {
+              // 不承诺具体可用性数字:SLA 一旦写进首页就是对外承诺,
+              // 而我们并没有对应的赔付条款。只讲我们确实做了的机制。
               label: '自动故障切换',
               opaque: '❌ 无',
               official: '❌ 无',
-              apexone: '✅ 99.99% 可用性'
+              apexone: '✅ 多路由自动切换'
             },
             price: {
               label: '价格',
               opaque: '便宜，但说不清为什么',
               official: '官方原价',
-              apexone: '官方价格五折'
+              apexone: '官方价格 2.2 折'
             }
           }
         },
         uptime: {
           title: '不间断路由',
           desc: '多路由架构，路由一旦劣化立即切换流量。',
-          window: '可用性设计目标',
+          headline: '多路由自动切换',
+          window: '可用性设计目标：劣化即切换',
           points: {
             failover: '路由劣化时自动切换',
             monitoring: '实时路由健康监测'
@@ -189,27 +116,31 @@ export default {
         },
         privacy: {
           title: 'TEE 密封路由',
-          desc: '提示词只在 Intel TDX 机密虚拟机内解密——这条边界你可以在浏览器里亲自验证。',
+          desc: '不同供货通道的数据流向不一样，这里按通道说清楚——TEE 边界本身，你可以在浏览器里亲自验证。',
+          // 按通道分开写,不是措辞讲究而是准确性:自营和共享订阅两条通道请求确实
+          // 不出 TEE,但 API 中转通道会走到供给者自己的服务器上。合成一句"我们拿不到
+          // 你的数据"对第三条就是假的,所以三条各写各的流向。
           points: {
-            tdx: '仅在 Intel TDX 内、交给服务方之前解密',
-            noRead: 'ApexOne 运营方和日志读不到提示词',
-            attestation: '远程认证可验证网关边界'
+            owned: '平台自营账号：请求在 Intel TDX 机密虚拟机内路由，运营方与日志都读不到明文',
+            shared:
+              '共享订阅通道：供给者只提供订阅额度，请求内容经 TEE 直达 Anthropic，不经过供给者的任何设备',
+            relay: 'API 中转通道：请求会转发到供给者提供的服务端点，这一通道不在 TEE 密封范围内'
           }
         }
       },
       pricing: {
         eyebrow: '// 价格',
-        title: '官方价格一半，透明公开。',
-        subtitle: '按 token 计费，价格为官方 API 的 50%——没有订阅，没有最低消费。',
+        title: '官方价格 2.2 折，透明公开。',
+        subtitle: '按 token 计费，价格为官方 API 的 22%——没有订阅，没有最低消费。',
         personal: {
           name: 'ApexOne',
           tagline: '按量付费',
-          priceLine: '按官方 API 计费价格的 50% 逐 token 计费。',
+          priceLine: '按官方 API 计费价格的 22% 逐 token 计费。',
           desc: '面向需要 Claude 接入、可验证私密路由和透明账单的开发者。',
           cta: '立即开始 →',
           features: {
-            f1: 'Claude Fable 5 今日可用；GPT 和 Gemini 即将上线',
-            f2: '官方 API 计费价格五折',
+            f1: 'Claude Fable 5 现已可用；GPT 和 Gemini 即将上线',
+            f2: '官方 API 计费价格 2.2 折',
             f3: 'TEE 认证网关 + 远程认证',
             f4: '控制面只接触元数据——提示词从不落日志',
             f5: '自动故障切换 & 实时路由监测',
@@ -217,16 +148,63 @@ export default {
           }
         }
       },
+      // 供给侧区块。刻意只承诺我们控制得了的东西(分成比例、提现方式),
+      // 用量和收入取决于真实需求,写成数字就会变成信任事故。
+      supply: {
+        eyebrow: '// 共享订阅',
+        title: '把闲置的订阅额度，变成收入。',
+        subtitle: '你已经在为 Claude 订阅付费。别人用掉你没用完的那部分时，你按比例分成。',
+        howItWorks: {
+          title: '怎么运作',
+          s1: {
+            title: '接入你的订阅',
+            desc: '授权连接，或提供一个兼容的 API 端点。随时可以下线或解绑。'
+          },
+          s2: {
+            title: '闲置额度被使用',
+            desc: '平台把请求调度到你的账号上，只用你没用完的额度。'
+          },
+          // 分成基数必须写明是「平台向用户收取的金额」而不是「官方计价」。
+          // 页面另一处写着"按官方价的 22% 计费"，两个数字摆在同一页上，
+          // 含糊的基数会被直接算成"收 22 付 80"——那是一句说不通的话，
+          // 而认真算过账的供给者恰恰是我们最想留住的那批人。
+          s3: {
+            title: '按用量分成',
+            desc: '平台向用户收取的每一笔费用，你拿其中的 80%。'
+          }
+        },
+        earnings: {
+          title: '收益怎么算',
+          formula: '你的收益 = 用户为这些用量付的钱 × 分成比例',
+          ratio: '当前分成比例：80%',
+          // 全区块最重要的一句:平台还在早期,供给者按"月入多少"的预期进来
+          // 一定会失望,这句必须留在页面上,不能被后来的转化优化砍掉。
+          disclaimer:
+            '平台承诺的是分成比例，不是具体收入金额。实际能赚多少取决于平台的真实需求量——而平台仍在早期，需求还在积累中，早期收益可能很有限。任何收益测算都只是估算，不构成承诺。'
+        },
+        payout: {
+          title: '收益怎么拿',
+          chain: '链上 USDT 直接打到你的钱包地址',
+          fee: '提现零手续费，网络 gas 由平台承担',
+          freeze: '收益有 72 小时冻结期，之后可随时提取'
+        },
+        privacy: {
+          title: '你不经手任何用户数据',
+          desc: '共享订阅通道下，用户的请求内容经平台的 TEE 网关直达 Anthropic，不会流经你的任何设备。你提供的是额度，不是服务器。'
+        },
+        cta: '了解如何共享订阅'
+      },
       video: {
         eyebrow: '// 为什么是 ApexOne',
-        title: '价格减半，隐私不打折',
+        title: '价格 2.2 折，隐私不打折',
         subtitle: '便宜和隐私，不用二选一。'
       },
       cta: {
         title: '用得起，也信得过的 AI。',
-        description: 'Claude Fable 5，官方半价，TEE 全程密封。',
+        description: 'Claude Fable 5，官方 2.2 折，TEE 全程密封。',
         primary: '立即开始 →',
         secondary: '验证隐私 →',
+        supply: '共享订阅赚钱 →',
         pills: {
           noTraining: '🚫 不用你的数据训练',
           audit: '📋 仅元数据审计日志',
