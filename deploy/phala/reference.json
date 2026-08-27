@@ -1,22 +1,22 @@
 {
-  "$comment": "Authoritative attestation reference for the production publicai-gateway CVM (sub2api single-enclave architecture). Fetched at runtime by the /proof page (see frontend/src/utils/attestation/reference.ts). Every change to this file is public git history — that is part of the trust story. composeHash was read back from the CVM's RTMR3 via the attestor's event log on 2026-08-03 and cross-checked against the Phala control-plane API; both report a199f53d. Image digests are the linux/amd64 children of the cosign-signed proof-v14 indexes built from sourceCommit by publish-tee-images (run 30778961874); the keyless signatures were verified against certificate identity https://github.com/FiiLabs/sub2api/.github/workflows/publish-tee-images.yml@refs/heads/proof-solo, and the Fulcio certificates embed githubWorkflowSha = the sourceCommit below, so the digest-to-source binding is cryptographic rather than self-reported. This release is a security update: it merges upstream sub2api v0.1.170, which fixes GHSA-vrxq-qm4h-6hgg (High, CVSS 3.1 8.5) — a path traversal in the three POST /responses/*subpath wildcard routes that let any holder of a valid platform API key relay POST requests to arbitrary upstream paths under the operator's pooled account credentials. The code measured by the previous reference (proof-v13, composeHash 4092bc20, built from upstream baseline v0.1.165-51-g95590b553) was in the affected range >= v0.1.135, <= v0.1.168 and did contain the vulnerable routes; that history stays in this file's git log deliberately. The merge deliberately keeps this fork's own HomeView.vue instead of adopting upstream's new custom-home-content branch, which renders operator-supplied HTML via v-html and would add an XSS surface to the landing page, and its iframe branch would require widening the Content-Security-Policy frame-src that is itself measured into this image. As with proof-v12 and proof-v13, composeHash could NOT be predicted ahead of the deploy, so it was read back afterwards; between the CVM update and this commit, /proof reported a mismatch against this file as a failed enclave. osImageHash, appId and instanceId are unchanged, so the enclave's E2EE public key, derived from the app key, is also unchanged.",
+  "$comment": "Authoritative attestation reference for the production publicai-gateway CVM (sub2api single-enclave architecture). Fetched at runtime by the /proof page (see frontend/src/utils/attestation/reference.ts). Every change to this file is public git history — that is part of the trust story. composeHash was read back from the CVM's RTMR3 via the attestor's event log on 2026-08-27 and cross-checked against the Phala control-plane API; both report c5f79ad6. Image digests are the linux/amd64 children of the cosign-signed proof-v15 indexes (sub2api INDEX 44d10d34, attestor INDEX 696a5634) built by publish-tee-images run 33057550235; the keyless signatures were verified against certificate identity https://github.com/FiiLabs/sub2api/.github/workflows/publish-tee-images.yml@refs/heads/feat/two-sided-market, and the Fulcio certificates embed githubWorkflowSha = the sourceCommit below, so the digest-to-source binding is cryptographic rather than self-reported. Note that the build branch changed from proof-solo to feat/two-sided-market with this release: anyone re-verifying the signatures must use the identity above, not the proof-solo one recorded in earlier revisions of this file. This release deploys the two-sided marketplace (supplier onboarding, revenue share, on-chain payouts) — 593 commits and 18 additive schema migrations on top of the previous baseline. The measured compose text is commit a7a851101, which differs from sourceCommit ec9ebbbf5 only by the two image digest pins that point at the images ec9ebbbf5 produced; that one-commit gap is inherent to pinning by digest and is why sourceCommit tracks what cosign attests rather than what contains this file. As with proof-v12 through proof-v14, composeHash could NOT be predicted ahead of the deploy, so it was read back afterwards; between the CVM update and this commit, /proof reported a mismatch against this file. osImageHash and appId are unchanged — the deploy passed --no-dev-os explicitly, because phala deploy silently switches to a dev OS image when it detects a local SSH key, and a dev OS would void the attestation entirely.",
   "version": 1,
-  "updatedAt": "2026-08-03",
+  "updatedAt": "2026-08-27",
   "enclave": {
     "appId": "9467ce766ed63423e86a19d2f36cc9a9926daf27",
     "osImage": "dstack-0.5.9",
     "osImageHash": "bd369a8c2f9edb2b52dad48ac8e0b32dde5f1337c423a506b48d07403a7d8033",
-    "composeHash": "a199f53d46141490d730a4c8575e5bcbfb454eb38421bec6e4d1179f898007da",
+    "composeHash": "c5f79ad647597fade7d28dfa59ea89e486849a202b94687c138c67712372bf58",
     "sourceRepo": "https://github.com/FiiLabs/sub2api.git",
-    "sourceCommit": "4394826be9fba3a12b093504bee494df348ceee5",
+    "sourceCommit": "ec9ebbbf57c8e8a91dba91110a4cb503b5e8ebea",
     "images": [
       {
         "name": "sub2api",
-        "digest": "docker.io/markerdao/sub2api@sha256:83c3f6f88999acca55ac9e72205a39521d76b83df4073aaca98e6fc9ac7d8adc"
+        "digest": "docker.io/markerdao/sub2api@sha256:2e618ed930a560cb4c5ac46aab23746ffbaae06cf69b198e47fa12d0b514e7cd"
       },
       {
         "name": "sub2api-attestor",
-        "digest": "docker.io/markerdao/sub2api-attestor@sha256:f5ddd0c235588f0d799cd5d50cf6476a04e51fbfcba4c17a4190a6f26d8215ae"
+        "digest": "docker.io/markerdao/sub2api-attestor@sha256:1d0d53b001e676cdd27b96b9974245dc72486964fede5febb70b5fefc2d3b636"
       }
     ],
     "confidential": false
