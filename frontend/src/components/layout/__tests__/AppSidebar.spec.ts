@@ -84,3 +84,91 @@ describe('AppSidebar two-sided navigation grouping', () => {
     expect(componentSource).toContain('selfNavItems.value.filter')
   })
 })
+
+// 普通用户侧栏的折叠分组。
+//
+// 这组断言守的是四件很容易在后续改动里悄悄失效的事：子项的开关会不会被过滤到、
+// 空分组会不会留下一个点开什么都没有的标题、付费入口有没有被"顺手"折起来、
+// 分组标题会不会变成一个可点击跳转的死链。
+const localesDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../../i18n/locales')
+const zhCommonSource = readFileSync(resolve(localesDir, 'zh/common.ts'), 'utf8')
+const enCommonSource = readFileSync(resolve(localesDir, 'en/common.ts'), 'utf8')
+
+describe('AppSidebar user nav grouping', () => {
+  it('filters children recursively so per-child feature flags keep working', () => {
+    // 最隐蔽的一处：只过滤顶层的话，关掉支付的站点仍然会在「我的账单」里
+    // 看到「我的订单」——而且要展开分组才看得见，几乎不会被报上来。
+    expect(componentSource).toContain('function filterSimpleMode(items: NavItem[]): NavItem[]')
+    expect(componentSource).toContain('filterSimpleMode(item.children)')
+    expect(componentSource).toContain('authStore.isSimpleMode ? filterSimpleMode(visible) : visible')
+    // featureFlag 那一侧本来就是递归的，别把它退化成一层。
+    expect(componentSource).toContain('children: applyFeatureFlags(item.children)')
+  })
+
+  it('drops a collapsible group entirely once its children are all filtered out', () => {
+    // 简易模式下「我的账单」三项全被隐藏。留下一个空标题比不显示更糟。
+    expect(componentSource).toContain('function dropEmptyGroups(items: NavItem[]): NavItem[]')
+    expect(componentSource).toContain('items.filter((item) => !item.children || item.children.length > 0)')
+    expect(componentSource).toContain('dropEmptyGroups(finalizeNav(groupUserNav(rawSelfNavItems.value)))')
+  })
+
+  it('keeps /purchase at the top level, never inside a collapsible group', () => {
+    // 付费入口。折进「我的账单」只是让列表短一行，代价是多一次点击。
+    expect(componentSource).toContain("const USER_NAV_TOP_PATHS = ['/dashboard', '/keys', '/usage', '/purchase', '/batch-image', '/affiliate']")
+    expect(componentSource).toContain("const BILLING_GROUP_PATHS = ['/subscriptions', '/orders', '/redeem']")
+    expect(componentSource).toContain("const SERVICE_GROUP_PATHS = ['/available-channels', '/monitor']")
+    for (const group of [
+      componentSource.match(/const BILLING_GROUP_PATHS = \[[^\]]*\]/)?.[0],
+      componentSource.match(/const SERVICE_GROUP_PATHS = \[[^\]]*\]/)?.[0],
+    ]) {
+      expect(group).toBeDefined()
+      expect(group).not.toContain('/purchase')
+    }
+  })
+
+  it('makes the group headers expand-only instead of navigable routes', () => {
+    // /billing 和 /service-status 没有对应路由，点标题跳转就是死链。
+    expect(componentSource).toContain("const BILLING_GROUP_PATH = '/billing'")
+    expect(componentSource).toContain("const SERVICE_GROUP_PATH = '/service-status'")
+    const groupDecls = componentSource.match(/path: (?:BILLING_GROUP_PATH|SERVICE_GROUP_PATH),[\s\S]*?children:/g)
+    expect(groupDecls).toHaveLength(2)
+    for (const decl of groupDecls ?? []) {
+      expect(decl).toContain('expandOnly: true')
+    }
+    // expandOnly 的分支必须只切换展开状态，不 router.push。
+    expect(componentSource).toContain('if (item.expandOnly) {')
+  })
+
+  it('titles both groups from aligned zh/en keys', () => {
+    expect(componentSource).toContain("t('nav.myBilling')")
+    expect(componentSource).toContain("t('nav.serviceStatus')")
+    for (const key of ['myBilling', 'serviceStatus']) {
+      expect(zhCommonSource).toContain(`${key}: '`)
+      expect(enCommonSource).toContain(`${key}: '`)
+    }
+  })
+
+  it('does not silently drop nav items that are missing from the grouping tables', () => {
+    // 自定义菜单项（运营在后台配的）不在分组表里；以后往 buildSelfNavItems 里加条目
+    // 的人也未必会记得登记。落到第一组末尾，好过从侧栏里消失。
+    expect(componentSource).toContain('if (!listed.has(item.path) && !SUPPLY_NAV_PATHS.has(item.path)) top.push(item)')
+  })
+})
+
+// 收起态摊平回扁平列表。
+//
+// 这条护栏防的是"这段 if 看着多余"式的删除：分组在 72px 图标条上不产生任何收益
+// （没地方放标题），却会让折叠组里的子项彻底够不到——handleGroupClick 在收起时
+// 直接 return，children 的 v-if 也带着 !sidebarCollapsed。删掉这段，
+// 「我的订单」「兑换」这些改版前点得到的图标会在收起状态下凭空消失。
+describe('AppSidebar collapsed-mode reachability', () => {
+  it('flattens groups when the sidebar is collapsed', () => {
+    expect(componentSource).toContain('if (!sidebarCollapsed.value) return grouped')
+    expect(componentSource).toContain('item.children?.length ? item.children : [item]')
+  })
+
+  it('still groups when the sidebar is expanded', () => {
+    // 摊平只能发生在收起态：展开态摊平就等于这次重构白做。
+    expect(componentSource).toContain('dropEmptyGroups(finalizeNav(groupUserNav(rawSelfNavItems.value)))')
+  })
+})

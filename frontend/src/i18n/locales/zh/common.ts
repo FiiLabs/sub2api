@@ -199,6 +199,9 @@ export default {
     promoCodes: '优惠码',
     settings: '系统设置',
     myAccount: '我的账户',
+    // 侧栏折叠分组的标题（普通用户视图）
+    myBilling: '我的账单',
+    serviceStatus: '服务状态',
     lightMode: '浅色模式',
     darkMode: '深色模式',
     collapse: '收起',

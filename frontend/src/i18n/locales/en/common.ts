@@ -199,6 +199,9 @@ export default {
     promoCodes: 'Promo Codes',
     settings: 'Settings',
     myAccount: 'My Account',
+    // Sidebar collapsible group titles (regular user view)
+    myBilling: 'My Billing',
+    serviceStatus: 'Service Status',
     lightMode: 'Light Mode',
     darkMode: 'Dark Mode',
     collapse: 'Collapse',

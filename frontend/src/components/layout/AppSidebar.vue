@@ -129,20 +129,63 @@
       <!-- Regular User View -->
       <template v-else-if="!appStore.backendModeEnabled">
         <div class="sidebar-section">
-          <router-link
-            v-for="item in userNavItems"
-            :key="item.path"
-            :to="item.path"
-            class="sidebar-link mb-1"
-            :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
-            :title="sidebarCollapsed ? item.label : undefined"
-            :data-tour="item.path === '/keys' ? 'sidebar-my-keys' : undefined"
-            @click="handleMenuItemClick(item.path)"
-          >
-            <span v-if="item.iconSvg" class="h-5 w-5 flex-shrink-0 sidebar-svg-icon" v-html="sanitizeSvg(item.iconSvg)"></span>
-            <component v-else :is="item.icon" class="h-5 w-5 flex-shrink-0" />
-            <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">{{ item.label }}</span>
-          </router-link>
+          <template v-for="item in userNavItems" :key="item.path">
+            <!-- 折叠分组（有 children）：标题只展开/收起，不是可导航路由 -->
+            <template v-if="item.children?.length">
+              <button
+                type="button"
+                class="sidebar-link mb-1 w-full"
+                :class="{
+                  'sidebar-link-active': isGroupActive(item) && !isGroupExpanded(item),
+                  'sidebar-link-collapsed': sidebarCollapsed
+                }"
+                :title="sidebarCollapsed ? item.label : undefined"
+                @click="handleGroupClick(item)"
+              >
+                <component :is="item.icon" class="h-5 w-5 flex-shrink-0" />
+                <span
+                  class="sidebar-label sidebar-label-flex"
+                  :class="{ 'sidebar-label-collapsed': sidebarCollapsed }"
+                  :aria-hidden="sidebarCollapsed ? 'true' : 'false'"
+                >
+                  <span class="min-w-0 truncate">{{ item.label }}</span>
+                  <ChevronDownIcon
+                    class="h-4 w-4 flex-shrink-0 transition-transform duration-200"
+                    :class="isGroupExpanded(item) ? 'rotate-180' : ''"
+                  />
+                </span>
+              </button>
+              <!-- Children -->
+              <div v-if="!sidebarCollapsed && isGroupExpanded(item)" class="mb-1 ml-4 border-l border-gray-200 pl-2 dark:border-dark-600">
+                <router-link
+                  v-for="child in item.children"
+                  :key="child.path"
+                  :to="child.path"
+                  class="sidebar-link mb-0.5 py-1.5 text-sm"
+                  :class="{ 'sidebar-link-active': route.path === child.path }"
+                  @click="handleMenuItemClick(child.path)"
+                >
+                  <span v-if="child.iconSvg" class="h-4 w-4 flex-shrink-0 sidebar-svg-icon" v-html="sanitizeSvg(child.iconSvg)"></span>
+                  <component v-else :is="child.icon" class="h-4 w-4 flex-shrink-0" />
+                  <span>{{ child.label }}</span>
+                </router-link>
+              </div>
+            </template>
+            <!-- Normal item (no children) -->
+            <router-link
+              v-else
+              :to="item.path"
+              class="sidebar-link mb-1"
+              :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
+              :title="sidebarCollapsed ? item.label : undefined"
+              :data-tour="item.path === '/keys' ? 'sidebar-my-keys' : undefined"
+              @click="handleMenuItemClick(item.path)"
+            >
+              <span v-if="item.iconSvg" class="h-5 w-5 flex-shrink-0 sidebar-svg-icon" v-html="sanitizeSvg(item.iconSvg)"></span>
+              <component v-else :is="item.icon" class="h-5 w-5 flex-shrink-0" />
+              <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">{{ item.label }}</span>
+            </router-link>
+          </template>
         </div>
 
         <!-- 共享赚钱。与上面那组是两种相反的意图，所以带标题单独成区；
@@ -739,6 +782,9 @@ const flagSupply = () => supplyStore.enabled
 //
 // 条目顺序：密钥 → 用量 → 可用渠道 → 渠道状态 → 订阅/支付 → 兑换/资料。
 // 可用渠道紧挨渠道状态之上，让用户"先看自己能用什么、再看对应状态"。
+//
+// 这里的顺序只对管理员的「我的账户」区生效；普通用户视图会被 groupUserNav 重排成
+// 分组结构。分组是纯呈现的决定，不放进这个函数——放进来会泄漏到管理员那一侧。
 function buildSelfNavItems(withDashboard: boolean): NavItem[] {
   const items: NavItem[] = []
   if (withDashboard) {
@@ -768,10 +814,32 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
   return items
 }
 
-// finalizeNav 合并三重过滤：featureFlag 过滤 + simple 模式过滤。
+// filterSimpleMode 递归剔除 hideInSimpleMode 的节点。
+// 递归是必须的：折叠分组的子项各自带自己的 hideInSimpleMode，只看顶层的话，
+// 简易模式下「我的账单」这类分组会照常展开出一堆本该藏起来的条目。
+function filterSimpleMode(items: NavItem[]): NavItem[] {
+  const out: NavItem[] = []
+  for (const item of items) {
+    if (item.hideInSimpleMode) continue
+    out.push(item.children ? { ...item, children: filterSimpleMode(item.children) } : item)
+  }
+  return out
+}
+
+// finalizeNav 合并两重过滤：featureFlag 过滤 + simple 模式过滤，两重都递归到 children。
+// 子项的开关是独立的（「我的订单」跟支付开关走、「可用渠道」跟自己的开关走），
+// 不递归的话这些开关会全部失效：关掉了支付的站点，用户展开「我的账单」照样看得见
+// 「我的订单」。而且症状藏在折叠面板里，不点开根本发现不了。
 function finalizeNav(items: NavItem[]): NavItem[] {
   const visible = applyFeatureFlags(items)
-  return authStore.isSimpleMode ? visible.filter(item => !item.hideInSimpleMode) : visible
+  return authStore.isSimpleMode ? filterSimpleMode(visible) : visible
+}
+
+// dropEmptyGroups 丢掉过滤后子项全没了的折叠分组——连标题一起丢。
+// 一个点开什么都没有的分区，用户会以为功能坏了；简易模式下「我的账单」三项全被隐藏
+// 就是这种情况。规则与供给分区一致（空分组整区不渲染）。
+function dropEmptyGroups(items: NavItem[]): NavItem[] {
+  return items.filter((item) => !item.children || item.children.length > 0)
 }
 
 // APEXONE-EXT: 双边市场——供给入口从消费者菜单里分出来单独成组。
@@ -785,12 +853,88 @@ function finalizeNav(items: NavItem[]): NavItem[] {
 // 泄漏到管理员那边。
 const SUPPLY_NAV_PATHS = new Set(['/supply'])
 
-const selfNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems(true)))
+// 折叠分组标题自己的 path。这两个 path 刻意没有对应路由：分组标题只负责展开/收起
+// （expandOnly），path 只是展开状态的稳定 key 和 v-for 的 key，跟管理端那几组一样。
+const BILLING_GROUP_PATH = '/billing'
+const SERVICE_GROUP_PATH = '/service-status'
+
+// 普通用户视图的分组表：只登记 path。条目本身（label / icon / featureFlag /
+// hideInSimpleMode）仍然只有 buildSelfNavItems 那一份声明——在这里再写一遍的话，
+// 以后改开关只改一处，另一处静默失效。
+//
+// /purchase 留在顶层不进任何分组：它是付费入口，折进「我的账单」等于把它藏到
+// 一次额外点击后面。
+const USER_NAV_TOP_PATHS = ['/dashboard', '/keys', '/usage', '/purchase', '/batch-image', '/affiliate']
+const BILLING_GROUP_PATHS = ['/subscriptions', '/orders', '/redeem']
+const SERVICE_GROUP_PATHS = ['/available-channels', '/monitor']
+// 个人资料留在最后一项：它是「设置」性质的，不该跟日常功能抢位置。
+const USER_NAV_TAIL_PATHS = ['/profile']
+
+// groupUserNav 把扁平声明重排成分组结构。纯呈现：路径、权限、开关都原样带过来。
+//
+// 必须在 finalizeNav **之前**跑，让过滤统一发生在成形后的树上——否则分组里的子项
+// 是从"已过滤的扁平表"里捞的，两套过滤时序并存，很容易漏掉一边。
+function groupUserNav(flat: NavItem[]): NavItem[] {
+  const byPath = new Map(flat.map((item) => [item.path, item]))
+  const pick = (paths: string[]): NavItem[] =>
+    paths.map((p) => byPath.get(p)).filter((item): item is NavItem => item !== undefined)
+
+  const listed = new Set<string>([
+    ...USER_NAV_TOP_PATHS,
+    ...BILLING_GROUP_PATHS,
+    ...SERVICE_GROUP_PATHS,
+    ...USER_NAV_TAIL_PATHS,
+  ])
+
+  const top = pick(USER_NAV_TOP_PATHS)
+  // 分组表里没登记的条目（运营配置的自定义菜单，以及以后加进 buildSelfNavItems 但
+  // 忘了登记的条目）一律落到第一组末尾：位置不理想，好过从侧栏里凭空消失。
+  for (const item of flat) {
+    if (!listed.has(item.path) && !SUPPLY_NAV_PATHS.has(item.path)) top.push(item)
+  }
+
+  return [
+    ...top,
+    {
+      path: BILLING_GROUP_PATH,
+      label: t('nav.myBilling'),
+      icon: CreditCardIcon,
+      expandOnly: true,
+      children: pick(BILLING_GROUP_PATHS),
+    },
+    {
+      path: SERVICE_GROUP_PATH,
+      label: t('nav.serviceStatus'),
+      icon: SignalIcon,
+      expandOnly: true,
+      children: pick(SERVICE_GROUP_PATHS),
+    },
+    ...pick(USER_NAV_TAIL_PATHS),
+  ]
+}
+
+// 一次构造、两处派生：分组视图和供给分区共用同一份扁平声明，条目不会在两边同时出现
+// 或者两边都不出现。
+const rawSelfNavItems = computed((): NavItem[] => buildSelfNavItems(true))
+
+const selfNavItems = computed((): NavItem[] => finalizeNav(rawSelfNavItems.value))
 
 // User navigation items (for regular users)
-const userNavItems = computed((): NavItem[] =>
-  selfNavItems.value.filter((item) => !SUPPLY_NAV_PATHS.has(item.path))
-)
+//
+// 收起态（72px 图标条）下**摊平回扁平列表**，不分组。
+//
+// 不这么做的话那几个子项在收起时根本够不到：handleGroupClick 在 sidebarCollapsed
+// 时直接 return，children 的 v-if 也带着 !sidebarCollapsed——于是「我的订单」
+// 「兑换」这些改版前点得到的图标会凭空消失。管理端一直是这个行为，但它丢的是
+// 二级配置页；用户端丢的是订单和兑换，性质不一样。
+//
+// 而且收起态本来就没有放分组标题的地方（只剩图标），分组在那里不产生任何收益，
+// 纯粹是把可达性换掉了。
+const userNavItems = computed((): NavItem[] => {
+  const grouped = dropEmptyGroups(finalizeNav(groupUserNav(rawSelfNavItems.value)))
+  if (!sidebarCollapsed.value) return grouped
+  return grouped.flatMap((item) => (item.children?.length ? item.children : [item]))
+})
 
 // 供给分组。为空 = 供给功能没开（featureFlag 已经把它滤掉了），
 // 此时整个分组连标题一起不渲染——一个只有标题没有条目的分区比没有更糟。
