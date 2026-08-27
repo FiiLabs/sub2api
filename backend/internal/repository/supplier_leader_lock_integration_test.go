@@ -418,7 +418,23 @@ func TestSupplierThawLeaderLock_AdvisoryLockNoStampedeOnSimultaneousStart(t *tes
 	fleet := newThawFleet(t, leaderLockTestFleetSize, cache, integrationDB)
 	fleet.startAll()
 
+	// 两个同步点缺一不可，早先只等了第一个，于是这条测试在慢机器上偶发失败。
+	//
+	//   1. 所有实例都**尝试**过选主 —— 保证输家已经出局，不会在断言之后才跑起来。
+	//      这个计数在 Redis 失败时就自增（本例的 cache 恒报错），而那发生在
+	//      拿 advisory lock **之前**。
+	//   2. 赢家真的**跑起来**了 —— runs++ 在拿到 advisory lock 之后才发生。
+	//
+	// 只等 1 的话，读 stats 时赢家可能还卡在这两步之间：runs 是 0，
+	// 断言拿到的不是"互斥被破坏"而是"还没开始"。本地机器上这个窗口小到看不见，
+	// CI 的共享 runner 上就张开了——症状是一条与被测逻辑毫无关系的偶发红。
+	//
+	// 等 runs 到 1 之后仍然可以断言"不多于 1"：第 1 步已经保证没有人会后来居上。
 	waitAttempts(t, cache.attemptCount, leaderLockTestFleetSize)
+	require.Eventually(t, func() bool {
+		runs, _ := fleet.repo.stats()
+		return runs >= 1
+	}, leaderLockTestTimeout, 5*time.Millisecond, "拿到 advisory lock 的那个实例始终没有跑起来")
 
 	runs, maxInFlight := fleet.repo.stats()
 	require.Equal(t, 1, runs, "%d 个实例里跑了 %d 轮", leaderLockTestFleetSize, runs)
