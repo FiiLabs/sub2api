@@ -8,7 +8,11 @@
 # =============================================================================
 
 ARG NODE_IMAGE=node:24-alpine
-ARG GOLANG_IMAGE=golang:1.26.5-alpine
+# 必须 >= backend/go.mod 的 `go` 行。构建阶段设了 GOTOOLCHAIN=local，Go 不会
+# 自己去下一个更新的工具链——版本低了就直接失败，而不是悄悄换一个跑起来。
+# 这个失败只在 CI 里出现：本机 go 通常已经够新，`go build ./...` 一路绿灯，
+# 于是 go.mod 抬版本时很容易漏掉这一行。改 go.mod 的 go 版本时记得一起动。
+ARG GOLANG_IMAGE=golang:1.26.6-alpine
 ARG ALPINE_IMAGE=alpine:3.21
 ARG POSTGRES_IMAGE=postgres:18-alpine
 ARG GOPROXY=https://goproxy.cn,direct
