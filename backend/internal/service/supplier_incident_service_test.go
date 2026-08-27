@@ -264,13 +264,31 @@ func TestSupplierIncidentReads_UnavailableWhenNotWired(t *testing.T) {
 // GuardOnboarding
 // ============================================================================
 
-// 闸默认是关的：连查询都不该发出去。
-func TestSupplierIncidentGuard_DisabledByDefault(t *testing.T) {
+// 闸配成 0 时是关的：连查询都不该发出去。
+//
+// 2026-08-27 前这条测的是「默认关」。默认值那天从 0 改成 3（熔断成为
+// 放开账号数上限的对价），但**这条断言要守的性质从来不是那个默认值**，
+// 而是「关着的时候不产生任何数据库查询」——闸关着还去 count 一次，
+// 是在每一次接入上白付一次查询，且没人会发现。所以显式构造一个关闭的配置。
+func TestSupplierIncidentGuard_DisabledByExplicitZero(t *testing.T) {
 	repo := &fakeIncidentRepo{recentCount: 9999}
 	limits := DefaultSupplyOnboardingSettings()
+	limits.MaxIncidentsPerUser = 0
 
 	require.NoError(t, newIncidentSvc(repo, nil).GuardOnboarding(context.Background(), 42, limits))
 	assert.NotContains(t, repo.calls, "count", "闸关着时一次查询都不该发")
+}
+
+// 默认配置下闸是**开着**的——这是放开每人账号数上限的对价。
+//
+// 单独一条而不是并进上面：那条守的是"关着时不查询"，这条守的是"默认不是关的"。
+// 合在一起的话，把默认值改回 0 只会让上面那条继续绿。
+func TestSupplierIncidentGuard_EnabledByDefault(t *testing.T) {
+	repo := &fakeIncidentRepo{recentCount: 9999}
+
+	err := newIncidentSvc(repo, nil).GuardOnboarding(context.Background(), 42, DefaultSupplyOnboardingSettings())
+	require.Error(t, err, "默认配置下熔断该拦住一个已经失效 9999 次的用户")
+	assert.Contains(t, repo.calls, "count")
 }
 
 // 开着且没到线 → 放行；到线 → 拦。边界是 >=。

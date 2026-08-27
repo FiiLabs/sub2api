@@ -20,10 +20,23 @@ func TestDefaultSupplyOnboardingSettings(t *testing.T) {
 
 	// 每人有闸、每 IP 不设闸：这个不对称是这套配置的核心决定（见文件头）。
 	// 一个「默认每 IP 3 个」的世界里，校园网后面的人会在没有任何提示的情况下挂不上号。
-	assert.Equal(t, 5, settings.MaxAccountsPerUser)
+	//
+	// **每人 5 这个数刻意不跟随运营策略。** 运营侧的决定是放开这道闸
+	// （运行时配 0 = 不限），但代码默认值留在 5，因为它同时是故障路径的兜底：
+	// 配置读不出来时退回这里，而那一刻「不限」是错的答案。谁把它改成 0，
+	// 就把一次本该只影响策略的改动变成了 fail-safe → fail-open。
+	assert.Equal(t, 5, settings.MaxAccountsPerUser,
+		"这个默认值兼作故障兜底，不要为了跟随运营策略把它改成 0")
 	assert.Zero(t, settings.MaxAccountsPerIP)
 	assert.True(t, settings.userCapEnabled())
 	assert.False(t, settings.ipCapEnabled())
+
+	// 熔断默认开着：7 天窗口内 3 次失效即停止该用户继续接入。
+	// 与上面那条相反，这个数**是**纯策略——它没有故障兜底的角色，
+	// 所以跟着运营决定走。正常供给者一辈子撞不到这条线，
+	// 往池子里倒坏号的人会被切断。
+	assert.Equal(t, 3, settings.MaxIncidentsPerUser)
+	assert.Equal(t, 24*7, settings.IncidentWindowHours)
 }
 
 func TestSupplyOnboardingSettingsNormalize(t *testing.T) {

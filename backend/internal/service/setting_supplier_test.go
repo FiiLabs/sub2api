@@ -75,13 +75,24 @@ func TestDefaultSupplierSettlementSettingsIsDisabled(t *testing.T) {
 	assert.Equal(t, SupplierShareRatioDefault, settings.ShareRatio)
 	assert.Equal(t, SupplierFreezeHoursDefault, settings.FreezeHours)
 
-	// 冻结窗单独钉死字面量 720，而不是只跟着常量走。
+	// 冻结窗单独钉死字面量，而不是只跟着常量走。
 	//
 	// 上面那一行拿常量比常量，改小默认值它照样绿——而这个值配小了的表现是：
 	// 冻结期过后钱已经付给供给者，此后被拒付平台自吃，且要等到第一笔真实拒付
 	// 才看得见。代码侧只 clamp 上限，拦不住「配小了」，所以这里放一道会响的闸：
-	// 谁改这个数，谁就得在这条断言前停一下，回答"新的值 ≥ 支付通道拒付窗吗"。
-	assert.Equal(t, 720, settings.FreezeHours, "默认冻结窗 30 天；要改先读 docs/two-sided-market.md §6")
+	// 谁改这个数，谁就得在这条断言前停一下，回答"新的值扛得住什么、扛不住什么"。
+	//
+	// **2026-08-27 这道闸响过一次，答案记在这里**：720 → 72。
+	// 扛得住的是盗卡这类明显欺诈（几天内就会被持卡人发现并拒付），那是拒付里
+	// 金额占比最大的一类；扛不住的是长尾拒付，那部分从此由平台自吃。
+	// 换来的是供给者的等待从 30 天降到 3 天——供给是这个市场的瓶颈侧，
+	// 而 30 天的等待在招募时是硬伤。
+	// 正确的长尾工具是比例准备金（还没做），完整推理见常量定义处的注释。
+	//
+	// 下一个改这个数的人：先去查 `payment_disputes.uncovered_basis` 的真实
+	// 累计值。那一列就是这次权衡的记分牌——它明显超出预期，说明 72 太短了。
+	assert.Equal(t, 72, settings.FreezeHours,
+		"默认冻结窗 72 小时；要改先读常量注释里那段权衡，以及 docs/two-sided-market.md §6")
 }
 
 func TestSupplierSettlementSettingsNormalizeClampsGarbage(t *testing.T) {

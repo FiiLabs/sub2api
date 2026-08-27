@@ -33,6 +33,11 @@
 // 每人上限退回默认的 5（比运营配的宽松值更严），每 IP 上限退回不限（比运营配的
 // 值更宽松）。后者看似不 fail-closed，但它是对的——一个因为数据库抖动就把整个
 // 出口网络的人全部挡住的闸，造成的损失比它防的那点刷号大得多。
+//
+// **这条回退语义是每人上限那个默认值存在的全部理由。** 运营侧此刻配的是
+// 0（不限，见常量注释里的取舍），但代码默认值留在 5：默认值在这里回答的不是
+// 「我们想要什么策略」，而是「配置读不出来时先按什么办」。把它改成 0 去跟随
+// 运营策略，会顺带把故障路径从 fail-safe 变成 fail-open，且没有任何症状。
 package service
 
 import (
@@ -94,10 +99,27 @@ const (
 
 // 默认值。
 const (
+	// supplyOnboardingDefaultMaxAccountsPerUser 默认 5。
+	//
+	// **这个默认值刻意不跟随运营策略。** 2026-08-27 的运营决定是放开这道闸
+	// （运行时配 0 = 不限，理由：数量与风险无关，真正的护栏是下面的失效熔断，
+	// 而 5 这道闸挡不住刷号的人、却把专业供给者关在门外）。但**代码默认值
+	// 没有跟着改成 0**，因为它同时是故障路径的兜底：`onboardingSettings()`
+	// 在配置读不出来时退回这里，而那一刻「不限」是错的答案——读不到配置
+	// 意味着一道闸整个消失，不是运营决定不要这道闸。
+	//
+	// 换句话说这个常量回答的是「配置不可用时先按什么办」，不是「我们想要
+	// 什么策略」。5 比运营通常会配的值更严，所以这个方向的回退不会放进
+	// 任何本该被挡住的人。策略值配在 settings 里。
 	supplyOnboardingDefaultMaxAccountsPerUser = 5
 	supplyOnboardingDefaultMaxAccountsPerIP   = 0
-	// supplyOnboardingDefaultMaxIncidents 默认 0 = 熔断关着，理由见结构体上的注释。
-	supplyOnboardingDefaultMaxIncidents = 0
+	// supplyOnboardingDefaultMaxIncidents 默认 3 = 熔断开着（7 天窗口内 3 次失效）。
+	//
+	// 早先是 0（关着）。与上面放开账号数上限是**同一个决定的两半**：
+	// 账号数上限数的是"你有几个号"，与风险无关；失效熔断数的是"你的号坏了几个"，
+	// 那才是真正该被限制的东西。往池子里倒坏号的人会被切断，而正常供给者
+	// 一辈子也撞不到这条线。
+	supplyOnboardingDefaultMaxIncidents = 3
 	// supplyOnboardingDefaultIncidentWindowHours 熔断窗口的默认值：7 天。
 	//
 	// 它在闸关着时也有值，因为运营打开这道闸时最不该同时被要求想清楚窗口该多长。
@@ -134,12 +156,16 @@ type SupplyOnboardingSettings struct {
 	// 挂上去、被上游封掉、解绑、再挂一个。他名下的账号数可以永远是 1。
 	// 这道闸数的是**历史事件**，所以解绑帮不了他。
 	//
-	// # 默认 0（关着）
+	// # 默认 3（开着，7 天窗口）
 	//
-	// 与每 IP 上限同一个理由，但风险更具体：一次上游的大面积封号（同一批订阅
-	// 被批量风控）会在几分钟内给一大群**正常**供给者各记一条事件，而这道闸
+	// 2026-08-27 从 0（关着）改成 3，作为**放开每人账号数上限的对价**：
+	// 数量与风险无关，失效率才有关。前两道闸数的是"你有几个号"，
+	// 这道闸数的是"你的号坏了几个"，那才是真正该被限制的东西。
+	//
+	// 但它有一个真实的误伤场景，运营要知道：一次上游的大面积封号（同一批订阅
+	// 被批量风控）会在几分钟内给一大群**正常**供给者各记一条事件，这道闸
 	// 会紧接着把他们全部挡在门外——症状是"平台在最需要供给的那一刻拒绝了所有供给"。
-	// 它应当在运营看过一段时间真实的事件分布之后再打开。
+	// 真撞上了，临时把它调回 0 是正确的应急动作。
 	MaxIncidentsPerUser int `json:"max_incidents_per_user"`
 	// IncidentWindowHours 上一项往回数多久。0 用默认值（7 天）。
 	//
@@ -148,7 +174,10 @@ type SupplyOnboardingSettings struct {
 	IncidentWindowHours int `json:"incident_window_hours"`
 }
 
-// DefaultSupplyOnboardingSettings 返回默认上限：每人 5 个，每 IP 不限，失效熔断关着。
+// DefaultSupplyOnboardingSettings 返回默认上限：每人 5 个，每 IP 不限，失效熔断开着（7 天 3 次）。
+//
+// 注意每人那个 5 与另外三项性质不同：它兼作故障路径的兜底值，刻意不跟随
+// 运营策略（运营侧配的是 0 = 不限）。详见常量定义处。
 func DefaultSupplyOnboardingSettings() *SupplyOnboardingSettings {
 	return &SupplyOnboardingSettings{
 		MaxAccountsPerUser:  supplyOnboardingDefaultMaxAccountsPerUser,
