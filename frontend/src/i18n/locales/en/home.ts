@@ -36,9 +36,21 @@ export default {
         subtitle:
           'Access frontier models like Claude through a TEE-protected gateway — your data stays private, every call is verifiable, all at 22% of official API pricing.',
         verifyPrivacy: 'Verify Privacy',
+        // 消费侧入口卡的标题。与下面的供给卡是一对,措辞必须同构（都是「我要/我有」
+        // 开头的第一人称短句）：两张卡回答的是同一个问题的两个答案,句式不一致
+        // 会让人以为它们不是并列关系。
+        useAI: 'I want to use AI',
+        // 卡片副文案是 subtitle 的精简版：卡片里放不下一整句带三个从句的话,
+        // 但价格和隐私这两个点必须都在——少一个就变成另一个产品的介绍。
+        useAIDesc:
+          'Call frontier models like Claude through a TEE-protected gateway at 22% of official API pricing — your data stays private and every call is verifiable.',
         // 供给侧入口:锚点到本页的 #supply,不直接跳 /supply——那条路要登录,
         // 未登录用户点过去只会看到登录页,不知道自己错过了什么。
-        shareSubscription: 'Earn by Sharing',
+        shareSubscription: 'I have spare quota',
+        // 三件事按供给者真正会问的顺序说：能赚吗、怎么算、钱怎么拿到手。
+        shareSubscriptionDesc:
+          'Turn idle subscription quota into income: earn a revenue share whenever someone uses it, and withdraw your earnings on-chain.',
+        shareSubscriptionCta: 'See how earning works',
         stats: {
           discount: 'Of Official API Price',
           attested: 'TEE Privacy Protection',

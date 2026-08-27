@@ -15,6 +15,14 @@ export interface SupplyStatus {
   settlement_enabled: boolean
   /** 「URL + API Key」中转接入开没开（M7）。决定接入卡画不画第二个标签页 */
   relay_enabled?: boolean
+  /**
+   * 这个人名下还挂着几个供给账号。
+   *
+   * 控制台靠它**自动**判断该进哪种模式（有号 = 共享者），这样绝大多数人
+   * 永远不需要手动选一次身份。可选是因为旧版本后端不返回这个字段——
+   * 缺省按 0 读，退化成"使用模式"，与没有这个特性时的行为一致。
+   */
+  account_count?: number
 }
 
 /** 下线通道。graceful 可在排空窗内取消，immediate 直接进终态、不可撤销。 */

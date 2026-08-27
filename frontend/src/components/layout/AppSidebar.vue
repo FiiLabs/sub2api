@@ -128,7 +128,16 @@
 
       <!-- Regular User View -->
       <template v-else-if="!appStore.backendModeEnabled">
-        <div class="sidebar-section">
+        <!--
+          APEXONE-EXT: 两个分区的**顺序**由控制台模式决定，内容一个字都不变。
+
+          共享模式下把「共享赚钱」提到最前：那个人每天来这里是为了看收益和管号，
+          让他每次先划过十几个消费侧菜单项才够到自己那一组，等于每天替他确认一次
+          "你是二等公民"。用 v-for 走一遍顺序表而不是把整块 markup 复制两份——
+          复制出来的那份迟早会和原件长得不一样。
+        -->
+        <template v-for="section in userNavSections" :key="section">
+        <div v-if="section === 'consumer'" class="sidebar-section">
           <template v-for="item in userNavItems" :key="item.path">
             <!-- 折叠分组（有 children）：标题只展开/收起，不是可导航路由 -->
             <template v-if="item.children?.length">
@@ -190,6 +199,7 @@
 
         <!-- 共享赚钱。与上面那组是两种相反的意图，所以带标题单独成区；
              供给功能没开时 supplyNavItems 为空，整区不渲染。 -->
+        <template v-else>
         <div v-if="supplyNavItems.length > 0" class="sidebar-section">
           <div class="sidebar-section-title" :class="{ 'sidebar-section-title-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
             <span class="sidebar-section-title-text" :class="{ 'sidebar-section-title-text-collapsed': sidebarCollapsed }">
@@ -211,6 +221,8 @@
             <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">{{ item.label }}</span>
           </router-link>
         </div>
+        </template>
+        </template>
       </template>
     </nav>
 
@@ -940,6 +952,12 @@ const userNavItems = computed((): NavItem[] => {
 // 此时整个分组连标题一起不渲染——一个只有标题没有条目的分区比没有更糟。
 const supplyNavItems = computed((): NavItem[] =>
   selfNavItems.value.filter((item) => SUPPLY_NAV_PATHS.has(item.path))
+)
+
+// 两个分区的渲染顺序。只有顺序随模式变，两组的内容/过滤/开关都不受影响——
+// 模式是"我现在在干哪件事"，不是权限，不该让任何一个入口消失。
+const userNavSections = computed((): ('consumer' | 'supply')[] =>
+  supplyStore.mode === 'sharing' ? ['supply', 'consumer'] : ['consumer', 'supply']
 )
 
 // Personal navigation items (for admin's "My Account" section, without Dashboard).

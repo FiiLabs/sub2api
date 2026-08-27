@@ -73,6 +73,13 @@ type SupplierStatusResponse struct {
 	// RelayEnabled 「URL + API Key」中转接入开没开（M7）。前端靠它决定
 	// 接入卡画不画第二个标签页。
 	RelayEnabled bool `json:"relay_enabled"`
+	// AccountCount 这个人名下还挂着几个供给账号。
+	//
+	// 前端靠它**自动判定**该进哪种控制台模式（有号 = 共享者，进共享模式），
+	// 这样绝大多数人永远不需要手动选一次身份。给的是数量而不是布尔：
+	// 「0 个」和「有几个」在供给侧仪表盘上本来就要显示，多一个布尔等于
+	// 让同一件事有两个来源。
+	AccountCount int `json:"account_count"`
 }
 
 // GetStatus 返回自助接入是否开放。
@@ -81,13 +88,15 @@ type SupplierStatusResponse struct {
 // 前端用它决定要不要显示「连接我的订阅」入口。刻意不返回分组 id 之类的内部配置——
 // 前端需要知道的只是「能不能点」。
 func (h *SupplierHandler) GetStatus(c *gin.Context) {
-	if _, ok := h.currentUserID(c); !ok {
+	userID, ok := h.currentUserID(c)
+	if !ok {
 		return
 	}
 	resp := SupplierStatusResponse{}
 	if h.onboardingService != nil {
 		resp.Enabled = h.onboardingService.IsEnabled(c.Request.Context())
 		resp.RelayEnabled = h.onboardingService.RelayEnabled(c.Request.Context())
+		resp.AccountCount = h.onboardingService.CountAccounts(c.Request.Context(), userID)
 	}
 	if h.creditService != nil {
 		resp.SettlementEnabled = h.creditService.IsEnabled(c.Request.Context())

@@ -77,6 +77,28 @@ describe('AppSidebar two-sided navigation grouping', () => {
     expect(componentSource).toContain('v-if="supplyNavItems.length > 0"')
   })
 
+  it('puts the earning section first — and only — in sharing mode', () => {
+    // 顺序表是唯一的开关。共享模式下那个人每天来这里看的就是收益和号，
+    // 让他每次先划过十几个消费侧条目，等于每天替他确认一次"你是二等公民"。
+    expect(componentSource).toContain(
+      "supplyStore.mode === 'sharing' ? ['supply', 'consumer'] : ['consumer', 'supply']"
+    )
+    expect(componentSource).toContain('v-for="section in userNavSections"')
+    expect(componentSource).toContain(`v-if="section === 'consumer'"`)
+  })
+
+  it('changes only the order, never the contents of either group', () => {
+    // 模式是"我现在在干哪件事"，不是权限：任何一侧的入口都不该因为切模式而消失。
+    // 两个列表的定义里都不能出现 mode。
+    for (const decl of [
+      componentSource.match(/const userNavItems = computed[\s\S]*?\n\}\)/)?.[0],
+      componentSource.match(/const supplyNavItems = computed[\s\S]*?\n\)/)?.[0],
+    ]) {
+      expect(decl).toBeDefined()
+      expect(decl).not.toContain('mode')
+    }
+  })
+
   it('derives both groups from one build so the two lists cannot drift', () => {
     // 两个 computed 各调一次 buildSelfNavItems 的话，特性开关在两次调用之间
     // 变化就会让同一个条目同时出现在两组里、或者两组都没有。

@@ -24,6 +24,12 @@ vi.mock('@/stores', () => ({
   })
 }))
 
+// 供给开关是按用户的后端状态。这个 spec 断言的是**未登录访客**看到的首页，
+// 那时开关读不到，第二张入口卡照常显示（它是获客入口）。
+vi.mock('@/stores/supply', () => ({
+  useSupplyStore: () => ({ enabled: false, loaded: true, ensureStatus: vi.fn() })
+}))
+
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
   return {

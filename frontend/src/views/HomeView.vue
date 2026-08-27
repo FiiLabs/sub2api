@@ -29,17 +29,66 @@
         <p class="mx-auto mb-8 max-w-[460px] text-fluid-base text-gray-500 dark:text-dark-300">
           {{ t('home.landing.hero.subtitle') }}
         </p>
-        <div class="mb-10 flex flex-col gap-2 md:flex-row md:justify-center">
-          <router-link :to="ctaTarget" class="btn btn-primary px-6 py-3 text-fluid-base shadow-lg shadow-primary-500/30">
-            {{ isAuthenticated ? t('home.goToDashboard') : t('home.getStarted') }}
+        <!--
+          双边市场的两个入口,视觉权重相当。
+
+          原来供给入口是三个按钮里的第三个,和「验证隐私」并排——一个次要按钮的
+          外形在说"这是个附加功能",而它是平台的另一半:供给不够,消费侧再多用户
+          也接不住。两张同样大的卡片让访客在第一屏就面对一个真正的分岔:
+          你是来花钱的,还是来赚钱的。
+        -->
+        <div class="mb-6 grid gap-4 text-left md:grid-cols-2">
+          <router-link :to="ctaTarget" :class="entryCardClass" data-testid="home-entry-usage">
+            <div class="mb-2 text-2xl">🚀</div>
+            <div class="mb-1.5 text-fluid-lg font-bold text-gray-900 dark:text-white">
+              {{ t('home.landing.hero.useAI') }}
+            </div>
+            <p class="mb-4 text-fluid-sm leading-relaxed text-gray-500 dark:text-dark-400">
+              {{ t('home.landing.hero.useAIDesc') }}
+            </p>
+            <span class="mt-auto inline-flex items-center gap-1 text-fluid-sm font-semibold text-primary-600 dark:text-primary-400">
+              {{ isAuthenticated ? t('home.goToDashboard') : t('home.getStarted') }}
+              <span aria-hidden="true">→</span>
+            </span>
           </router-link>
-          <router-link to="/proof" :class="outlineBtn">
-            {{ t('home.landing.hero.verifyPrivacy') }}
-          </router-link>
-          <!-- 双边市场的另一半:供给侧入口。锚点而非 /supply,那条路要登录 -->
-          <a href="#supply" :class="outlineBtn" @click.prevent="scrollToSupply">
-            {{ t('home.landing.hero.shareSubscription') }}
+
+          <!--
+            锚点而非 /supply:那条路要登录,未登录用户点过去只会看到登录页,
+            不知道自己错过了什么。
+
+            未登录时**照常显示**——这张卡是获客入口,而访客身上读不到供给开关。
+            登录之后才按开关决定:此时进去撞上"尚未开放"是可预见的死路。
+          -->
+          <a
+            v-if="showSupplyEntry"
+            href="#supply"
+            :class="entryCardClass"
+            data-testid="home-entry-supply"
+            @click.prevent="scrollToSupply"
+          >
+            <div class="mb-2 text-2xl">💰</div>
+            <div class="mb-1.5 text-fluid-lg font-bold text-gray-900 dark:text-white">
+              {{ t('home.landing.hero.shareSubscription') }}
+            </div>
+            <p class="mb-4 text-fluid-sm leading-relaxed text-gray-500 dark:text-dark-400">
+              {{ t('home.landing.hero.shareSubscriptionDesc') }}
+            </p>
+            <span class="mt-auto inline-flex items-center gap-1 text-fluid-sm font-semibold text-primary-600 dark:text-primary-400">
+              {{ t('home.landing.hero.shareSubscriptionCta') }}
+              <span aria-hidden="true">→</span>
+            </span>
           </a>
+        </div>
+
+        <!-- /proof 是这个产品的核心差异化,降级成文字链接而不是删掉:
+             它要证明的东西对已经在读隐私文案的人才有意义,不该跟入口抢注意力。 -->
+        <div class="mb-10">
+          <router-link
+            to="/proof"
+            class="text-fluid-sm font-medium text-gray-500 underline-offset-4 transition-colors hover:text-primary-600 hover:underline dark:text-dark-400 dark:hover:text-primary-400"
+          >
+            {{ t('home.landing.hero.verifyPrivacy') }} →
+          </router-link>
         </div>
         <div class="mx-auto grid max-w-3xl grid-cols-2 gap-2 md:grid-cols-4">
           <div v-for="stat in heroStats" :key="stat.label" :class="cardClass" class="p-4 text-center">
@@ -391,7 +440,9 @@
           </p>
         </div>
 
-        <div class="mt-6 flex justify-center">
+        <!-- 与 hero 那张卡同一条判断:这个按钮真的会把人送进 /supply,
+             功能关着时它通向的是一句"尚未开放"。介绍文字留着——那是产品说明,不是入口。 -->
+        <div v-if="showSupplyEntry" class="mt-6 flex justify-center">
           <router-link :to="supplyTarget" :class="outlineBtn">
             {{ t('home.landing.supply.cta') }}
           </router-link>
@@ -427,7 +478,7 @@
             <router-link to="/proof" :class="outlineBtn">
               {{ t('home.landing.cta.secondary') }}
             </router-link>
-            <a href="#supply" :class="outlineBtn" @click.prevent="scrollToSupply">
+            <a v-if="showSupplyEntry" href="#supply" :class="outlineBtn" @click.prevent="scrollToSupply">
               {{ t('home.landing.cta.supply') }}
             </a>
           </div>
@@ -451,6 +502,7 @@ import type { Directive } from 'vue'
 import { computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore, useAuthStore } from '@/stores'
+import { useSupplyStore } from '@/stores/supply'
 import AppFooter from '@/components/layout/AppFooter.vue'
 import Header from '@/components/layout/Header.vue'
 import StatusIcon from '@/components/icons/StatusIcon.vue'
@@ -461,6 +513,7 @@ const { t } = useI18n()
 
 const appStore = useAppStore()
 const authStore = useAuthStore()
+const supplyStore = useSupplyStore()
 
 // Shared utility class fragments (kept here so the template stays declarative)
 const cardClass =
@@ -473,6 +526,10 @@ const checkItemClass =
   'flex items-start gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-fluid-xs text-gray-700 dark:border-dark-700 dark:bg-dark-900/50 dark:text-dark-200'
 const outlineBtn =
   'inline-flex items-center justify-center rounded-lg border border-gray-300 px-6 py-3 text-fluid-base font-medium text-gray-700 transition-colors hover:border-primary-500 dark:border-dark-600 dark:text-dark-200'
+// 两张入口卡片共用一份样式:权重相当这件事必须由样式本身保证,
+// 分成两份迟早会有一边被"顺手"调大。
+const entryCardClass =
+  'flex flex-col rounded-xl border border-gray-200 bg-white/80 p-6 shadow-card backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-primary-500 hover:shadow-lg dark:border-dark-700 dark:bg-dark-800/60'
 
 // HERO stats
 const heroStats = computed(() => [
@@ -612,6 +669,10 @@ const ctaTarget = computed(() => (isAuthenticated.value ? dashboardPath.value : 
 // /supply 是 requiresAuth 的,未登录直接跳过去只会被守卫弹回登录页
 const supplyTarget = computed(() => (isAuthenticated.value ? '/supply' : '/login'))
 
+// 访客身上读不到供给开关（那是按用户的接口），所以未登录一律显示;
+// 登录之后才用真实开关决定,免得有人从这里点进一个"尚未开放"的页面。
+const showSupplyEntry = computed(() => !isAuthenticated.value || supplyStore.enabled)
+
 // 与 Header 的锚点导航保持同一种滚动手感
 function scrollToSupply() {
   document.getElementById('supply')?.scrollIntoView({ behavior: 'smooth' })
@@ -619,6 +680,12 @@ function scrollToSupply() {
 
 onMounted(() => {
   authStore.checkAuth()
+
+  // 只在登录态问一次。未登录时这个接口必然 401，为了一张反正要显示的卡片
+  // 去打一次注定失败的请求，只会在访客的控制台里留下一条红色报错。
+  if (authStore.isAuthenticated) {
+    void supplyStore.ensureStatus()
+  }
 
   // Ensure public settings are loaded (will use cache if already loaded from injected config)
   if (!appStore.publicSettingsLoaded) {

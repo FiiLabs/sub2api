@@ -1410,6 +1410,9 @@ onMounted(async () => {
     // 让侧边栏与本页共用同一份判断：用户从这里进来时顺手把 store 也刷新一次。
     supplyStore.enabled = status.value.enabled
     supplyStore.settlementEnabled = status.value.settlement_enabled
+    // 账号数一起带过去：一个人接入第一个号之后，控制台该自动变成共享模式，
+    // 而这一页正是他接入的地方——不同步的话他要刷新整个应用才看得到。
+    supplyStore.accountCount = status.value.account_count ?? 0
     supplyStore.loaded = true
     if (status.value.enabled) {
       await loadAll()

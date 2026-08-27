@@ -13,6 +13,30 @@ export default {
     description:
       'Connect your AI subscription. When someone else uses your idle quota, you earn a share of it.',
 
+    // Sharing mode on the console. Kept separate from the /supply page's
+    // wallet.* copy: the same number sits in a different context here — on a
+    // screen mixed with consumption charts, a label has to say which side it is.
+    console: {
+      modeLabel: 'Console',
+      usageMode: 'Usage mode',
+      sharingMode: 'Sharing mode',
+      // Same wording as supply.wallet.available on purpose: one pot of money
+      // must carry one name across pages, or people will think there are two.
+      available: 'Ready to withdraw',
+      availableHint: 'Past the hold period',
+      // Deliberately not "this month": there is no monthly supplier-side
+      // aggregate on the backend, and a label has to describe the number it shows.
+      history: 'Total earned',
+      frozenHint: '{amount} still in the hold period',
+      accounts: 'Accounts in pool',
+      schedulableHint: '{count} currently serving',
+      actionsTitle: 'Quick actions',
+      connect: 'Connect a subscription',
+      connectDesc: 'Put idle quota to work and start earning',
+      withdraw: 'Withdraw',
+      withdrawDesc: 'Move your earnings on-chain'
+    },
+
     disabled: {
       title: 'The supply market is not open yet',
       body: 'This site has no supply pool configured. Once an administrator sets one up, you will be able to connect your subscription here.'

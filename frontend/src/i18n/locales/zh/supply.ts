@@ -11,6 +11,30 @@ export default {
     title: '共享我的订阅',
     description: '把你的 AI 订阅接进来，闲置额度被别人用掉时你按比例分成。',
 
+    // 控制台共享模式。这一组只在 /dashboard 上用，与 /supply 那一页的
+    // wallet.* 分开写：同一个数在两处的**语境**不同——在专门的收益页可以叫
+    // 「累计收益」，在一屏混着趋势图的概览上必须带上"这是共享侧的"这层信息。
+    console: {
+      modeLabel: '控制台',
+      usageMode: '使用模式',
+      sharingMode: '共享模式',
+      // 与 supply.wallet.available 同名同义：同一笔钱在两个页面上必须叫同一个名字，
+      // 否则用户会以为是两笔。
+      available: '待提现收益',
+      availableHint: '已过冻结期，可提现',
+      // 刻意不叫「本月产出」：后端没有按月聚合的供给侧接口，标签说的必须是
+      // 这个数真正的口径，否则它会被拿去算月收入。
+      history: '累计收益',
+      frozenHint: '另有 {amount} 在冻结期内',
+      accounts: '在池账号数',
+      schedulableHint: '{count} 个正在接单',
+      actionsTitle: '快捷操作',
+      connect: '接入订阅',
+      connectDesc: '把闲置订阅挂进来开始赚分成',
+      withdraw: '提现',
+      withdrawDesc: '把待提现收益提到链上'
+    },
+
     disabled: {
       title: '供给市场尚未开放',
       body: '这个站点还没有配置供给池。等管理员配好之后，你就能在这里接入自己的订阅。'

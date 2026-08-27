@@ -1373,3 +1373,44 @@ func marshalKeys(t *testing.T, v any) string {
 	require.NoError(t, err)
 	return string(data)
 }
+
+// ============================================================================
+// CountAccounts —— 控制台模式自动判定的唯一依据
+// ============================================================================
+//
+// 这个数决定供给者登录后落在哪种控制台模式。它的两种错法后果不同，
+// 都不会报错，所以各钉一条：
+//   - 数少了（比如读失败当成 0）→ 供给者被送进消费者控制台，满屏都是与他
+//     无关的东西，而他不知道自己该去哪
+//   - 让读失败冒泡 → 整个 /supply/status 接口挂掉，连带把侧栏入口和接入
+//     卡片一起打没，代价远大于一次模式判定失准
+
+func TestCountAccountsReturnsOwnedCount(t *testing.T) {
+	repo := &supplierOnboardingRepoStub{ownedCount: 3}
+	svc := &SupplierOnboardingService{repo: repo}
+
+	assert.Equal(t, 3, svc.CountAccounts(context.Background(), 7))
+	assert.Contains(t, repo.calls, "CountAccountsByOwner")
+}
+
+func TestCountAccountsFallsBackToZeroInsteadOfFailing(t *testing.T) {
+	// 读失败回 0：判断失准只是默认落到使用模式（安全的答案），
+	// 而让它冒泡会把整个状态接口连坐。
+	repo := &supplierOnboardingRepoStub{ownedCount: 9, ownedCountErr: errors.New("db down")}
+	svc := &SupplierOnboardingService{repo: repo}
+
+	assert.Zero(t, svc.CountAccounts(context.Background(), 7))
+}
+
+func TestCountAccountsIsNilSafeAndRejectsBadUser(t *testing.T) {
+	var nilSvc *SupplierOnboardingService
+	assert.Zero(t, nilSvc.CountAccounts(context.Background(), 7))
+
+	assert.Zero(t, (&SupplierOnboardingService{}).CountAccounts(context.Background(), 7))
+
+	// userID <= 0 不该发查询：那是个没有意义的问题，而它会在未登录路径上
+	// 被问到（handler 取不到身份时已经返回，但服务层不该依赖调用方的纪律）。
+	repo := &supplierOnboardingRepoStub{ownedCount: 5}
+	assert.Zero(t, (&SupplierOnboardingService{repo: repo}).CountAccounts(context.Background(), 0))
+	assert.NotContains(t, repo.calls, "CountAccountsByOwner")
+}

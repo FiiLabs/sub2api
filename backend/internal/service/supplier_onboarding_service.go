@@ -569,6 +569,28 @@ func (s *SupplierOnboardingService) rejectDuplicateSubscription(ctx context.Cont
 	return nil
 }
 
+// CountAccounts 数某个供给者名下还挂着几个号。
+//
+// 与 ListAccounts 分开而不是让前端拿列表的长度：这个数唯一的消费者是
+// 「这个人是不是供给者」这个判断（前端据此自动进共享模式），为它拉一整份
+// 账号列表——每条都要回一次账号仓储、还要解 jsonb 里的观察期状态——
+// 是为一个布尔付一次全表往返。
+//
+// 读失败回 0 而不是报错：判断失败的后果只是默认落到使用模式，
+// 那是个安全的答案；让整个状态接口失败会连带把侧栏和接入入口一起打没。
+func (s *SupplierOnboardingService) CountAccounts(ctx context.Context, userID int64) int {
+	if s == nil || s.repo == nil || userID <= 0 {
+		return 0
+	}
+	owned, err := s.repo.CountAccountsByOwner(ctx, userID)
+	if err != nil {
+		slog.Warn("[SupplierOnboarding] failed to count owned supply accounts",
+			"user_id", userID, "error", err)
+		return 0
+	}
+	return owned
+}
+
 // ListAccounts 列出某个供给者名下的账号。
 func (s *SupplierOnboardingService) ListAccounts(ctx context.Context, userID int64) ([]SupplierAccountView, error) {
 	if s == nil || s.repo == nil || s.accountRepo == nil || userID <= 0 {
