@@ -144,6 +144,30 @@
             <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">{{ item.label }}</span>
           </router-link>
         </div>
+
+        <!-- 共享赚钱。与上面那组是两种相反的意图，所以带标题单独成区；
+             供给功能没开时 supplyNavItems 为空，整区不渲染。 -->
+        <div v-if="supplyNavItems.length > 0" class="sidebar-section">
+          <div class="sidebar-section-title" :class="{ 'sidebar-section-title-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
+            <span class="sidebar-section-title-text" :class="{ 'sidebar-section-title-text-collapsed': sidebarCollapsed }">
+              {{ t('supply.navSection') }}
+            </span>
+          </div>
+
+          <router-link
+            v-for="item in supplyNavItems"
+            :key="item.path"
+            :to="item.path"
+            class="sidebar-link mb-1"
+            :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
+            :title="sidebarCollapsed ? item.label : undefined"
+            @click="handleMenuItemClick(item.path)"
+          >
+            <span v-if="item.iconSvg" class="h-5 w-5 flex-shrink-0 sidebar-svg-icon" v-html="sanitizeSvg(item.iconSvg)"></span>
+            <component v-else :is="item.icon" class="h-5 w-5 flex-shrink-0" />
+            <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">{{ item.label }}</span>
+          </router-link>
+        </div>
       </template>
     </nav>
 
@@ -750,8 +774,29 @@ function finalizeNav(items: NavItem[]): NavItem[] {
   return authStore.isSimpleMode ? visible.filter(item => !item.hideInSimpleMode) : visible
 }
 
+// APEXONE-EXT: 双边市场——供给入口从消费者菜单里分出来单独成组。
+//
+// 这两组回答的是两个相反的问题：「我要用 AI」和「我要靠闲置额度赚钱」。
+// 混在同一列里时，供给入口只是第 12 个图标（夹在推广和个人资料之间），
+// 而它是平台增长的另一半——供给不够，消费侧再多用户也接不住。
+//
+// 用路径集合而不是在 buildSelfNavItems 里分叉：那个函数同时供管理员的
+// 「我的账号」区用，在里面分组会把一个只与普通用户视图有关的呈现决定
+// 泄漏到管理员那边。
+const SUPPLY_NAV_PATHS = new Set(['/supply'])
+
+const selfNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems(true)))
+
 // User navigation items (for regular users)
-const userNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems(true)))
+const userNavItems = computed((): NavItem[] =>
+  selfNavItems.value.filter((item) => !SUPPLY_NAV_PATHS.has(item.path))
+)
+
+// 供给分组。为空 = 供给功能没开（featureFlag 已经把它滤掉了），
+// 此时整个分组连标题一起不渲染——一个只有标题没有条目的分区比没有更糟。
+const supplyNavItems = computed((): NavItem[] =>
+  selfNavItems.value.filter((item) => SUPPLY_NAV_PATHS.has(item.path))
+)
 
 // Personal navigation items (for admin's "My Account" section, without Dashboard).
 // Admins access 可用渠道 from this section just like regular users — there is no

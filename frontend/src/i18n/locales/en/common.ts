@@ -63,7 +63,9 @@ export default {
     disabled: 'Disabled',
 	    total: 'Total',
 	    balance: 'Balance',
-	    availableBalance: 'Available balance',
+	    // Paired naming with the supply side's "Ready to withdraw"
+	    // (supply.wallet.available): different rules, different names.
+	    availableBalance: 'Account balance',
 	    frozenBalance: 'Frozen balance',
 	    totalBalance: 'Total balance',
 	    available: 'Available',

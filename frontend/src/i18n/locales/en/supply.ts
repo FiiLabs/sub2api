@@ -6,6 +6,9 @@ export default {
     // Deliberately NOT placed in common.ts's `nav` namespace — that is an upstream
     // file, and this module is a pure addition.
     navLabel: 'Share Subscription',
+    // Section heading, deliberately different from the item label: the heading
+    // says what this whole block is for (earning), the item says where it goes.
+    navSection: 'Earn by Sharing',
     title: 'Share my subscription',
     description:
       'Connect your AI subscription. When someone else uses your idle quota, you earn a share of it.',
@@ -22,8 +25,13 @@ export default {
 
     wallet: {
       title: 'My earnings',
-      available: 'Available',
-      availableHint: 'Past the freeze window; can be spent',
+      // Deliberately NOT "Available balance" — that name belongs to the
+      // consumer top-up balance (common.availableBalance). A user who both
+      // supplies and consumes would otherwise see two "available balances"
+      // governed by entirely different rules: one is topped up and can only be
+      // spent; this one is earned and can be withdrawn on-chain.
+      available: 'Ready to withdraw',
+      availableHint: 'Past the freeze window; can be withdrawn or spent',
       frozen: 'Frozen',
       frozenHint: 'Moves to available automatically once the freeze window passes',
       history: 'Total earned',

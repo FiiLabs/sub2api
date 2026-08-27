@@ -63,7 +63,9 @@ export default {
     disabled: '已禁用',
 	    total: '总计',
 	    balance: '余额',
-	    availableBalance: '可用余额',
+	    // 与供给侧的「待提现收益」（supply.wallet.available）配对命名：
+	    // 两笔钱的规则不同，名字就不能一样。
+	    availableBalance: '账户余额',
 	    frozenBalance: '冻结金额',
 	    totalBalance: '总余额',
 	    available: '可用',
