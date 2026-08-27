@@ -151,6 +151,41 @@ describe('DashboardView console modes', () => {
     wrapper.unmount()
   })
 
+  it('walks a zero-account sharer through the three steps', async () => {
+    // 一个号都没挂的人，上面那一格必然是四个 0。那不是"我今天没赚到"，
+    // 是"我还没开始"——两句话之间的差别只能由这张卡来说。
+    holder.store.mode = 'sharing'
+    supplyApi.listAccounts.mockResolvedValue([])
+
+    const wrapper = await mountDashboard()
+
+    expect(wrapper.find('[data-testid="supply-guide-card"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="supply-guide-cta"]').exists()).toBe(true)
+    // 精简版也要带那句免责：只在完整页出现的免责，等于默认大多数人读不到。
+    expect(wrapper.get('[data-testid="supply-guide-disclaimer"]').text()).toBe('supply.guide.after3')
+
+    wrapper.unmount()
+  })
+
+  it('does not lecture someone who already connected an account', async () => {
+    holder.store.mode = 'sharing'
+
+    const wrapper = await mountDashboard()
+
+    expect(wrapper.find('[data-testid="supply-guide-card"]').exists()).toBe(false)
+
+    wrapper.unmount()
+  })
+
+  it('keeps the guide out of usage mode entirely', async () => {
+    // 消费者看到的控制台一个字都不该变——他没有供给账号这件事在这里没有意义。
+    const wrapper = await mountDashboard()
+
+    expect(wrapper.find('[data-testid="supply-guide-card"]').exists()).toBe(false)
+
+    wrapper.unmount()
+  })
+
   it('shows zeros instead of blowing up when the supply endpoints fail', async () => {
     holder.store.mode = 'sharing'
     supplyApi.getWallet.mockRejectedValue(new Error('500'))
@@ -159,6 +194,9 @@ describe('DashboardView console modes', () => {
     const wrapper = await mountDashboard()
 
     expect(wrapper.get('[data-testid="supply-stat-available"]').text()).toContain('0.00')
+    // 接口挂了时账号数停在初值 0，但那是"不知道"不是"零个"：
+    // 拿它当"这人还没接入"，会对着一个挂了三个号的老供给者讲"三步开始赚钱"。
+    expect(wrapper.find('[data-testid="supply-guide-card"]').exists()).toBe(false)
 
     wrapper.unmount()
   })

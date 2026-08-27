@@ -73,6 +73,11 @@ type SupplierStatusResponse struct {
 	// RelayEnabled 「URL + API Key」中转接入开没开（M7）。前端靠它决定
 	// 接入卡画不画第二个标签页。
 	RelayEnabled bool `json:"relay_enabled"`
+	// ShareRatio 当前分成比例（0.8 = 80%）。0 = 读不到，界面据此不显示。
+	//
+	// 下发而不是让前端写死：它是运营随时可改的设置，而写死的那个数会在
+	// 运营改配置的那一刻变成一句谎话——对着一个正在决定要不要挂号的人。
+	ShareRatio float64 `json:"share_ratio"`
 	// AccountCount 这个人名下还挂着几个供给账号。
 	//
 	// 前端靠它**自动判定**该进哪种控制台模式（有号 = 共享者，进共享模式），
@@ -100,6 +105,7 @@ func (h *SupplierHandler) GetStatus(c *gin.Context) {
 	}
 	if h.creditService != nil {
 		resp.SettlementEnabled = h.creditService.IsEnabled(c.Request.Context())
+		resp.ShareRatio = h.creditService.ShareRatio(c.Request.Context())
 	}
 	response.Success(c, resp)
 }

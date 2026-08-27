@@ -63,6 +63,50 @@ export default {
       refresh: 'Refresh'
     },
 
+    // Onboarding guide, written for someone who just landed here and has no
+    // idea what they are supposed to do.
+    //
+    // Three self-imposed rules:
+    //   1. No amounts, no "earn $X a month", no projected figures — the only
+    //      things we can commit to are the revenue share and how withdrawals
+    //      work. Any number here would be read as a promise, and the day it is
+    //      not met, the whole supply side stops trusting us. after3 is that
+    //      rule stated out loud.
+    //   2. Every step says why it exists and how long it takes, the review
+    //      window above all: a new account not taking traffic is by design, and
+    //      unexplained it reads as "I connected it and nothing happened".
+    //   3. No comparison against any third-party service.
+    guide: {
+      title: 'Start earning in three steps',
+      subtitle:
+        'You already pay for a Claude subscription. Share the quota you do not use, and you earn a share of it whenever someone else does.',
+      step1: {
+        title: 'Accept the supplier agreement',
+        desc: 'A one-time step. The agreement spells out how your data is handled and what you take on as a supplier.'
+      },
+      step2: {
+        title: 'Connect your subscription',
+        desc: 'An authorized connection (OAuth) is recommended — requests reach Anthropic through the encrypted platform gateway and never pass through any device of yours. You can also point us at a compatible API endpoint.'
+      },
+      step3: {
+        title: 'Wait for verification',
+        desc: 'A newly connected account starts in a review window: the platform probes it periodically and it only starts serving after consecutive passes. Earning nothing during that window is normal.'
+      },
+      afterTitle: 'Once it starts serving',
+      after1: 'Every request is split from what the platform charges the user; the ratio is shown in the connect card below.',
+      after2: 'Earnings sit in a hold period, after which you can withdraw them to your on-chain address with zero fees.',
+      // This line is the floor. It must not be deleted or softened. It answers
+      // "how much will I actually make" — and if we do not answer it honestly,
+      // the reader will invent a number instead.
+      after3:
+        'What you actually earn depends on real demand on the platform. The platform is still early, and early earnings may be very limited — what we commit to is the revenue share, not an amount.',
+      docsCta: 'Read the full guide',
+      docsHref: 'https://docs.apex1.us/earn/share-subscription/',
+      // Button on the compact console version. There is no connect form on that
+      // page, so the only meaningful action is to send the person over.
+      cta: 'Connect now'
+    },
+
     // Four states, four sentences: unpublished / never accepted / accepted an
     // older version / accepted. Telling someone who did click accept to
     // "accept first" reads as a broken system, hence the separate updatedTitle.
@@ -83,6 +127,9 @@ export default {
     connect: {
       title: 'Connect a subscription',
       description: 'Two steps: authorize, then paste the code back here.',
+      // Served by the backend rather than hardcoded: it is an operator setting, and a
+      // hardcoded number becomes a lie the moment operations changes it.
+      shareRatio: 'Current revenue share: you keep {ratio} of every fee the platform charges the user.',
       start: 'Connect my subscription',
       starting: 'Generating authorization link…',
       step1: 'Step 1 — authorize in a new tab',

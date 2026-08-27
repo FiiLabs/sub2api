@@ -82,3 +82,18 @@ func TestSupplierCreditServiceListLedgerPropagatesRepoError(t *testing.T) {
 	assert.Nil(t, entries)
 	assert.Zero(t, total)
 }
+
+// TestShareRatio_UnreadableSettingsYieldZero 钉住 ShareRatio 的失败语义。
+//
+// 这个数会被供给者界面直接显示成「你拿 X%」，所以它的失败方式必须是**闭嘴**，
+// 不是猜。回 0 是与调用方约好的「我说不出」信号，界面据此整块不画；
+// 若有人日后改成回 SupplierShareRatioDefault「让它有个合理的值」，界面就会在
+// 一台压根没配好的部署上，对着一个正在决定要不要挂号的人报一个平台并不会兑现的比例。
+func TestShareRatio_UnreadableSettingsYieldZero(t *testing.T) {
+	// 两条 nil 路径分开断言：service 本身为 nil（未装配）和 settingService 为 nil
+	// （装配了但没接设置源）是两种不同的部署事故，都不该把默认值当成真实配置报出去。
+	var nilSvc *SupplierCreditService
+	assert.Zero(t, nilSvc.ShareRatio(context.Background()))
+
+	assert.Zero(t, (&SupplierCreditService{}).ShareRatio(context.Background()))
+}

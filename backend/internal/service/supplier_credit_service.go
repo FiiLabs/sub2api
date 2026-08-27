@@ -34,6 +34,25 @@ func (s *SupplierCreditService) IsEnabled(ctx context.Context) bool {
 	return s.settingService.GetSupplierSettlementSettings(ctx).Enabled
 }
 
+// ShareRatio 当前分成比例，给供给者界面**如实显示**用。
+//
+// 存在的理由是一条已经踩过的坑：这个数早先只写死在前端文案和文档里，而它其实是
+// 运营随时可改的设置。运营改了、文案没改，界面就会对着供给者报一个错的比例——
+// 而这恰恰是他决定要不要挂号时唯一在意的数字。
+//
+// 读不到时回 0，调用方据此**不显示**（而不是显示一个 0%）：说不出比例
+// 比说一个错的比例好，后者会被当成承诺。
+func (s *SupplierCreditService) ShareRatio(ctx context.Context) float64 {
+	if s == nil || s.settingService == nil {
+		return 0
+	}
+	settings := s.settingService.GetSupplierSettlementSettings(ctx)
+	if settings == nil {
+		return 0
+	}
+	return settings.ShareRatio
+}
+
 // GetWallet 读钱包快照。
 //
 // 读之前先解冻一次（照抄 affiliate 的懒解冻）：供给者点开页面时看到的

@@ -46,7 +46,10 @@
         </div>
 
         <!-- ===================== 收益 ===================== -->
-        <div class="space-y-3">
+        <!-- 这几个 data-testid 是给排序护栏用的（见 SupplyView.layout.spec.ts）：
+             区块顺序是这一页唯一一处"看起来无所谓、改回去也没人报错"的设计，
+             所以它必须有一条会红的测试钉着。 -->
+        <div class="space-y-3" data-testid="supply-wallet-card">
           <div class="flex items-center justify-between">
             <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('supply.wallet.title') }}</h3>
             <button class="btn btn-secondary btn-sm" :disabled="refreshing" @click="refreshAll">
@@ -90,10 +93,454 @@
           </div>
         </div>
 
+        <!-- ===================== 新手引导 ===================== -->
+        <!--
+          只对**一个号都没挂**的人显示，而不是常驻。
+          对已经接入过的人，这三步不含任何新信息；常驻只会把他真正要看的东西
+          （我的号在不在接单、赚了多少）往下推一屏，而那是他每次进来的唯一目的。
+
+          位置在钱包卡之后、接入卡之前：钱包说的是"我现在有多少"，引导回答紧跟着
+          的那个问题——"怎么让这几个数不是 0"，再往下就是他要动手的接入卡。
+        -->
+        <div v-if="accounts.length === 0" class="card p-6" data-testid="supply-guide-card">
+          <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('supply.guide.title') }}</h3>
+          <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ t('supply.guide.subtitle') }}</p>
+
+          <!-- 编号是圆圈里的数字而不是 list-decimal：这三步有先后依赖（没同意协议
+               就走不到接入），把序号做成看得见的实体，比一个默认的列表标记更难被跳读。 -->
+          <ol class="mt-5 space-y-4">
+            <li
+              v-for="step in guideSteps"
+              :key="step.n"
+              class="flex gap-3"
+              :data-testid="`supply-guide-step-${step.n}`"
+            >
+              <span
+                class="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-primary-100 text-sm font-semibold text-primary-700 dark:bg-primary-900/30 dark:text-primary-300"
+              >
+                {{ step.n }}
+              </span>
+              <div class="min-w-0">
+                <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t(step.titleKey) }}</p>
+                <p class="mt-0.5 text-sm text-gray-500 dark:text-dark-400">{{ t(step.descKey) }}</p>
+              </div>
+            </li>
+          </ol>
+
+          <div class="mt-5 border-t border-gray-100 pt-4 dark:border-dark-800">
+            <p class="text-sm font-medium text-gray-800 dark:text-gray-100">{{ t('supply.guide.afterTitle') }}</p>
+            <ul class="mt-2 space-y-1.5 text-sm text-gray-500 dark:text-dark-400">
+              <li class="flex gap-2"><span aria-hidden="true">·</span><span>{{ t('supply.guide.after1') }}</span></li>
+              <li class="flex gap-2"><span aria-hidden="true">·</span><span>{{ t('supply.guide.after2') }}</span></li>
+            </ul>
+
+            <!-- 中性底色 + 加重字重，刻意**不用**红/黄的警告框：这句话不是风险提示，
+                 是对"我能赚多少"的如实回答。做成警告色会让人以为有什么东西可能出错；
+                 做成一行灰色小字又会被整段跳过——而它恰恰是最不该被跳过的那句。 -->
+            <p
+              class="mt-3 rounded-xl bg-gray-50 px-4 py-3 text-sm font-medium text-gray-700 dark:bg-dark-900 dark:text-gray-300"
+              data-testid="supply-guide-disclaimer"
+            >
+              {{ t('supply.guide.after3') }}
+            </p>
+
+            <a
+              class="mt-3 inline-flex items-center gap-1 text-sm text-primary-600 hover:underline dark:text-primary-400"
+              :href="t('supply.guide.docsHref')"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="supply-guide-docs"
+            >
+              <Icon name="externalLink" size="sm" />
+              <span>{{ t('supply.guide.docsCta') }}</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- ===================== 接入 ===================== -->
+        <div class="card p-6" data-testid="supply-connect-card">
+          <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('supply.connect.title') }}</h3>
+          <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ t('supply.connect.description') }}</p>
+
+          <!-- 当前分成比例。引导卡里那句「比例见下方接入卡」指的就是这里——在这块
+               存在之前，那句话把新用户指向了一个空位（比例只在流水表格里出现，
+               而没挂过号的人根本没有流水）。读不到比例时整块不画：说不出这个数，
+               比说一个错的好，因为它会被当成承诺。 -->
+          <p
+            v-if="shareRatioText"
+            class="mt-2 text-sm font-medium text-primary-700 dark:text-primary-300"
+            data-testid="supply-connect-share-ratio"
+          >
+            {{ t('supply.connect.shareRatio', { ratio: shareRatioText }) }}
+          </p>
+
+          <!-- 协议门禁。整块挡在接入按钮之前，而不是做成提交时的一个勾选框：
+               服务端在 StartOAuth 和 CompleteOAuth 上都会拒绝没同意的人，界面
+               把按钮留着只会让他跑完一整遍上游授权之后才被告知。 -->
+          <div
+            v-if="!agreement.published"
+            class="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/40 dark:bg-amber-900/20"
+            data-testid="supply-agreement-unpublished"
+          >
+            <p class="text-sm font-medium text-amber-800 dark:text-amber-200">
+              {{ t('supply.agreement.unpublishedTitle') }}
+            </p>
+            <p class="mt-1 text-sm text-amber-700 dark:text-amber-300">{{ t('supply.agreement.unpublishedBody') }}</p>
+          </div>
+
+          <div v-else-if="!agreement.accepted" class="mt-4 space-y-3" data-testid="supply-agreement-gate">
+            <!-- 「协议改版了」与「你还没同意过」是两句不同的话：对一个明明点过同意的人
+                 说"请先同意"，他会以为系统坏了。 -->
+            <p class="text-sm font-medium text-gray-800 dark:text-gray-100">
+              {{ agreement.accepted_version ? t('supply.agreement.updatedTitle') : t('supply.agreement.title') }}
+            </p>
+            <p class="text-xs text-gray-400 dark:text-dark-500">
+              {{ t('supply.agreement.version', { version: agreement.version }) }}
+            </p>
+
+            <!-- 正文按纯文本渲染（whitespace-pre-wrap + 插值），**不用 v-html**：
+                 这份文本来自管理端表单，从别处粘来的条款里的 <script> 不该因为
+                 它是"协议"就获得执行权。 -->
+            <div
+              v-if="agreement.body"
+              class="max-h-64 overflow-y-auto whitespace-pre-wrap rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300"
+              data-testid="supply-agreement-body"
+            >{{ agreement.body }}</div>
+
+            <a
+              v-if="agreement.url"
+              class="inline-flex items-center gap-1 text-sm text-primary-600 hover:underline dark:text-primary-400"
+              :href="agreement.url"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Icon name="externalLink" size="sm" />
+              <span>{{ t('supply.agreement.openFullText') }}</span>
+            </a>
+
+            <label class="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input
+                v-model="agreementChecked"
+                class="mt-0.5"
+                type="checkbox"
+                data-testid="supply-agreement-checkbox"
+              />
+              <span>{{ t('supply.agreement.checkbox', { version: agreement.version }) }}</span>
+            </label>
+
+            <button
+              class="btn btn-primary"
+              :disabled="!agreementChecked || accepting"
+              data-testid="supply-agreement-accept"
+              @click="acceptAgreement"
+            >
+              <Icon name="check" size="sm" />
+              <span>{{ accepting ? t('supply.agreement.accepting') : t('supply.agreement.accept') }}</span>
+            </button>
+          </div>
+
+          <template v-else>
+            <p class="mt-3 text-xs text-gray-400 dark:text-dark-500" data-testid="supply-agreement-accepted">
+              {{
+                t('supply.agreement.acceptedAt', {
+                  version: agreement.version,
+                  time: agreement.accepted_at ? formatDateTime(agreement.accepted_at) : '-',
+                })
+              }}
+            </p>
+
+            <button
+              v-if="!pendingAuth"
+              class="btn btn-primary mt-4"
+              :disabled="starting"
+              data-testid="supply-start-oauth"
+              @click="startOAuth"
+            >
+              <Icon name="plus" size="sm" />
+              <span>{{ starting ? t('supply.connect.starting') : t('supply.connect.start') }}</span>
+            </button>
+
+            <div v-else class="mt-4 space-y-4">
+            <div class="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-900">
+              <p class="text-sm font-medium text-gray-800 dark:text-gray-100">{{ t('supply.connect.step1') }}</p>
+              <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ t('supply.connect.step1Hint') }}</p>
+              <div class="mt-3 flex flex-col gap-2 sm:flex-row">
+                <a
+                  class="btn btn-primary btn-sm"
+                  :href="pendingAuth.auth_url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Icon name="externalLink" size="sm" />
+                  <span>{{ t('supply.connect.openAuthUrl') }}</span>
+                </a>
+                <button class="btn btn-secondary btn-sm" @click="copyAuthUrl">
+                  <Icon name="copy" size="sm" />
+                  <span>{{ t('supply.connect.copyAuthUrl') }}</span>
+                </button>
+              </div>
+              <p class="mt-3 text-xs text-gray-400 dark:text-dark-500">{{ t('supply.connect.expiryHint') }}</p>
+            </div>
+
+            <div class="space-y-3">
+              <p class="text-sm font-medium text-gray-800 dark:text-gray-100">{{ t('supply.connect.step2') }}</p>
+              <div>
+                <label class="input-label" for="supply-code">{{ t('supply.connect.codeLabel') }}</label>
+                <input
+                  id="supply-code"
+                  v-model="authCode"
+                  class="input"
+                  type="text"
+                  autocomplete="off"
+                  :placeholder="t('supply.connect.codePlaceholder')"
+                  data-testid="supply-auth-code"
+                />
+              </div>
+              <div>
+                <label class="input-label" for="supply-name">{{ t('supply.connect.nameLabel') }}</label>
+                <input
+                  id="supply-name"
+                  v-model="accountName"
+                  class="input"
+                  type="text"
+                  :placeholder="t('supply.connect.namePlaceholder')"
+                />
+              </div>
+              <p class="text-xs text-gray-400 dark:text-dark-500">{{ t('supply.connect.pendingHint') }}</p>
+              <div class="flex gap-2">
+                <button
+                  class="btn btn-primary"
+                  :disabled="submitting"
+                  data-testid="supply-complete-oauth"
+                  @click="completeOAuth"
+                >
+                  <Icon name="check" size="sm" />
+                  <span>{{ submitting ? t('supply.connect.submitting') : t('supply.connect.submit') }}</span>
+                </button>
+                <button class="btn btn-secondary" :disabled="submitting" @click="cancelAuth">
+                  {{ t('supply.connect.cancel') }}
+                </button>
+              </div>
+            </div>
+            </div>
+
+            <!-- ===== 中转接入（M7），管理端开关控制 =====
+                 与 OAuth 并排的第二条路：填一个 Anthropic 兼容端点 + API Key。
+                 信任提示必须在提交按钮之前：平台会把**消费者的请求**转发到他
+                 填的服务器上，这件事得在他交出端点之前说清，而不是写进事后条款。 -->
+            <div
+              v-if="status.relay_enabled"
+              class="mt-6 border-t border-gray-100 pt-4 dark:border-dark-800"
+              data-testid="supply-relay-section"
+            >
+              <h4 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('supply.relay.title') }}</h4>
+              <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">{{ t('supply.relay.description') }}</p>
+              <p class="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-700 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-300">
+                {{ t('supply.relay.trustNotice') }}
+              </p>
+
+              <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                <div class="sm:col-span-2">
+                  <label class="input-label" for="relay-base-url">{{ t('supply.relay.baseUrlLabel') }}</label>
+                  <input
+                    id="relay-base-url"
+                    v-model="relayForm.base_url"
+                    class="input font-mono text-xs"
+                    type="text"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="https://relay.example.com"
+                    data-testid="supply-relay-base-url"
+                  />
+                  <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">{{ t('supply.relay.baseUrlHint') }}</p>
+                </div>
+                <div class="sm:col-span-2">
+                  <label class="input-label" for="relay-api-key">{{ t('supply.relay.apiKeyLabel') }}</label>
+                  <input
+                    id="relay-api-key"
+                    v-model="relayForm.api_key"
+                    class="input font-mono text-xs"
+                    type="password"
+                    autocomplete="off"
+                    data-testid="supply-relay-api-key"
+                  />
+                </div>
+                <div class="sm:col-span-2">
+                  <label class="input-label" for="relay-name">{{ t('supply.relay.nameLabel') }}</label>
+                  <input
+                    id="relay-name"
+                    v-model="relayForm.name"
+                    class="input"
+                    type="text"
+                    :placeholder="t('supply.relay.namePlaceholder')"
+                    data-testid="supply-relay-name"
+                  />
+                </div>
+              </div>
+
+              <button
+                class="btn btn-primary mt-3"
+                :disabled="submittingRelay"
+                data-testid="supply-relay-submit"
+                @click="submitRelay"
+              >
+                {{ submittingRelay ? t('supply.relay.submitting') : t('supply.relay.submit') }}
+              </button>
+              <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">{{ t('supply.relay.probeHint') }}</p>
+            </div>
+          </template>
+        </div>
+
+        <!-- ===================== 我的号 ===================== -->
+        <div class="card p-6" data-testid="supply-accounts-card">
+          <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('supply.accounts.title') }}</h3>
+          <!-- 两条下线通道的边界，写在表格上方而不是塞进按钮 tooltip：
+               "已经在流的请求停不掉"是用户唯一会因此投诉的点。 -->
+          <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ t('supply.accounts.pauseHint') }}</p>
+
+          <p v-if="accounts.length === 0" class="mt-4 text-sm text-gray-500 dark:text-dark-400">
+            {{ t('supply.accounts.empty') }}
+          </p>
+
+          <div v-else class="mt-4 overflow-x-auto">
+            <table class="min-w-full text-sm">
+              <thead>
+                <tr class="border-b border-gray-200 text-left text-xs uppercase text-gray-500 dark:border-dark-700 dark:text-dark-400">
+                  <th class="px-3 py-2">{{ t('supply.accounts.name') }}</th>
+                  <th class="px-3 py-2">{{ t('supply.accounts.platform') }}</th>
+                  <th class="px-3 py-2">{{ t('supply.accounts.state') }}</th>
+                  <th class="px-3 py-2">{{ t('supply.accounts.status') }}</th>
+                  <th class="px-3 py-2">{{ t('supply.accounts.lastUsedAt') }}</th>
+                  <th class="px-3 py-2">{{ t('supply.accounts.createdAt') }}</th>
+                  <th class="px-3 py-2 text-right">{{ t('supply.accounts.actions') }}</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-100 dark:divide-dark-800">
+                <tr v-for="account in accounts" :key="account.id" :data-testid="`supply-account-${account.id}`">
+                  <td class="px-3 py-3">
+                    <p class="font-medium text-gray-900 dark:text-white">{{ account.name }}</p>
+                    <p v-if="account.email_address" class="text-xs text-gray-400 dark:text-dark-500">
+                      {{ account.email_address }}
+                    </p>
+                  </td>
+                  <td class="px-3 py-3 text-gray-700 dark:text-gray-300">{{ account.platform }}</td>
+                  <td class="px-3 py-3">
+                    <span class="rounded-full px-2 py-0.5 text-xs font-medium" :class="stateBadgeClass(account.supply_state)">
+                      {{ stateLabel(account.supply_state) }}
+                    </span>
+                    <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">
+                      {{ account.schedulable ? t('supply.accounts.schedulable') : t('supply.accounts.notSchedulable') }}
+                    </p>
+
+                    <!-- 观察期进度。两个判据分开显示：用户要能分辨"还在等时间"和
+                         "我的号连不上"——后者只有他自己能修。 -->
+                    <template v-if="account.supply_state === 'pending_review'">
+                      <p v-if="account.probe_passes > 0" class="mt-1 text-xs text-gray-400 dark:text-dark-500">
+                        {{ t('supply.accounts.probePasses', { passes: account.probe_passes }) }}
+                      </p>
+                      <p v-if="account.eligible_at" class="mt-1 text-xs text-gray-400 dark:text-dark-500">
+                        {{ t('supply.accounts.eligibleAt', { time: formatDateTime(account.eligible_at) }) }}
+                      </p>
+                      <p v-if="account.probe_error" class="mt-1 max-w-xs text-xs text-red-500">
+                        {{ t('supply.accounts.probeError', { reason: account.probe_error }) }}
+                      </p>
+                    </template>
+
+                    <p
+                      v-if="account.supply_state === 'draining' && account.drain_until"
+                      class="mt-1 text-xs text-amber-600 dark:text-amber-400"
+                    >
+                      {{ t('supply.accounts.drainUntil', { time: formatDateTime(account.drain_until) }) }}
+                    </p>
+                  </td>
+                  <td class="px-3 py-3">
+                    <span class="text-gray-700 dark:text-gray-300">{{ account.status }}</span>
+                    <p v-if="account.error_message" class="mt-1 max-w-xs text-xs text-red-500">
+                      {{ account.error_message }}
+                    </p>
+                  </td>
+                  <td class="px-3 py-3 text-gray-500 dark:text-dark-400">
+                    {{ account.last_used_at ? formatDateTime(account.last_used_at) : t('supply.accounts.never') }}
+                  </td>
+                  <td class="px-3 py-3 text-gray-500 dark:text-dark-400">{{ formatDateTime(account.created_at) }}</td>
+                  <td class="px-3 py-3 text-right">
+                    <!-- 三种状态三套动作。draining 特殊在它同时能"反悔"和"别等了"，
+                         所以那两个按钮必须同时在场，否则用户只能干等排空窗。 -->
+                    <div class="flex flex-wrap justify-end gap-2">
+                      <template v-if="account.supply_state === 'retired'">
+                        <button
+                          class="btn btn-secondary btn-sm"
+                          :disabled="mutatingId === account.id"
+                          :data-testid="`supply-resume-${account.id}`"
+                          @click="resumeAccount(account)"
+                        >
+                          {{ mutatingId === account.id ? t('supply.accounts.resuming') : t('supply.accounts.resume') }}
+                        </button>
+                      </template>
+                      <template v-else-if="account.supply_state === 'draining'">
+                        <button
+                          class="btn btn-secondary btn-sm"
+                          :disabled="mutatingId === account.id"
+                          :data-testid="`supply-cancel-pause-${account.id}`"
+                          @click="resumeAccount(account)"
+                        >
+                          {{ mutatingId === account.id ? t('supply.accounts.resuming') : t('supply.accounts.cancelPause') }}
+                        </button>
+                        <button
+                          class="btn btn-secondary btn-sm"
+                          :disabled="mutatingId === account.id"
+                          :data-testid="`supply-pause-immediate-${account.id}`"
+                          @click="pauseAccount(account, 'immediate')"
+                        >
+                          {{ mutatingId === account.id ? t('supply.accounts.pausing') : t('supply.accounts.pauseNow') }}
+                        </button>
+                      </template>
+                      <template v-else>
+                        <button
+                          class="btn btn-secondary btn-sm"
+                          :disabled="mutatingId === account.id"
+                          :data-testid="`supply-pause-${account.id}`"
+                          @click="pauseAccount(account, 'graceful')"
+                        >
+                          {{ mutatingId === account.id ? t('supply.accounts.pausing') : t('supply.accounts.pause') }}
+                        </button>
+                        <button
+                          class="btn btn-secondary btn-sm"
+                          :disabled="mutatingId === account.id"
+                          :data-testid="`supply-pause-immediate-${account.id}`"
+                          @click="pauseAccount(account, 'immediate')"
+                        >
+                          {{ mutatingId === account.id ? t('supply.accounts.pausing') : t('supply.accounts.pauseNow') }}
+                        </button>
+                      </template>
+                      <!-- 解绑对所有状态都在场，而且不随状态变化。
+                           「撤回自己的授权」不该有任何一个状态是够不着的——包括
+                           已经下线的号，那正是最该把凭证收回去的时候。 -->
+                      <button
+                        class="btn btn-danger btn-sm"
+                        :disabled="mutatingId === account.id"
+                        :data-testid="`supply-detach-${account.id}`"
+                        @click="detachAccount(account)"
+                      >
+                        {{ mutatingId === account.id ? t('supply.accounts.detaching') : t('supply.accounts.detach') }}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <!-- ===================== 提现 ===================== -->
         <!--
-          放在收益卡片正下方，紧挨着"可用余额"那个数：提现回答的就是"这个数怎么变成钱"。
-          隔着接入和账号表格才出现，会让人以为它属于别的功能。
+          排在接入和账号之后，而不是紧跟着钱包。
+          页面的第一屏要回答"怎么开始赚"，不是"怎么把钱取走"：对一个还没接入任何
+          号的人，提现表单里的每一个控件都是他此刻按不动的——余额是 0、地址没绑、
+          提交必然被拒。把它放在第一眼，等于用一屏他做不了的事挡住他唯一该做的事。
+
+          往下挪不影响已经在赚的人：他们进这一页是带着"取钱"这个目的来的，会往下找；
+          而新用户不会去找一个他还不知道自己需要的东西。
 
           整块在提现没开时**不隐藏**，而是显示一句为什么。隐藏等于让供给者对着一个
           只增不减的余额自己猜，而"暂未开放"和"渠道维护中"是两句不同的话（见下）。
@@ -417,371 +864,8 @@
           </div>
         </div>
 
-        <!-- ===================== 接入 ===================== -->
-        <div class="card p-6">
-          <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('supply.connect.title') }}</h3>
-          <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ t('supply.connect.description') }}</p>
-
-          <!-- 协议门禁。整块挡在接入按钮之前，而不是做成提交时的一个勾选框：
-               服务端在 StartOAuth 和 CompleteOAuth 上都会拒绝没同意的人，界面
-               把按钮留着只会让他跑完一整遍上游授权之后才被告知。 -->
-          <div
-            v-if="!agreement.published"
-            class="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/40 dark:bg-amber-900/20"
-            data-testid="supply-agreement-unpublished"
-          >
-            <p class="text-sm font-medium text-amber-800 dark:text-amber-200">
-              {{ t('supply.agreement.unpublishedTitle') }}
-            </p>
-            <p class="mt-1 text-sm text-amber-700 dark:text-amber-300">{{ t('supply.agreement.unpublishedBody') }}</p>
-          </div>
-
-          <div v-else-if="!agreement.accepted" class="mt-4 space-y-3" data-testid="supply-agreement-gate">
-            <!-- 「协议改版了」与「你还没同意过」是两句不同的话：对一个明明点过同意的人
-                 说"请先同意"，他会以为系统坏了。 -->
-            <p class="text-sm font-medium text-gray-800 dark:text-gray-100">
-              {{ agreement.accepted_version ? t('supply.agreement.updatedTitle') : t('supply.agreement.title') }}
-            </p>
-            <p class="text-xs text-gray-400 dark:text-dark-500">
-              {{ t('supply.agreement.version', { version: agreement.version }) }}
-            </p>
-
-            <!-- 正文按纯文本渲染（whitespace-pre-wrap + 插值），**不用 v-html**：
-                 这份文本来自管理端表单，从别处粘来的条款里的 <script> 不该因为
-                 它是"协议"就获得执行权。 -->
-            <div
-              v-if="agreement.body"
-              class="max-h-64 overflow-y-auto whitespace-pre-wrap rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300"
-              data-testid="supply-agreement-body"
-            >{{ agreement.body }}</div>
-
-            <a
-              v-if="agreement.url"
-              class="inline-flex items-center gap-1 text-sm text-primary-600 hover:underline dark:text-primary-400"
-              :href="agreement.url"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <Icon name="externalLink" size="sm" />
-              <span>{{ t('supply.agreement.openFullText') }}</span>
-            </a>
-
-            <label class="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
-              <input
-                v-model="agreementChecked"
-                class="mt-0.5"
-                type="checkbox"
-                data-testid="supply-agreement-checkbox"
-              />
-              <span>{{ t('supply.agreement.checkbox', { version: agreement.version }) }}</span>
-            </label>
-
-            <button
-              class="btn btn-primary"
-              :disabled="!agreementChecked || accepting"
-              data-testid="supply-agreement-accept"
-              @click="acceptAgreement"
-            >
-              <Icon name="check" size="sm" />
-              <span>{{ accepting ? t('supply.agreement.accepting') : t('supply.agreement.accept') }}</span>
-            </button>
-          </div>
-
-          <template v-else>
-            <p class="mt-3 text-xs text-gray-400 dark:text-dark-500" data-testid="supply-agreement-accepted">
-              {{
-                t('supply.agreement.acceptedAt', {
-                  version: agreement.version,
-                  time: agreement.accepted_at ? formatDateTime(agreement.accepted_at) : '-',
-                })
-              }}
-            </p>
-
-            <button
-              v-if="!pendingAuth"
-              class="btn btn-primary mt-4"
-              :disabled="starting"
-              data-testid="supply-start-oauth"
-              @click="startOAuth"
-            >
-              <Icon name="plus" size="sm" />
-              <span>{{ starting ? t('supply.connect.starting') : t('supply.connect.start') }}</span>
-            </button>
-
-            <div v-else class="mt-4 space-y-4">
-            <div class="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-900">
-              <p class="text-sm font-medium text-gray-800 dark:text-gray-100">{{ t('supply.connect.step1') }}</p>
-              <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ t('supply.connect.step1Hint') }}</p>
-              <div class="mt-3 flex flex-col gap-2 sm:flex-row">
-                <a
-                  class="btn btn-primary btn-sm"
-                  :href="pendingAuth.auth_url"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <Icon name="externalLink" size="sm" />
-                  <span>{{ t('supply.connect.openAuthUrl') }}</span>
-                </a>
-                <button class="btn btn-secondary btn-sm" @click="copyAuthUrl">
-                  <Icon name="copy" size="sm" />
-                  <span>{{ t('supply.connect.copyAuthUrl') }}</span>
-                </button>
-              </div>
-              <p class="mt-3 text-xs text-gray-400 dark:text-dark-500">{{ t('supply.connect.expiryHint') }}</p>
-            </div>
-
-            <div class="space-y-3">
-              <p class="text-sm font-medium text-gray-800 dark:text-gray-100">{{ t('supply.connect.step2') }}</p>
-              <div>
-                <label class="input-label" for="supply-code">{{ t('supply.connect.codeLabel') }}</label>
-                <input
-                  id="supply-code"
-                  v-model="authCode"
-                  class="input"
-                  type="text"
-                  autocomplete="off"
-                  :placeholder="t('supply.connect.codePlaceholder')"
-                  data-testid="supply-auth-code"
-                />
-              </div>
-              <div>
-                <label class="input-label" for="supply-name">{{ t('supply.connect.nameLabel') }}</label>
-                <input
-                  id="supply-name"
-                  v-model="accountName"
-                  class="input"
-                  type="text"
-                  :placeholder="t('supply.connect.namePlaceholder')"
-                />
-              </div>
-              <p class="text-xs text-gray-400 dark:text-dark-500">{{ t('supply.connect.pendingHint') }}</p>
-              <div class="flex gap-2">
-                <button
-                  class="btn btn-primary"
-                  :disabled="submitting"
-                  data-testid="supply-complete-oauth"
-                  @click="completeOAuth"
-                >
-                  <Icon name="check" size="sm" />
-                  <span>{{ submitting ? t('supply.connect.submitting') : t('supply.connect.submit') }}</span>
-                </button>
-                <button class="btn btn-secondary" :disabled="submitting" @click="cancelAuth">
-                  {{ t('supply.connect.cancel') }}
-                </button>
-              </div>
-            </div>
-            </div>
-
-            <!-- ===== 中转接入（M7），管理端开关控制 =====
-                 与 OAuth 并排的第二条路：填一个 Anthropic 兼容端点 + API Key。
-                 信任提示必须在提交按钮之前：平台会把**消费者的请求**转发到他
-                 填的服务器上，这件事得在他交出端点之前说清，而不是写进事后条款。 -->
-            <div
-              v-if="status.relay_enabled"
-              class="mt-6 border-t border-gray-100 pt-4 dark:border-dark-800"
-              data-testid="supply-relay-section"
-            >
-              <h4 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('supply.relay.title') }}</h4>
-              <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">{{ t('supply.relay.description') }}</p>
-              <p class="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-700 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-300">
-                {{ t('supply.relay.trustNotice') }}
-              </p>
-
-              <div class="mt-3 grid gap-3 sm:grid-cols-2">
-                <div class="sm:col-span-2">
-                  <label class="input-label" for="relay-base-url">{{ t('supply.relay.baseUrlLabel') }}</label>
-                  <input
-                    id="relay-base-url"
-                    v-model="relayForm.base_url"
-                    class="input font-mono text-xs"
-                    type="text"
-                    autocomplete="off"
-                    spellcheck="false"
-                    placeholder="https://relay.example.com"
-                    data-testid="supply-relay-base-url"
-                  />
-                  <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">{{ t('supply.relay.baseUrlHint') }}</p>
-                </div>
-                <div class="sm:col-span-2">
-                  <label class="input-label" for="relay-api-key">{{ t('supply.relay.apiKeyLabel') }}</label>
-                  <input
-                    id="relay-api-key"
-                    v-model="relayForm.api_key"
-                    class="input font-mono text-xs"
-                    type="password"
-                    autocomplete="off"
-                    data-testid="supply-relay-api-key"
-                  />
-                </div>
-                <div class="sm:col-span-2">
-                  <label class="input-label" for="relay-name">{{ t('supply.relay.nameLabel') }}</label>
-                  <input
-                    id="relay-name"
-                    v-model="relayForm.name"
-                    class="input"
-                    type="text"
-                    :placeholder="t('supply.relay.namePlaceholder')"
-                    data-testid="supply-relay-name"
-                  />
-                </div>
-              </div>
-
-              <button
-                class="btn btn-primary mt-3"
-                :disabled="submittingRelay"
-                data-testid="supply-relay-submit"
-                @click="submitRelay"
-              >
-                {{ submittingRelay ? t('supply.relay.submitting') : t('supply.relay.submit') }}
-              </button>
-              <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">{{ t('supply.relay.probeHint') }}</p>
-            </div>
-          </template>
-        </div>
-
-        <!-- ===================== 我的号 ===================== -->
-        <div class="card p-6">
-          <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('supply.accounts.title') }}</h3>
-          <!-- 两条下线通道的边界，写在表格上方而不是塞进按钮 tooltip：
-               "已经在流的请求停不掉"是用户唯一会因此投诉的点。 -->
-          <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ t('supply.accounts.pauseHint') }}</p>
-
-          <p v-if="accounts.length === 0" class="mt-4 text-sm text-gray-500 dark:text-dark-400">
-            {{ t('supply.accounts.empty') }}
-          </p>
-
-          <div v-else class="mt-4 overflow-x-auto">
-            <table class="min-w-full text-sm">
-              <thead>
-                <tr class="border-b border-gray-200 text-left text-xs uppercase text-gray-500 dark:border-dark-700 dark:text-dark-400">
-                  <th class="px-3 py-2">{{ t('supply.accounts.name') }}</th>
-                  <th class="px-3 py-2">{{ t('supply.accounts.platform') }}</th>
-                  <th class="px-3 py-2">{{ t('supply.accounts.state') }}</th>
-                  <th class="px-3 py-2">{{ t('supply.accounts.status') }}</th>
-                  <th class="px-3 py-2">{{ t('supply.accounts.lastUsedAt') }}</th>
-                  <th class="px-3 py-2">{{ t('supply.accounts.createdAt') }}</th>
-                  <th class="px-3 py-2 text-right">{{ t('supply.accounts.actions') }}</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-gray-100 dark:divide-dark-800">
-                <tr v-for="account in accounts" :key="account.id" :data-testid="`supply-account-${account.id}`">
-                  <td class="px-3 py-3">
-                    <p class="font-medium text-gray-900 dark:text-white">{{ account.name }}</p>
-                    <p v-if="account.email_address" class="text-xs text-gray-400 dark:text-dark-500">
-                      {{ account.email_address }}
-                    </p>
-                  </td>
-                  <td class="px-3 py-3 text-gray-700 dark:text-gray-300">{{ account.platform }}</td>
-                  <td class="px-3 py-3">
-                    <span class="rounded-full px-2 py-0.5 text-xs font-medium" :class="stateBadgeClass(account.supply_state)">
-                      {{ stateLabel(account.supply_state) }}
-                    </span>
-                    <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">
-                      {{ account.schedulable ? t('supply.accounts.schedulable') : t('supply.accounts.notSchedulable') }}
-                    </p>
-
-                    <!-- 观察期进度。两个判据分开显示：用户要能分辨"还在等时间"和
-                         "我的号连不上"——后者只有他自己能修。 -->
-                    <template v-if="account.supply_state === 'pending_review'">
-                      <p v-if="account.probe_passes > 0" class="mt-1 text-xs text-gray-400 dark:text-dark-500">
-                        {{ t('supply.accounts.probePasses', { passes: account.probe_passes }) }}
-                      </p>
-                      <p v-if="account.eligible_at" class="mt-1 text-xs text-gray-400 dark:text-dark-500">
-                        {{ t('supply.accounts.eligibleAt', { time: formatDateTime(account.eligible_at) }) }}
-                      </p>
-                      <p v-if="account.probe_error" class="mt-1 max-w-xs text-xs text-red-500">
-                        {{ t('supply.accounts.probeError', { reason: account.probe_error }) }}
-                      </p>
-                    </template>
-
-                    <p
-                      v-if="account.supply_state === 'draining' && account.drain_until"
-                      class="mt-1 text-xs text-amber-600 dark:text-amber-400"
-                    >
-                      {{ t('supply.accounts.drainUntil', { time: formatDateTime(account.drain_until) }) }}
-                    </p>
-                  </td>
-                  <td class="px-3 py-3">
-                    <span class="text-gray-700 dark:text-gray-300">{{ account.status }}</span>
-                    <p v-if="account.error_message" class="mt-1 max-w-xs text-xs text-red-500">
-                      {{ account.error_message }}
-                    </p>
-                  </td>
-                  <td class="px-3 py-3 text-gray-500 dark:text-dark-400">
-                    {{ account.last_used_at ? formatDateTime(account.last_used_at) : t('supply.accounts.never') }}
-                  </td>
-                  <td class="px-3 py-3 text-gray-500 dark:text-dark-400">{{ formatDateTime(account.created_at) }}</td>
-                  <td class="px-3 py-3 text-right">
-                    <!-- 三种状态三套动作。draining 特殊在它同时能"反悔"和"别等了"，
-                         所以那两个按钮必须同时在场，否则用户只能干等排空窗。 -->
-                    <div class="flex flex-wrap justify-end gap-2">
-                      <template v-if="account.supply_state === 'retired'">
-                        <button
-                          class="btn btn-secondary btn-sm"
-                          :disabled="mutatingId === account.id"
-                          :data-testid="`supply-resume-${account.id}`"
-                          @click="resumeAccount(account)"
-                        >
-                          {{ mutatingId === account.id ? t('supply.accounts.resuming') : t('supply.accounts.resume') }}
-                        </button>
-                      </template>
-                      <template v-else-if="account.supply_state === 'draining'">
-                        <button
-                          class="btn btn-secondary btn-sm"
-                          :disabled="mutatingId === account.id"
-                          :data-testid="`supply-cancel-pause-${account.id}`"
-                          @click="resumeAccount(account)"
-                        >
-                          {{ mutatingId === account.id ? t('supply.accounts.resuming') : t('supply.accounts.cancelPause') }}
-                        </button>
-                        <button
-                          class="btn btn-secondary btn-sm"
-                          :disabled="mutatingId === account.id"
-                          :data-testid="`supply-pause-immediate-${account.id}`"
-                          @click="pauseAccount(account, 'immediate')"
-                        >
-                          {{ mutatingId === account.id ? t('supply.accounts.pausing') : t('supply.accounts.pauseNow') }}
-                        </button>
-                      </template>
-                      <template v-else>
-                        <button
-                          class="btn btn-secondary btn-sm"
-                          :disabled="mutatingId === account.id"
-                          :data-testid="`supply-pause-${account.id}`"
-                          @click="pauseAccount(account, 'graceful')"
-                        >
-                          {{ mutatingId === account.id ? t('supply.accounts.pausing') : t('supply.accounts.pause') }}
-                        </button>
-                        <button
-                          class="btn btn-secondary btn-sm"
-                          :disabled="mutatingId === account.id"
-                          :data-testid="`supply-pause-immediate-${account.id}`"
-                          @click="pauseAccount(account, 'immediate')"
-                        >
-                          {{ mutatingId === account.id ? t('supply.accounts.pausing') : t('supply.accounts.pauseNow') }}
-                        </button>
-                      </template>
-                      <!-- 解绑对所有状态都在场，而且不随状态变化。
-                           「撤回自己的授权」不该有任何一个状态是够不着的——包括
-                           已经下线的号，那正是最该把凭证收回去的时候。 -->
-                      <button
-                        class="btn btn-danger btn-sm"
-                        :disabled="mutatingId === account.id"
-                        :data-testid="`supply-detach-${account.id}`"
-                        @click="detachAccount(account)"
-                      >
-                        {{ mutatingId === account.id ? t('supply.accounts.detaching') : t('supply.accounts.detach') }}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
         <!-- ===================== 流水 ===================== -->
-        <div class="card p-6">
+        <div class="card p-6" data-testid="supply-ledger-card">
           <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('supply.ledger.title') }}</h3>
 
           <p v-if="ledger.length === 0" class="mt-4 text-sm text-gray-500 dark:text-dark-400">
@@ -850,6 +934,7 @@ import Icon from '@/components/icons/Icon.vue'
 import { supplyAPI, type SupplyAccount, type SupplyAgreement, type SupplyLedgerEntry, type SupplyOnchainChannel, type SupplyPauseMode, type SupplyPayoutWallet, type SupplyStatus, type SupplyWallet, type SupplyWithdrawal, type SupplyWithdrawalOptions, type StartOAuthResponse } from '@/api/supply'
 import { useAppStore } from '@/stores/app'
 import { useSupplyStore } from '@/stores/supply'
+import { SUPPLY_GUIDE_STEPS } from '@/constants/supplyGuide'
 import { useClipboard } from '@/composables/useClipboard'
 import { formatCurrency, formatDateTime } from '@/utils/format'
 import { extractApiErrorMessage } from '@/utils/apiError'
@@ -858,6 +943,10 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const supplyStore = useSupplyStore()
 const { copyToClipboard } = useClipboard()
+
+// 与控制台那张精简引导共用同一张步骤表：编号和文案的对应关系只存一处，
+// 否则两处会在某次改动后开始讲不一样的流程。
+const guideSteps = SUPPLY_GUIDE_STEPS
 
 const LEDGER_PAGE_SIZE = 20
 // 提现单不分页：一个人的单子就那么几张，翻页控件比它要翻的内容还大。
@@ -871,6 +960,23 @@ const submitting = ref(false)
 const mutatingId = ref<number | null>(null)
 
 const status = ref<SupplyStatus>({ enabled: false, settlement_enabled: false })
+
+/**
+ * 分成比例的显示文本，如 "80%"；后端没给（或给了脏值）时为 null → 界面不显示。
+ *
+ * 存在的理由是引导卡里那句「比例见下方接入卡」：在补上这个之前，那句话指向的是
+ * 一个空位——接入卡上从来没有出现过比例，它只出现在流水表格里，也就是只有
+ * **已经赚到过钱的人**才看得见。而需要这个数来做决定的，恰恰是还一个号都没挂的人。
+ *
+ * 取整到整数百分比：0.8 → "80%"。运营不会配 0.805 这种值，多出来的小数位
+ * 只会让这个数看起来像浮点误差。
+ */
+const shareRatioText = computed<string | null>(() => {
+  const ratio = status.value.share_ratio
+  if (typeof ratio !== 'number' || ratio <= 0 || ratio > 1) return null
+  return `${Math.round(ratio * 100)}%`
+})
+
 const wallet = ref<SupplyWallet | null>(null)
 const accounts = ref<SupplyAccount[]>([])
 const ledger = ref<SupplyLedgerEntry[]>([])
@@ -1413,6 +1519,9 @@ onMounted(async () => {
     // 账号数一起带过去：一个人接入第一个号之后，控制台该自动变成共享模式，
     // 而这一页正是他接入的地方——不同步的话他要刷新整个应用才看得到。
     supplyStore.accountCount = status.value.account_count ?? 0
+    // 走 shareRatioText 的判定而不是直接透传：这里绕过了 store 自己的清洗，
+    // 不加这道门槛的话一个脏值会从这条路径漏进去，两个入口对同一个数得出不同结论。
+    supplyStore.shareRatio = shareRatioText.value ? (status.value.share_ratio ?? 0) : 0
     supplyStore.loaded = true
     if (status.value.enabled) {
       await loadAll()

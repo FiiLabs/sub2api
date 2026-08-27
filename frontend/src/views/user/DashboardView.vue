@@ -20,6 +20,12 @@
              为了对称把它们也换掉，等于凭空多造两个供给侧视图。 -->
         <SupplyDashboardStats v-if="isSharing" :wallet="supplyWallet" :account-count="supplyAccountCount" :schedulable-count="supplySchedulableCount" />
         <UserDashboardStats v-else :stats="stats" :balance="user?.balance || 0" :is-simple="authStore.isSimpleMode" :platform-quotas="platformQuotas" />
+        <!-- 一个号都没挂的人，上面那一格必然是四个 0——那不是"我今天没赚到"，
+             是"我还没开始"。这两句话之间的差别只能由这张卡来说。
+             接入过的人不显示：对他们这三步是纯占位，会把趋势图挤下去一屏。
+             判断带上 supplyLoaded，是因为 supplyAccountCount 的初值就是 0，
+             不等接口回来的话，已接入的人每次进控制台都会先闪一下这张卡。 -->
+        <SupplyStartGuide v-if="isSharing && supplyLoaded && supplyAccountCount === 0" />
         <UserDashboardCharts v-model:startDate="startDate" v-model:endDate="endDate" v-model:granularity="granularity" :loading="loadingCharts" :trend="trendData" :models="modelStats" @dateRangeChange="loadCharts" @granularityChange="loadCharts" @refresh="refreshAll" />
         <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div class="lg:col-span-2"><UserDashboardRecentUsage :data="recentUsage" :loading="loadingUsage" /></div>
@@ -38,7 +44,7 @@ import { ref, computed, onMounted, watch } from 'vue'; import { useAuthStore } f
 import AppLayout from '@/components/layout/AppLayout.vue'; import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import UserDashboardStats from '@/components/user/dashboard/UserDashboardStats.vue'; import UserDashboardCharts from '@/components/user/dashboard/UserDashboardCharts.vue'
 import UserDashboardRecentUsage from '@/components/user/dashboard/UserDashboardRecentUsage.vue'; import UserDashboardQuickActions from '@/components/user/dashboard/UserDashboardQuickActions.vue'
-import ConsoleModeSwitch from '@/components/user/dashboard/ConsoleModeSwitch.vue'; import SupplyDashboardStats from '@/components/user/dashboard/SupplyDashboardStats.vue'; import SupplyQuickActions from '@/components/user/dashboard/SupplyQuickActions.vue'
+import ConsoleModeSwitch from '@/components/user/dashboard/ConsoleModeSwitch.vue'; import SupplyDashboardStats from '@/components/user/dashboard/SupplyDashboardStats.vue'; import SupplyQuickActions from '@/components/user/dashboard/SupplyQuickActions.vue'; import SupplyStartGuide from '@/components/user/dashboard/SupplyStartGuide.vue'
 import type { UsageLog, TrendDataPoint, ModelStat, PlatformQuotaItem } from '@/types'
 import { getMyPlatformQuotas } from '@/api/user'
 import { formatDateLocalInput } from '@/utils/format'
@@ -58,6 +64,10 @@ const isSharing = computed(() => supplyStore.mode === 'sharing')
 const supplyWallet = ref<SupplyWallet | null>(null)
 const supplyAccountCount = ref(0)
 const supplySchedulableCount = ref(0)
+// "还没问过" 与 "问过了，答案是零个" 在界面上是两件事：只有后者才该看到新手引导。
+// 所以它只在成功那条路径上置位——接口失败时账号数停在初值 0，此刻若拿它当
+// "这人还没接入"，就会对着一个挂了三个号的老供给者讲"三步开始赚钱"。
+const supplyLoaded = ref(false)
 
 const loadStats = async () => { loading.value = true; try { await authStore.refreshUser(); stats.value = await usageAPI.getDashboardStats() } catch (error) { console.error('Failed to load dashboard stats:', error) } finally { loading.value = false } }
 const loadCharts = async () => { loadingCharts.value = true; try { const res = await Promise.all([usageAPI.getDashboardTrend({ start_date: startDate.value, end_date: endDate.value, granularity: granularity.value as any }), usageAPI.getDashboardModels({ start_date: startDate.value, end_date: endDate.value })]); trendData.value = res[0].trend || []; modelStats.value = res[1].models || [] } catch (error) { console.error('Failed to load charts:', error) } finally { loadingCharts.value = false } }
@@ -75,6 +85,7 @@ const loadSupply = (): Promise<void> => {
     try {
       const [wallet, accounts] = await Promise.all([supplyAPI.getWallet(), supplyAPI.listAccounts()])
       supplyWallet.value = wallet; supplyAccountCount.value = accounts.length; supplySchedulableCount.value = accounts.filter((a) => a.schedulable).length
+      supplyLoaded.value = true
     } catch (error) {
       console.warn('Failed to load supply overview:', error)
     } finally {

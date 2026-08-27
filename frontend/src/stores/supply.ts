@@ -46,6 +46,8 @@ export const useSupplyStore = defineStore('supply', () => {
   const enabled = ref(false)
   const settlementEnabled = ref(false)
   const accountCount = ref(0)
+  // 0 = 后端没给出比例，界面据此**不显示**而不是显示 0%。
+  const shareRatio = ref(0)
   const loaded = ref(false)
 
   // 缓存是按用户的：换个人登录（同一个 SPA 会话内，不刷新页面）必须重新问一次，
@@ -67,6 +69,10 @@ export const useSupplyStore = defineStore('supply', () => {
     enabled.value = status?.enabled === true
     settlementEnabled.value = status?.settlement_enabled === true
     accountCount.value = typeof status?.account_count === 'number' ? status.account_count : 0
+    // 只认 (0, 1] 的比例。后端给 0（读不到设置）、负数或大于 1 的脏值时一律归零 →
+    // 界面不显示。对一个正在决定要不要挂号的人报一个错的分成比例，比不报更糟。
+    const ratio = status?.share_ratio
+    shareRatio.value = typeof ratio === 'number' && ratio > 0 && ratio <= 1 ? ratio : 0
   }
 
   /** 拉一次状态；同一个用户已经拉过就直接返回。用 refresh() 强制重拉。 */
@@ -134,6 +140,7 @@ export const useSupplyStore = defineStore('supply', () => {
     enabled.value = false
     settlementEnabled.value = false
     accountCount.value = 0
+    shareRatio.value = 0
     loaded.value = false
     statusUserID.value = null
     // 只清内存里的选择，不清 localStorage：那条记录是**上一个用户的**，
@@ -146,6 +153,7 @@ export const useSupplyStore = defineStore('supply', () => {
     enabled,
     settlementEnabled,
     accountCount,
+    shareRatio,
     loaded,
     mode,
     canSwitchMode,
