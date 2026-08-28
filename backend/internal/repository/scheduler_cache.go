@@ -989,6 +989,16 @@ func filterSchedulerExtra(extra map[string]any) map[string]any {
 		"mixed_scheduling",
 		"window_cost_limit",
 		"window_cost_sticky_reserve",
+		// RPM 闸门读的两个键。它们**本来漏在这份名单外**：checkRPMGate 会调
+		// account.GetBaseRPM()，而快照路径（listSchedulableAccounts 在快照成功时
+		// 直接返回、不回落数据库）把它们过滤掉了，于是那道闸对走快照的账号
+		// 一直是个静默空操作。补进来。
+		"base_rpm",
+		"rpm_strategy",
+		// 供给者自设的每日共享上限。同理：漏在这份名单外，闸门就永远读到 0
+		// （= 不限），功能静默失效，且没有任何地方会报错。
+		"apexone_supply_daily_cost_limit",
+		"apexone_supply_daily_token_limit",
 		"max_sessions",
 		"session_idle_timeout_minutes",
 		"openai_oauth_responses_websockets_v2_enabled",
