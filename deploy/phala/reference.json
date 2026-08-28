@@ -1,22 +1,22 @@
 {
-  "$comment": "Authoritative attestation reference for the production publicai-gateway CVM. Fetched at runtime by the /proof page. composeHash was read back from the CVM's RTMR3 event log on 2026-08-28 and cross-checked against the Phala control-plane API; both report 5dcab477. Image digests are the linux/amd64 children of the cosign-signed proof-v19 indexes (sub2api INDEX 0a6bfbe2, attestor INDEX c384468f) built by publish-tee-images run 33155344730; the keyless signatures verify against certificate identity https://github.com/FiiLabs/sub2api/.github/workflows/publish-tee-images.yml@refs/heads/feat/two-sided-market, and the Fulcio certificates embed githubWorkflowSha = the sourceCommit below. This release adds usage-pattern abuse detection with optional automatic rate-limiting, SHIPPED DISABLED (enabled=false, auto_throttle=false) so operators can review the thresholds against their own traffic before turning it on. The detector deliberately does NOT ban accounts or forfeit balances: it can only observe traffic shape, and legitimate batch work (labelling, evals, content processing) is indistinguishable from bulk extraction at that layer. Throttling is reversible; a ban is not, and we could not evidence one. Thresholds were derived from measured production traffic: a heavy Claude Code session shows ~0.999 cache-hit ratio and ~2 real input tokens per request, so the 0.30 / 200 gates sit far from normal use. Earlier releases in this line: proof-v18 (take-offline copy), proof-v17 (reference-source fix + first-screen 1332KB->118KB), proof-v16/v15 (two-sided marketplace). osImageHash, appId and instanceId are unchanged; the deploy passed --no-dev-os explicitly, because phala deploy silently switches to a dev OS image when it detects a local SSH key and a dev OS would void the attestation.",
+  "$comment": "Authoritative attestation reference for the production publicai-gateway CVM. Fetched at runtime by the /proof page. composeHash was read back from the CVM's RTMR3 event log on 2026-08-28 and cross-checked against the Phala control-plane API; both report 5b806f35. Image digests are the linux/amd64 children of the cosign-signed proof-v20 indexes (sub2api INDEX d4c08fda, attestor INDEX cef1d03d) built by publish-tee-images run 33158993160; the keyless signatures verify against certificate identity https://github.com/FiiLabs/sub2api/.github/workflows/publish-tee-images.yml@refs/heads/feat/two-sided-market, and the Fulcio certificates embed githubWorkflowSha = the sourceCommit below. This release raises the default concurrency cap for newly connected supply accounts from 3 to 15. The old value was never reasoned about — the code comment said it was simply copied from the ent schema default — and it caused production 503s: the single serving supply account (cap 3) absorbed 98% of traffic, saturated, and hit upstream rate limits at the same second as the fallback account, leaving no schedulable account at all. First-party accounts run at 20, and a supplier's quota is indistinguishable from ours upstream, so there was no reason to cap them at a fifth of that. The real ceiling remains upstream 429s, which RateLimitService already handles. Note this constant only affects NEW connections; the existing production account was updated separately through the admin API. Earlier in this line: proof-v19 (abuse detection, shipped disabled), v18 (take-offline copy), v17 (reference-source fix + first-screen 1332KB->118KB), v16/v15 (two-sided marketplace). osImageHash, appId and instanceId are unchanged; the deploy passed --no-dev-os explicitly, because phala deploy silently switches to a dev OS image when it detects a local SSH key and a dev OS would void the attestation.",
   "version": 1,
   "updatedAt": "2026-08-28",
   "enclave": {
     "appId": "9467ce766ed63423e86a19d2f36cc9a9926daf27",
     "osImage": "dstack-0.5.9",
     "osImageHash": "bd369a8c2f9edb2b52dad48ac8e0b32dde5f1337c423a506b48d07403a7d8033",
-    "composeHash": "5dcab4770f4c14f1f2a99a44fa0bc816e384afc330b3bbc2d2b25c77ad0f3072",
+    "composeHash": "5b806f35958ce6d93a8c19288f6deac0832b472509c7375145372334379c27c2",
     "sourceRepo": "https://github.com/FiiLabs/sub2api.git",
-    "sourceCommit": "419ef80aa83ef94dc8d92730d8ffd1d5a7be319d",
+    "sourceCommit": "e28a522ce36eff8cbdc4a2b14cdca6450abb9677",
     "images": [
       {
         "name": "sub2api",
-        "digest": "docker.io/markerdao/sub2api@sha256:b5c5b43f0348fc6f5470d9aa9446cd0518406ae3928db21b786238555c9435be"
+        "digest": "docker.io/markerdao/sub2api@sha256:31043e24c892003f36951e51fd4324339dde44c7b87e173a8f77f48784f0ffd0"
       },
       {
         "name": "sub2api-attestor",
-        "digest": "docker.io/markerdao/sub2api-attestor@sha256:117cfa012e9007fc0aeea3e1b55fc842487350904f1ef9d43907198b2e502b3f"
+        "digest": "docker.io/markerdao/sub2api-attestor@sha256:790d4712dbc57da5d4469eec549afc9e180797649c844637d8abfce1b6763ce9"
       }
     ],
     "confidential": false
