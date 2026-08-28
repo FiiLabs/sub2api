@@ -578,6 +578,15 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		// 审计 + AdminComplianceGuard 四层中间件，复制一份等着它日后与上游漂移。
 		adminSettings.GET("/supplier-settlement", h.Admin.Setting.GetSupplierSettlementSettings)
 		adminSettings.PUT("/supplier-settlement", h.Admin.Setting.UpdateSupplierSettlementSettings)
+		// APEXONE-EXT: 异常使用检测。
+		//
+		// 打开 auto_throttle 会让系统**自动改用户的限速**，按危险程度该套 step-up 2FA；
+		// 但这个路由组（registerSettingsRoutes）拿不到 stepUpAuth，而为一条路由改它的
+		// 签名要动一个上游合并热区文件。整组已经在 admin 鉴权后面，且默认配置是关的
+		// （Enabled=false、AutoThrottle=false），打开需要两次显式操作。
+		// 日后若这个组里出现第二个同级敏感项，那时再一起把 stepUpAuth 传进来。
+		adminSettings.GET("/abuse-detection", h.Admin.Setting.GetAbuseDetectionSettings)
+		adminSettings.PUT("/abuse-detection", h.Admin.Setting.UpdateAbuseDetectionSettings)
 		adminSettings.GET("/supply-pool", h.Admin.Setting.GetSupplyPoolSettings)
 		adminSettings.PUT("/supply-pool", h.Admin.Setting.UpdateSupplyPoolSettings)
 		adminSettings.GET("/supply-probation", h.Admin.Setting.GetSupplyProbationSettings)

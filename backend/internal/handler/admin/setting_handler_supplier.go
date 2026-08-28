@@ -563,3 +563,66 @@ func (h *SettingHandler) UpdateSupplyOnboardingSettings(c *gin.Context) {
 	response.Success(c, newSupplyOnboardingSettingsResponse(
 		h.settingService.GetSupplyOnboardingSettings(ctx)))
 }
+
+// AbuseDetectionSettingsResponse 是异常使用检测配置的对外形态。
+type AbuseDetectionSettingsResponse struct {
+	Enabled           bool    `json:"enabled"`
+	WindowMinutes     int     `json:"window_minutes"`
+	MinRequests       int64   `json:"min_requests"`
+	MaxCacheHitRatio  float64 `json:"max_cache_hit_ratio"`
+	MinAvgInputTokens float64 `json:"min_avg_input_tokens"`
+	ThrottleRPM       int     `json:"throttle_rpm"`
+	AutoThrottle      bool    `json:"auto_throttle"`
+}
+
+func newAbuseDetectionSettingsResponse(s *service.AbuseDetectionSettings) AbuseDetectionSettingsResponse {
+	if s == nil {
+		return AbuseDetectionSettingsResponse{}
+	}
+	return AbuseDetectionSettingsResponse{
+		Enabled:           s.Enabled,
+		WindowMinutes:     s.WindowMinutes,
+		MinRequests:       s.MinRequests,
+		MaxCacheHitRatio:  s.MaxCacheHitRatio,
+		MinAvgInputTokens: s.MinAvgInputTokens,
+		ThrottleRPM:       s.ThrottleRPM,
+		AutoThrottle:      s.AutoThrottle,
+	}
+}
+
+// GetAbuseDetectionSettings 读异常使用检测配置
+// GET /api/v1/admin/settings/abuse-detection
+func (h *SettingHandler) GetAbuseDetectionSettings(c *gin.Context) {
+	response.Success(c, newAbuseDetectionSettingsResponse(
+		h.settingService.GetAbuseDetectionSettings(c.Request.Context())))
+}
+
+// UpdateAbuseDetectionSettings 写异常使用检测配置
+// PUT /api/v1/admin/settings/abuse-detection
+//
+// 越界的阈值由 service 层夹回合法区间而不是报错——一个填过头的数字应当被收敛成
+// 最接近的合法值，而不是让整次保存失败。所以这里回读写入后的真实配置，
+// 而不是回显请求体：回显会让面板显示一个数据库里并不存在的值。
+func (h *SettingHandler) UpdateAbuseDetectionSettings(c *gin.Context) {
+	var req AbuseDetectionSettingsResponse
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	ctx := c.Request.Context()
+	settings := &service.AbuseDetectionSettings{
+		Enabled:           req.Enabled,
+		WindowMinutes:     req.WindowMinutes,
+		MinRequests:       req.MinRequests,
+		MaxCacheHitRatio:  req.MaxCacheHitRatio,
+		MinAvgInputTokens: req.MinAvgInputTokens,
+		ThrottleRPM:       req.ThrottleRPM,
+		AutoThrottle:      req.AutoThrottle,
+	}
+	if err := h.settingService.SetAbuseDetectionSettings(ctx, settings); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, newAbuseDetectionSettingsResponse(
+		h.settingService.GetAbuseDetectionSettings(ctx)))
+}

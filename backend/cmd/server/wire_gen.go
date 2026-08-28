@@ -358,12 +358,13 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	paymentOrderExpiryService := service.ProvidePaymentOrderExpiryService(paymentService, leaderLockCache, db)
 	supplierThawService := service.ProvideSupplierThawService(supplierCreditRepository, leaderLockCache, db)
 	supplierLifecycleService := service.ProvideSupplierLifecycleService(supplierOnboardingRepository, accountRepository, settingService, accountTestService, supplierIncidentService, leaderLockCache, db)
+	abuseDetectorService := service.ProvideAbuseDetectorService(usageLogRepository, userRepository, adminService, settingService, leaderLockCache, db)
 	supplierPayoutQueueRepository := repository.NewSupplierPayoutQueueRepository(client, secretEncryptor)
 	supplierPayoutWorker := service.ProvideSupplierPayoutWorker(supplierPayoutQueueRepository, supplierChainClient, supplierWithdrawalNotifier, leaderLockCache, db)
 	channelMonitorRunner := service.ProvideChannelMonitorRunner(channelMonitorService, settingService)
 	channelMonitorV2Aggregator := service.ProvideChannelMonitorV2Aggregator(channelMonitorV2Repository, db, settingService)
 	userPlatformQuotaUsageFlusher := service.ProvideUserPlatformQuotaUsageFlusher(configConfig, billingCache, serviceUserPlatformQuotaRepository, timingWheelService)
-	v := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, openAICodexVersionSyncService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, batchImageCleanupService, batchImageWorkerRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, supplierThawService, supplierLifecycleService, supplierPayoutWorker, channelMonitorRunner, channelMonitorV2Aggregator, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, auditLogService, promptService)
+	v := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, openAICodexVersionSyncService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, batchImageCleanupService, batchImageWorkerRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, supplierThawService, supplierLifecycleService, abuseDetectorService, supplierPayoutWorker, channelMonitorRunner, channelMonitorV2Aggregator, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, auditLogService, promptService)
 	application := &Application{
 		Server:      httpServer,
 		PromptAudit: promptService,
@@ -431,6 +432,7 @@ func provideCleanup(
 
 	supplierThaw *service.SupplierThawService,
 	supplierLifecycle *service.SupplierLifecycleService,
+	abuseDetector *service.AbuseDetectorService,
 
 	supplierPayout *service.SupplierPayoutWorker,
 	channelMonitorRunner *service.ChannelMonitorRunner,
@@ -653,6 +655,12 @@ func provideCleanup(
 			{"SupplierLifecycleService", func() error {
 				if supplierLifecycle != nil {
 					supplierLifecycle.Stop()
+				}
+				return nil
+			}},
+			{"AbuseDetectorService", func() error {
+				if abuseDetector != nil {
+					abuseDetector.Stop()
 				}
 				return nil
 			}},

@@ -996,6 +996,32 @@ func ProvideSupplierThawService(repo SupplierCreditRepository, lockCache LeaderL
 // 吃 *AccountTestService 是为了复用已有的探测能力（RunTestBackground）而不是另写一条
 // 上游调用路径：探测要走的重试、代理、模型解析、错误归类全在那里，重写一份只会在
 // 「什么算探测失败」这件事上和真实调用产生分歧。
+// APEXONE-EXT: ProvideAbuseDetectorService 构造异常使用检测并启动周期扫描。
+//
+// 默认配置是**关闭**的（DefaultAbuseDetectionSettings），所以启动它在功能上是
+// 无害的：不开开关，runOnce 第一行就返回。这样代码可以先随版本进生产、在真实
+// 流量旁边待着，由运营看过阈值之后再显式打开——与供给结算当初的上线策略一致。
+func ProvideAbuseDetectorService(
+	usageLogRepo UsageLogRepository,
+	userRepo UserRepository,
+	adminService AdminService,
+	settingService *SettingService,
+	lockCache LeaderLockCache,
+	db *sql.DB,
+) *AbuseDetectorService {
+	// 扫描查询不在 UsageLogRepository 主接口上，走可选能力断言——与
+	// queryGrokFreeQuotaWindowStats 同一个套路。拿不到就不装，检测整体不启动，
+	// 而不是让服务装配失败。
+	reader, ok := usageLogRepo.(AbuseSignalReader)
+	if !ok {
+		return nil
+	}
+	svc := NewAbuseDetectorService(reader, userRepo, adminService, settingService)
+	svc.SetLeaderLock(lockCache, db)
+	svc.Start()
+	return svc
+}
+
 func ProvideSupplierLifecycleService(
 	repo SupplierOnboardingRepository,
 	accountRepo AccountRepository,
