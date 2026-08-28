@@ -81,10 +81,19 @@ export const ATTESTATION_QUOTE_PATH = '/attestation/quote'
 /**
  * Authoritative runtime reference, hosted in the public repo so its change
  * history is auditable and updates don't require rebuilding the measured image.
+ *
+ * The branch here MUST be the branch the deployed image is built from.
+ * It used to point at `proof-solo` while images were built from
+ * `feat/two-sided-market`, which meant /proof read its reference from a branch
+ * nobody was deploying — the two only stayed in sync because someone remembered
+ * to commit the same file twice. A reference that silently describes a
+ * different build is worse than no reference at all: it reports a mismatch as
+ * a *failed enclave*, i.e. it accuses a healthy deployment of being tampered
+ * with. If you move the release branch, move this too.
  */
 export const REFERENCE_JSON_URL: string =
   (import.meta.env.VITE_REFERENCE_JSON_URL as string | undefined) ||
-  'https://raw.githubusercontent.com/FiiLabs/sub2api/proof-solo/deploy/phala/reference.json'
+  'https://raw.githubusercontent.com/FiiLabs/sub2api/feat/two-sided-market/deploy/phala/reference.json'
 
 /**
  * Mirrors of the same file, tried in order when the authoritative URL is
@@ -95,7 +104,7 @@ export const REFERENCE_JSON_URL: string =
  */
 export const REFERENCE_JSON_MIRROR_URLS: readonly string[] = (
   (import.meta.env.VITE_REFERENCE_JSON_MIRROR_URLS as string | undefined) ||
-  'https://cdn.jsdelivr.net/gh/FiiLabs/sub2api@proof-solo/deploy/phala/reference.json'
+  'https://cdn.jsdelivr.net/gh/FiiLabs/sub2api@feat/two-sided-market/deploy/phala/reference.json'
 )
   .split(',')
   .map((u) => u.trim())
