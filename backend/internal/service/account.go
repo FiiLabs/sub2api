@@ -2888,3 +2888,76 @@ func (a *Account) QuotaDimensionOrDefault() string {
 	}
 	return a.QuotaDimension
 }
+
+// ============================================================================
+// APEXONE-EXT: 供给者自设的每日共享上限
+// ============================================================================
+
+// GetSupplyDailyCostLimit 每日金额上限（美元/天），**按官方牌价计**。0 = 不限。
+//
+// 口径是官方定价而不是消费者实付，因为供给者要保护的是「我自己的订阅额度被消耗了多少」，
+// 不是平台流水。这两个数差一个倍率，混淆会让他以为限额没生效。
+func (a *Account) GetSupplyDailyCostLimit() float64 {
+	if a == nil || a.Extra == nil {
+		return 0
+	}
+	v := parseExtraFloat64(a.Extra[SupplyDailyCostLimitExtraKey])
+	if v < 0 {
+		// 负数按不限处理而不是按 0 拦死：脏数据不该把一个号永久踢出池子。
+		return 0
+	}
+	return v
+}
+
+// GetSupplyDailyTokenLimit 每日 token 上限。0 = 不限。
+func (a *Account) GetSupplyDailyTokenLimit() int64 {
+	if a == nil || a.Extra == nil {
+		return 0
+	}
+	// 走 float64 再转：extra 经过 JSON 往返后整数会变成 float64，
+	// 而 float64 到 2^53 都是精确的，远超任何真实的 token 数。
+	v := parseExtraFloat64(a.Extra[SupplyDailyTokenLimitExtraKey])
+	if v < 0 {
+		return 0
+	}
+	return int64(v)
+}
+
+// HasSupplyDailyCap 这个号有没有设过任何一种上限。
+//
+// 调度闸和预取都用它做早返回，两处**必须用同一个判据**：如果预取的过滤条件比闸门窄，
+// 被漏掉的那些号会退化成每请求一次单点查询——不给错答案，只是慢，且没人会归因到这里。
+func (a *Account) HasSupplyDailyCap() bool {
+	return a.GetSupplyDailyCostLimit() > 0 || a.GetSupplyDailyTokenLimit() > 0
+}
+
+// CheckSupplyDailyCapSchedulability 按今日已用量判定这个号还能不能接单。
+//
+// # 为什么是硬上限，没有 sticky 余量
+//
+// 姊妹函数 CheckWindowCostSchedulability 有一个 StickyOnly 中间态，用意是让已经在进行的
+// 会话跑完。这里刻意不做，两个理由：
+//
+//  1. **那个担心在这里不成立。** 三道闸全跑在**选号时刻**；已经在流式输出的请求早就选完号、
+//     握着槽位了，闸门根本打断不了它。真正的差别只是下一轮对话会不会落到别的号——
+//     代价是一次 prompt 缓存未命中，不是把人写到一半截断。
+//
+//  2. **既有的预留值会毁掉这个功能的语义。** GetWindowCostStickyReserve() 默认 10 美元。
+//     对一个填了 5 美元的供给者，那等于把他填的数字近乎翻三倍。那个默认值是为平台自有
+//     账号的 5 小时限流阈值校准的，不适用于一个陌生人为保护自己订阅而填的数。
+//
+// 日后若确需宽限，只接受**按比例**（如 5%），绝不用固定金额。
+//
+// 边界用 >=：达到上限即停，与 CheckWindowCostSchedulability 一致。
+func (a *Account) CheckSupplyDailyCapSchedulability(cost float64, tokens int64) WindowCostSchedulability {
+	if a == nil {
+		return WindowCostSchedulable
+	}
+	if limit := a.GetSupplyDailyCostLimit(); limit > 0 && cost >= limit {
+		return WindowCostNotSchedulable
+	}
+	if limit := a.GetSupplyDailyTokenLimit(); limit > 0 && tokens >= limit {
+		return WindowCostNotSchedulable
+	}
+	return WindowCostSchedulable
+}

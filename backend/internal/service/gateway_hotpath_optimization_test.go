@@ -366,7 +366,7 @@ func TestWithWindowCostPrefetch_BatchReadAndContextReuse(t *testing.T) {
 		usageLogRepo:      repo,
 	}
 
-	outCtx := svc.withWindowCostPrefetch(context.Background(), accounts)
+	outCtx := svc.prefetchWindowCost(context.Background(), accounts)
 	require.NotNil(t, outCtx)
 
 	cost1, ok1 := windowCostFromPrefetchContext(outCtx, 1)
@@ -427,7 +427,7 @@ func TestWithWindowCostPrefetch_AllHitNoSQL(t *testing.T) {
 		usageLogRepo:      repo,
 	}
 
-	outCtx := svc.withWindowCostPrefetch(context.Background(), accounts)
+	outCtx := svc.prefetchWindowCost(context.Background(), accounts)
 	cost1, ok1 := windowCostFromPrefetchContext(outCtx, 1)
 	cost2, ok2 := windowCostFromPrefetchContext(outCtx, 2)
 	require.True(t, ok1)
@@ -473,7 +473,7 @@ func TestWithWindowCostPrefetch_BatchErrorFallbackSingleQuery(t *testing.T) {
 		usageLogRepo:      repo,
 	}
 
-	outCtx := svc.withWindowCostPrefetch(context.Background(), accounts)
+	outCtx := svc.prefetchWindowCost(context.Background(), accounts)
 	cost, ok := windowCostFromPrefetchContext(outCtx, 2)
 	require.True(t, ok)
 	require.Equal(t, 33.0, cost)

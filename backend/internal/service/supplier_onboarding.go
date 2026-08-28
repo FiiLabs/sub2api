@@ -95,6 +95,16 @@ const (
 	// 写在已经被软删的行上，唯一的读者是人：出纠纷时要能回答「平台是什么时候
 	// 不再持有这份凭证的」。凭证本身那时已经被抹掉，这个时间戳是仅存的证据。
 	SupplyDetachedAtExtraKey = "apexone_supply_detached_at"
+
+	// SupplyDailyCostLimitExtraKey 供给者自设的每日金额上限（美元/天），按**官方牌价**计。
+	// 0 或缺失 = 不限。
+	//
+	// 与上面那些键的区别：它们是平台写、供给者只读的生命周期状态；这一个是**供给者写**的
+	// 意愿表达。放在同一个前缀下，是因为「谁能写」由接口层管，而 extra 里同族的键
+	// 放在一起，下一个读这张表的人才不必猜 apexone_supply_ 是不是还有别处也在用。
+	SupplyDailyCostLimitExtraKey = "apexone_supply_daily_cost_limit"
+	// SupplyDailyTokenLimitExtraKey 供给者自设的每日 token 上限。0 或缺失 = 不限。
+	SupplyDailyTokenLimitExtraKey = "apexone_supply_daily_token_limit"
 )
 
 // 下线的两个通道。
