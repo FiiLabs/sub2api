@@ -101,6 +101,8 @@ type SupplierOnboardingService struct {
 	settings    supplierSettingsReader
 	// incidents 失效熔断的判据来源。可选，见 SetIncidentGuard。
 	incidents supplierIncidentGuard
+	// dailyUsageReader 每日共享上限的「今日已用」来源。可选，见 SetDailyUsageReader。
+	dailyUsageReader supplierDailyUsageReader
 
 	// relayProbeClient 中转提交时探测用的 HTTP 客户端。nil = 默认（15s 超时）。
 	// 单独一个字段是给测试注桩用的——探测是真实网络调用，单测不该出网。
@@ -611,12 +613,16 @@ func (s *SupplierOnboardingService) ListAccounts(ctx context.Context, userID int
 	// 仍然会让同一个列表里的两个号用上不同版本的窗口（缓存正好在中途过期）。
 	settings := s.probationSettings(ctx)
 	views := make([]SupplierAccountView, 0, len(accounts))
+	accountByID := make(map[int64]*Account, len(accounts))
 	for _, account := range accounts {
 		if account == nil {
 			continue
 		}
+		accountByID[account.ID] = account
 		views = append(views, *newSupplierAccountView(account, settings))
 	}
+	// 补「今日已用 / 是否触顶」。best-effort：查不到就只显示上限本身。
+	s.applyDailyCapUsage(ctx, views, accountByID)
 	return views, nil
 }
 
@@ -935,6 +941,15 @@ func newSupplierAccountView(account *Account, settings *SupplyProbationSettings)
 	}
 	if until, ok := supplyExtraTime(account, SupplyDrainUntilExtraKey); ok {
 		view.DrainUntil = &until
+	}
+	// 上限本身是纯读 extra，不需要 I/O，所以在这里填。今日**已用**要查
+	// usage_logs，由 applyDailyCapUsage 在批量取数之后单独补——分开是为了
+	// 这个构造函数保持无副作用，也为了「用量拿不到」时上限照样能显示。
+	view.DailyCostLimitUSD = account.GetSupplyDailyCostLimit()
+	view.DailyTokenLimit = account.GetSupplyDailyTokenLimit()
+	if account.HasSupplyDailyCap() {
+		resetAt := supplyDailyWindowStart().Add(24 * time.Hour)
+		view.DailyCapResetAt = &resetAt
 	}
 	return view
 }

@@ -169,6 +169,26 @@ type SupplierAccountView struct {
 	ProbeError string `json:"probe_error,omitempty"`
 	// DrainUntil 排空窗到期时刻，仅 draining 状态有值。
 	DrainUntil *time.Time `json:"drain_until,omitempty"`
+
+	// ---- 每日共享上限。供给者自己设的，0 = 不限。----
+
+	// DailyCostLimitUSD 每日金额上限，**按官方牌价**计。
+	DailyCostLimitUSD float64 `json:"daily_cost_limit_usd"`
+	// DailyTokenLimit 每日 token 上限。
+	DailyTokenLimit int64 `json:"daily_token_limit"`
+	// DailyCostUsedUSD / DailyTokensUsed 今天已经用掉的量（UTC 日）。
+	//
+	// 必须下发，这不是锦上添花：触顶时账号在库里仍是 schedulable=true
+	// （闸门是调度层过滤，不写库），所以界面如果只看 Schedulable 就会在一个
+	// 一分钱赚不到的号上显示「接单中」。供给者需要看见分子和分母才知道
+	// 「为什么现在没在赚钱」——那正是这个功能存在的意义。
+	DailyCostUsedUSD float64 `json:"daily_cost_used_usd"`
+	DailyTokensUsed  int64   `json:"daily_tokens_used"`
+	// DailyCapReached 今天是否已经触顶。由服务端判定，前端不要自己拿
+	// used >= limit 去算——那会在两边的边界语义（>= 还是 >）漂移时静默不一致。
+	DailyCapReached bool `json:"daily_cap_reached"`
+	// DailyCapResetAt 下一个 UTC 零点。只在设了上限时有值。
+	DailyCapResetAt *time.Time `json:"daily_cap_reset_at,omitempty"`
 }
 
 // SupplierOnboardingRepository 是自助接入需要的、上游仓储给不了的那部分数据访问。

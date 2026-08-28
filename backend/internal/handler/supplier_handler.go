@@ -375,6 +375,53 @@ func (h *SupplierHandler) ResumeAccount(c *gin.Context) {
 	})
 }
 
+// SupplierDailyCapRequest 设置每日共享上限。
+//
+// 两个字段都是指针，语义是三态：nil = 这一项不改，0 = 取消这一项的上限，
+// 正数 = 设成这个值。用值类型的话「把金额上限清成 0」和「我只想改 token 上限」
+// 会发出同一个请求体，而这两件事的结果完全相反。
+type SupplierDailyCapRequest struct {
+	DailyCostLimitUSD *float64 `json:"daily_cost_limit_usd"`
+	DailyTokenLimit   *int64   `json:"daily_token_limit"`
+}
+
+// SetDailyCap 设置某个供给账号的每日共享上限。
+// PUT /api/v1/user/supply/accounts/:id/daily-cap
+//
+// 用 PUT 而不是 POST：每个号至多一份上限，这是一次幂等置换而非追加
+// （与 BindPayoutWallet 同一个理由）。
+//
+// **刻意不照抄 PauseAccount 的 `_ = c.ShouldBindJSON`。** 那里忽略绑定错误是对的：
+// 下线的本质语义是「停」，不该让一个畸形请求体卡住一个想紧急下线的人。这里相反——
+// 请求体坏掉时没有任何安全的默认值可取，而「界面显示已保存、实际什么都没设」
+// 恰恰是供给者永远不会发现的那种失败。所以绑定失败就报 400。
+func (h *SupplierHandler) SetDailyCap(c *gin.Context) {
+	var req SupplierDailyCapRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	userID, ok := h.currentUserID(c)
+	if !ok {
+		return
+	}
+	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || accountID <= 0 {
+		response.BadRequest(c, "Invalid account id")
+		return
+	}
+	if h.onboardingService == nil {
+		response.ErrorFrom(c, service.ErrSupplierOnboardingDisabled)
+		return
+	}
+	view, err := h.onboardingService.SetDailyCap(c.Request.Context(), userID, accountID, req.DailyCostLimitUSD, req.DailyTokenLimit)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, view)
+}
+
 // DetachAccount 彻底解绑一个供给账号：停调度、抹掉凭证、摘掉号。
 // DELETE /api/v1/user/supply/accounts/:id
 //

@@ -81,6 +81,12 @@ func RegisterSupplierRoutes(
 		supply.GET("/accounts/:id", h.Supplier.GetAccount)
 		supply.POST("/accounts/:id/pause", h.Supplier.PauseAccount)
 		supply.POST("/accounts/:id/resume", h.Supplier.ResumeAccount)
+		// 每日共享上限。PUT = 幂等置换（每个号至多一份上限）。
+		//
+		// 与 pause/resume 一样不套 Heavy 限流：这是供给者把自己的水龙头拧小，
+		// 把它排在限流后面，等于在他最想止损的时候让他改不了。它也不打上游、
+		// 不消耗任何配额。
+		supply.PUT("/accounts/:id/daily-cap", h.Supplier.SetDailyCap)
 		// 解绑是不可逆的（凭证被抹掉，号被摘掉），但**不**套 Heavy 限流：
 		// 撤回自己的授权是供给者最该畅通无阻的一个动作，把它排在限流后面，
 		// 等于在他最想退出的时候让他退不出去。它本身也不打上游、不消耗任何配额。
