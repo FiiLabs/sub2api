@@ -162,12 +162,25 @@ export default {
       lastUsedAt: 'Last used',
       actions: 'Actions',
       never: 'Never used',
+      // The labels carry the *reversibility*, not the timing. "now" only said
+      // when it happens, while the real difference is whether you can undo it —
+      // and the asymmetry is steep: picking the irreversible one by mistake costs
+      // a full re-review (15–30 min), picking the other costs a 10-minute wait.
+      // A supplier asked us what the difference was; that was the signal the
+      // labels were not carrying it.
       pause: 'Take offline',
       pausing: 'Taking offline…',
-      pauseNow: 'Take offline now',
+      pauseNow: "Take offline (can't undo)",
       resume: 'Put back',
       resuming: 'Putting back…',
       cancelPause: 'Cancel offline',
+      // Hover copy. One sentence each, stating the consequence rather than the
+      // mechanism — someone hovering wants to know which button to press.
+      pauseTitle: 'Stops new requests and starts a 10-minute window you can still cancel. In-flight requests finish normally.',
+      pauseNowTitle: 'Skips the cancellable window and cannot be undone. Putting the account back means going through the review period again (15–30 min).',
+      resumeTitle: 'Puts the account back in the pool. It re-enters the review period before it starts earning again.',
+      cancelPauseTitle: 'Keeps the account serving — cancels the pending offline and returns it to its previous state immediately.',
+      detachTitle: 'Stops serving AND permanently deletes the credential we hold for this account. Cannot be undone.',
       pauseHint:
         '"Take offline" starts a drain window: no new requests are routed to the account, and you can still change your mind. "Take offline now" goes straight to the final state, and putting the account back means going through review again. Neither one cuts off requests already streaming — those finish normally.',
       pauseConfirm:

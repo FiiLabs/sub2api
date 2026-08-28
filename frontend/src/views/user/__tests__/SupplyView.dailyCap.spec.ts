@@ -173,4 +173,24 @@ describe('SupplyView daily share cap', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="supply-account-1"]').exists()).toBe(true)
   })
+
+  // 每个动作按钮都要有悬停提示。
+  //
+  // 这条的由来是一个真实的供给者提问：「take offline 和 take offline now 有什么
+  // 区别？」——说明光看按钮看不出差别。而这两者的代价不对称：选错不可逆的那个
+  // 要重走 15–30 分钟观察期。提示被顺手删掉不会有任何报错，所以钉在这里。
+  it('每个动作按钮都带悬停提示', async () => {
+    api.listAccounts.mockResolvedValue([BASE_ACCOUNT])
+    const wrapper = mountView()
+    await flushPromises()
+
+    const expected: Array<[string, string]> = [
+      ['supply-pause-1', 'supply.accounts.pauseTitle'],
+      ['supply-pause-immediate-1', 'supply.accounts.pauseNowTitle'],
+      ['supply-detach-1', 'supply.accounts.detachTitle'],
+    ]
+    for (const [testid, key] of expected) {
+      expect(wrapper.get(`[data-testid="${testid}"]`).attributes('title')).toBe(key)
+    }
+  })
 })

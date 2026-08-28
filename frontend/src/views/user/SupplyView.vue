@@ -516,6 +516,7 @@
                         <button
                           class="btn btn-secondary btn-sm"
                           :disabled="mutatingId === account.id"
+                          :title="t('supply.accounts.resumeTitle')"
                           :data-testid="`supply-resume-${account.id}`"
                           @click="resumeAccount(account)"
                         >
@@ -526,6 +527,7 @@
                         <button
                           class="btn btn-secondary btn-sm"
                           :disabled="mutatingId === account.id"
+                          :title="t('supply.accounts.cancelPauseTitle')"
                           :data-testid="`supply-cancel-pause-${account.id}`"
                           @click="resumeAccount(account)"
                         >
@@ -534,6 +536,7 @@
                         <button
                           class="btn btn-secondary btn-sm"
                           :disabled="mutatingId === account.id"
+                          :title="t('supply.accounts.pauseNowTitle')"
                           :data-testid="`supply-pause-immediate-${account.id}`"
                           @click="pauseAccount(account, 'immediate')"
                         >
@@ -544,6 +547,7 @@
                         <button
                           class="btn btn-secondary btn-sm"
                           :disabled="mutatingId === account.id"
+                          :title="t('supply.accounts.pauseTitle')"
                           :data-testid="`supply-pause-${account.id}`"
                           @click="pauseAccount(account, 'graceful')"
                         >
@@ -552,6 +556,7 @@
                         <button
                           class="btn btn-secondary btn-sm"
                           :disabled="mutatingId === account.id"
+                          :title="t('supply.accounts.pauseNowTitle')"
                           :data-testid="`supply-pause-immediate-${account.id}`"
                           @click="pauseAccount(account, 'immediate')"
                         >
@@ -564,6 +569,7 @@
                       <button
                         class="btn btn-danger btn-sm"
                         :disabled="mutatingId === account.id"
+                        :title="t('supply.accounts.detachTitle')"
                         :data-testid="`supply-detach-${account.id}`"
                         @click="detachAccount(account)"
                       >
