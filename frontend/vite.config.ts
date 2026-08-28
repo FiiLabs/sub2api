@@ -121,6 +121,18 @@ export default defineConfig(({ mode }) => {
   build: {
     outDir: '../backend/internal/web/dist',
     emptyOutDir: true,
+    /**
+     * 只预载入口真正需要的那几个 chunk，不递归预载懒加载路由的依赖。
+     *
+     * 默认策略（resolveDependencies 返回全部 deps）会把懒加载路由的依赖也写进
+     * index.html 的 modulepreload，浏览器于是在首屏就把它们全下下来——懒加载
+     * 因此形同虚设。实测：首屏被预载了 381KB 的 TEE 证明密码学栈，而它只有
+     * /proof 那一页用；绝大多数人从不打开那一页。
+     *
+     * 关掉之后这些 chunk 回到「点到那一页才下」，代价是真去 /proof 的人多一次
+     * 往返——那一页本来就要跑几秒的硬件验证，多这一次往返无感。
+     */
+    modulePreload: { polyfill: true, resolveDependencies: () => [] },
     rollupOptions: {
       output: {
         /**
@@ -157,6 +169,30 @@ export default defineConfig(({ mode }) => {
             // Stripe 仅在支付流程中按需加载，避免进入首页公共依赖。
             if (id.includes('/@stripe/stripe-js/')) {
               return 'vendor-stripe'
+            }
+
+            // 注：曾尝试把 TEE 证明的密码学栈（dcap-qvl / noble / elliptic /
+            // asn1 家族，源码约 720KB，只有懒加载的 /proof 用得到）拆成独立
+            // chunk，好让首页不必下载它。**三次尝试全部在运行时炸掉**：
+            //   按包名拆、buffer 留在 vendor-misc → Cannot destructure 'Buffer'
+            //   把 buffer 拉进同一个 chunk       → Cannot read 'toArray'
+            //   整条依赖链一起打包               → pb is not a function
+            // 这条链（asn1.js → safer-buffer → buffer，elliptic → bn.js）对模块
+            // **求值顺序**敏感，而 rollup 只保证 chunk 内有序、不保证跨 chunk。
+            // 每一次的现象都是整页 JS 报错（基线 headless 渲染是零错误）。
+            //
+            // 所以它继续留在 vendor-misc。真要拆的话，得先弄清这条链的求值依赖，
+            // 而不是继续换匹配规则去试——收益是首页少下 ~400KB，不值得拿白屏赌。
+
+            // 支付相关的第三方（二维码、airwallex 埋点）。同理：只有付款流程
+            // 需要，而那几个页面同样是懒加载路由。
+            if (
+              id.includes('/qrcode/') ||
+              id.includes('/@airwallex/') ||
+              id.includes('/encode-utf8/') ||
+              id.includes('/dijkstrajs/')
+            ) {
+              return 'vendor-payment'
             }
 
             // 其他小型第三方库合并
