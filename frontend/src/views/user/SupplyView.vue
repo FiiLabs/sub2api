@@ -409,6 +409,9 @@
                   <th class="px-3 py-2">{{ t('supply.accounts.name') }}</th>
                   <th class="px-3 py-2">{{ t('supply.accounts.platform') }}</th>
                   <th class="px-3 py-2">{{ t('supply.accounts.state') }}</th>
+                  <!-- 每日上限排在「接单状态」之后：那一列回答「在不在接单」，
+                       紧接着的追问就是「为什么不接 / 还剩多少」。 -->
+                  <th class="px-3 py-2">{{ t('supply.accounts.dailyCap') }}</th>
                   <th class="px-3 py-2">{{ t('supply.accounts.status') }}</th>
                   <th class="px-3 py-2">{{ t('supply.accounts.lastUsedAt') }}</th>
                   <th class="px-3 py-2">{{ t('supply.accounts.createdAt') }}</th>
@@ -416,7 +419,8 @@
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-100 dark:divide-dark-800">
-                <tr v-for="account in accounts" :key="account.id" :data-testid="`supply-account-${account.id}`">
+                <template v-for="account in accounts" :key="account.id">
+                <tr :data-testid="`supply-account-${account.id}`">
                   <td class="px-3 py-3">
                     <p class="font-medium text-gray-900 dark:text-white">{{ account.name }}</p>
                     <p v-if="account.email_address" class="text-xs text-gray-400 dark:text-dark-500">
@@ -428,7 +432,18 @@
                     <span class="rounded-full px-2 py-0.5 text-xs font-medium" :class="stateBadgeClass(account.supply_state)">
                       {{ stateLabel(account.supply_state) }}
                     </span>
-                    <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">
+                    <!-- 触顶优先于 schedulable。
+                         闸门是调度层过滤、不写库，所以触顶时 account.schedulable
+                         **仍然是 true**——只看它就会在一个一分钱赚不到的号上显示
+                         「接单中」。这一行是整个每日上限功能里最要紧的一处显示。 -->
+                    <p
+                      v-if="account.daily_cap_reached"
+                      class="mt-1 text-xs font-medium text-amber-600 dark:text-amber-400"
+                      :data-testid="`supply-daily-cap-reached-${account.id}`"
+                    >
+                      {{ t('supply.accounts.dailyCapReached') }}
+                    </p>
+                    <p v-else class="mt-1 text-xs text-gray-400 dark:text-dark-500">
                       {{ account.schedulable ? t('supply.accounts.schedulable') : t('supply.accounts.notSchedulable') }}
                     </p>
 
@@ -452,6 +467,36 @@
                     >
                       {{ t('supply.accounts.drainUntil', { time: formatDateTime(account.drain_until) }) }}
                     </p>
+                  </td>
+                  <!-- ===== 每日共享上限 ===== -->
+                  <td class="px-3 py-3" :data-testid="`supply-daily-cap-cell-${account.id}`">
+                    <template v-if="hasDailyCap(account)">
+                      <p v-if="(account.daily_cost_limit_usd ?? 0) > 0" class="text-xs text-gray-700 dark:text-gray-300">
+                        {{ formatUsd(account.daily_cost_used_usd ?? 0) }} / {{ formatUsd(account.daily_cost_limit_usd ?? 0) }}
+                      </p>
+                      <p v-if="(account.daily_token_limit ?? 0) > 0" class="text-xs text-gray-700 dark:text-gray-300">
+                        {{ formatTokens(account.daily_tokens_used ?? 0) }} / {{ formatTokens(account.daily_token_limit ?? 0) }}
+                        {{ t('supply.accounts.dailyCapTokensUnit') }}
+                      </p>
+                      <!-- 这句不能省：分母是**官方牌价**，不是他的收益（两者差一个倍率）。
+                           少了它，供给者会拿这个数去对自己的分成、得出「数字不对」的结论。 -->
+                      <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">{{ t('supply.accounts.dailyCapBasisHint') }}</p>
+                      <p v-if="account.daily_cap_reset_at" class="text-xs text-gray-400 dark:text-dark-500">
+                        {{ t('supply.accounts.dailyCapResetAt', { time: formatDateTime(account.daily_cap_reset_at) }) }}
+                      </p>
+                    </template>
+                    <p v-else class="text-xs text-gray-400 dark:text-dark-500">
+                      {{ t('supply.accounts.dailyCapUnlimited') }}
+                    </p>
+                    <button
+                      type="button"
+                      class="mt-1 text-xs text-primary-600 hover:underline dark:text-primary-400"
+                      :disabled="mutatingId === account.id"
+                      :data-testid="`supply-daily-cap-edit-${account.id}`"
+                      @click="toggleCapEditor(account)"
+                    >
+                      {{ capEditingId === account.id ? t('supply.accounts.dailyCapCancel') : t('supply.accounts.dailyCapEdit') }}
+                    </button>
                   </td>
                   <td class="px-3 py-3">
                     <span class="text-gray-700 dark:text-gray-300">{{ account.status }}</span>
@@ -527,6 +572,52 @@
                     </div>
                   </td>
                 </tr>
+
+                <!-- 上限编辑器：行内展开行，不做弹窗。
+                     这一页目前一个弹窗都没有（OAuth 流程也是行内的），引入第一个
+                     会让 diff 大很多，而这里要编辑的只有两个数字。 -->
+                <tr v-if="capEditingId === account.id" :data-testid="`supply-daily-cap-editor-${account.id}`">
+                  <td colspan="8" class="bg-gray-50 px-3 py-3 dark:bg-dark-800/50">
+                    <div class="flex flex-wrap items-end gap-3">
+                      <div>
+                        <label class="mb-1 block text-xs text-gray-500 dark:text-dark-400">
+                          {{ t('supply.accounts.dailyCapCostLabel') }}
+                        </label>
+                        <input
+                          v-model="capForm.cost"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          class="input w-40 text-sm"
+                          :data-testid="`supply-daily-cap-cost-${account.id}`"
+                        />
+                      </div>
+                      <div>
+                        <label class="mb-1 block text-xs text-gray-500 dark:text-dark-400">
+                          {{ t('supply.accounts.dailyCapTokenLabel') }}
+                        </label>
+                        <input
+                          v-model="capForm.tokens"
+                          type="number"
+                          min="0"
+                          step="1000"
+                          class="input w-40 text-sm"
+                          :data-testid="`supply-daily-cap-tokens-${account.id}`"
+                        />
+                      </div>
+                      <button
+                        class="btn btn-primary btn-sm"
+                        :disabled="mutatingId === account.id"
+                        :data-testid="`supply-daily-cap-save-${account.id}`"
+                        @click="saveDailyCap(account)"
+                      >
+                        {{ mutatingId === account.id ? t('supply.accounts.dailyCapSaving') : t('supply.accounts.dailyCapSave') }}
+                      </button>
+                    </div>
+                    <p class="mt-2 text-xs text-gray-400 dark:text-dark-500">{{ t('supply.accounts.dailyCapHint') }}</p>
+                  </td>
+                </tr>
+                </template>
               </tbody>
             </table>
           </div>
@@ -927,7 +1018,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -958,6 +1049,78 @@ const refreshing = ref(false)
 const starting = ref(false)
 const submitting = ref(false)
 const mutatingId = ref<number | null>(null)
+
+// ---- 每日共享上限 ----
+// 展开中的那一行；null = 没有任何行在编辑。一次只允许开一个，与 mutatingId 同理。
+const capEditingId = ref<number | null>(null)
+// 输入框存字符串：type=number 的空值是空串，转成 0 会把「没填」变成「设成 0」，
+// 而 0 的语义是「取消上限」——两者相反。
+const capForm = reactive<{ cost: string | number; tokens: string | number }>({ cost: '', tokens: '' })
+
+/** 这个号设过任一种上限没有。与后端 HasSupplyDailyCap 同一判据。 */
+function hasDailyCap(account: SupplyAccount): boolean {
+  return (account.daily_cost_limit_usd ?? 0) > 0 || (account.daily_token_limit ?? 0) > 0
+}
+
+function formatUsd(value: number): string {
+  return `$${value.toFixed(2)}`
+}
+
+/** 大数字缩写成 12.3K / 4.5M，表格里放得下。 */
+function formatTokens(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`
+  return String(value)
+}
+
+function toggleCapEditor(account: SupplyAccount): void {
+  if (capEditingId.value === account.id) {
+    capEditingId.value = null
+    return
+  }
+  capEditingId.value = account.id
+  // 用当前值预填，0（不限）显示成空——让「不限」在输入框里就是「什么都没填」。
+  capForm.cost = (account.daily_cost_limit_usd ?? 0) > 0 ? String(account.daily_cost_limit_usd) : ''
+  capForm.tokens = (account.daily_token_limit ?? 0) > 0 ? String(account.daily_token_limit) : ''
+}
+
+/**
+ * 空值 → 0（清除上限）；非法输入 → null（不发这一项，服务端也就不改它）。
+ * 把非法输入当 0 会把一次手滑变成一次静默的「取消上限」。
+ *
+ * 入参按 unknown 收：`<input type="number">` 上的 v-model 给回来的可能是 number
+ * 也可能是空串，直接当 string 用会在 .trim() 上炸掉。
+ */
+function parseCapInput(raw: unknown): number | null {
+  if (raw === '' || raw === null || raw === undefined) return 0
+  const parsed = typeof raw === 'number' ? raw : Number(String(raw).trim())
+  if (!Number.isFinite(parsed) || parsed < 0) return null
+  return parsed
+}
+
+async function saveDailyCap(account: SupplyAccount): Promise<void> {
+  const cost = parseCapInput(capForm.cost)
+  const tokens = parseCapInput(capForm.tokens)
+  if (cost === null || tokens === null) {
+    appStore.showError(t('supply.error.dailyCapInvalid'))
+    return
+  }
+  mutatingId.value = account.id
+  try {
+    // 从**响应**回填，不用本地输入值：服务端会夹取值区间、把金额截到分，
+    // 显示他填的那个数会让界面和实际生效的值对不上。
+    replaceAccount(await supplyAPI.setDailyCap(account.id, {
+      daily_cost_limit_usd: cost,
+      daily_token_limit: tokens,
+    }))
+    capEditingId.value = null
+    appStore.showSuccess(t('supply.accounts.dailyCapSaved'))
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('supply.error.dailyCapFailed')))
+  } finally {
+    mutatingId.value = null
+  }
+}
 
 const status = ref<SupplyStatus>({ enabled: false, settlement_enabled: false })
 

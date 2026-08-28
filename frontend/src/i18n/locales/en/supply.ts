@@ -195,7 +195,28 @@ export default {
       probePasses: '{passes} consecutive health checks passed',
       eligibleAt: 'Observation window is met no earlier than {time}',
       probeError: 'Health check failed: {reason}. You most likely need to re-authorize this account.',
-      drainUntil: 'Draining until {time}'
+      drainUntil: 'Draining until {time}',
+
+      // ---- Daily share cap ----
+      dailyCap: 'Daily cap',
+      dailyCapUnlimited: 'Unlimited',
+      dailyCapEdit: 'Set',
+      dailyCapCancel: 'Cancel',
+      dailyCapSave: 'Save',
+      dailyCapSaving: 'Saving…',
+      dailyCapSaved: 'Saved. Resets at 00:00 UTC.',
+      dailyCapCostLabel: 'Daily spend cap (USD, blank = unlimited)',
+      dailyCapTokenLabel: 'Daily token cap (blank = unlimited)',
+      dailyCapTokensUnit: 'tokens',
+      // Load-bearing: the denominator is list price, not your earnings (they differ
+      // by the platform multiplier). Without this line providers compare it against
+      // their revenue share and conclude the number is wrong.
+      dailyCapBasisHint: 'Counted at official list price, not your earnings',
+      dailyCapResetAt: 'Resets {time}',
+      // The account still reads as schedulable in the database when the cap trips,
+      // so this line is the only place a provider can learn why they are not earning.
+      dailyCapReached: 'Daily cap reached — resumes automatically at 00:00 UTC',
+      dailyCapHint: 'Whichever cap is hit first applies. The account stops taking new requests for the rest of the day and resumes at 00:00 UTC; earnings already accrued are unaffected.'
     },
 
     // Relay onboarding (M7). trustNotice is the one sentence that must never be
@@ -351,7 +372,9 @@ export default {
       payoutAddressRequired: 'Enter the payout address',
       payoutWalletRequired: 'Bind an on-chain payout address for this channel first',
       payoutBindFailed: 'Failed to bind the payout address',
-      payoutUnbindFailed: 'Failed to unbind the payout address'
+      payoutUnbindFailed: 'Failed to unbind the payout address',
+      dailyCapInvalid: 'A cap must be a number of 0 or more; leave blank for unlimited',
+      dailyCapFailed: 'Failed to save the daily cap'
     }
   },
 

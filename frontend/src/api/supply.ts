@@ -66,6 +66,23 @@ export interface SupplyAccount {
   probe_error?: string
   /** 排空窗到期时刻，仅 draining 状态有值 */
   drain_until?: string | null
+
+  // ---- 每日共享上限。全部可选：旧后端不返回这些字段，缺了不能让整表渲染崩。----
+
+  /** 每日金额上限（美元/天），**按官方牌价**计。0 或缺省 = 不限。 */
+  daily_cost_limit_usd?: number
+  /** 每日 token 上限。0 或缺省 = 不限。 */
+  daily_token_limit?: number
+  /** 今日已用（UTC 日）。 */
+  daily_cost_used_usd?: number
+  daily_tokens_used?: number
+  /**
+   * 今日是否已触顶。**由服务端判定**，前端不要自己拿 used >= limit 去算——
+   * 那会在两边边界语义漂移时静默不一致，而现象是界面说「还能接单」但实际不接。
+   */
+  daily_cap_reached?: boolean
+  /** 下一个 UTC 零点。只在设了上限时有值。 */
+  daily_cap_reset_at?: string | null
 }
 
 /** 赚取钱包快照。 */
@@ -454,6 +471,20 @@ async function unbindPayoutWallet(network: string): Promise<{ network: string; b
   return data
 }
 
+/**
+ * 设置某个号的每日共享上限。
+ *
+ * PUT 而非 POST：每个号至多一份上限，这是一次幂等置换（与 bindPayoutWallet 同理）。
+ * 两个字段可单独省略，省略 = 这一项不改；传 0 = 取消这一项的上限。
+ */
+async function setDailyCap(
+  id: number,
+  payload: { daily_cost_limit_usd?: number; daily_token_limit?: number }
+): Promise<SupplyAccount> {
+  const { data } = await apiClient.put<SupplyAccount>(`/user/supply/accounts/${id}/daily-cap`, payload)
+  return data
+}
+
 export const supplyAPI = {
   getStatus,
   getAgreement,
@@ -464,6 +495,7 @@ export const supplyAPI = {
   pauseAccount,
   resumeAccount,
   detachAccount,
+  setDailyCap,
   getWallet,
   listLedger,
   submitRelayAccount,

@@ -179,7 +179,27 @@ export default {
       probePasses: '已连续通过 {passes} 次探测',
       eligibleAt: '不早于 {time} 满足观察时长',
       probeError: '探测失败：{reason}。多半需要你重新授权这个号。',
-      drainUntil: '排空期至 {time}'
+      drainUntil: '排空期至 {time}',
+
+      // ---- 每日共享上限 ----
+      dailyCap: '每日上限',
+      dailyCapUnlimited: '不限',
+      dailyCapEdit: '设置',
+      dailyCapCancel: '取消',
+      dailyCapSave: '保存',
+      dailyCapSaving: '保存中…',
+      dailyCapSaved: '已保存。次日 UTC 零点自动重置。',
+      dailyCapCostLabel: '每日金额上限（美元，留空=不限）',
+      dailyCapTokenLabel: '每日 token 上限（留空=不限）',
+      dailyCapTokensUnit: 'token',
+      // 这一句不能删：分母是官方牌价，不是他的收益（两者差一个倍率）。
+      // 少了它，供给者会拿这个数去对自己的分成、得出"数字不对"的结论。
+      dailyCapBasisHint: '按官方定价计，不是你的收益',
+      dailyCapResetAt: '{time} 重置',
+      // 触顶时账号在库里仍是"可调度"，所以这句话是供给者唯一能知道
+      // "为什么现在没在赚钱"的地方。
+      dailyCapReached: '今日额度已用完，零点后自动恢复接单',
+      dailyCapHint: '两个上限先到先生效。用完当天不再接单，次日 UTC 零点自动恢复；已产生的收益不受影响。'
     },
 
     // 中转接入（M7）。trustNotice 是这一组唯一不能删的句子：平台会把消费者
@@ -339,7 +359,9 @@ export default {
       // 是绑定出来的。让他去表单里找一个不存在的输入框，是一次白跑。
       payoutWalletRequired: '请先绑定这个渠道的链上收款地址',
       payoutBindFailed: '绑定收款地址失败',
-      payoutUnbindFailed: '解绑收款地址失败'
+      payoutUnbindFailed: '解绑收款地址失败',
+      dailyCapInvalid: '上限要填一个不小于 0 的数字，留空表示不限',
+      dailyCapFailed: '保存每日上限失败'
     }
   },
 
