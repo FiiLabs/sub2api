@@ -1,22 +1,22 @@
 {
-  "$comment": "Authoritative attestation reference for the production publicai-gateway CVM (sub2api single-enclave architecture). Fetched at runtime by the /proof page (see frontend/src/utils/attestation/reference.ts). Every change to this file is public git history — that is part of the trust story. composeHash was read back from the CVM's RTMR3 via the attestor's event log on 2026-08-27 and cross-checked against the Phala control-plane API; both report c5f79ad6. Image digests are the linux/amd64 children of the cosign-signed proof-v15 indexes (sub2api INDEX 44d10d34, attestor INDEX 696a5634) built by publish-tee-images run 33057550235; the keyless signatures were verified against certificate identity https://github.com/FiiLabs/sub2api/.github/workflows/publish-tee-images.yml@refs/heads/feat/two-sided-market, and the Fulcio certificates embed githubWorkflowSha = the sourceCommit below, so the digest-to-source binding is cryptographic rather than self-reported. Note that the build branch changed from proof-solo to feat/two-sided-market with this release: anyone re-verifying the signatures must use the identity above, not the proof-solo one recorded in earlier revisions of this file. This release deploys the two-sided marketplace (supplier onboarding, revenue share, on-chain payouts) — 593 commits and 18 additive schema migrations on top of the previous baseline. The measured compose text is commit a7a851101, which differs from sourceCommit ec9ebbbf5 only by the two image digest pins that point at the images ec9ebbbf5 produced; that one-commit gap is inherent to pinning by digest and is why sourceCommit tracks what cosign attests rather than what contains this file. As with proof-v12 through proof-v14, composeHash could NOT be predicted ahead of the deploy, so it was read back afterwards; between the CVM update and this commit, /proof reported a mismatch against this file. osImageHash and appId are unchanged — the deploy passed --no-dev-os explicitly, because phala deploy silently switches to a dev OS image when it detects a local SSH key, and a dev OS would void the attestation entirely.",
+  "$comment": "Authoritative attestation reference for the production publicai-gateway CVM. Fetched at runtime by the /proof page. composeHash was read back from the CVM's RTMR3 event log on 2026-08-28 and cross-checked against the Phala control-plane API; both report ce8e7691. Image digests are the linux/amd64 children of the cosign-signed proof-v17 indexes (sub2api INDEX 73ef7182, attestor INDEX 95d947bb) built by publish-tee-images run 33147862253; the keyless signatures verify against certificate identity https://github.com/FiiLabs/sub2api/.github/workflows/publish-tee-images.yml@refs/heads/feat/two-sided-market, and the Fulcio certificates embed githubWorkflowSha = the sourceCommit below. THIS RELEASE FIXES A REFERENCE-SOURCE BUG: the /proof page used to fetch this file from the proof-solo branch while images were built from feat/two-sided-market. The two only stayed in sync because someone remembered to commit the same file twice; a reference describing a different build does not merely fail to help, it reports a healthy deployment as a TAMPERED enclave. Both the authoritative URL and the CDN mirror now point at the release branch, and a frontend test pins them to it. The release also cuts first-screen download from 1332KB to 118KB (-91%) via two changes: Vite modulePreload no longer resolves lazy-route dependencies (they were being preloaded on the homepage), and static assets are pre-compressed at build time and served as .gz by internal/web/precompressed.go. The CVM was resized back to 1 vCPU / 2GB in the same window: it had been scaled to 4/8 on a WRONG diagnosis (TLS handshake CPU), which measurement disproved — handshake time did not improve at 4 cores. The real cause was download volume. osImageHash, appId and instanceId are unchanged; the deploy passed --no-dev-os explicitly, because phala deploy silently switches to a dev OS image when it detects a local SSH key and a dev OS would void the attestation.",
   "version": 1,
-  "updatedAt": "2026-08-27",
+  "updatedAt": "2026-08-28",
   "enclave": {
     "appId": "9467ce766ed63423e86a19d2f36cc9a9926daf27",
     "osImage": "dstack-0.5.9",
     "osImageHash": "bd369a8c2f9edb2b52dad48ac8e0b32dde5f1337c423a506b48d07403a7d8033",
-    "composeHash": "c5f79ad647597fade7d28dfa59ea89e486849a202b94687c138c67712372bf58",
+    "composeHash": "ce8e76917e6fdf8efe7684ce94c7e13ea1232c236509671afa512cdf3d886410",
     "sourceRepo": "https://github.com/FiiLabs/sub2api.git",
-    "sourceCommit": "ec9ebbbf57c8e8a91dba91110a4cb503b5e8ebea",
+    "sourceCommit": "4d2863b843964f6e9e5d72914a0c914601883b99",
     "images": [
       {
         "name": "sub2api",
-        "digest": "docker.io/markerdao/sub2api@sha256:2e618ed930a560cb4c5ac46aab23746ffbaae06cf69b198e47fa12d0b514e7cd"
+        "digest": "docker.io/markerdao/sub2api@sha256:af2270f90264942c554f3dad5ab6692d08b3d605007f92b4461bcabfd882b468"
       },
       {
         "name": "sub2api-attestor",
-        "digest": "docker.io/markerdao/sub2api-attestor@sha256:1d0d53b001e676cdd27b96b9974245dc72486964fede5febb70b5fefc2d3b636"
+        "digest": "docker.io/markerdao/sub2api-attestor@sha256:f79d5aee0976ca754cf44331c2974b60632bac0fa1342f1bd211ca14b3d8339c"
       }
     ],
     "confidential": false
