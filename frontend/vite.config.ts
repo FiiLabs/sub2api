@@ -86,6 +86,54 @@ function injectPublicSettings(backendUrl: string): Plugin {
   }
 }
 
+/**
+ * APEXONE-EXT: 构建时预压缩静态资源。
+ *
+ * 后端 internal/web/precompressed.go 会在客户端支持 gzip 时优先发这里生成的
+ * .gz，找不到就原样发原文。所以这个插件的产物是**纯优化**，缺了不会坏，
+ * 只是慢——实测那个 250KB 的 CSS 压到 33KB。
+ *
+ * 放在 vite 构建里而不是单独一个 npm script，是为了让它不可能被忘记：
+ * 任何人跑 `pnpm build` 都会带上，不需要记得多跑一步。
+ *
+ * 用 Node 内置 zlib，不引第三方插件——这点活不值得多一个依赖。
+ */
+function precompressAssets(): Plugin {
+  return {
+    name: 'apexone-precompress',
+    apply: 'build',
+    // writeBundle 而不是 generateBundle：要等文件真的落盘，且此时拿到的是
+    // 最终产物（含 vite 自己的后处理）。
+    async writeBundle(options, bundle) {
+      const { gzipSync } = await import('zlib')
+      const { writeFileSync, readFileSync } = await import('fs')
+      const { join, extname } = await import('path')
+      const outDir = options.dir || ''
+      const compressible = new Set(['.js', '.css', '.html', '.json', '.svg', '.txt', '.xml'])
+      let saved = 0
+      for (const name of Object.keys(bundle)) {
+        if (!compressible.has(extname(name).toLowerCase())) continue
+        const file = join(outDir, name)
+        try {
+          const raw = readFileSync(file)
+          // 小文件压了也省不了多少，反而多一次文件打开。1KB 以下跳过。
+          if (raw.length < 1024) continue
+          const gz = gzipSync(raw, { level: 9 })
+          // 压完反而更大就别写了（已压缩的内容会这样）。
+          if (gz.length >= raw.length) continue
+          writeFileSync(file + '.gz', gz)
+          saved += raw.length - gz.length
+        } catch {
+          // 单个文件失败不该让整个构建失败：后端会退回发原文。
+        }
+      }
+      if (saved > 0) {
+        this.info(`预压缩完成，省下 ${(saved / 1024).toFixed(0)} KB`)
+      }
+    },
+  }
+}
+
 export default defineConfig(({ mode }) => {
   // 加载环境变量
   const env = loadEnv(mode, process.cwd(), '')
@@ -98,7 +146,8 @@ export default defineConfig(({ mode }) => {
       checker({
         vueTsc: true
       }),
-      injectPublicSettings(backendUrl)
+      injectPublicSettings(backendUrl),
+      precompressAssets()
     ],
   resolve: {
     alias: {

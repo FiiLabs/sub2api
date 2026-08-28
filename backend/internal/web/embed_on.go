@@ -112,6 +112,11 @@ func (s *FrontendServer) Middleware() gin.HandlerFunc {
 
 		// Serve static files normally (hashed assets get long-lived cache headers)
 		applyStaticAssetCacheHeaders(c.Writer.Header(), cleanPath)
+		// 构建时生成的 .gz 优先。没有就原样发——慢，但不会坏。
+		if servePrecompressedAsset(c.Writer, c.Request, s.distFS, cleanPath) {
+			c.Abort()
+			return
+		}
 		s.fileServer.ServeHTTP(c.Writer, c.Request)
 		c.Abort()
 	}
@@ -328,6 +333,10 @@ func ServeEmbeddedFrontend() gin.HandlerFunc {
 				return
 			}
 			applyStaticAssetCacheHeaders(c.Writer.Header(), cleanPath)
+			if servePrecompressedAsset(c.Writer, c.Request, distFS, cleanPath) {
+				c.Abort()
+				return
+			}
 			fileServer.ServeHTTP(c.Writer, c.Request)
 			c.Abort()
 			return
