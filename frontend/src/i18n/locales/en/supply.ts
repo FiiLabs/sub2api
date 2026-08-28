@@ -176,15 +176,24 @@ export default {
       cancelPause: 'Cancel offline',
       // Hover copy. One sentence each, stating the consequence rather than the
       // mechanism — someone hovering wants to know which button to press.
-      pauseTitle: 'Stops new requests and starts a 10-minute window you can still cancel. In-flight requests finish normally.',
-      pauseNowTitle: 'Skips the cancellable window and cannot be undone. Putting the account back means going through the review period again (15–30 min).',
+      // Lead with "stays offline until you turn it back on". A provider asked us
+      // whether the account comes back by itself after the window — it does not,
+      // and the old copy left them to infer that. The wrong inference is costly
+      // in one direction only: someone who believes it auto-resumes takes the
+      // account offline, walks away, and quietly earns nothing for days. The
+      // 10-minute window is a CANCELLATION window, not a "comes back" timer.
+      pauseTitle: 'Stops new requests. The account stays offline until you put it back — it does not resume on its own. For 10 minutes you can still cancel; after that, putting it back means going through the review period again. In-flight requests finish normally.',
+      pauseNowTitle: 'Stops new requests immediately and cannot be undone — there is no cancellation window. The account stays offline until you put it back, and doing so means going through the review period again (15–30 min). In-flight requests finish normally.',
       resumeTitle: 'Puts the account back in the pool. It re-enters the review period before it starts earning again.',
       cancelPauseTitle: 'Keeps the account serving — cancels the pending offline and returns it to its previous state immediately.',
       detachTitle: 'Stops serving AND permanently deletes the credential we hold for this account. Cannot be undone.',
       pauseHint:
-        '"Take offline" starts a drain window: no new requests are routed to the account, and you can still change your mind. "Take offline now" goes straight to the final state, and putting the account back means going through review again. Neither one cuts off requests already streaming — those finish normally.',
+        'Both options stop the account and it stays stopped until you put it back — neither one resumes on its own. "Take offline" gives you a 10-minute window in which you can still cancel; "Take offline now" skips that window and cannot be undone. Putting an account back means going through the review period again. Neither one cuts off requests already streaming — those finish normally.',
+      // The confirm dialog is the last thing shown before the action, so it has
+      // to answer the question people actually have — "does it come back?" —
+      // rather than only describing the drain window.
       pauseConfirm:
-        'The account stops taking new requests immediately and enters the drain window, which you can still cancel. Earnings already accrued are unaffected. Take it offline?',
+        'The account stops taking new requests immediately. It will stay offline until you put it back yourself — it does not come back automatically. For the next 10 minutes you can still cancel. Earnings already accrued are unaffected. Take it offline?',
       pauseNowConfirm:
         'Taking it offline now is final and cannot be cancelled; putting the account back means going through review again. Requests already streaming still finish. Continue?',
       paused: 'Taken offline',
