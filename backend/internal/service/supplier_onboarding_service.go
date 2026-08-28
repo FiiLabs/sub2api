@@ -44,8 +44,22 @@ const (
 	supplierSessionCleanupBatch = 200
 	// supplierAccountNameMaxLen 供给者能给自己的号起的名字长度上限。
 	supplierAccountNameMaxLen = 64
-	// supplierDefaultConcurrency 新接入账号的并发上限，取 ent 默认值。
-	supplierDefaultConcurrency = 3
+	// supplierDefaultConcurrency 新接入账号的并发上限。
+	//
+	// 曾经是 3——那个值不是算出来的，只是照抄了 ent schema 的字段默认值。
+	// 线上因此出过一次 503：供给池里唯一在接单的号并发上限 3，扛了 98% 的流量，
+	// 很快打满并撞上上游限流；与此同时兜底号（并发 20）几乎没被用到。两个号在
+	// 同一秒被限流的那一刻，消费者收到 "no available accounts"。
+	//
+	// 改成 15，与自营账号同档（线上自营号是 20），理由与 supplierDefaultPriority
+	// 一样：**供给账号不该因为「是外部的」就被系统性地限制得更死**。一个供给者
+	// 的订阅额度和自营账号的额度在上游看来没有区别，凭什么它只能跑三分之一的并发。
+	//
+	// 上界仍由上游限流兜着：真打太猛，Anthropic 会返回 429，RateLimitService
+	// 把这个号临时摘掉——那是一道比我们瞎猜一个并发数更准的闸。
+	//
+	// 这个常量只影响**新接入**的号。已经在池子里的号要单独改，改动不会追溯。
+	supplierDefaultConcurrency = 15
 	// supplierDefaultPriority 新接入账号的调度优先级，取 ent 默认值。
 	//
 	// 刻意与自营账号同档：供给账号不该因为「是外部的」就被系统性地排在后面或前面。
