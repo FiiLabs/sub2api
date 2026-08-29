@@ -87,6 +87,15 @@ func RegisterSupplierRoutes(
 		// 把它排在限流后面，等于在他最想止损的时候让他改不了。它也不打上游、
 		// 不消耗任何配额。
 		supply.PUT("/accounts/:id/daily-cap", h.Supplier.SetDailyCap)
+		// 就地重新授权：凭证失效时把一份新 token 换进**同一个**号，
+		// 而不是让供给者走「解绑 → 重新接入」（不可逆、换新 id、观察期重跑、
+		// 每日上限丢失）。见 service/supplier_reauth.go。
+		//
+		// 两条都套 Heavy 限流，与 /oauth/start|complete 同档——它们的代价一模一样：
+		// 一条会话行加一次上游授权页跳转，然后是一次真实的 token 交换。
+		// 这里与 pause/resume/detach 的区别在于「打不打上游」：那三条不打，这两条打。
+		supply.POST("/accounts/:id/reauth/start", panelRateLimiter.Heavy(), h.Supplier.StartReauth)
+		supply.POST("/accounts/:id/reauth/complete", panelRateLimiter.Heavy(), h.Supplier.CompleteReauth)
 		// 解绑是不可逆的（凭证被抹掉，号被摘掉），但**不**套 Heavy 限流：
 		// 撤回自己的授权是供给者最该畅通无阻的一个动作，把它排在限流后面，
 		// 等于在他最想退出的时候让他退不出去。它本身也不打上游、不消耗任何配额。

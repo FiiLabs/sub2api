@@ -64,8 +64,19 @@ export interface SupplyAccount {
   probe_passes: number
   /** 上次探测失败原因。有值 = 供给者自己要动手（多半是重新授权）。 */
   probe_error?: string
+  /** 上次探测时刻。用来分辨「刚失败」与「几天前就坏了、一直没人管」。 */
+  probe_at?: string | null
   /** 排空窗到期时刻，仅 draining 状态有值 */
   drain_until?: string | null
+
+  /**
+   * 需要重新授权。**服务端判定**，理由同 daily_cap_reached——两边各写一份判据，
+   * 漂移那天界面会对着一个坏号说「一切正常」。
+   *
+   * 徽章与那个按钮出不出现**只看这个字段**，不要自己拿 status / probe_error 去拼。
+   * 可选是因为旧后端不返回它（缺省视为 false）。
+   */
+  needs_reauth?: boolean
 
   // ---- 每日共享上限。全部可选：旧后端不返回这些字段，缺了不能让整表渲染崩。----
 
@@ -280,6 +291,16 @@ export interface StartOAuthResponse {
   session_id: string
 }
 
+/**
+ * 发起重新授权的响应。与 StartOAuthResponse 同形但**不复用**——
+ * 后端那两个类型也是分开的，理由一样：两条路径回答的是不同的问题
+ * （「挂一个新号」与「修这一个号」），将来很可能分叉。
+ */
+export interface StartReauthResponse {
+  auth_url: string
+  session_id: string
+}
+
 async function getStatus(): Promise<SupplyStatus> {
   const { data } = await apiClient.get<SupplyStatus>('/user/supply/status')
   return data
@@ -324,6 +345,36 @@ async function completeOAuth(payload: {
 async function listAccounts(): Promise<SupplyAccount[]> {
   const { data } = await apiClient.get<{ accounts: SupplyAccount[] }>('/user/supply/accounts')
   return data?.accounts ?? []
+}
+
+/**
+ * 发起一次**就地重新授权**。
+ *
+ * 与 startOAuth 的区别不只是多一个 id：服务端会把这条会话绑死在这个号上，
+ * 兑换时换不到别的号上去，也换不出一个新号。所以这两个函数不能互相替代，
+ * 界面上也不该让它们共用同一份状态（见 SupplyView 里 reauthAccountId 的注释）。
+ */
+async function startReauth(id: number): Promise<StartReauthResponse> {
+  const { data } = await apiClient.post<StartReauthResponse>(`/user/supply/accounts/${id}/reauth/start`)
+  return data
+}
+
+/**
+ * 兑换一次重新授权。成功后返回的是**同一个 id** 的账号——每日上限、已产生的收益、
+ * 观察期进度都还在。这一点要在文案里说清楚：供给者此前被教育的修复方式是
+ * 「解绑再重新接入」，那会换掉 id 并丢掉上面几样。
+ *
+ * 没有 name 参数：重新授权不改名字。
+ */
+async function completeReauth(
+  id: number,
+  payload: { session_id: string; code: string },
+): Promise<SupplyAccount> {
+  const { data } = await apiClient.post<SupplyAccount>(
+    `/user/supply/accounts/${id}/reauth/complete`,
+    payload,
+  )
+  return data
 }
 
 /**
@@ -492,6 +543,8 @@ export const supplyAPI = {
   startOAuth,
   completeOAuth,
   listAccounts,
+  startReauth,
+  completeReauth,
   pauseAccount,
   resumeAccount,
   detachAccount,

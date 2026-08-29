@@ -30,6 +30,8 @@ type supplierOnboardingRepoStub struct {
 
 	claimSession *SupplierOAuthSession
 	claimErr     error
+	// claimAccountIDs 记下每一次领取时调用方声明的会话种类（0 = 接入）。
+	claimAccountIDs []int64
 
 	pendingCount int
 	pendingErr   error
@@ -69,6 +71,12 @@ type supplierOnboardingRepoStub struct {
 
 	scrubCalls [][2]int64
 	scrubErr   error
+
+	// reauthCalls 记下每一次原地换凭证：号、人、写进去的凭证与 extra。
+	// 凭证整份记下来（而不是只记一个 bool）是因为「旧 token 有没有残留」
+	// 恰恰是这条路径最要紧的那条性质，只有比对整份 map 才测得出来。
+	reauthCalls []supplierReauthRecord
+	reauthErr   error
 
 	// acceptances 按 "userID|version" 索引已经存在的同意记录。
 	acceptances map[string]*SupplierAgreementAcceptance
@@ -173,8 +181,15 @@ func (r *supplierOnboardingRepoStub) CreateSession(_ context.Context, session *S
 	return nil
 }
 
-func (r *supplierOnboardingRepoStub) ClaimSession(_ context.Context, _ string, _ int64) (*SupplierOAuthSession, error) {
+func (r *supplierOnboardingRepoStub) ClaimSession(_ context.Context, _ string, _, accountID int64) (*SupplierOAuthSession, error) {
 	r.calls = append(r.calls, "ClaimSession")
+	// 刻意**不**进 seq（那条跨仓储的调用流水）：它记的是「建号 → 写归属 → 绑分组」
+	// 这类写操作的先后，领会话不在那条链上，混进去会让既有的顺序断言全部改口径。
+	//
+	// 记下调用方要的是哪一类会话。真实实现把这个判断做在 SQL 的
+	// `account_id IS NOT DISTINCT FROM` 里，替身测不了那条 WHERE，
+	// 能测的是「调用方有没有把它传对」——接入必须传 0，重新授权必须传号 id。
+	r.claimAccountIDs = append(r.claimAccountIDs, accountID)
 	if r.claimErr != nil {
 		return nil, r.claimErr
 	}
@@ -273,6 +288,31 @@ func (r *supplierOnboardingRepoStub) ScrubAccountCredentials(_ context.Context, 
 	return r.scrubErr
 }
 
+// supplierReauthRecord 一次原地换凭证的全部入参。
+type supplierReauthRecord struct {
+	accountID   int64
+	userID      int64
+	credentials map[string]any
+	extra       map[string]any
+}
+
+func (r *supplierOnboardingRepoStub) ApplyReauthCredentials(
+	_ context.Context, accountID, userID int64, credentials, extra map[string]any,
+) error {
+	r.calls = append(r.calls, "ApplyReauthCredentials")
+	r.record("ApplyReauthCredentials")
+	if r.reauthErr != nil {
+		return r.reauthErr
+	}
+	r.reauthCalls = append(r.reauthCalls, supplierReauthRecord{
+		accountID:   accountID,
+		userID:      userID,
+		credentials: credentials,
+		extra:       extra,
+	})
+	return nil
+}
+
 // relayEndpoints 已存在的中转端点，键 "baseURL|apiKey" → 账号 id（M7 查重桩）。
 func (r *supplierOnboardingRepoStub) FindAccountIDByRelayEndpoint(_ context.Context, _ string, baseURL, apiKey string) (int64, error) {
 	if r.relayFindErr != nil {
@@ -314,6 +354,21 @@ type supplierAccountStoreStub struct {
 
 	deletedIDs []int64
 	deleteErr  error
+
+	// clearErrorIDs / setErrorCalls 分别记「放回 active」与「打成 error」。
+	//
+	// 两个方向各记一份而不是合成一个状态：这两个动作分属两条路径
+	// （重新授权 / 探测失败），测试要断言的常常是「另一个方向**没有**被调用」。
+	clearErrorIDs []int64
+	clearErrorErr error
+	setErrorCalls []supplierSetErrorRecord
+	setErrorErr   error
+}
+
+// supplierSetErrorRecord 一次置错的入参。
+type supplierSetErrorRecord struct {
+	accountID int64
+	message   string
 }
 
 func newSupplierAccountStoreStub() *supplierAccountStoreStub {
@@ -421,6 +476,40 @@ func (s *supplierAccountStoreStub) SetSchedulable(_ context.Context, id int64, s
 	if account, ok := s.accounts[id]; ok {
 		account.Schedulable = schedulable
 	}
+	return nil
+}
+
+func (s *supplierAccountStoreStub) ClearError(_ context.Context, id int64) error {
+	s.calls = append(s.calls, "ClearError")
+	s.record("ClearError")
+	if s.clearErrorErr != nil {
+		return s.clearErrorErr
+	}
+	s.clearErrorIDs = append(s.clearErrorIDs, id)
+	if account, ok := s.accounts[id]; ok {
+		account.Status = StatusActive
+		account.ErrorMessage = ""
+		// 与真实实现同构：ClearError **不**动 schedulable。
+		// 把它顺手置回 true 会让「已 promote 的号重新授权后要显式恢复调度」
+		// 这条性质在测试里恒真——而那正是它要守的那个线上坑。
+	}
+	return nil
+}
+
+func (s *supplierAccountStoreStub) SetError(_ context.Context, id int64, message string) error {
+	s.calls = append(s.calls, "SetError")
+	s.record("SetError")
+	if s.setErrorErr != nil {
+		return s.setErrorErr
+	}
+	s.setErrorCalls = append(s.setErrorCalls, supplierSetErrorRecord{accountID: id, message: message})
+	if account, ok := s.accounts[id]; ok {
+		account.Status = StatusError
+		account.ErrorMessage = message
+		// 与真实实现同构：SetError 一并停调度。
+		account.Schedulable = false
+	}
+	s.schedulableSets[id] = false
 	return nil
 }
 

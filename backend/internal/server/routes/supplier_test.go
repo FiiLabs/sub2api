@@ -267,6 +267,11 @@ func TestSupplierRoutes_HeavyRateLimitManifest(t *testing.T) {
 	sort.Strings(got)
 
 	assert.Equal(t, []string{
+		// 就地重新授权：与 /oauth/* 同一副代价（会话行 + 授权页跳转 + token 交换），
+		// 所以同一档限流。注意它与同组的 pause/resume/detach 不同——那三条不打上游。
+		// （排在 relay 前面只是字节序：':' < 'r'。）
+		"POST /accounts/:id/reauth/complete",
+		"POST /accounts/:id/reauth/start",
 		// M7：中转提交会向供给者填的端点发真实探测，被脚本刷 = 平台替人压测。
 		"POST /accounts/relay",
 		"POST /oauth/complete",

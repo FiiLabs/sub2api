@@ -66,6 +66,13 @@ type supplierLifecycleAccountStore interface {
 	GetByID(ctx context.Context, id int64) (*Account, error)
 	UpdateExtra(ctx context.Context, id int64, updates map[string]any) error
 	SetSchedulable(ctx context.Context, id int64, schedulable bool) error
+	// SetError 把号打成错误态（status=error + 错误信息 + schedulable=false）。
+	//
+	// 只在探测拿到**认证类**失败时调用，见 probeOnce。加进这个窄接口之前值得知道：
+	// 它是这份清单里唯一一个会让号「停下来」的方法，而它的对立面（ClearError）
+	// 不在这里——把号放回去是供给者重新授权那条路径的事（supplier_reauth.go），
+	// 不是后台任务能自作主张做的。
+	SetError(ctx context.Context, id int64, errorMsg string) error
 }
 
 // supplierLifecycleStateLister 按接入状态列账号，外加一条按归属人可用性的扫描。
@@ -497,6 +504,29 @@ func (s *SupplierLifecycleService) probeOnce(ctx context.Context, account *Accou
 		if updErr := s.accountRepo.UpdateExtra(ctx, account.ID, updates); updErr != nil {
 			slog.Warn("[SupplierLifecycle] failed to record probe failure", "account_id", account.ID, "error", updErr)
 		}
+		// 认证类失败（401）与其它探测失败是两件不同的事。其它失败可能自己好——
+		// 限流、网络抖动、上游 5xx；而 401 只有账号的主人能修（重新授权一次）。
+		//
+		// 把它抬成 status=error，是为了让它落进**已经存在**的失效事件与通知里
+		// （SupplierIncidentService 的开事件谓词认的就是 status，见
+		// repository/supplier_incident_repo.go）。不抬的话，一个凭证过期的号会每
+		// 15 分钟失败一次、永远失败下去，而它的主人一封信都收不到、仪表盘上
+		// 只有一行红字——那封信的正文其实早就写好了，只是没有任何东西会触发它。
+		//
+		// 放在这里而不是 account_test_service.go 里 403 那一处：那个函数同时服务
+		// 管理端手工「测试连接」按钮和全部自营号，在那里加 401 会让管理员的一次
+		// 诊断点击，把一个正在刷新 token 的自营号打成错误态——401 比 403 常见得多，
+		// 也远更可能是瞬态的。这里则确知自己面对的是一个供给号
+		// （sweepPendingReview 只扫 owner_user_id IS NOT NULL 的行）、且是一次后台探测。
+		//
+		// 这一步与 supplier_reauth.go 是绑死的：SetError 会一并把 schedulable 置 false，
+		// 而 ClearError 不会还回来。没有那条重新授权路径，这里就是一扇只出不进的门。
+		if supplyProbeAuthFailure(message) {
+			if setErr := s.accountRepo.SetError(ctx, account.ID, message); setErr != nil {
+				slog.Warn("[SupplierLifecycle] failed to mark supply account as errored after auth failure",
+					"account_id", account.ID, "error", setErr)
+			}
+		}
 		return
 	}
 
@@ -579,3 +609,23 @@ func supplyProbeErrorMessage(err error, result *ScheduledTestResult) string {
 
 // supplyProbeErrorMaxLen 探测失败原因的存储上限。
 const supplyProbeErrorMaxLen = 300
+
+// supplyProbeAuthFailure 判断一句探测失败是不是「上游不认这份凭证了」。
+//
+// 判据是字符串，因为探测结果（ScheduledTestResult）只带回一句话、不带状态码。
+// 它匹配的是 account_test_service.go 里那句
+//
+//	errMsg := fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(body))
+//
+// 的产物——改那句话会让这里**静默**失效（不会编译错，只会让徽章、事件和邮件
+// 一起消失），所以有一条单测把这个前缀原样钉住。
+//
+// 只匹配这一个精确前缀，不放宽成「含 401」：上游的错误体本身可能提到 401
+// （比如一段解释重试策略的文档链接），那会把一次限流误判成凭证失效，
+// 进而把一个健康的号打成错误态。
+//
+// supplyProbeErrorMessage 会把消息截到 300 字符，但这个前缀在最开头，
+// 截断不影响匹配。
+func supplyProbeAuthFailure(message string) bool {
+	return strings.Contains(message, "API returned 401")
+}

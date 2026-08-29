@@ -238,6 +238,40 @@ export default {
       fieldsRequired: '端点地址与 API Key 都要填'
     },
 
+    // 就地重新授权。凭证失效时把一份新 token 换进**同一个**号。
+    //
+    // 这一组里有两句是承重的，改之前请读理由：
+    //   - hint：供给者此前被教育的修复方式是「解绑再重新接入」（换新 id、
+    //     观察期重跑、每日上限丢失）。不明确说「这不是重新接入」，他不会相信。
+    //   - mismatch：泛化成「授权失败」会把人直接推回解绑重挂，正是要消灭的动作。
+    reauth: {
+      badge: '需要重新授权',
+      cta: '重新授权',
+      starting: '正在生成授权链接…',
+      title: '重新授权这个号',
+      hint: '用同一个 Anthropic 账号重新走一遍授权。账号 id、每日上限和已产生的收益都保留，这不是重新接入。',
+      sameAccountHint: '请确认你登录的是 {email}。',
+      submit: '完成重新授权',
+      submitting: '正在换回凭证…',
+      cancel: '取消',
+      success: '已重新授权，这个号恢复接单。',
+      successPending: '已重新授权，将重新进入观察期。',
+      failed: '重新授权失败',
+      mismatch: '你授权的是另一个 Anthropic 账号。请用 {email} 再走一遍。',
+      // 替代那串原始的上游报错：它可能带 token 片段、内部主机名或整个 JSON 响应体，
+      // 而供给者需要的是「我该做什么」。非重新授权类的错误仍显示原文——
+      // 那是他仅有的诊断信息。
+      statusHint: '平台已经用不了这个号的凭证了。点右边的「重新授权」换一份新的。'
+    },
+
+    // account.status 的翻译。此前这一栏直接把 'error' 这种内部值显示给供给者。
+    accountStatus: {
+      active: '正常',
+      error: '异常',
+      disabled: '已被平台停用',
+      unknown: '未知'
+    },
+
     state: {
       pending_review: '观察期',
       active: '已上线',

@@ -53,7 +53,7 @@ func TestSupplierOnboarding_SessionIsClaimableExactlyOnce(t *testing.T) {
 	session := newTestOAuthSession(userID, "claim", 10*time.Minute)
 	require.NoError(t, repo.CreateSession(txCtx, session))
 
-	claimed, err := repo.ClaimSession(txCtx, session.SessionID, userID)
+	claimed, err := repo.ClaimSession(txCtx, session.SessionID, userID, 0)
 	require.NoError(t, err)
 	require.Equal(t, session.SessionID, claimed.SessionID)
 	require.Equal(t, userID, claimed.UserID)
@@ -64,7 +64,7 @@ func TestSupplierOnboarding_SessionIsClaimableExactlyOnce(t *testing.T) {
 	require.Equal(t, session.Scope, claimed.Scope)
 
 	// 第二次领取拿不到——重放不会再建一个账号。
-	_, err = repo.ClaimSession(txCtx, session.SessionID, userID)
+	_, err = repo.ClaimSession(txCtx, session.SessionID, userID, 0)
 	require.ErrorIs(t, err, service.ErrSupplierOAuthSessionInvalid)
 }
 
@@ -81,11 +81,11 @@ func TestSupplierOnboarding_SessionCannotBeClaimedByAnotherUser(t *testing.T) {
 	session := newTestOAuthSession(ownerID, "steal", 10*time.Minute)
 	require.NoError(t, repo.CreateSession(txCtx, session))
 
-	_, err := repo.ClaimSession(txCtx, session.SessionID, attackerID)
+	_, err := repo.ClaimSession(txCtx, session.SessionID, attackerID, 0)
 	require.ErrorIs(t, err, service.ErrSupplierOAuthSessionInvalid)
 
 	// 失败的领取不能顺手把会话标记成已消费，否则就是一条免费的拒绝服务。
-	claimed, err := repo.ClaimSession(txCtx, session.SessionID, ownerID)
+	claimed, err := repo.ClaimSession(txCtx, session.SessionID, ownerID, 0)
 	require.NoError(t, err)
 	require.Equal(t, ownerID, claimed.UserID)
 }
@@ -104,7 +104,7 @@ func TestSupplierOnboarding_ExpiredSessionIsNeitherClaimableNorPending(t *testin
 	live := newTestOAuthSession(userID, "live", 10*time.Minute)
 	require.NoError(t, repo.CreateSession(txCtx, live))
 
-	_, err := repo.ClaimSession(txCtx, expired.SessionID, userID)
+	_, err := repo.ClaimSession(txCtx, expired.SessionID, userID, 0)
 	require.ErrorIs(t, err, service.ErrSupplierOAuthSessionInvalid)
 
 	// 限流按「还能用的会话」计数，过期的不该继续占着名额。
@@ -118,7 +118,7 @@ func TestSupplierOnboarding_ExpiredSessionIsNeitherClaimableNorPending(t *testin
 	require.Equal(t, int64(1), deleted)
 
 	// 未过期的那条毫发无伤。
-	claimed, err := repo.ClaimSession(txCtx, live.SessionID, userID)
+	claimed, err := repo.ClaimSession(txCtx, live.SessionID, userID, 0)
 	require.NoError(t, err)
 	require.Equal(t, live.SessionID, claimed.SessionID)
 }
@@ -134,7 +134,7 @@ func TestSupplierOnboarding_ConsumedSessionSurvivesExpiryCleanup(t *testing.T) {
 	userID := mustCreateSupplier(t, client, "onboard-consumed")
 	session := newTestOAuthSession(userID, "consumed", 10*time.Minute)
 	require.NoError(t, repo.CreateSession(txCtx, session))
-	_, err := repo.ClaimSession(txCtx, session.SessionID, userID)
+	_, err := repo.ClaimSession(txCtx, session.SessionID, userID, 0)
 	require.NoError(t, err)
 
 	// 把它推成过期，但它已经被消费过了。
@@ -148,6 +148,186 @@ func TestSupplierOnboarding_ConsumedSessionSurvivesExpiryCleanup(t *testing.T) {
 	require.Zero(t, deleted)
 	require.Equal(t, 1, querySingleInt(t, txCtx, client,
 		"SELECT COUNT(*)::int FROM supplier_oauth_sessions WHERE session_id = $1", session.SessionID))
+}
+
+// 两类会话互不通兑（迁移 237 的 account_id + 领取语句里的 IS NOT DISTINCT FROM）。
+//
+// 只有真库能证：`IS NOT DISTINCT FROM` 的 NULL 语义是 Postgres 的，而这条判断
+// **整个落在那条一次性 UPDATE 的 WHERE 上**——它是「用一次重新授权的授权码去建
+// 一个新号」这条路径的唯一阻断点。写成领取之后再校验，就是一句能被重构删掉的 if；
+// 写在 WHERE 里，删掉它就没有行返回。
+func TestSupplierOnboarding_ReauthAndOnboardingSessionsAreNotInterchangeable(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewSupplierOnboardingRepository(client)
+
+	userID := mustCreateSupplier(t, client, "session-kind")
+	account := mustCreateAccount(t, client, &service.Account{
+		Name: fmt.Sprintf("session-kind-acct-%d", time.Now().UnixNano()),
+	})
+
+	// 一条接入会话（account_id 为 NULL）。
+	onboarding := newTestOAuthSession(userID, "kind-onboard", 10*time.Minute)
+	require.NoError(t, repo.CreateSession(txCtx, onboarding))
+
+	// 一条重新授权会话，绑在那个号上。
+	reauth := newTestOAuthSession(userID, "kind-reauth", 10*time.Minute)
+	reauth.AccountID = account.ID
+	require.NoError(t, repo.CreateSession(txCtx, reauth))
+
+	// 拿接入会话去修号：领不到。
+	_, err := repo.ClaimSession(txCtx, onboarding.SessionID, userID, account.ID)
+	require.ErrorIs(t, err, service.ErrSupplierOAuthSessionInvalid)
+
+	// 拿重新授权会话去建新号：同样领不到。这一支是要紧的那一支——
+	// 它挡住「授权一次、既修了旧号又白得一个新号」。
+	_, err = repo.ClaimSession(txCtx, reauth.SessionID, userID, 0)
+	require.ErrorIs(t, err, service.ErrSupplierOAuthSessionInvalid)
+
+	// 拿重新授权会话去修**另一个**号：也领不到。
+	_, err = repo.ClaimSession(txCtx, reauth.SessionID, userID, account.ID+99999)
+	require.ErrorIs(t, err, service.ErrSupplierOAuthSessionInvalid)
+
+	// 几次失败的领取都不能把会话标成已消费，否则就是一条免费的拒绝服务。
+	claimed, err := repo.ClaimSession(txCtx, reauth.SessionID, userID, account.ID)
+	require.NoError(t, err)
+	require.Equal(t, account.ID, claimed.AccountID, "领回来的会话要带着它绑定的号")
+
+	claimedOnboarding, err := repo.ClaimSession(txCtx, onboarding.SessionID, userID, 0)
+	require.NoError(t, err)
+	require.Zero(t, claimedOnboarding.AccountID, "接入会话读回来是 0，不是 NULL 扫描错误")
+}
+
+// ---------------------------------------------------------------------------
+// 就地重新授权（迁移 237）
+// ---------------------------------------------------------------------------
+
+// 凭证**整份替换**、extra **合并**。
+//
+// 两个方向都必须验，而且只有真库能验——它们分别落在同一条 UPDATE 的
+// `credentials = $3::jsonb` 与 `extra = COALESCE(extra,'{}') || $4::jsonb` 上。
+// 写反任何一个的后果都是静默的：凭证若变成合并，上一份 refresh_token 会留下来，
+// 号在下一次刷新时用一份作废的 token；extra 若变成替换，供给者自己设的每日上限
+// 和接入状态会一起消失，而界面上只会显示成「他从没设过上限」。
+func TestSupplierOnboarding_ReauthReplacesCredentialsAndMergesExtra(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewSupplierOnboardingRepository(client)
+
+	ownerID := mustCreateSupplier(t, client, "reauth-owner")
+	stamp := time.Now().UnixNano()
+	account := mustCreateAccount(t, client, &service.Account{
+		Name: fmt.Sprintf("reauth-acct-%d", stamp),
+		Credentials: map[string]any{
+			"access_token":  "old-at",
+			"refresh_token": "old-rt-SECRET",
+			"account_uuid":  fmt.Sprintf("reauth-uuid-%d", stamp),
+		},
+		Extra: map[string]any{
+			service.SupplyStateExtraKey:          service.SupplyStateActive,
+			service.SupplyProbeErrorExtraKey:     "API returned 401: expired",
+			service.SupplyProbePassesExtraKey:    0,
+			service.SupplyDailyCostLimitExtraKey: 12.5,
+		},
+	})
+	require.NoError(t, repo.SetAccountOwner(txCtx, account.ID, ownerID))
+	setAccountSchedulable(t, client, account.ID, false)
+
+	require.NoError(t, repo.ApplyReauthCredentials(txCtx, account.ID, ownerID,
+		map[string]any{
+			"access_token": "new-at",
+			"account_uuid": fmt.Sprintf("reauth-uuid-%d", stamp),
+		},
+		map[string]any{
+			service.SupplyProbeErrorExtraKey:  "",
+			service.SupplyProbePassesExtraKey: 0,
+		}))
+
+	creds, extra, schedulable := readAccountRow(t, txCtx, client, account.ID)
+	require.Contains(t, creds, "new-at")
+	require.NotContains(t, creds, "old-at")
+	require.NotContains(t, creds, "old-rt-SECRET",
+		"整份替换：上一份 refresh_token 一个字节都不该留下")
+
+	// extra 是合并：这次没写的键必须还在。
+	require.Contains(t, extra, service.SupplyDailyCostLimitExtraKey,
+		"供给者自己设的每日上限不能被一次重新授权抹掉")
+	require.Contains(t, extra, service.SupplyStateActive, "接入状态不该被这条语句动到")
+
+	// 这条语句刻意不碰 schedulable——把号放回池子要发调度事件，由 accountRepo 做。
+	require.False(t, schedulable)
+}
+
+// 换凭证只能换自己的号，且软删的行拒绝。
+//
+// 与 ScrubAccountCredentials 同一条 TOCTOU 理由：上层查过归属，但那次查与这次写
+// 之间隔着一次网络往返。这里更要紧一点——抹凭证的最坏后果是别人的号停了，
+// 而换凭证的最坏后果是**别人的号被换成了我的订阅**。
+func TestSupplierOnboarding_ReauthRefusesForeignAndDeletedAccounts(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewSupplierOnboardingRepository(client)
+
+	ownerID := mustCreateSupplier(t, client, "reauth-mine")
+	strangerID := mustCreateSupplier(t, client, "reauth-stranger")
+	stamp := time.Now().UnixNano()
+	account := mustCreateAccount(t, client, &service.Account{
+		Name:        fmt.Sprintf("reauth-guard-%d", stamp),
+		Credentials: map[string]any{"refresh_token": "rt-secret"},
+	})
+	require.NoError(t, repo.SetAccountOwner(txCtx, account.ID, ownerID))
+
+	err := repo.ApplyReauthCredentials(txCtx, account.ID, strangerID,
+		map[string]any{"access_token": "attacker-at"}, nil)
+	require.ErrorIs(t, err, service.ErrSupplierAccountNotFound)
+
+	creds, _, _ := readAccountRow(t, txCtx, client, account.ID)
+	require.Contains(t, creds, "rt-secret", "别人的凭证一个字节都不该被动到")
+	require.NotContains(t, creds, "attacker-at")
+
+	_, execErr := client.ExecContext(txCtx,
+		"UPDATE accounts SET deleted_at = NOW() WHERE id = $1", account.ID)
+	require.NoError(t, execErr)
+	require.ErrorIs(t,
+		repo.ApplyReauthCredentials(txCtx, account.ID, ownerID,
+			map[string]any{"access_token": "new-at"}, nil),
+		service.ErrSupplierAccountNotFound)
+}
+
+// extra 传 nil 时不能把整个 extra 变成 NULL。
+//
+// `extra || NULL` 在 Postgres 里是 NULL——那一下会把接入状态、每日上限、
+// 观察期进度一起抹掉，而症状是这个号从供给者的界面上「变回了刚接入的样子」。
+func TestSupplierOnboarding_ReauthWithNilExtraKeepsExistingExtra(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewSupplierOnboardingRepository(client)
+
+	ownerID := mustCreateSupplier(t, client, "reauth-nil-extra")
+	account := mustCreateAccount(t, client, &service.Account{
+		Name:        fmt.Sprintf("reauth-nil-%d", time.Now().UnixNano()),
+		Credentials: map[string]any{"access_token": "old-at"},
+		Extra: map[string]any{
+			service.SupplyStateExtraKey:          service.SupplyStateActive,
+			service.SupplyDailyCostLimitExtraKey: 7.5,
+		},
+	})
+	require.NoError(t, repo.SetAccountOwner(txCtx, account.ID, ownerID))
+
+	require.NoError(t, repo.ApplyReauthCredentials(txCtx, account.ID, ownerID,
+		map[string]any{"access_token": "new-at"}, nil))
+
+	_, extra, _ := readAccountRow(t, txCtx, client, account.ID)
+	require.Contains(t, extra, service.SupplyStateActive)
+	require.Contains(t, extra, service.SupplyDailyCostLimitExtraKey)
 }
 
 // ---------------------------------------------------------------------------

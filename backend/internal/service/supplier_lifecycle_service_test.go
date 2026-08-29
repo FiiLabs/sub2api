@@ -10,6 +10,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -374,6 +375,105 @@ func TestProbeFailureResetsPassesAndRecordsReason(t *testing.T) {
 	assert.Equal(t, 0, updates[SupplyProbePassesExtraKey])
 	assert.Equal(t, "invalid refresh token", updates[SupplyProbeErrorExtraKey])
 	assert.Zero(t, store.schedulableCalls, "探测失败绝不入池")
+}
+
+// ============================================================================
+// 认证类探测失败 → 置错误态
+//
+// 这一组守的是「凭证失效不再是一个静默黑洞」：401 抬成 status=error，
+// 于是既有的失效事件与那封早就写好的邮件才会被触发。
+// 同时守住它的**边界**——把限流、超时、5xx 一并抬成错误态，会把一批
+// 会自己恢复的号打死，而它们的主人对此无能为力。
+// ============================================================================
+
+// newProbeFailureFixture 摆一个「观察期里的号探测失败」的场景。
+func newProbeFailureFixture(t *testing.T, message string) *supplierAccountStoreStub {
+	t.Helper()
+	store := newSupplierAccountStoreStub()
+	store.accounts[100] = &Account{ID: 100, Status: StatusActive, Extra: map[string]any{
+		SupplyStateExtraKey: SupplyStatePendingReview,
+	}}
+	repo := &supplierOnboardingRepoStub{idsByState: map[string][]int64{
+		SupplyStatePendingReview: {100},
+	}}
+	prober := newSupplierProberStub()
+	prober.results[100] = &ScheduledTestResult{Status: "failed", ErrorMessage: message}
+	newLifecycleService(repo, store, autoPromoteSettings(), prober).
+		sweepPendingReview(context.Background())
+	return store
+}
+
+// 401：抬成错误态。没有这一步，一个凭证过期的号会每 15 分钟失败一次、永远失败，
+// 而它的主人一封信都收不到——那正是线上 #2 号的处境。
+func TestProbeAuthFailureMarksAccountErrored(t *testing.T) {
+	const message = `API returned 401: {"type":"error","error":{"type":"authentication_error",` +
+		`"message":"OAuth access token has expired. Re-authenticate to continue."}}`
+	store := newProbeFailureFixture(t, message)
+
+	require.Len(t, store.setErrorCalls, 1)
+	assert.Equal(t, int64(100), store.setErrorCalls[0].accountID)
+	assert.Equal(t, message, store.setErrorCalls[0].message)
+	// 失败原因照样记进 extra：前端那行红字和这个状态是两个独立的读者。
+	assert.Equal(t, message, store.extraUpdates[100][SupplyProbeErrorExtraKey])
+}
+
+// 非认证类失败一律**不**抬。这些都可能自己好，而 SetError 会一并停调度、
+// 且 ClearError 不还回来——把一次网络抖动打成永久停摆是不可接受的代价。
+func TestProbeNonAuthFailureDoesNotMarkAccountErrored(t *testing.T) {
+	cases := []struct {
+		name    string
+		message string
+	}{
+		{"超时", "context deadline exceeded"},
+		{"上游 5xx", `API returned 500: {"error":"internal"}`},
+		{"限流", `API returned 429: {"error":"rate_limited"}`},
+		{"封号走的是 403，由 account_test_service 自己置错", `API returned 403: {"error":"forbidden"}`},
+		{"泛泛的失败", "probe failed"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newProbeFailureFixture(t, tc.message)
+			assert.Empty(t, store.setErrorCalls, "只有认证类失败才该抬成错误态")
+		})
+	}
+}
+
+// 把判据本身钉住。
+//
+// supplyProbeAuthFailure 匹配的是 account_test_service.go 里那句
+// `fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(body))` 的产物——
+// 改那句话不会编译错，只会让徽章、事件和邮件一起静默消失。这条测试是那根钉子。
+func TestSupplyProbeAuthFailureClassifier(t *testing.T) {
+	// 与生产者同构地造消息，而不是手写字面量：这样上游改了格式，这里会跟着变。
+	upstream := func(status int, body string) string {
+		return supplyProbeErrorMessage(nil, &ScheduledTestResult{
+			Status:       "failed",
+			ErrorMessage: fmt.Sprintf("API returned %d: %s", status, body),
+		})
+	}
+
+	assert.True(t, supplyProbeAuthFailure(upstream(401, `{"error":"authentication_error"}`)))
+	assert.False(t, supplyProbeAuthFailure(upstream(403, `{"error":"forbidden"}`)))
+	assert.False(t, supplyProbeAuthFailure(upstream(429, `{"error":"rate_limited"}`)))
+	assert.False(t, supplyProbeAuthFailure(upstream(500, `{"error":"internal"}`)))
+	assert.False(t, supplyProbeAuthFailure(""))
+
+	t.Run("截断不影响匹配", func(t *testing.T) {
+		// 前缀在最开头，300 字符的截断砍的是尾巴。
+		long := make([]byte, supplyProbeErrorMaxLen*2)
+		for i := range long {
+			long[i] = 'x'
+		}
+		message := upstream(401, string(long))
+		assert.Len(t, message, supplyProbeErrorMaxLen)
+		assert.True(t, supplyProbeAuthFailure(message))
+	})
+
+	t.Run("正文里提到 401 不算", func(t *testing.T) {
+		// 放宽成「含 401」会把这种限流误判成凭证失效，进而把一个健康的号打死。
+		assert.False(t, supplyProbeAuthFailure(
+			upstream(429, `{"error":"rate_limited","docs":"retry on 401 or 429"}`)))
+	})
 }
 
 func TestProbeErrorMessageIsTruncated(t *testing.T) {

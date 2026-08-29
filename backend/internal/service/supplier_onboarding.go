@@ -51,6 +51,31 @@ var (
 	// 所以「它现在不是下线状态」不是泄漏，而是他需要知道的、能自己纠正的信息。
 	ErrSupplierAccountNotRetired = infraerrors.BadRequest(
 		"SUPPLIER_ACCOUNT_NOT_RETIRED", "only a retired or draining supply account can be resumed")
+
+	// ErrSupplierReauthIdentityMismatch 这次授权来自另一份订阅，不是这个号原本那份。
+	//
+	// 与上面那几个刻意合并的错误**相反：这一条要说明白**。调用方已经证明了自己是
+	// 这个号的主人（他读得到它），所以这里不存在信息泄漏；而他此刻做错的事——
+	// 用另一个 Anthropic 账号点了授权——只有告诉他才纠正得了。含糊成一句
+	// 「授权失败」，他会以为是平台坏了，然后回去走解绑重挂，而那正是这条路径要
+	// 消灭的动作（不可逆、换新 id、观察期重跑、每日上限丢失）。
+	ErrSupplierReauthIdentityMismatch = infraerrors.BadRequest(
+		"SUPPLIER_REAUTH_IDENTITY_MISMATCH",
+		"this authorization is for a different subscription than the one on this account")
+	// ErrSupplierReauthUnsupported 这个号走不了 OAuth 重新授权。
+	//
+	// 两种成因：中转（API key）账号根本没有 OAuth 身份——它的补救是重新提交 key，
+	// 是另一件事；以及号上一个可锚定的身份键都没有——那时无法判定「换进来的是不是
+	// 同一份订阅」，而放行一个判不了的重绑等于把账号 id 变成任意订阅的壳子。
+	ErrSupplierReauthUnsupported = infraerrors.BadRequest(
+		"SUPPLIER_REAUTH_UNSUPPORTED", "this supply account cannot be re-authorized")
+	// ErrSupplierAccountRetired 已经下线的号要先挂回来再谈重新授权。
+	//
+	// 不合并进 NotFound，理由同 ErrSupplierAccountNotRetired：他是主人，
+	// 「你自己把它下线了」是他能纠正的信息。对应的动作是「重新挂回」，
+	// 而不是在同一个位置上再放一个长得也像「修好它」的按钮。
+	ErrSupplierAccountRetired = infraerrors.BadRequest(
+		"SUPPLIER_ACCOUNT_RETIRED", "resume this supply account before re-authorizing it")
 )
 
 // 供给账号的接入状态，存在 accounts.extra 里。
@@ -130,6 +155,15 @@ type SupplierOAuthSession struct {
 	Scope        string
 	ExpiresAt    time.Time
 	CreatedAt    time.Time
+	// AccountID 这条会话是为哪个已有账号发起的。
+	//
+	// 0 = 接入会话，兑换出一个**新**号；非 0 = 就地重新授权那**一个**号
+	// （见 supplier_reauth.go）。库里存的是可空列，0 与 NULL 的转换只在仓储那一层。
+	//
+	// 为什么必须记在服务端而不是兑换时由调用方带上：那样一条为账号 A 发起的授权
+	// 就能被兑换到账号 B 上。两者同属一人，所以不是跨租户的洞，但「这次授权是为哪个
+	// 号发起的」是一个服务端已经知道的事实，没有理由再问一遍调用方。
+	AccountID int64
 }
 
 // SupplierAccountView 是供给者能看见的账号视图。
@@ -167,8 +201,20 @@ type SupplierAccountView struct {
 	ProbePasses int `json:"probe_passes"`
 	// ProbeError 上次探测失败原因，供给者据此判断要不要重新授权。
 	ProbeError string `json:"probe_error,omitempty"`
+	// ProbeAt 上次探测时刻。
+	//
+	// 有它，供给者才分得清「刚刚失败了一次」和「几天前就坏了、一直没人管」——
+	// 只给失败原因不给时间，一条陈旧的错误看起来和一条新鲜的一模一样。
+	ProbeAt *time.Time `json:"probe_at,omitempty"`
 	// DrainUntil 排空窗到期时刻，仅 draining 状态有值。
 	DrainUntil *time.Time `json:"drain_until,omitempty"`
+
+	// NeedsReauth 服务端判定的「这个号现在需要他重新授权一次」。
+	//
+	// 由服务端算而不是让前端拿 status / probe_error 自己拼，理由与 DailyCapReached
+	// 一字不差：两边各写一份判据，漂移的那一天界面会对着一个坏号说「一切正常」。
+	// 它同时是那个按钮该不该出现的**唯一**依据——前端不要另立门户。
+	NeedsReauth bool `json:"needs_reauth"`
 
 	// ---- 每日共享上限。供给者自己设的，0 = 不限。----
 
@@ -201,10 +247,17 @@ type SupplierOnboardingRepository interface {
 	CreateSession(ctx context.Context, session *SupplierOAuthSession) error
 	// ClaimSession 原子领取：把会话标记为已消费并返回它。
 	//
-	// 归属人不匹配、已过期、已被消费，一律返回 ErrSupplierOAuthSessionInvalid。
+	// accountID 传 0 表示领取一条**接入**会话（兑换出新号），非 0 表示领取一条为
+	// 那个账号发起的**重新授权**会话。两类互不通兑，且这个判断在同一条 UPDATE 的
+	// WHERE 里完成——领取之后再校验是一句可以被重构删掉的 if。
+	//
+	// 做成参数而不是另开一个方法：两条几乎一样的 SQL 早晚会漂移，而参数化之后
+	// 编译器会强迫每一个调用点显式说出自己要的是哪一类。
+	//
+	// 归属人不匹配、种类不匹配、已过期、已被消费，一律返回 ErrSupplierOAuthSessionInvalid。
 	// 「查出来再判断再更新」在并发重放下会让同一个授权码被兑换两次，
 	// 所以这必须是一条 UPDATE ... WHERE ... RETURNING。
-	ClaimSession(ctx context.Context, sessionID string, userID int64) (*SupplierOAuthSession, error)
+	ClaimSession(ctx context.Context, sessionID string, userID, accountID int64) (*SupplierOAuthSession, error)
 	// CountPendingSessions 数某人手上还有几条未消费且未过期的会话。
 	CountPendingSessions(ctx context.Context, userID int64) (int, error)
 	// DeleteExpiredSessions 清理过期未消费的会话，返回删除行数。
@@ -257,6 +310,19 @@ type SupplierOnboardingRepository interface {
 	//
 	// 账号不存在、不属于 userID、或已经被删，一律返回 ErrSupplierAccountNotFound。
 	ScrubAccountCredentials(ctx context.Context, accountID int64, userID int64) error
+	// ApplyReauthCredentials 原地换掉一个供给账号的凭证，并合并一批 extra 键。
+	//
+	// 与 ScrubAccountCredentials 同族（同一张表、同样把归属写进 WHERE、同样是一条
+	// 语句），也同样刻意**不**放进 supplierAccountStore：那个窄接口是「自助接入能对
+	// 账号做什么」的清单，而它的注释明确写着改凭证不在里面。重新授权确实要改凭证，
+	// 但它不是接入——把这个能力加进那份清单，会让「供给者的接口够不到凭证」这句话
+	// 从此不再成立，而那句话是别处几个判断的前提。
+	//
+	// credentials 整体替换（旧 token 必须消失），extra 合并（每日上限、接入状态要留着）。
+	// 不碰 status / schedulable——那两样要发调度事件，由 accountRepo 改。
+	//
+	// 账号不存在、不属于 userID、或已经被删，一律返回 ErrSupplierAccountNotFound。
+	ApplyReauthCredentials(ctx context.Context, accountID int64, userID int64, credentials map[string]any, extra map[string]any) error
 	// RecordAgreementAcceptance 记一条协议同意（见 supplier_agreement.go）。
 	//
 	// 幂等：同一个人对同一个版本重复点同意不报错，且库里保留**最早**那一行——

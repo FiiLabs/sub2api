@@ -447,6 +447,17 @@
                       {{ account.schedulable ? t('supply.accounts.schedulable') : t('supply.accounts.notSchedulable') }}
                     </p>
 
+                    <!-- 需要重新授权。配色抄的是管理端 AccountUsageCell 的同名徽章，
+                         好让供给端和管理端的同一件事长得一样。
+                         判据只看 needs_reauth（服务端算），不在这里拼 status。 -->
+                    <span
+                      v-if="account.needs_reauth"
+                      class="mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300"
+                      :data-testid="`supply-needs-reauth-${account.id}`"
+                    >
+                      {{ t('supply.reauth.badge') }}
+                    </span>
+
                     <!-- 观察期进度。两个判据分开显示：用户要能分辨"还在等时间"和
                          "我的号连不上"——后者只有他自己能修。 -->
                     <template v-if="account.supply_state === 'pending_review'">
@@ -456,10 +467,15 @@
                       <p v-if="account.eligible_at" class="mt-1 text-xs text-gray-400 dark:text-dark-500">
                         {{ t('supply.accounts.eligibleAt', { time: formatDateTime(account.eligible_at) }) }}
                       </p>
-                      <p v-if="account.probe_error" class="mt-1 max-w-xs text-xs text-red-500">
-                        {{ t('supply.accounts.probeError', { reason: account.probe_error }) }}
-                      </p>
                     </template>
+
+                    <!-- 探测失败原因**不**限于观察期。
+                         它此前挂在上面那个 pending_review 的 template 里，于是一个
+                         已经入池、后来坏掉的号在这一栏什么都不显示——而那恰恰是
+                         最需要被看见的状态。 -->
+                    <p v-if="account.probe_error" class="mt-1 max-w-xs text-xs text-red-500">
+                      {{ t('supply.accounts.probeError', { reason: account.probe_error }) }}
+                    </p>
 
                     <p
                       v-if="account.supply_state === 'draining' && account.drain_until"
@@ -499,8 +515,20 @@
                     </button>
                   </td>
                   <td class="px-3 py-3">
-                    <span class="text-gray-700 dark:text-gray-300">{{ account.status }}</span>
-                    <p v-if="account.error_message" class="mt-1 max-w-xs text-xs text-red-500">
+                    <!-- 翻译过的状态。此前这里直接把内部值（'error'）显示给供给者。 -->
+                    <span class="text-gray-700 dark:text-gray-300">{{ statusLabel(account.status) }}</span>
+                    <!-- 需要重新授权时，用一句「你该做什么」替掉那串原始上游报错。
+                         理由与失效通知邮件刻意不带 error_message 一样：那串可能含
+                         token 片段、内部主机名，或者整个上游 JSON 响应体。
+                         其余错误仍显示原文——那是他仅有的诊断信息。 -->
+                    <p
+                      v-if="account.needs_reauth"
+                      class="mt-1 max-w-xs text-xs text-orange-600 dark:text-orange-400"
+                      :data-testid="`supply-reauth-status-hint-${account.id}`"
+                    >
+                      {{ t('supply.reauth.statusHint') }}
+                    </p>
+                    <p v-else-if="account.error_message" class="mt-1 max-w-xs text-xs text-red-500">
                       {{ account.error_message }}
                     </p>
                   </td>
@@ -512,6 +540,22 @@
                     <!-- 三种状态三套动作。draining 特殊在它同时能"反悔"和"别等了"，
                          所以那两个按钮必须同时在场，否则用户只能干等排空窗。 -->
                     <div class="flex flex-wrap justify-end gap-2">
+                      <!-- 重新授权排在第一位，而且是这一格里唯一的 primary：
+                           它是唯一一个能让这一行重新赚钱的动作。其余按钮都是
+                           「停下来」或者「退出去」。 -->
+                      <button
+                        v-if="account.needs_reauth"
+                        class="btn btn-primary btn-sm"
+                        :disabled="mutatingId === account.id || reauthStarting"
+                        :data-testid="`supply-reauth-${account.id}`"
+                        @click="startReauth(account)"
+                      >
+                        {{
+                          reauthStarting && reauthAccountId === account.id
+                            ? t('supply.reauth.starting')
+                            : t('supply.reauth.cta')
+                        }}
+                      </button>
                       <template v-if="account.supply_state === 'retired'">
                         <button
                           class="btn btn-secondary btn-sm"
@@ -575,6 +619,86 @@
                       >
                         {{ mutatingId === account.id ? t('supply.accounts.detaching') : t('supply.accounts.detach') }}
                       </button>
+                    </div>
+                  </td>
+                </tr>
+
+                <!-- 重新授权：同样是行内展开行（这一页没有弹窗，见下面上限编辑器的注释）。
+                     结构照抄接入卡的两步，复用同一批 supply.connect.* 文案——
+                     供给者在这两个地方做的动作**完全一样**，两套说法只会让他以为
+                     这是两件不同的事。差别只有两点：没有起名字的输入框（重新授权
+                     不改名），以及多一句"用同一个账号"的提示。 -->
+                <tr v-if="reauthAccountId === account.id" :data-testid="`supply-reauth-editor-${account.id}`">
+                  <td colspan="8" class="bg-orange-50/60 px-3 py-4 dark:bg-orange-900/10">
+                    <p class="text-sm font-medium text-gray-800 dark:text-gray-100">
+                      {{ t('supply.reauth.title') }}
+                    </p>
+                    <!-- 这一句是承重的：供给者此前被教育的修复方式是解绑重挂。
+                         不明说「这不是重新接入」，他不会相信 id 和上限还在。 -->
+                    <p class="mt-1 text-sm text-gray-600 dark:text-dark-300">{{ t('supply.reauth.hint') }}</p>
+                    <p v-if="account.email_address" class="mt-1 text-sm text-gray-600 dark:text-dark-300">
+                      {{ t('supply.reauth.sameAccountHint', { email: account.email_address }) }}
+                    </p>
+
+                    <div v-if="reauthSession" class="mt-3 space-y-4">
+                      <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-900">
+                        <p class="text-sm font-medium text-gray-800 dark:text-gray-100">
+                          {{ t('supply.connect.step1') }}
+                        </p>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ t('supply.connect.step1Hint') }}</p>
+                        <div class="mt-3 flex flex-col gap-2 sm:flex-row">
+                          <a
+                            class="btn btn-primary btn-sm"
+                            :href="reauthSession.auth_url"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <Icon name="externalLink" size="sm" />
+                            <span>{{ t('supply.connect.openAuthUrl') }}</span>
+                          </a>
+                          <button class="btn btn-secondary btn-sm" @click="copyReauthUrl">
+                            <Icon name="copy" size="sm" />
+                            <span>{{ t('supply.connect.copyAuthUrl') }}</span>
+                          </button>
+                        </div>
+                        <p class="mt-3 text-xs text-gray-400 dark:text-dark-500">{{ t('supply.connect.expiryHint') }}</p>
+                      </div>
+
+                      <div class="space-y-3">
+                        <p class="text-sm font-medium text-gray-800 dark:text-gray-100">
+                          {{ t('supply.connect.step2') }}
+                        </p>
+                        <div>
+                          <label class="input-label" :for="`supply-reauth-code-${account.id}`">
+                            {{ t('supply.connect.codeLabel') }}
+                          </label>
+                          <input
+                            :id="`supply-reauth-code-${account.id}`"
+                            v-model="reauthCode"
+                            class="input"
+                            type="text"
+                            autocomplete="off"
+                            :placeholder="t('supply.connect.codePlaceholder')"
+                            :data-testid="`supply-reauth-code-${account.id}`"
+                          />
+                        </div>
+                        <div class="flex gap-2">
+                          <button
+                            class="btn btn-primary"
+                            :disabled="reauthSubmitting"
+                            :data-testid="`supply-complete-reauth-${account.id}`"
+                            @click="completeReauth(account)"
+                          >
+                            <Icon name="check" size="sm" />
+                            <span>
+                              {{ reauthSubmitting ? t('supply.reauth.submitting') : t('supply.reauth.submit') }}
+                            </span>
+                          </button>
+                          <button class="btn btn-secondary" :disabled="reauthSubmitting" @click="cancelReauth">
+                            {{ t('supply.reauth.cancel') }}
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </td>
                 </tr>
@@ -1028,7 +1152,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { supplyAPI, type SupplyAccount, type SupplyAgreement, type SupplyLedgerEntry, type SupplyOnchainChannel, type SupplyPauseMode, type SupplyPayoutWallet, type SupplyStatus, type SupplyWallet, type SupplyWithdrawal, type SupplyWithdrawalOptions, type StartOAuthResponse } from '@/api/supply'
+import { supplyAPI, type SupplyAccount, type SupplyAgreement, type SupplyLedgerEntry, type SupplyOnchainChannel, type SupplyPauseMode, type SupplyPayoutWallet, type SupplyStatus, type SupplyWallet, type SupplyWithdrawal, type SupplyWithdrawalOptions, type StartOAuthResponse, type StartReauthResponse } from '@/api/supply'
 import { useAppStore } from '@/stores/app'
 import { useSupplyStore } from '@/stores/supply'
 import { SUPPLY_GUIDE_STEPS } from '@/constants/supplyGuide'
@@ -1166,6 +1290,21 @@ const relayForm = ref({ base_url: '', api_key: '', name: '' })
 const authCode = ref('')
 const accountName = ref('')
 
+// ---- 就地重新授权。刻意**不**复用上面的 pendingAuth ----
+//
+// pendingAuth 驱动的是接入卡：`v-if="!pendingAuth"` 决定「开始接入」按钮在不在，
+// 而那张卡的提交按钮打的是**建号**接口。共用一份状态的后果是：供给者点了某一行
+// 的「重新授权」，页面顶部的接入卡会切成第二步、开始按钮消失，而他能看见的那个
+// 提交按钮会去建一个新号——恰好是这次改动要消灭的动作。
+//
+// 一次只开一个（不是 map），形态同本页的 capEditingId：在另一行点重新授权会
+// 替换掉当前这个。两条并行的授权流程对用户没有意义，只会让他把两个 code 贴错地方。
+const reauthAccountId = ref<number | null>(null)
+const reauthSession = ref<StartReauthResponse | null>(null)
+const reauthCode = ref('')
+const reauthStarting = ref(false)
+const reauthSubmitting = ref(false)
+
 // 初值是 null 而不是一份「关着」的默认值：两者在界面上是不同的东西——
 // null 表示还没问过（那块什么都不画），一份 available=false 的 options 表示
 // 问过了、答案是没开（那块要显示为什么）。
@@ -1214,6 +1353,17 @@ const boundPayoutWallet = computed<SupplyPayoutWallet | null>(() => {
 function stateLabel(state: string): string {
   const known = ['pending_review', 'active', 'draining', 'retired']
   return known.includes(state) ? t(`supply.state.${state}`) : t('supply.state.unknown')
+}
+
+/**
+ * account.status 的翻译。形态同 stateLabel：已知列表 + 兜底。
+ *
+ * 此前这一栏直接把内部值（'error'）显示给供给者——他既读不懂，也无从判断
+ * 那是"我该做点什么"还是"平台在处理"。
+ */
+function statusLabel(status: string): string {
+  const known = ['active', 'error', 'disabled']
+  return known.includes(status) ? t(`supply.accountStatus.${status}`) : t('supply.accountStatus.unknown')
 }
 
 function stateBadgeClass(state: string): string {
@@ -1615,6 +1765,93 @@ async function completeOAuth(): Promise<void> {
 
 function replaceAccount(updated: SupplyAccount): void {
   accounts.value = accounts.value.map(item => (item.id === updated.id ? updated : item))
+}
+
+// ---------------------------------------------------------------------------
+// 就地重新授权
+// ---------------------------------------------------------------------------
+
+/**
+ * 发起某一行的重新授权。
+ *
+ * 顺序：先把当前行记下来再发请求——这样 `reauthStarting && reauthAccountId === id`
+ * 才能只让**被点的那一行**显示"正在生成…"，而不是让所有需要重新授权的行一起变。
+ *
+ * 同时关掉上限编辑器：两个展开行同时挂在一行下面会把表格挤得看不出层级。
+ */
+async function startReauth(account: SupplyAccount): Promise<void> {
+  reauthAccountId.value = account.id
+  reauthSession.value = null
+  reauthCode.value = ''
+  capEditingId.value = null
+  reauthStarting.value = true
+  try {
+    reauthSession.value = await supplyAPI.startReauth(account.id)
+  } catch (error) {
+    // 拿不到授权链接就把展开行收回去：一个空的两步流程比没有更让人困惑。
+    reauthAccountId.value = null
+    appStore.showError(extractApiErrorMessage(error, t('supply.error.startFailed')))
+  } finally {
+    reauthStarting.value = false
+  }
+}
+
+async function copyReauthUrl(): Promise<void> {
+  if (!reauthSession.value) return
+  await copyToClipboard(reauthSession.value.auth_url, t('supply.connect.authUrlCopied'))
+}
+
+function cancelReauth(): void {
+  // 同 cancelAuth：只丢掉本地这份 session_id，服务端那行留着自然过期。
+  reauthAccountId.value = null
+  reauthSession.value = null
+  reauthCode.value = ''
+}
+
+/**
+ * 兑换重新授权。
+ *
+ * 成功提示按**响应里**的 supply_state 分两句（同 pauseAccount 用响应而不是请求）：
+ * 已入池的号修好就继续接单，观察期里的号还要再等一轮——说成同一句话，
+ * 后者会以为自己马上就能赚钱。
+ */
+async function completeReauth(account: SupplyAccount): Promise<void> {
+  if (!reauthSession.value) return
+  const code = reauthCode.value.trim()
+  if (!code) {
+    appStore.showError(t('supply.error.codeRequired'))
+    return
+  }
+
+  reauthSubmitting.value = true
+  try {
+    const updated = await supplyAPI.completeReauth(account.id, {
+      session_id: reauthSession.value.session_id,
+      code,
+    })
+    replaceAccount(updated)
+    cancelReauth()
+    appStore.showSuccess(
+      updated.supply_state === 'active' ? t('supply.reauth.success') : t('supply.reauth.successPending'),
+    )
+  } catch (error) {
+    // 身份不符要说明白，不能糊成一句"失败了"：他会以为是平台坏了，
+    // 然后回去走解绑重挂——而那正是这条路径要消灭的动作。
+    const fallback = isReauthMismatch(error)
+      ? t('supply.reauth.mismatch', { email: account.email_address ?? '' })
+      : t('supply.reauth.failed')
+    // 失败时**保留展开行**：会话可能还没被消费（授权码贴错了是最常见的一种），
+    // 收起来的话他得从第一步重来。同 completeOAuth。
+    appStore.showError(extractApiErrorMessage(error, fallback))
+  } finally {
+    reauthSubmitting.value = false
+  }
+}
+
+/** 后端的身份闸拒绝：SUPPLIER_REAUTH_IDENTITY_MISMATCH。 */
+function isReauthMismatch(error: unknown): boolean {
+  const code = (error as { response?: { data?: { code?: unknown } } })?.response?.data?.code
+  return code === 'SUPPLIER_REAUTH_IDENTITY_MISMATCH'
 }
 
 /**

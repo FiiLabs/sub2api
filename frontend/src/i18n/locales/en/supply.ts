@@ -261,6 +261,44 @@ export default {
       fieldsRequired: 'Both the base URL and the API key are required'
     },
 
+    // In-place re-authorization: swap a fresh token into the SAME account when the
+    // credential expires.
+    //
+    // Two lines here are load-bearing; read the reasoning before editing:
+    //   - hint: the fix providers have been taught so far is "disconnect and
+    //     reconnect" (new id, review period restarts, daily cap lost). Without
+    //     saying plainly that this is NOT reconnecting, they will not believe it.
+    //   - mismatch: a generic "authorization failed" pushes people straight back
+    //     to disconnect-and-reconnect, which is exactly what this path removes.
+    reauth: {
+      badge: 'Needs re-authorization',
+      cta: 'Re-authorize',
+      starting: 'Generating the authorization link…',
+      title: 'Re-authorize this account',
+      hint: 'Authorize again with the same Anthropic account. The account id, daily cap and earnings already accrued are all kept — this is not a reconnection.',
+      sameAccountHint: 'Make sure you are signed in as {email}.',
+      submit: 'Finish re-authorization',
+      submitting: 'Swapping in the new credential…',
+      cancel: 'Cancel',
+      success: 'Re-authorized — this account is serving again.',
+      successPending: 'Re-authorized — it will go through the review period again.',
+      failed: 'Re-authorization failed',
+      mismatch: 'That authorization is for a different Anthropic account. Please try again with {email}.',
+      // Replaces the raw upstream error, which may carry token fragments, internal
+      // hostnames or a whole JSON body — what the provider needs is what to do.
+      // Non-reauth errors still show the raw text; that is their only diagnostic.
+      statusHint: 'The platform can no longer use this account’s credential. Use “Re-authorize” on the right to swap in a new one.'
+    },
+
+    // Translations for account.status. This column used to render internal values
+    // such as 'error' straight at the provider.
+    accountStatus: {
+      active: 'Healthy',
+      error: 'Broken',
+      disabled: 'Disabled by the platform',
+      unknown: 'Unknown'
+    },
+
     state: {
       pending_review: 'In review',
       active: 'Live',

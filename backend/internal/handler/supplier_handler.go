@@ -246,6 +246,95 @@ func (h *SupplierHandler) CompleteOAuth(c *gin.Context) {
 	response.Success(c, view)
 }
 
+// SupplierStartReauthResponse 是发起重新授权的响应。
+//
+// 与 SupplierStartOAuthResponse 同形，刻意**不**复用同一个类型：两条路径回答的是
+// 不同的问题（「挂一个新号」与「修这一个号」），响应将来很可能分叉——比如带上
+// 「必须用哪个邮箱去授权」的提示。共用一个类型时，那种分叉会变成一个
+// 「加一个字段，另一条路径顺带也有了」的既成事实。
+type SupplierStartReauthResponse struct {
+	AuthURL   string `json:"auth_url"`
+	SessionID string `json:"session_id"`
+}
+
+// StartReauth 为某个已有的供给号发起一次就地重新授权。
+// POST /api/v1/user/supply/accounts/:id/reauth/start
+func (h *SupplierHandler) StartReauth(c *gin.Context) {
+	userID, ok := h.currentUserID(c)
+	if !ok {
+		return
+	}
+	if h.onboardingService == nil {
+		response.ErrorFrom(c, service.ErrSupplierAccountNotFound)
+		return
+	}
+	accountID, ok := h.accountIDParam(c)
+	if !ok {
+		return
+	}
+
+	auth, err := h.onboardingService.StartReauth(c.Request.Context(), userID, accountID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, SupplierStartReauthResponse{
+		AuthURL:   auth.AuthURL,
+		SessionID: auth.SessionID,
+	})
+}
+
+// SupplierCompleteReauthRequest 是兑换一次重新授权的请求。
+//
+// 刻意**没有** Name：重新授权不改名字。改名是另一件事（而且目前没有那个接口），
+// 顺手在这里支持它，会让一个「修凭证」的操作悄悄具备改展示名的能力。
+type SupplierCompleteReauthRequest struct {
+	SessionID string `json:"session_id" binding:"required"`
+	Code      string `json:"code" binding:"required"`
+}
+
+// CompleteReauth 兑换授权码并把新凭证换进那个号。
+// POST /api/v1/user/supply/accounts/:id/reauth/complete
+//
+// 请求体严格绑定（畸形就 400），理由同 SetDailyCap 而不是 PauseAccount：
+// 一个畸形的重新授权请求没有安全的默认值可退，而静默忽略它会让供给者对着一个
+// 仍然坏着的号看到「成功」——比直接报错糟得多。
+func (h *SupplierHandler) CompleteReauth(c *gin.Context) {
+	userID, ok := h.currentUserID(c)
+	if !ok {
+		return
+	}
+	if h.onboardingService == nil {
+		response.ErrorFrom(c, service.ErrSupplierAccountNotFound)
+		return
+	}
+	accountID, ok := h.accountIDParam(c)
+	if !ok {
+		return
+	}
+
+	var req SupplierCompleteReauthRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request body")
+		return
+	}
+
+	view, err := h.onboardingService.CompleteReauth(c.Request.Context(), &service.CompleteReauthInput{
+		UserID:    userID,
+		AccountID: accountID,
+		SessionID: req.SessionID,
+		Code:      req.Code,
+		// 同 CompleteOAuth：来源 IP 是 HTTP 层的事实，不从请求体读。
+		// 这条路径上它只进日志（不建号，也就没有按 IP 数号的那道闸）。
+		ClientIP: c.ClientIP(),
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, view)
+}
+
 // SupplierSubmitRelayRequest 是中转接入的请求体（M7）。
 type SupplierSubmitRelayRequest struct {
 	BaseURL string `json:"base_url"`

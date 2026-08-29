@@ -10,6 +10,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -36,25 +37,37 @@ func NewSupplierOnboardingRepository(client *dbent.Client) service.SupplierOnboa
 	return &supplierOnboardingRepository{client: client}
 }
 
+// supplierOAuthSessionInsertSQL 落一条待兑换会话。
+//
+// account_id 走 NULLIF($8, 0)：service 侧用 0 表示「接入会话」（Go 里没有可空整数
+// 又不想为一个字段引入指针），库里存 NULL。转换只此一处，两侧各自用自己顺手的
+// 表示法，而不是让 0 这个哨兵值渗进 SQL——领取语句的 IS NOT DISTINCT FROM
+// 依赖的是 NULL 语义，不是 0。
 const supplierOAuthSessionInsertSQL = `
 INSERT INTO supplier_oauth_sessions (
-    session_id, user_id, platform, state, code_verifier, scope, expires_at, created_at, updated_at
+    session_id, user_id, platform, state, code_verifier, scope, expires_at, account_id, created_at, updated_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())`
+VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8::bigint, 0), NOW(), NOW())`
 
 // supplierOAuthSessionClaimSQL 原子领取一条会话。
 //
-// 三个 WHERE 条件（归属人、未消费、未过期）和「打上消费标记」必须在同一条语句里完成，
-// 否则并发重放会让两个请求都通过检查、同一个授权码被兑换两次、建出两个账号。
-// 拿不到行就是拿不到，调用方不需要知道是三个条件里的哪一个没满足。
+// 四个 WHERE 条件（归属人、会话种类、未消费、未过期）和「打上消费标记」必须在同一条
+// 语句里完成，否则并发重放会让两个请求都通过检查、同一个授权码被兑换两次、建出两个账号。
+// 拿不到行就是拿不到，调用方不需要知道是四个条件里的哪一个没满足。
+//
+// `account_id IS NOT DISTINCT FROM NULLIF($3, 0)` 是会话种类那一条：NULL 与 NULL 相等、
+// NULL 与任何数不等，于是一条为账号 N 发起的重新授权会话换不出新号，一条接入会话也
+// 修不了 N。放进 WHERE 而不是领取之后再校验——后者是一句可以被重构顺手删掉的 if，
+// 而这里删掉就没有行返回。
 const supplierOAuthSessionClaimSQL = `
 UPDATE supplier_oauth_sessions
 SET consumed_at = NOW(), updated_at = NOW()
 WHERE session_id = $1
   AND user_id = $2
+  AND account_id IS NOT DISTINCT FROM NULLIF($3::bigint, 0)
   AND consumed_at IS NULL
   AND expires_at > NOW()
-RETURNING session_id, user_id, platform, state, code_verifier, scope, expires_at, created_at`
+RETURNING session_id, user_id, platform, state, code_verifier, scope, expires_at, created_at, COALESCE(account_id, 0)`
 
 const supplierOAuthSessionCountPendingSQL = `
 SELECT COUNT(*)
@@ -80,15 +93,16 @@ func (r *supplierOnboardingRepository) CreateSession(ctx context.Context, sessio
 	}
 	_, err := r.client.ExecContext(ctx, supplierOAuthSessionInsertSQL,
 		session.SessionID, session.UserID, session.Platform,
-		session.State, session.CodeVerifier, session.Scope, session.ExpiresAt)
+		session.State, session.CodeVerifier, session.Scope, session.ExpiresAt,
+		session.AccountID)
 	if err != nil {
 		return fmt.Errorf("insert supplier oauth session: %w", err)
 	}
 	return nil
 }
 
-func (r *supplierOnboardingRepository) ClaimSession(ctx context.Context, sessionID string, userID int64) (*service.SupplierOAuthSession, error) {
-	rows, err := r.client.QueryContext(ctx, supplierOAuthSessionClaimSQL, sessionID, userID)
+func (r *supplierOnboardingRepository) ClaimSession(ctx context.Context, sessionID string, userID, accountID int64) (*service.SupplierOAuthSession, error) {
+	rows, err := r.client.QueryContext(ctx, supplierOAuthSessionClaimSQL, sessionID, userID, accountID)
 	if err != nil {
 		return nil, fmt.Errorf("claim supplier oauth session: %w", err)
 	}
@@ -105,7 +119,7 @@ func (r *supplierOnboardingRepository) ClaimSession(ctx context.Context, session
 	if err := rows.Scan(
 		&session.SessionID, &session.UserID, &session.Platform,
 		&session.State, &session.CodeVerifier, &session.Scope,
-		&session.ExpiresAt, &session.CreatedAt,
+		&session.ExpiresAt, &session.CreatedAt, &session.AccountID,
 	); err != nil {
 		return nil, fmt.Errorf("scan supplier oauth session: %w", err)
 	}
@@ -248,6 +262,35 @@ WHERE id = $1
 	service.SupplyStateExtraKey, service.SupplyStateRetired,
 	service.SupplyDetachedAtExtraKey)
 
+// supplierAccountApplyReauthSQL 原地换掉一个供给账号的凭证，并合并一批 extra 键。
+//
+// 必须是一条语句：拆成「先写凭证再写 extra」会留下一个窗口，窗口里凭证已经是新的、
+// 观察期计数还是旧的——而那正是下一轮探测会读到的状态（它会拿一个刚换过的号
+// 去对一份属于上一份凭证的连续成功计数）。
+//
+// credentials 用 `=` 整体替换而不是 `||` 合并：旧的 access_token / refresh_token
+// 必须消失。合并的语义是「新的覆盖同名键」，而上一份凭证里可能有这一份没有的键
+// （比如上次授权给了 refresh_token、这次没给），那些残留会让刷新走到一份
+// 已经作废的 token 上。整体替换是唯一能保证「这个号现在只持有这一份凭证」的写法。
+//
+// extra 用 `||` 合并：这里要改的只是观察期那几个键，而同一个 extra 里还放着
+// 供给者自己设的每日上限、接入状态。整体替换会把它们一起抹掉。
+//
+// `owner_user_id = $2` 进 WHERE，理由与 supplierAccountScrubCredentialsSQL 一字不差：
+// 上层已经查过归属（getOwnedAccount），但那次查与这次写之间隔着一次网络往返。
+//
+// 刻意**不碰** status / schedulable：那两样要发调度变更事件、同步调度快照，
+// 这条 raw SQL 做不到，所以由 accountRepo 的 ClearError / SetSchedulable 单独改。
+// 分工同 DetachAccount 里 SetSchedulable 与 ScrubAccountCredentials 的关系。
+const supplierAccountApplyReauthSQL = `
+UPDATE accounts
+SET credentials = $3::jsonb,
+    extra       = COALESCE(extra, '{}'::jsonb) || $4::jsonb,
+    updated_at  = NOW()
+WHERE id = $1
+  AND owner_user_id = $2
+  AND deleted_at IS NULL`
+
 // 按上游身份键找已存在的账号。每个键一条写死的语句，**键名不拼进 SQL**。
 //
 // 为什么不写成一条 `credentials->>$2 = $3` 的通用语句：那样键名就成了运行期数据，
@@ -335,6 +378,46 @@ func (r *supplierOnboardingRepository) ScrubAccountCredentials(ctx context.Conte
 	affected, err := result.RowsAffected()
 	if err != nil {
 		// 驱动不报行数——语句本身已经成功了，不能倒过来当成没抹掉。
+		return nil
+	}
+	if affected == 0 {
+		// 号不存在、不是他的、或已经被删。三种情况对调用方是同一个回答，
+		// 理由同 ErrSupplierAccountNotFound 本身。
+		return service.ErrSupplierAccountNotFound
+	}
+	return nil
+}
+
+func (r *supplierOnboardingRepository) ApplyReauthCredentials(
+	ctx context.Context, accountID int64, userID int64, credentials map[string]any, extra map[string]any,
+) error {
+	if len(credentials) == 0 {
+		// 空凭证会把号写成一个「存在但一定用不了」的壳，且不可逆——上一份凭证
+		// 在同一条语句里就被覆盖掉了。这是调用方的 bug，不是一种可以兜底的输入。
+		return fmt.Errorf("apply reauth credentials requires credentials")
+	}
+	credentialsJSON, err := json.Marshal(credentials)
+	if err != nil {
+		return fmt.Errorf("marshal reauth credentials: %w", err)
+	}
+	// extra 为空时也要给一个合法的 jsonb：`|| NULL` 会让整个 extra 变成 NULL，
+	// 把这个号的接入状态和每日上限一起抹掉。空对象合并是恒等操作。
+	if extra == nil {
+		extra = map[string]any{}
+	}
+	extraJSON, err := json.Marshal(extra)
+	if err != nil {
+		return fmt.Errorf("marshal reauth extra: %w", err)
+	}
+
+	result, err := r.client.ExecContext(ctx, supplierAccountApplyReauthSQL,
+		accountID, userID, string(credentialsJSON), string(extraJSON))
+	if err != nil {
+		return fmt.Errorf("apply supply account reauth credentials: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		// 驱动不报行数时不能倒过来当成没写——语句本身已经成功了。
 		return nil
 	}
 	if affected == 0 {

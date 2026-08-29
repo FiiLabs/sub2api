@@ -103,6 +103,16 @@ type supplierAccountStore interface {
 	BindGroups(ctx context.Context, accountID int64, groupIDs []int64) error
 	UpdateExtra(ctx context.Context, id int64, updates map[string]any) error
 	SetSchedulable(ctx context.Context, id int64, schedulable bool) error
+	// ClearError 把账号从错误态放回 active（清 status 与 error_message）。
+	//
+	// 它**不是**一个凭证方法——上面那句「改凭证不在里面」仍然成立。它是
+	// SetSchedulable 的同族：改的是调度层看得见的状态，因而必须走仓储而不是混进
+	// 重新授权那条 raw SQL——ClearError 还会发调度变更事件、同步调度快照，
+	// 而 SQL 做不到那两件事。分工同 DetachAccount 里 SetSchedulable 与
+	// ScrubAccountCredentials 的关系。
+	//
+	// 唯一的调用方是 CompleteReauth（supplier_reauth.go）。
+	ClearError(ctx context.Context, id int64) error
 	// Delete 软删账号，同时解掉分组绑定、清掉调度快照、发一次调度变更事件。
 	Delete(ctx context.Context, id int64) error
 }
@@ -326,7 +336,10 @@ func (s *SupplierOnboardingService) CompleteOAuth(ctx context.Context, input *Co
 
 	// 原子领取。会话在这一刻就被标成已消费，即使后面的兑换失败也不退回——
 	// 一个授权码本来就只能换一次，失败了就该重新走一遍授权，而不是拿同一个 code 重试。
-	session, err := s.repo.ClaimSession(ctx, strings.TrimSpace(input.SessionID), input.UserID)
+	// accountID 传 0：这是一条**接入**会话。一条为某个已有账号发起的重新授权会话
+	// 在这里领不到（见 ClaimSession 的 IS NOT DISTINCT FROM），于是「用重新授权的
+	// 授权码去建一个新号」这条路在 SQL 层就断了。
+	session, err := s.repo.ClaimSession(ctx, strings.TrimSpace(input.SessionID), input.UserID, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -945,6 +958,10 @@ func newSupplierAccountView(account *Account, settings *SupplyProbationSettings)
 		CreatedAt:    account.CreatedAt,
 		ProbePasses:  supplyExtraInt(account, SupplyProbePassesExtraKey),
 		ProbeError:   supplyExtraString(account, SupplyProbeErrorExtraKey),
+		NeedsReauth:  supplyNeedsReauth(account),
+	}
+	if probedAt, ok := supplyExtraTime(account, SupplyProbeAtExtraKey); ok {
+		view.ProbeAt = &probedAt
 	}
 	if since, ok := supplyExtraTime(account, SupplyProbationSinceExtraKey); ok {
 		view.ProbationSince = &since
