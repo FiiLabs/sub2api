@@ -17,6 +17,33 @@ const (
 	opsRawPeakQueryTimeout    = 1500 * time.Millisecond
 )
 
+// opsErrorSLAExpr 是「这条错误算不算进 SLA」的唯一定义。
+//
+// 三个条件都是排除项，性质相同：**不是平台造成的错，不计入平台的 SLA**。
+//   - `status_code >= 400`：先得是个错。
+//   - `NOT is_business_limited`：余额不足、超配额这类是业务规则在按预期工作，不是故障。
+//     这一条本来就在。
+//   - `error_owner <> 'client'`：客户端自己造成的错——最典型的是
+//     `Failed to read request body`（用户在上传请求体的过程中断开：Ctrl-C、切网络）。
+//     这一条是 2026-08-31 补的，补它的直接原因是一次真实误报：
+//     scott 的 CLI 断了一次连，那一分钟总共 3 个请求，1÷3 = 33.33% 越过 20% 阈值，
+//     触发了一条 P0 告警邮件。平台侧一切正常，`account_id` 是 NULL——请求根本
+//     没走到上游账号。
+//
+// 为什么是排除而不是「算进分母但不算错」：被排除的请求同时退出分子和分母
+// （requestCountSLA = successCount + errorCountSLA）。这是对的——一个我们无法
+// 影响其成败的请求，不该稀释也不该恶化我们的 SLA。与 is_business_limited 的处理一致。
+//
+// 抽成常量是因为它有**两处**使用（总览 queryErrorCounts 与趋势图
+// ops_repo_trends.go）。两处各写一份的症状是「总览说 2%、趋势图说 5%」，
+// 而两边单独看都对。
+//
+// 注意 error_total 与 business_limited 刻意**不**套这个口径：它们回答的是
+// 「一共出了多少错」，客户端的错也是错，只是不算平台的账。
+const opsErrorSLAExpr = `COALESCE(status_code, 0) >= 400 ` +
+	`AND NOT is_business_limited ` +
+	`AND COALESCE(error_owner, '') <> 'client'`
+
 func (r *opsRepository) GetDashboardOverview(ctx context.Context, filter *service.OpsDashboardFilter) (*service.OpsDashboardOverview, error) {
 	if r == nil || r.db == nil {
 		return nil, fmt.Errorf("nil ops repository")
@@ -882,7 +909,7 @@ func (r *opsRepository) queryErrorCounts(ctx context.Context, filter *service.Op
 SELECT
   COALESCE(COUNT(*) FILTER (WHERE COALESCE(status_code, 0) >= 400), 0) AS error_total,
   COALESCE(COUNT(*) FILTER (WHERE COALESCE(status_code, 0) >= 400 AND is_business_limited), 0) AS business_limited,
-  COALESCE(COUNT(*) FILTER (WHERE COALESCE(status_code, 0) >= 400 AND NOT is_business_limited), 0) AS error_sla,
+  COALESCE(COUNT(*) FILTER (WHERE ` + opsErrorSLAExpr + `), 0) AS error_sla,
   COALESCE(COUNT(*) FILTER (WHERE error_owner = 'provider' AND NOT is_business_limited AND COALESCE(upstream_status_code, status_code, 0) NOT IN (429, 529)), 0) AS upstream_excl,
   COALESCE(COUNT(*) FILTER (WHERE error_owner = 'provider' AND NOT is_business_limited AND COALESCE(upstream_status_code, status_code, 0) = 429), 0) AS upstream_429,
   COALESCE(COUNT(*) FILTER (WHERE error_owner = 'provider' AND NOT is_business_limited AND COALESCE(upstream_status_code, status_code, 0) = 529), 0) AS upstream_529

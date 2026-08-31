@@ -22,6 +22,31 @@ const (
 	opsAlertEvaluatorLeaderLockKey   = "ops:alert:evaluator:leader"
 	opsAlertEvaluatorLeaderLockTTL   = 90 * time.Second
 	opsAlertEvaluatorSkipLogInterval = 1 * time.Minute
+
+	// opsAlertMinSamples 比率类告警要求的最小样本量。窗口内请求数不到它，本轮不评估。
+	//
+	// # 为什么需要它
+	//
+	// 此前的闸是 `RequestCountSLA <= 0`——只要有一个请求就评估。在低流量下这是个
+	// 噪音发生器：一分钟窗口里只有 3 个请求时，**任何一次失败都是 33%**，
+	// 而 P0 的阈值是 20%。2026-08-31 就这么触发过一次真实的 P0 告警邮件；
+	// 再往前，2026-08-30 一天内同类告警触发了 12 次，读数里有 100%、80%、61.5%
+	// ——那些不是平台崩了，是那几分钟里总共只有一两个请求。
+	//
+	// # 为什么是 20
+	//
+	// 取自一条能讲清楚的原则：**单独一次失败永远不该触发告警**。
+	// n = 20 时一次失败正好是 5%，而最敏感的那条规则（错误率过高）是 `> 5`，
+	// 严格大于，所以 5.0 不触发。20 是满足这条原则的最小整数。
+	//
+	// 做成常量而不是每条规则一个字段：那需要改表、改接口、改面板，而这条原则
+	// 对所有比率类规则都一样——它约束的是统计有效性，不是业务策略。
+	// 真需要按规则区分时再加字段，那时这个常量就是它的默认值。
+	//
+	// 代价要说清楚：低流量时段的真实故障会**延迟**被发现（要等窗口内攒够 20 个
+	// 请求）。这是有意的取舍——一个每天误报十几次的 P0，比晚几分钟的告警更糟，
+	// 因为前者会让人把整条通道静音。
+	opsAlertMinSamples = 20
 )
 
 var opsAlertEvaluatorReleaseScript = redis.NewScript(`
@@ -597,21 +622,34 @@ func (s *OpsAlertEvaluatorService) computeRuleMetric(
 		return 0, false
 	}
 
-	switch strings.TrimSpace(rule.MetricType) {
-	case "success_rate":
-		if overview.RequestCountSLA <= 0 {
+	return opsAlertRateMetric(rule.MetricType, overview)
+}
+
+// opsAlertRateMetric 从总览里取出比率类指标的读数（百分比），并过最小样本量的闸。
+//
+// 抽成不带 I/O 的包级函数，是为了让「样本不足就不评估」这条能被直接测到——
+// 它外面那个方法要打数据库，而这条规则本身与数据从哪来无关。
+//
+// 三个指标共用同一道闸：漏掉任何一个，噪音就从那条缝里出来。
+func opsAlertRateMetric(metricType string, overview *OpsDashboardOverview) (float64, bool) {
+	if overview == nil {
+		return 0, false
+	}
+	switch strings.TrimSpace(metricType) {
+	case "success_rate", "error_rate", "upstream_error_rate":
+		if overview.RequestCountSLA < opsAlertMinSamples {
 			return 0, false
 		}
+	default:
+		return 0, false
+	}
+
+	switch strings.TrimSpace(metricType) {
+	case "success_rate":
 		return overview.SLA * 100, true
 	case "error_rate":
-		if overview.RequestCountSLA <= 0 {
-			return 0, false
-		}
 		return overview.ErrorRate * 100, true
 	case "upstream_error_rate":
-		if overview.RequestCountSLA <= 0 {
-			return 0, false
-		}
 		return overview.UpstreamErrorRate * 100, true
 	default:
 		return 0, false
