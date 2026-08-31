@@ -1008,6 +1008,7 @@ func ProvideAbuseDetectorService(
 	settingService *SettingService,
 	lockCache LeaderLockCache,
 	db *sql.DB,
+	opsService *OpsService,
 ) *AbuseDetectorService {
 	// 扫描查询不在 UsageLogRepository 主接口上，走可选能力断言——与
 	// queryGrokFreeQuotaWindowStats 同一个套路。拿不到就不装，检测整体不启动，
@@ -1018,6 +1019,9 @@ func ProvideAbuseDetectorService(
 	}
 	svc := NewAbuseDetectorService(reader, userRepo, adminService, settingService)
 	svc.SetLeaderLock(lockCache, db)
+	// 命中信号的去处。**必须排在 Start 之前**，理由同 ProvideSupplierLifecycleService：
+	// Start 之后第一轮随时可能起跑，那一轮读到的是 nil 还是真对象取决于赛跑结果。
+	svc.SetAlertSink(opsService)
 	svc.Start()
 	return svc
 }

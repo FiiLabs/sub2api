@@ -29,6 +29,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"fmt"
 
 	"github.com/google/uuid"
 	"log/slog"
@@ -58,6 +59,17 @@ const (
 
 	abuseDetectorLeaderLockKey = "abuse:detector:leader"
 	abuseDetectorLeaderLockTTL = 90 * time.Second
+
+	// abuseAlertCooldown 同一个用户两条告警之间的最小间隔。
+	//
+	// 比观察窗（默认 30 分钟）长：一个持续滥用的人在每一轮扫描里都会命中，
+	// 而运营需要知道的是「这个人有问题」，不是「这个人有问题×288」。
+	abuseAlertCooldown = 60 * time.Minute
+	// abuseAlertSeverity 落进 ops_alert_events 的级别。
+	//
+	// warning 而不是 critical：判据是启发式的，命中不等于确认滥用，
+	// 而 critical 在告警面板上意味着「现在就得有人处理」。
+	abuseAlertSeverity = "warning"
 )
 
 // abuseUserLimitWriter 是降速需要的那点能力。
@@ -74,6 +86,19 @@ type abuseUserLookup interface {
 	GetByID(ctx context.Context, id int64) (*User, error)
 }
 
+// abuseAlertSink 把命中记到一个**运营查得到**的地方。
+//
+// 存在的理由是一条实测：这个功能此前的全部产出是一行 slog，而生产 CVM 的
+// public_logs 是关着的（对一个机密计算产品这是正确设置——公开日志会泄漏），
+// 于是那行日志谁也读不到。也就是说「只检测不处置」这个模式在当前部署形态下
+// 等于**什么都没做**：既不拦，也没人知道它拦不拦得对。
+//
+// 落到 ops_alert_events 而不是新建一张表：那里已经有列表、按 severity 过滤、
+// 状态流转和邮件通知，而这条信息本来就是一条告警。
+type abuseAlertSink interface {
+	CreateAlertEvent(ctx context.Context, event *OpsAlertEvent) (*OpsAlertEvent, error)
+}
+
 // AbuseDetectorService 周期扫描用量、标记可疑用户、（可选）自动降速。
 type AbuseDetectorService struct {
 	reader     AbuseSignalReader
@@ -87,6 +112,19 @@ type AbuseDetectorService struct {
 	stopCh     chan struct{}
 	stopOnce   sync.Once
 	wg         sync.WaitGroup
+
+	// alerts 命中信号的去处。可选，见 SetAlertSink。
+	alerts abuseAlertSink
+	// alertedAt 每个用户上一次落告警的时刻，用来按 abuseAlertCooldown 去重。
+	//
+	// 放内存而不是查库：扫描每 5 分钟跑一次、观察窗 30 分钟，同一个真实滥用者
+	// 会在每一轮里都命中——不去重的话一天 288 条，运营看到的是刷屏而不是信号。
+	// 既有告警是按 rule_id 查活跃事件去重的，这里用不上：滥用信号要按**用户**
+	// 去重，而这些事件共用一个 rule_id（0，它们不来自任何规则）。
+	//
+	// 进程重启会丢，代价是重启后可能多出一条重复告警——比为它加一张表便宜。
+	alertedAt map[int64]time.Time
+	alertMu   sync.Mutex
 }
 
 func NewAbuseDetectorService(
@@ -103,6 +141,76 @@ func NewAbuseDetectorService(
 		interval:   abuseDetectorDefaultInterval,
 		instanceID: uuid.NewString(),
 		stopCh:     make(chan struct{}),
+	}
+}
+
+// SetAlertSink 注入命中信号的去处。不注入时行为回到从前：只有一行读不到的日志。
+//
+// 显式判空再赋值：一个 nil 的 *OpsService 装进接口变量后不是 nil 接口，
+// 后面的 `s.alerts == nil` 就永远为假。
+func (s *AbuseDetectorService) SetAlertSink(ops *OpsService) {
+	if s == nil || ops == nil {
+		return
+	}
+	s.alerts = ops
+	s.alertedAt = map[int64]time.Time{}
+}
+
+// recordAlert 把一次命中落成一条告警事件，按用户去重。
+//
+// 失败只记日志：这一步是**观测**，它坏了不该影响检测本身，更不该影响降速。
+func (s *AbuseDetectorService) recordAlert(ctx context.Context, sig *AbuseSignal, cfg *AbuseDetectionSettings, now time.Time) {
+	if s == nil || s.alerts == nil || sig == nil {
+		return
+	}
+
+	s.alertMu.Lock()
+	if last, ok := s.alertedAt[sig.UserID]; ok && now.Sub(last) < abuseAlertCooldown {
+		s.alertMu.Unlock()
+		return
+	}
+	s.alertedAt[sig.UserID] = now
+	s.alertMu.Unlock()
+
+	requests := float64(sig.Requests)
+	threshold := float64(cfg.MinRequests)
+	event := &OpsAlertEvent{
+		// rule_id = 0：这条事件不来自任何告警规则。那一列可空且没有外键，
+		// 读路径也不 JOIN 规则表，所以 0 能被正常列出与查看。
+		RuleID:   0,
+		Severity: abuseAlertSeverity,
+		Status:   OpsAlertStatusFiring,
+		Title:    fmt.Sprintf("Suspicious usage pattern: user %d", sig.UserID),
+		// 把三个判据的读数都写进正文：运营要判断的是「这是不是误伤」，
+		// 而那个判断需要看到命中的是哪一条、离阈值多远。
+		Description: fmt.Sprintf(
+			"user=%d requests=%d (>= %d) cache_hit_ratio=%.3f (< %.2f) avg_input_tokens=%.0f (> %d) "+
+				"distinct_sessions=%d standard_cost=%.4f window=%dmin auto_throttle=%t",
+			sig.UserID, sig.Requests, cfg.MinRequests,
+			sig.CacheHitRatio, cfg.MaxCacheHitRatio,
+			sig.AvgInputTokens, int64(cfg.MinAvgInputTokens),
+			sig.DistinctSessions, sig.StandardCost,
+			cfg.WindowMinutes, cfg.AutoThrottle),
+		MetricValue:    &requests,
+		ThresholdValue: &threshold,
+		Dimensions: map[string]any{
+			"source":            "abuse_detector",
+			"user_id":           sig.UserID,
+			"requests":          sig.Requests,
+			"cache_hit_ratio":   sig.CacheHitRatio,
+			"avg_input_tokens":  sig.AvgInputTokens,
+			"distinct_sessions": sig.DistinctSessions,
+			"standard_cost":     sig.StandardCost,
+			"window_minutes":    cfg.WindowMinutes,
+			"auto_throttle":     cfg.AutoThrottle,
+		},
+		FiredAt:   now,
+		CreatedAt: now,
+	}
+
+	if _, err := s.alerts.CreateAlertEvent(ctx, event); err != nil {
+		slog.Error("[AbuseDetector] failed to record alert event",
+			"user_id", sig.UserID, "error", err)
 	}
 }
 
@@ -187,8 +295,10 @@ func (s *AbuseDetectorService) runOnce() {
 			continue
 		}
 
-		// 无论处置与否都留一条日志。这是运营唯一能看到的东西——自动降速关着时，
-		// 它就是这个功能的**全部**产出。
+		// 无论处置与否都留一条日志。留着它是为了本地/自建部署——那里 stdout 读得到。
+		//
+		// 但在机密计算部署里它读不到（public_logs=false），所以下面那条 recordAlert
+		// 才是真正让运营看得见的那一半。两条都留：它们服务的是两种不同的部署形态。
 		slog.Warn("[AbuseDetector] suspicious usage pattern",
 			"user_id", sig.UserID,
 			"requests", sig.Requests,
@@ -199,6 +309,10 @@ func (s *AbuseDetectorService) runOnce() {
 			"window_minutes", cfg.WindowMinutes,
 			"auto_throttle", cfg.AutoThrottle,
 		)
+
+		// 落一条运营查得到的告警。**在处置判断之前**——自动降速关着时，
+		// 这就是这个功能唯一的产出，不该被那个 continue 跳过。
+		s.recordAlert(ctx, sig, cfg, time.Now())
 
 		if !cfg.AutoThrottle || cfg.ThrottleRPM <= 0 {
 			continue

@@ -358,7 +358,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	paymentOrderExpiryService := service.ProvidePaymentOrderExpiryService(paymentService, leaderLockCache, db)
 	supplierThawService := service.ProvideSupplierThawService(supplierCreditRepository, leaderLockCache, db)
 	supplierLifecycleService := service.ProvideSupplierLifecycleService(supplierOnboardingRepository, accountRepository, settingService, accountTestService, supplierIncidentService, leaderLockCache, db)
-	abuseDetectorService := service.ProvideAbuseDetectorService(usageLogRepository, userRepository, adminService, settingService, leaderLockCache, db)
+	abuseDetectorService := service.ProvideAbuseDetectorService(usageLogRepository, userRepository, adminService, settingService, leaderLockCache, db, opsService)
 	supplierPayoutQueueRepository := repository.NewSupplierPayoutQueueRepository(client, secretEncryptor)
 	supplierPayoutWorker := service.ProvideSupplierPayoutWorker(supplierPayoutQueueRepository, supplierChainClient, supplierWithdrawalNotifier, leaderLockCache, db)
 	channelMonitorRunner := service.ProvideChannelMonitorRunner(channelMonitorService, settingService)
