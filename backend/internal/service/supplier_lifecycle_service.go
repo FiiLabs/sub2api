@@ -546,12 +546,24 @@ func (s *SupplierLifecycleService) probeOnce(ctx context.Context, account *Accou
 	}
 }
 
-// eligible 判定一个号是否可以入池。
+// eligible 判定一个号是否可以入池。委托给包级的 supplyProbationEligible。
+//
+// 保留这个方法而不是让调用点直接调那个函数：它是本服务里「该不该 promote」
+// 的唯一提问处，留一层薄壳能让这条链在调用图上仍然读得出来。
+func (s *SupplierLifecycleService) eligible(account *Account, settings *SupplyProbationSettings, passes int, now time.Time) bool {
+	return supplyProbationEligible(account, settings, passes, now)
+}
+
+// supplyProbationEligible 判定一个号是否可以入池。
 //
 // 三个条件是**并且**：总开关开着、连续成功次数达标、观察窗跑满。
 // 观察起点缺失时按「刚补上」算（probeOnce 刚写了 now），也就是从这一刻重新计时——
 // 一个没有起点的号不该因为查不到时间就被判为已经观察够久了。
-func (s *SupplierLifecycleService) eligible(account *Account, settings *SupplyProbationSettings, passes int, now time.Time) bool {
+//
+// 做成包级函数是因为它有**两个**调用方：观察期任务（本文件）与自助接入时的
+// 同步探测（supplier_onboarding_service.go 的 probeOnAttach）。两边各写一份判据，
+// 漂移的那天症状是「接入时说不够格、十五分钟后又够格了」，而两处代码单独看都对。
+func supplyProbationEligible(account *Account, settings *SupplyProbationSettings, passes int, now time.Time) bool {
 	if settings == nil || !settings.Enabled {
 		return false
 	}
@@ -565,22 +577,37 @@ func (s *SupplierLifecycleService) eligible(account *Account, settings *SupplyPr
 	return !now.Before(since.Add(settings.ObservationWindow()))
 }
 
-// promote 把号推进 active。
+// promote 把号推进 active。委托给包级的 supplyPromoteToActive，理由同 eligible。
+func (s *SupplierLifecycleService) promote(ctx context.Context, account *Account, setSchedulable bool) error {
+	return supplyPromoteToActive(ctx, s.accountRepo, account, setSchedulable)
+}
+
+// supplyPromoteStore 入池要写的两样东西。
 //
-// 先开调度再写状态：反过来的话，中间失败会留下一个 state=active 却不可调度的号——
+// 单独一个窄接口，是为了让 supplyPromoteToActive 同时被观察期任务的
+// supplierLifecycleAccountStore 和自助接入的 supplierAccountStore 满足——
+// 两者都有这两个方法，但它们是两个不同的接口，没有这层抽象就只能各抄一遍入池动作。
+type supplyPromoteStore interface {
+	SetSchedulable(ctx context.Context, id int64, schedulable bool) error
+	UpdateExtra(ctx context.Context, id int64, updates map[string]any) error
+}
+
+// supplyPromoteToActive 把号推进 active。
+//
+// **先开调度再写状态**：反过来的话，中间失败会留下一个 state=active 却不可调度的号——
 // 一个「看起来入池了但永远拿不到流量」的静默故障，供给者看不出问题在哪。这个顺序下
 // 的中间失败是「已经在接单，状态还写着 pending_review」，下一轮的对齐规则会补上。
 //
 // setSchedulable=false 用于对齐路径：那时号已经是可调度的，不必再写一次。
-func (s *SupplierLifecycleService) promote(ctx context.Context, account *Account, setSchedulable bool) error {
+func supplyPromoteToActive(ctx context.Context, store supplyPromoteStore, account *Account, setSchedulable bool) error {
 	if setSchedulable {
-		if err := s.accountRepo.SetSchedulable(ctx, account.ID, true); err != nil {
+		if err := store.SetSchedulable(ctx, account.ID, true); err != nil {
 			return err
 		}
 		slog.Info("[SupplierLifecycle] supply account promoted to active",
 			"account_id", account.ID, "name", account.Name)
 	}
-	return s.accountRepo.UpdateExtra(ctx, account.ID, map[string]any{
+	return store.UpdateExtra(ctx, account.ID, map[string]any{
 		SupplyStateExtraKey:      SupplyStateActive,
 		SupplyProbeErrorExtraKey: "",
 	})

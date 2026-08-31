@@ -1040,11 +1040,12 @@ func ProvideSupplierLifecycleService(
 	return svc
 }
 
-// APEXONE-EXT: ProvideSupplierOnboardingService 构造接入服务并挂上两个可选依赖。
+// APEXONE-EXT: ProvideSupplierOnboardingService 构造接入服务并挂上三个可选依赖。
 //
-// 存在的理由是那两行 setter——为什么是 setter 而不是构造参数，分别写在
-// SetIncidentGuard（会成环）和 SetDailyUsageReader（缺了它这一页仍然可用）的
-// 注释里。wire 需要一个能把这两步表达出来的 provider，于是有了这个壳。
+// 存在的理由是那几行 setter——为什么是 setter 而不是构造参数，分别写在
+// SetIncidentGuard（会成环）、SetDailyUsageReader（缺了它这一页仍然可用）和
+// SetProber（*AccountTestService 太大，焊进签名会让每个接入测试都得先造它）的
+// 注释里。wire 需要一个能把这几步表达出来的 provider，于是有了这个壳。
 func ProvideSupplierOnboardingService(
 	repo SupplierOnboardingRepository,
 	accountRepo AccountRepository,
@@ -1052,9 +1053,13 @@ func ProvideSupplierOnboardingService(
 	settingService *SettingService,
 	incidents *SupplierIncidentService,
 	usageLogRepo UsageLogRepository,
+	testService *AccountTestService,
 ) *SupplierOnboardingService {
 	svc := NewSupplierOnboardingService(repo, accountRepo, oauthService, settingService)
 	svc.SetIncidentGuard(incidents)
+	// 接入完成时当场探一次（见 probeOnAttach）。与观察期任务用的是同一个实现，
+	// 所以「探测」这件事在两条路径上是同一种行为。
+	svc.SetProber(testService)
 	// 批量统计不在 UsageLogRepository 主接口上，走可选能力断言——拿不到就
 	// 不装，「今日已用」显示 0，上限本身照常显示。
 	if reader, ok := usageLogRepo.(supplierDailyUsageReader); ok {

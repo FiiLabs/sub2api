@@ -127,10 +127,21 @@ type SupplierOnboardingService struct {
 	incidents supplierIncidentGuard
 	// dailyUsageReader 每日共享上限的「今日已用」来源。可选，见 SetDailyUsageReader。
 	dailyUsageReader supplierDailyUsageReader
+	// prober 接入完成时的同步探测。可选，见 SetProber。
+	prober supplierOnboardingProber
 
 	// relayProbeClient 中转提交时探测用的 HTTP 客户端。nil = 默认（15s 超时）。
 	// 单独一个字段是给测试注桩用的——探测是真实网络调用，单测不该出网。
 	relayProbeClient *http.Client
+}
+
+// supplierOnboardingProber 接入完成时当场探一次。
+//
+// 与 supplierLifecycleProber 同形且刻意同形——两边探的是同一件事、用的是同一个
+// 实现（*AccountTestService）。不共用一个接口名，是因为「本服务需要什么」应该由
+// 本服务自己声明；共用会让删掉一边的依赖时，另一边静默地跟着变。
+type supplierOnboardingProber interface {
+	RunTestBackground(ctx context.Context, accountID int64, modelID string) (*ScheduledTestResult, error)
 }
 
 // supplierIncidentGuard 是「这个人最近坏掉的号是不是太多了」这一个判断。
@@ -164,6 +175,23 @@ func NewSupplierOnboardingService(
 // 接入服务在没有事件台账的部署里必须照常工作，而构造函数里那四个依赖是它跑起来的
 // 必要条件。另有一条本处独有的：反过来注入会成环——事件服务读的是账号表，
 // 接入服务写的也是账号表，把它塞进构造签名会让 wire 的装配顺序变成一件要想的事。
+// SetProber 注入接入完成时的同步探测能力。为 nil 时这一步整个不存在，
+// 新号照旧留在观察期等后台任务来探——也就是这个功能上线之前的行为。
+//
+// setter 而不是构造参数，理由同 SetIncidentGuard：接入在没有探测能力的部署里
+// 必须照常工作。另有一条本处独有的：*AccountTestService 是一个吃十几个依赖的
+// 大服务，把它焊进构造签名会让每一个接入相关的测试都得先造出它。
+//
+// 显式判空再赋值：一个 nil 的 *AccountTestService 装进接口变量后**不是** nil 接口，
+// 后面的 `s.prober == nil` 就永远为假，探测会打到一个空指针上。
+// 这个坑在 NewSupplierLifecycleService 里已经踩过一次，注释留在那里。
+func (s *SupplierOnboardingService) SetProber(prober *AccountTestService) {
+	if s == nil || prober == nil {
+		return
+	}
+	s.prober = prober
+}
+
 func (s *SupplierOnboardingService) SetIncidentGuard(guard *SupplierIncidentService) {
 	if s == nil || guard == nil {
 		return
@@ -380,7 +408,111 @@ func (s *SupplierOnboardingService) CompleteOAuth(ctx context.Context, input *Co
 		// 走既有的错误状态机，那条路径有告警、有错误信息，比静默暂停可诊断。
 		AutoPauseOnExpired: false,
 	}
-	return s.finalizeSupplyAccount(ctx, account, input.UserID, input.ClientIP, groupID)
+	view, err := s.finalizeSupplyAccount(ctx, account, input.UserID, input.ClientIP, groupID)
+	if err != nil {
+		return nil, err
+	}
+	// 当场探一次。这一步之前，供给者点完授权要等 20~30 分钟才看得到「已上线」——
+	// 那段时间不是在观察他的号，是在等后台任务的两次轮询。见 probeOnAttach。
+	return s.probeOnAttach(ctx, account, view), nil
+}
+
+// probeOnAttach 在账号刚挂上来时同步探一次，并按既有规则决定要不要立刻入池。
+//
+// # 为什么要有这一步
+//
+// 在它之前，一个 OAuth 接入的号从「授权完成」到「开始接单」要等 20~30 分钟，
+// 而这段时间**没有在观察任何东西**：它由「生命周期任务 5 分钟轮询一次」加上
+// 「两次探测之间隔 15 分钟」凑出来，与这个号好不好毫无关系。供给者那边看到的是
+// 一个「接入成功了但什么也没发生」的页面，而这是他与平台的第一次交互。
+//
+// 中转接入（SubmitRelay）一直是当场探的，理由写在那里：「不验的话，一个抄错一位的
+// key 要等观察期第一次探测才暴露，而供给者早已关掉页面」。同一条理由对 OAuth 成立
+// ——token 交换只证明凭证能换出 token，不证明这个订阅还能跑推理（额度用尽、
+// 被上游风控、订阅到期都能换出 token 却跑不了）。两条路径此前的不一致没有道理。
+//
+// # 刻意不给 OAuth 开特例
+//
+// 这次探测**作为第一次探测参与既有状态机**：写 probe_passes=1 / probe_at，
+// 然后用与观察期任务**同一个** supplyProbationEligible 判断够不够格入池。
+// 于是「新号多久能上线」完全由观察期配置决定，而不是由「走了哪条接入路径」决定。
+// 配成 required_successes=1 + min_observation_minutes=0 就是立刻上线；
+// 配回 2 次 / 60 分钟，这次探测就只是提前完成了第一次，行为回到从前。
+//
+// # 探测失败为什么不回滚接入
+//
+// 账号已经建好、归属已经写上、分组已经绑上——这三件事都不该因为一次探测失败而
+// 撤销，理由与 finalizeSupplyAccount 里「逐步推进不回滚」一字不差。失败留下的是
+// 一个 pending_review + probe_error 的号：供给者在仪表盘上看得到失败原因
+// （supply.accounts.probeError 那行红字），观察期任务会继续按间隔重试，
+// 而认证类失败还会被抬成错误态并触发通知（见 probeOnce）。
+//
+// 返回值永远非 nil：拿不到更新后的视图就退回接入时那一份，
+// 「接入成功」这件事不该因为一次读失败而变成失败。
+func (s *SupplierOnboardingService) probeOnAttach(ctx context.Context, account *Account, fallback *SupplierAccountView) *SupplierAccountView {
+	if s == nil || s.prober == nil || account == nil {
+		return fallback
+	}
+
+	settings := s.probationSettings(ctx)
+	probeModel := ""
+	if settings != nil {
+		probeModel = settings.ProbeModel
+	}
+
+	probeCtx, cancel := context.WithTimeout(ctx, supplierLifecycleProbeTimeout)
+	result, err := s.prober.RunTestBackground(probeCtx, account.ID, probeModel)
+	cancel()
+
+	now := time.Now()
+	updates := map[string]any{
+		SupplyProbeAtExtraKey: now.Format(time.RFC3339),
+	}
+
+	if err != nil || result == nil || result.Status != "success" {
+		message := supplyProbeErrorMessage(err, result)
+		updates[SupplyProbePassesExtraKey] = 0
+		updates[SupplyProbeErrorExtraKey] = message
+		if updErr := s.accountRepo.UpdateExtra(ctx, account.ID, updates); updErr != nil {
+			slog.Warn("[SupplierOnboarding] failed to record attach probe failure",
+				"account_id", account.ID, "error", updErr)
+		}
+		// 刻意不在这里调 SetError：那条判定（401 抬成错误态）住在 probeOnce 里，
+		// 和事件/通知是一整套。接入这一刻多写一个状态只会让两处判据各自演化。
+		slog.Info("[SupplierOnboarding] attach probe failed, account stays in review",
+			"account_id", account.ID, "reason", message)
+		return s.refreshView(ctx, account, fallback)
+	}
+
+	updates[SupplyProbePassesExtraKey] = 1
+	updates[SupplyProbeErrorExtraKey] = ""
+	if err := s.accountRepo.UpdateExtra(ctx, account.ID, updates); err != nil {
+		slog.Warn("[SupplierOnboarding] failed to record attach probe success",
+			"account_id", account.ID, "error", err)
+		return s.refreshView(ctx, account, fallback)
+	}
+
+	if !supplyProbationEligible(account, settings, 1, now) {
+		// 够不上就留在观察期——这是配置说了算的正常结果，不是故障。
+		return s.refreshView(ctx, account, fallback)
+	}
+	if err := supplyPromoteToActive(ctx, s.accountRepo, account, true); err != nil {
+		slog.Warn("[SupplierOnboarding] attach probe passed but promotion failed",
+			"account_id", account.ID, "error", err)
+	}
+	return s.refreshView(ctx, account, fallback)
+}
+
+// refreshView 重读账号并重建视图；读不到就退回 fallback。
+//
+// 重读而不是就地改 fallback：上面几步分别写在 UpdateExtra 与 SetSchedulable 两处，
+// 手工拼一份视图迟早与库里不一致——而这份视图正是供给者看到的第一屏。
+func (s *SupplierOnboardingService) refreshView(ctx context.Context, account *Account, fallback *SupplierAccountView) *SupplierAccountView {
+	updated, err := s.accountRepo.GetByID(ctx, account.ID)
+	if err != nil || updated == nil {
+		return fallback
+	}
+	return newSupplierAccountView(updated, s.probationSettings(ctx))
 }
 
 // finalizeSupplyAccount 把一个准备好的账号真正挂进供给池：建行 → 写归属 →

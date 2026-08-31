@@ -316,7 +316,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	supplierIncidentRepository := repository.NewSupplierIncidentRepository(client)
 	supplierIncidentNotifier := service.NewSupplierIncidentNotifier(emailService, userRepository, settingService)
 	supplierIncidentService := service.NewSupplierIncidentService(supplierIncidentRepository, supplierIncidentNotifier)
-	supplierOnboardingService := service.ProvideSupplierOnboardingService(supplierOnboardingRepository, accountRepository, oAuthService, settingService, supplierIncidentService, usageLogRepository)
+	supplierOnboardingService := service.ProvideSupplierOnboardingService(supplierOnboardingRepository, accountRepository, oAuthService, settingService, supplierIncidentService, usageLogRepository, accountTestService)
 	supplierCreditRepository := repository.ProvideSupplierCreditRepository(client)
 	supplierCreditService := service.ProvideSupplierCreditService(supplierCreditRepository, settingService)
 	supplierAdminRepository := repository.NewSupplierAdminRepository(client)
