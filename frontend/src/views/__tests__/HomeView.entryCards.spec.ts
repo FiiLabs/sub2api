@@ -87,7 +87,7 @@ describe('HomeView dual entry cards', () => {
     expect(usage.text()).toContain('我要用 AI')
     expect(supply.text()).toContain('我有闲置订阅')
     // 副文案各自讲清自己那一侧的价值主张，缺了就只剩两个空标题。
-    expect(usage.text()).toContain('官方 API 的 2.2 折')
+    expect(usage.text()).toContain('官方 API 的 1.4 折')
     expect(supply.text()).toContain('闲置额度变成收入')
     expect(supply.text()).toContain('提现到链上')
 

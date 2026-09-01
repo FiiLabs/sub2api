@@ -96,7 +96,7 @@ describe('HomeView ApexOne landing content', () => {
     // Hero
     expect(text).toContain('Data privacy you can verify. Powered by TEE')
     expect(text).toContain('Claude Fable 5 Is Live')
-    expect(text).toContain('22% of official API pricing')
+    expect(text).toContain('14% of official API pricing')
     expect(text).toContain('TEE Privacy Protection')
     expect(text).toContain('Hermes')
     expect(text).toContain('Client Support')
@@ -106,7 +106,7 @@ describe('HomeView ApexOne landing content', () => {
     expect(text).toContain('plaintext never touches our hands')
 
     // Comparison table
-    expect(text).toContain('22% of the Price. None of the Snooping.')
+    expect(text).toContain('14% of the Price. None of the Snooping.')
     expect(text).toContain('Opaque Gateway')
     expect(text).toContain('Official API')
     // 这三行在 proof-solo 上被改写过（tee-control 原文是
@@ -127,7 +127,7 @@ describe('HomeView ApexOne landing content', () => {
 
     // 供给侧区块:分成比例可以承诺,收入金额不能——这句免责是这一段的底线
     expect(text).toContain('Turn idle subscription quota into income.')
-    expect(text).toContain('Current revenue share: 80%')
+    expect(text).toContain('Current revenue share: 50%')
     expect(text).toContain('not any particular amount of income')
     expect(text).toContain('demand still building')
     expect(text).toContain('USDT paid on-chain')
@@ -153,9 +153,14 @@ describe('HomeView ApexOne landing content', () => {
     // 价格对比只与「官方 API」比。规则与理由写在 i18n/locales/*/home.ts 顶部——
     // 这里刻意不列竞品名单：把名单写进仓库，本身就违反了那条规则。
     expect(text).toContain('Official API')
-    // 旧的五折口径:改价后任何残留都是价格错标
+    // 旧的五折口径:改价后任何残留都是价格错标。
+    // 注意这里只钉「50% 作为价格」的说法——裸 '50%' 不能再断言,
+    // 它现在是供给者分成比例的正确值(Current revenue share: 50%),
+    // 两个 50% 在同一页上但含义不同:一个是我们收多少钱,一个是我们付出去多少。
     expect(text).not.toContain('Half the price')
-    expect(text).not.toContain('50%')
+    expect(text).not.toContain('50% of official')
+    expect(text).not.toContain('50% of Official')
+    expect(text).not.toContain('50% Of Official')
     expect(text).not.toContain('0.5x')
     // 带时效的上线措辞过一天就是假的
     expect(text).not.toContain('Live Today')

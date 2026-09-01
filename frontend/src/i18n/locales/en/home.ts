@@ -34,7 +34,7 @@ export default {
         badge: 'Claude Fable 5 Is Live',
         title: 'Data privacy you can verify. Powered by TEE',
         subtitle:
-          'Access frontier models like Claude through a TEE-protected gateway — your data stays private, every call is verifiable, all at 22% of official API pricing.',
+          'Access frontier models like Claude through a TEE-protected gateway — your data stays private, every call is verifiable, all at 14% of official API pricing.',
         verifyPrivacy: 'Verify Privacy',
         // 消费侧入口卡的标题。与下面的供给卡是一对,措辞必须同构（都是「我要/我有」
         // 开头的第一人称短句）：两张卡回答的是同一个问题的两个答案,句式不一致
@@ -43,7 +43,7 @@ export default {
         // 卡片副文案是 subtitle 的精简版：卡片里放不下一整句带三个从句的话,
         // 但价格和隐私这两个点必须都在——少一个就变成另一个产品的介绍。
         useAIDesc:
-          'Call frontier models like Claude through a TEE-protected gateway at 22% of official API pricing — your data stays private and every call is verifiable.',
+          'Call frontier models like Claude through a TEE-protected gateway at 14% of official API pricing — your data stays private and every call is verifiable.',
         // 供给侧入口:锚点到本页的 #supply,不直接跳 /supply——那条路要登录,
         // 未登录用户点过去只会看到登录页,不知道自己错过了什么。
         shareSubscription: 'I have spare quota',
@@ -70,10 +70,10 @@ export default {
       },
       personal: {
         eyebrow: '// ApexOne',
-        title: '22% of the Price. None of the Snooping.',
+        title: '14% of the Price. None of the Snooping.',
         subtitle: 'One gateway for price, privacy, and reliability — compare for yourself.',
         compare: {
-          note: 'Based on official API billing price. ApexOne bills 22% of that price.',
+          note: 'Based on official API billing price. ApexOne bills 14% of that price.',
           cols: {
             opaque: 'Opaque Gateway',
             official: 'Official API',
@@ -110,7 +110,7 @@ export default {
               label: 'Price',
               opaque: 'Cheap, unclear how',
               official: '1x Official Price',
-              apexone: '22% of Official Price'
+              apexone: '14% of Official Price'
             }
           }
         },
@@ -142,17 +142,17 @@ export default {
       },
       pricing: {
         eyebrow: '// Pricing',
-        title: '22% of official pricing. Nothing hidden.',
-        subtitle: 'Billed per token at 22% of official API pricing — no subscriptions, no minimums.',
+        title: '14% of official pricing. Nothing hidden.',
+        subtitle: 'Billed per token at 14% of official API pricing — no subscriptions, no minimums.',
         personal: {
           name: 'ApexOne',
           tagline: 'Pay As You Go',
-          priceLine: '22% of official API billing price, per token.',
+          priceLine: '14% of official API billing price, per token.',
           desc: 'For developers who want Claude access with verifiable private routing and transparent billing.',
           cta: 'Get Started →',
           features: {
             f1: 'Claude Fable 5 Available Now; GPT and Gemini Coming Soon',
-            f2: '22% of Official API Billing Price',
+            f2: '14% of Official API Billing Price',
             f3: 'TEE-Attested Gateway + Remote Attestation',
             f4: 'Metadata-Only Control Plane — Prompts Never Logged',
             f5: 'Automatic Failover & Real-Time Route Monitoring',
@@ -178,17 +178,17 @@ export default {
             desc: 'The platform routes requests to your account, drawing only on quota you have not used.'
           },
           // The share base must say "what the platform charges the user", not
-          // "official pricing": the same page states we bill at 22% of official
-          // pricing, so a vague base reads as "collect 22, pay out 80".
+          // "official pricing": the same page states we bill at 14% of official
+          // pricing, so a vague base reads as "collect 14, pay out 50".
           s3: {
             title: 'Share the usage revenue',
-            desc: 'You keep 80% of every fee the platform charges the user.'
+            desc: 'You keep 50% of every fee the platform charges the user.'
           }
         },
         earnings: {
           title: 'How Earnings Are Calculated',
           formula: 'Your earnings = what users paid for that usage × revenue share',
-          ratio: 'Current revenue share: 80%',
+          ratio: 'Current revenue share: 50%',
           // 全区块最重要的一句:平台还在早期,供给者按"月入多少"的预期进来
           // 一定会失望,这句必须留在页面上,不能被后来的转化优化砍掉。
           disclaimer:
@@ -208,12 +208,12 @@ export default {
       },
       video: {
         eyebrow: '// Why ApexOne',
-        title: '22% of the price, none of the trade-off.',
+        title: '14% of the price, none of the trade-off.',
         subtitle: "Why you don't have to trade privacy for cost."
       },
       cta: {
         title: 'Build on AI You Can Verify.',
-        description: 'Claude Fable 5, at 22% of official pricing, sealed inside a TEE.',
+        description: 'Claude Fable 5, at 14% of official pricing, sealed inside a TEE.',
         primary: 'Get Started →',
         secondary: 'Verify Privacy →',
         supply: 'Earn by Sharing →',

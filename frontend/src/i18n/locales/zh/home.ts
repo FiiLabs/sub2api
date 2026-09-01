@@ -34,7 +34,7 @@ export default {
         badge: 'Claude Fable 5 已上线',
         title: '隐私不靠承诺，靠验证。TEE 加密路由',
         subtitle:
-          '通过 TEE 加密网关调用 Claude 等前沿模型——数据全程私密，每次调用可验证，价格低至官方 API 的 2.2 折。',
+          '通过 TEE 加密网关调用 Claude 等前沿模型——数据全程私密，每次调用可验证，价格低至官方 API 的 1.4 折。',
         verifyPrivacy: '验证隐私',
         // 消费侧入口卡的标题。与下面的供给卡是一对,措辞必须同构（都是「我要/我有」
         // 开头的第一人称短句）：两张卡回答的是同一个问题的两个答案,句式不一致
@@ -42,7 +42,7 @@ export default {
         useAI: '我要用 AI',
         // 卡片副文案是 subtitle 的精简版：卡片里放不下一整句带三个从句的话,
         // 但价格和隐私这两个点必须都在——少一个就变成另一个产品的介绍。
-        useAIDesc: '通过 TEE 加密网关调用 Claude 等前沿模型，价格低至官方 API 的 2.2 折，数据全程私密且每次调用可验证。',
+        useAIDesc: '通过 TEE 加密网关调用 Claude 等前沿模型，价格低至官方 API 的 1.4 折，数据全程私密且每次调用可验证。',
         // 供给侧入口:锚点到本页的 #supply,不直接跳 /supply——那条路要登录,
         // 未登录用户点过去只会看到登录页,不知道自己错过了什么。
         shareSubscription: '我有闲置订阅',
@@ -50,7 +50,7 @@ export default {
         shareSubscriptionDesc: '把闲置额度变成收入：别人用掉你的订阅额度时按用量分成，收益可提现到链上。',
         shareSubscriptionCta: '了解如何赚取',
         stats: {
-          // 与数值卡片拼成「22% / 官方 API 价格」。标签里不要再写一遍「2.2 折」——
+          // 与数值卡片拼成「14% / 官方 API 价格」。标签里不要再写一遍「1.4 折」——
           // 那会让同一张卡上出现两种单位，读者得先换算才知道说的是一件事。
           discount: '官方 API 价格',
           attested: 'TEE 隐私保护',
@@ -70,10 +70,10 @@ export default {
       },
       personal: {
         eyebrow: '// ApexOne',
-        title: '价格 2.2 折，窥探为零。',
+        title: '价格 1.4 折，窥探为零。',
         subtitle: '价格、隐私、可靠性，一张表看明白。',
         compare: {
-          note: '基于官方 API 计费价格，ApexOne 按其 22% 计费。',
+          note: '基于官方 API 计费价格，ApexOne 按其 14% 计费。',
           cols: {
             opaque: '不透明网关',
             official: '官方 API',
@@ -110,7 +110,7 @@ export default {
               label: '价格',
               opaque: '便宜，但说不清为什么',
               official: '官方原价',
-              apexone: '官方价格 2.2 折'
+              apexone: '官方价格 1.4 折'
             }
           }
         },
@@ -140,17 +140,17 @@ export default {
       },
       pricing: {
         eyebrow: '// 价格',
-        title: '官方价格 2.2 折，透明公开。',
-        subtitle: '按 token 计费，价格为官方 API 的 22%——没有订阅，没有最低消费。',
+        title: '官方价格 1.4 折，透明公开。',
+        subtitle: '按 token 计费，价格为官方 API 的 14%——没有订阅，没有最低消费。',
         personal: {
           name: 'ApexOne',
           tagline: '按量付费',
-          priceLine: '按官方 API 计费价格的 22% 逐 token 计费。',
+          priceLine: '按官方 API 计费价格的 14% 逐 token 计费。',
           desc: '面向需要 Claude 接入、可验证私密路由和透明账单的开发者。',
           cta: '立即开始 →',
           features: {
             f1: 'Claude Fable 5 现已可用；GPT 和 Gemini 即将上线',
-            f2: '官方 API 计费价格 2.2 折',
+            f2: '官方 API 计费价格 1.4 折',
             f3: 'TEE 认证网关 + 远程认证',
             f4: '控制面只接触元数据——提示词从不落日志',
             f5: '自动故障切换 & 实时路由监测',
@@ -175,18 +175,18 @@ export default {
             desc: '平台把请求调度到你的账号上，只用你没用完的额度。'
           },
           // 分成基数必须写明是「平台向用户收取的金额」而不是「官方计价」。
-          // 页面另一处写着"按官方价的 22% 计费"，两个数字摆在同一页上，
-          // 含糊的基数会被直接算成"收 22 付 80"——那是一句说不通的话，
+          // 页面另一处写着"按官方价的 14% 计费"，两个数字摆在同一页上，
+          // 含糊的基数会被直接算成"收 14 付 50"——那是一句说不通的话，
           // 而认真算过账的供给者恰恰是我们最想留住的那批人。
           s3: {
             title: '按用量分成',
-            desc: '平台向用户收取的每一笔费用，你拿其中的 80%。'
+            desc: '平台向用户收取的每一笔费用，你拿其中的 50%。'
           }
         },
         earnings: {
           title: '收益怎么算',
           formula: '你的收益 = 用户为这些用量付的钱 × 分成比例',
-          ratio: '当前分成比例：80%',
+          ratio: '当前分成比例：50%',
           // 全区块最重要的一句:平台还在早期,供给者按"月入多少"的预期进来
           // 一定会失望,这句必须留在页面上,不能被后来的转化优化砍掉。
           disclaimer:
@@ -206,12 +206,12 @@ export default {
       },
       video: {
         eyebrow: '// 为什么是 ApexOne',
-        title: '价格 2.2 折，隐私不打折',
+        title: '价格 1.4 折，隐私不打折',
         subtitle: '便宜和隐私，不用二选一。'
       },
       cta: {
         title: '用得起，也信得过的 AI。',
-        description: 'Claude Fable 5，官方 2.2 折，TEE 全程密封。',
+        description: 'Claude Fable 5，官方 1.4 折，TEE 全程密封。',
         primary: '立即开始 →',
         secondary: '验证隐私 →',
         supply: '共享订阅赚钱 →',

@@ -535,7 +535,7 @@ const entryCardClass =
 const heroStats = computed(() => [
   // 数值保持语言中立（百分号各语言通用），折扣说法只出现在文案里——
   // 把「1.8折」写进 value 会让英文页面显示中文。
-  { value: '22%', label: t('home.landing.hero.stats.discount') },
+  { value: '14%', label: t('home.landing.hero.stats.discount') },
   { value: '100%', label: t('home.landing.hero.stats.attested') },
   { value: 'Fable 5', label: t('home.landing.hero.stats.claude') },
   { value: 'Hermes', label: t('home.landing.hero.stats.hermes') }
