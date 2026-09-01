@@ -21,9 +21,9 @@
 services:
   sub2api:
     # Built from THIS repo by .github/workflows/publish-tee-images.yml (cosign
-    # keyless + SLSA provenance, tag proof-v23). amd64 child of INDEX
-    # sha256:48e96b81d4c85926db6d2014514f77d68d215634962d2abe0261f972e8a10841.
-    image: docker.io/markerdao/sub2api@sha256:c24495c443a312580fb48a9a99b51b6cae5b7b0a33e98a1f7519960ecd112cc0
+    # keyless + SLSA provenance, tag proof-v24). amd64 child of INDEX
+    # sha256:694f165c3f42c570098253080e77dffb3d386effe22cad85dd56934b4f69044a.
+    image: docker.io/markerdao/sub2api@sha256:ee6c6e2d9cede33425958a94f1347fc1adbbb4c8ef4bc170749320c1ea03bc80
     container_name: sub2api
     restart: unless-stopped
     ulimits:
