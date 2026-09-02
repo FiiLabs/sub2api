@@ -673,12 +673,21 @@ export default {
       change: 'Show another',
       copy: 'Copy Message and Link',
       copied: 'Message and link copied',
+      // These three are copied by the user and **sent to other people**, so the
+      // price and model version in them are outward claims exactly like the
+      // landing page: a pricing or model change has to move them too.
+      //
+      // Fixed 2026-09-02: the price line still said "half the official API
+      // price", the figure from before 2026-08, while the multiplier had moved
+      // from 0.22 to 0.14. The landing page was updated and this was missed, so
+      // every share quoted a price we do not charge. Model version raised to
+      // 5.1 across all three at the same time.
       messages: {
-        fable: 'Claude Fable 5 is now available.\nStart using it through ApexOne.\n{inviteLink}',
+        fable: 'Claude Fable 5.1 is now available.\nStart using it through ApexOne.\n{inviteLink}',
         price:
-          'Access Claude Fable 5 through ApexOne at half the official API price.\n{inviteLink}',
+          'Access Claude Fable 5.1 through ApexOne at 14% of the official API price.\n{inviteLink}',
         privacy:
-          'ApexOne now supports Claude Fable 5.\nRequests travel through a verifiable TEE-protected privacy route.\n{inviteLink}'
+          'ApexOne now supports Claude Fable 5.1.\nRequests travel through a verifiable TEE-protected privacy route.\n{inviteLink}'
       }
     },
     loadFailed: 'Failed to load affiliate data',

@@ -677,11 +677,17 @@ export default {
       change: '换一条',
       copy: '复制推荐语和链接',
       copied: '推荐语和链接已复制',
+      // 这三条是用户点「复制推荐语」后**发出去给别人看**的文案，
+      // 所以里面的价格和模型版本跟首页一样是对外宣称，改价改型号时必须一起动。
+      //
+      // 2026-09-02 修：price 那条一直写着「五折」——那是 2026-08 之前的口径，
+      // 期间倍率已经从 0.22 改到 0.14（1.4 折）。首页早就改了，这里漏了，
+      // 于是每分享一次就对外报错一次价。三条的模型版本一并从 5 抬到 5.1。
       messages: {
-        fable: 'Claude Fable 5 现已支持。\n通过 ApexOne 即可开始调用。\n{inviteLink}',
-        price: 'Claude Fable 5 API，ApexOne 按官方 API 价格五折计费。\n{inviteLink}',
+        fable: 'Claude Fable 5.1 现已支持。\n通过 ApexOne 即可开始调用。\n{inviteLink}',
+        price: 'Claude Fable 5.1 API，ApexOne 按官方 API 价格 1.4 折计费。\n{inviteLink}',
         privacy:
-          'ApexOne 现已支持 Claude Fable 5。\n请求经可验证的 TEE 隐私路由处理，相关证据可以自己查。\n{inviteLink}'
+          'ApexOne 现已支持 Claude Fable 5.1。\n请求经可验证的 TEE 隐私路由处理，相关证据可以自己查。\n{inviteLink}'
       }
     },
     loadFailed: '加载邀请返利数据失败',
