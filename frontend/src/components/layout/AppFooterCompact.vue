@@ -28,9 +28,11 @@
           target="_blank"
           rel="external noreferrer"
           class="text-gray-400 transition-colors hover:text-primary-600 dark:text-dark-500 dark:hover:text-primary-400"
-          :aria-label="`${item.label} link`"
+          :aria-label="item.name"
+          :title="item.name"
         >
-          <svg class="size-4" viewBox="0 0 44 44" aria-hidden="true" focusable="false">
+          <!-- viewBox 跟着 footerLinks 一起从 44 改到 24：那里的 path 已换成纯字形。 -->
+          <svg class="size-4" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path fill="currentColor" :d="item.path" />
           </svg>
         </a>
