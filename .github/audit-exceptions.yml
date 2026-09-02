@@ -20,4 +20,15 @@ exceptions:
   # `pnpm audit --prod --ignore-workspace` 不再报出这三条，例外条目因此永远匹配
   # 不到、`expires_on` 也永远不被检查（校验脚本只对命中的发现查过期）。
   # 留着等于挂了三条看起来生效、实则是死条目的豁免；哪天真被降级重新引入，
-  # 现在会以"缺少例外"直接报红，比一条过期豁免更清楚。
+  # 现在会以「缺少例外」直接报红，比一条过期豁免更清楚。
+  #
+  # 2026-09-02 同步 upstream v0.1.185 时，上游把那三条又带了回来——**不接受**，
+  # 上面那段分析没有过期。但上游同时新增的 nanoid 条目是我们没分析过的新发现，
+  # 按「宁可留一条用不上的豁免，也不要让 CI 因为缺豁免而红」的方向保留它。
+  - package: nanoid
+    advisory: "GHSA-2v37-7h3g-55p8"
+    severity: high
+    reason: "Custom generator with size=0 not used; all nanoid calls use default size or positive values"
+    mitigation: "No zero-size custom generators in codebase; upgrade when nanoid releases fix"
+    expires_on: "2026-10-13"
+    owner: "security@your-domain"

@@ -25,6 +25,10 @@ vi.mock('@/stores', () => ({
   useAuthStore: () => authStore,
 }))
 
+vi.mock('@/stores/app', () => ({
+  useAppStore: () => appStore,
+}))
+
 vi.mock('vue-i18n', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-i18n')>()
   return {
@@ -55,6 +59,13 @@ function compactDestination(wrapper: ReturnType<typeof mountHome>) {
   return wrapper.get('[data-testid="compact-home"]').findComponent(RouterLinkStub).props('to')
 }
 
+function modelPlazaDestination(wrapper: ReturnType<typeof mountHome>) {
+  return wrapper
+    .findAllComponents(RouterLinkStub)
+    .find((link) => link.props('to') === '/model-plaza')
+    ?.props('to')
+}
+
 // SKIPPED on proof-solo。本分支的 HomeView.vue 自 proof-v5 起是 ApexOne 营销落地页
 // 的**整体覆盖**，不含 upstream 的两个运营开关(自定义首页内容 `v-html`/iframe、
 // 紧凑首页 `data-testid="compact-home"`)，所以这些用例断言的结构在本分支不存在。
@@ -66,6 +77,10 @@ function compactDestination(wrapper: ReturnType<typeof mountHome>) {
 // 另注:下面 beforeEach 里 `mockReturnValue({ matches: false })` 是残缺的 matchMedia
 // mock(缺 addListener/addEventListener),对 upstream 的 HomeView 无害,但本分支的
 // HomeView 挂了 VideoPlayer → usePreferredReducedMotion,会直接抛 TypeError。
+//
+// 2026-09-02 同步 v0.1.185:上游在这个文件里新增了模型广场入口的断言，连同它的
+// modelPlazaDestination 辅助函数一起收下——辅助函数放在 describe 外面，因为
+// .skip 只是不执行、函数体仍然要过类型检查，删掉它会让块内的引用编译不过。
 describe.skip('HomeView compact mode', () => {
   beforeEach(() => {
     authStore.isAuthenticated = false
@@ -129,5 +144,56 @@ describe.skip('HomeView compact mode', () => {
     expect(compactDestination(wrapper)).toBe('/admin/dashboard')
     expect(authStore.checkAuth).toHaveBeenCalledOnce()
     expect(appStore.fetchPublicSettings).not.toHaveBeenCalled()
+  })
+
+  it('shows the model plaza link to anonymous visitors when public access is enabled', () => {
+    const wrapper = mountHome({
+      compact_home_enabled: true,
+      model_plaza_enabled: true,
+      model_plaza_require_auth: false,
+    })
+
+    expect(modelPlazaDestination(wrapper)).toBe('/model-plaza')
+  })
+
+  it('hides the model plaza link from anonymous visitors when sign-in is required', () => {
+    const wrapper = mountHome({
+      compact_home_enabled: true,
+      model_plaza_enabled: true,
+      model_plaza_require_auth: true,
+    })
+
+    expect(modelPlazaDestination(wrapper)).toBeUndefined()
+  })
+
+  it('shows the model plaza link to authenticated visitors when sign-in is required', () => {
+    authStore.isAuthenticated = true
+
+    const wrapper = mountHome({
+      compact_home_enabled: true,
+      model_plaza_enabled: true,
+      model_plaza_require_auth: true,
+    })
+
+    expect(modelPlazaDestination(wrapper)).toBe('/model-plaza')
+  })
+
+  it('shows the model plaza link in the default home header', () => {
+    const wrapper = mountHome({
+      model_plaza_enabled: true,
+      model_plaza_require_auth: false,
+    })
+
+    expect(modelPlazaDestination(wrapper)).toBe('/model-plaza')
+  })
+
+  it('hides the model plaza link when the feature is disabled', () => {
+    const wrapper = mountHome({
+      compact_home_enabled: true,
+      model_plaza_enabled: false,
+      model_plaza_require_auth: false,
+    })
+
+    expect(modelPlazaDestination(wrapper)).toBeUndefined()
   })
 })
