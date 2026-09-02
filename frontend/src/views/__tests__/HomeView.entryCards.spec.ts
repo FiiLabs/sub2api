@@ -9,6 +9,7 @@
  */
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ref } from 'vue'
 
 import zh from '@/i18n/locales/zh'
 import HomeView from '../HomeView.vue'
@@ -50,6 +51,9 @@ vi.mock('vue-i18n', async (importOriginal) => {
         }, zh)
         return typeof value === 'string' ? value : key
       },
+      // HomeView 用 locale 决定共享者视频取中文版还是英文版。
+      // 这份 mock 喂的是 zh 文案，locale 跟着写 zh，两者别对不上。
+      locale: ref('zh'),
     }),
   }
 })

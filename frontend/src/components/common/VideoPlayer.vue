@@ -450,7 +450,17 @@ async function tryPlay() {
 }
 
 /** 重新拉流；resetAttempts 用于用户手动重试和网络恢复 */
-function reload(resetAttempts = false) {
+/**
+ * @param resetAttempts 清空已用掉的重试次数
+ * @param preserveTime  记住当前进度，新的源就绪后跳回去。
+ *
+ *   **换源时必须传 false。** 这个参数存在的理由只有一个：同一支片子卡住了
+ *   重试，用户不该被拽回开头。但换源走的是同一个函数，而下面那句
+ *   「currentTime > 0 就记下来」会把**旧片子**的秒数捞回来——即使调用方
+ *   刚刚把 resumeTime 归零。首页的共享者视频跟着语言切中英版，症状就是
+ *   切完语言新片子从旧片子的进度开始；两支长度不同的话还会直接落在片尾。
+ */
+function reload(resetAttempts = false, preserveTime = true) {
   clearRetryTimer()
   clearStallTimer()
   if (resetAttempts) attempts.value = 0
@@ -462,8 +472,10 @@ function reload(resetAttempts = false) {
     return
   }
 
-  if (Number.isFinite(el.currentTime) && el.currentTime > 0) {
+  if (preserveTime && Number.isFinite(el.currentTime) && el.currentTime > 0) {
     resumeTime = el.currentTime
+  } else {
+    resumeTime = 0
   }
   status.value = 'loading'
   el.load()
@@ -847,7 +859,11 @@ useEventListener(window, 'online', () => {
   }
 })
 
-// 换链接等于换一个视频，状态整体重置
+// 换链接等于换一个视频，状态整体重置。
+//
+// reload 的第二个参数必须是 false：这里把 resumeTime 归零之后，reload 内部
+// 还会「currentTime > 0 就记下来」，把旧片子的进度又捞回去——归零就白做了。
+// 首页共享者视频按语言切中英版走的正是这条路。
 watch(
   () => sources.value.map((item) => item.src).join('|'),
   () => {
@@ -859,7 +875,7 @@ watch(
     scrubbing.value = false
     pausedByUser.value = false
     status.value = 'idle'
-    if (attached.value) reload(true)
+    if (attached.value) reload(true, false)
   }
 )
 

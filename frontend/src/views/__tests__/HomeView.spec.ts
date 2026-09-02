@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ref } from 'vue'
 
 import en from '@/i18n/locales/en'
 import HomeView from '../HomeView.vue'
@@ -43,7 +44,10 @@ vi.mock('vue-i18n', async () => {
           return undefined
         }, en)
         return typeof value === 'string' ? value : key
-      }
+      },
+      // HomeView 用 locale 决定共享者视频取中文版还是英文版。
+      // 这份 mock 喂的是 en 文案，locale 跟着写 en，两者别对不上。
+      locale: ref('en')
     })
   }
 })
@@ -95,7 +99,7 @@ describe('HomeView ApexOne landing content', () => {
 
     // Hero
     expect(text).toContain('Data privacy you can verify. Powered by TEE')
-    expect(text).toContain('Claude Fable 5 Is Live')
+    expect(text).toContain('Claude Fable 5.1 Is Live')
     expect(text).toContain('14% of official API pricing')
     expect(text).toContain('TEE Privacy Protection')
     expect(text).toContain('Hermes')

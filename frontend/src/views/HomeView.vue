@@ -191,7 +191,7 @@
             <rect x="596" y="52" width="116" height="40" rx="8" class="surf" stroke-width="1" />
             <circle cx="612" cy="72" r="6.5" fill="#7b61ff" />
             <text x="623" y="69" font-size="10.5" font-weight="600" class="strong" font-family="system-ui">Claude</text>
-            <text x="623" y="80" font-size="9" class="label2" font-family="system-ui">Fable 5 live</text>
+            <text x="623" y="80" font-size="9" class="label2" font-family="system-ui">Fable 5.1 live</text>
 
             <rect x="596" y="130" width="116" height="40" rx="8" class="surf" stroke-width="1" />
             <circle cx="612" cy="150" r="6.5" fill="#10a37f" />
@@ -235,6 +235,28 @@
           <span :class="eyebrowClass">{{ t('home.landing.personal.eyebrow') }}</span>
           <h2 :class="headingClass" class="mt-1.5">{{ t('home.landing.personal.title') }}</h2>
           <p :class="subClass" class="mb-6 mt-2 max-w-3xl">{{ t('home.landing.personal.subtitle') }}</p>
+        </div>
+
+        <!--
+          消费者视角的片子。原来它单独占一节挂在页面最后（id="why"），
+          位置上离「谁该看它」很远：读者已经走完消费侧、价格、供给侧三段，
+          才撞见一个没有上下文的播放器。
+
+          两个视频各自归到它说的那件事里之后，这一节的节奏是
+          说明 → 片子 → 对照表 → 细节卡：先用 47 秒把话讲完，再给想核对的人证据。
+        -->
+        <div v-if="consumerVideoUrl" v-reveal class="reveal-item mb-6">
+          <div :class="videoBadgeClass">
+            <span aria-hidden="true">🚀</span>
+            <span>{{ t('home.landing.video.audience') }}</span>
+          </div>
+          <h3 class="mb-1 mt-3 text-fluid-lg font-bold tracking-tight text-gray-900 dark:text-white">
+            {{ t('home.landing.video.title') }}
+          </h3>
+          <p :class="subClass" class="mb-3">{{ t('home.landing.video.subtitle') }}</p>
+          <div :class="cardClass" class="overflow-hidden p-2 md:p-3">
+            <VideoPlayer :src="consumerVideoUrl" :poster="promoVideoPoster" fit="contain" />
+          </div>
         </div>
 
         <!-- comparison table -->
@@ -380,6 +402,35 @@
           <p :class="subClass" class="mb-6 mt-2 max-w-3xl">{{ t('home.landing.supply.subtitle') }}</p>
         </div>
 
+        <!--
+          共享者视角的片子，**跟着界面语言换中英版本**（见 contributorVideoUrl）。
+
+          语言在这里不是锦上添花：共享者要把订阅凭证交出来，片子讲的是这件事
+          安全在哪、钱怎么算。看不懂的语言等于没讲。消费侧那支是通用宣传片，
+          没有对应的语言版本，所以只有这一支做了切换。
+        -->
+        <div v-if="contributorVideoUrl" v-reveal class="reveal-item mb-6">
+          <div :class="videoBadgeClass">
+            <span aria-hidden="true">💰</span>
+            <span>{{ t('home.landing.supply.video.audience') }}</span>
+          </div>
+          <h3 class="mb-1 mt-3 text-fluid-lg font-bold tracking-tight text-gray-900 dark:text-white">
+            {{ t('home.landing.supply.video.title') }}
+          </h3>
+          <p :class="subClass" class="mb-3">{{ t('home.landing.supply.video.subtitle') }}</p>
+          <div :class="cardClass" class="overflow-hidden p-2 md:p-3">
+            <!--
+              没有 poster：这支片子没做封面图，VideoPlayer 会退到深色渐变垫底，
+              比借用消费侧那张封面诚实——那张图讲的是另一件事。
+            -->
+            <VideoPlayer
+              :src="contributorVideoUrl"
+              fit="contain"
+              data-testid="home-contributor-video"
+            />
+          </div>
+        </div>
+
         <!-- 怎么运作 -->
         <h3 class="mb-3 text-fluid-base font-semibold text-gray-900 dark:text-white">
           {{ t('home.landing.supply.howItWorks.title') }}
@@ -449,17 +500,11 @@
         </div>
       </section>
 
-      <!-- PROMO VIDEO — 未配置链接时整段不渲染 -->
-      <section v-if="promoVideoUrl" id="why" class="mx-auto mt-14 max-w-5xl">
-        <div v-reveal class="reveal-item text-center">
-          <span :class="eyebrowClass">{{ t('home.landing.video.eyebrow') }}</span>
-          <h2 :class="headingClass" class="mt-1.5">{{ t('home.landing.video.title') }}</h2>
-          <p :class="subClass" class="mx-auto mb-6 mt-2 max-w-2xl">{{ t('home.landing.video.subtitle') }}</p>
-        </div>
-        <div v-reveal :class="cardClass" class="reveal-item overflow-hidden p-2 md:p-3">
-          <VideoPlayer :src="promoVideoUrl" :poster="promoVideoPoster" fit="contain" />
-        </div>
-      </section>
+      <!--
+        这里原来是 id="why" 的独立视频段。片子已经搬进 #personal（消费侧那段），
+        id 一起去掉：它不在 Header 的导航清单里（architecture / personal / pricing
+        / /proof / 文档），没有任何入口锚到它，留着只是一个死锚点。
+      -->
 
       <!-- CTA -->
       <section class="mx-auto mt-14 max-w-5xl">
@@ -509,7 +554,8 @@ import StatusIcon from '@/components/icons/StatusIcon.vue'
 import VideoPlayer from '@/components/common/VideoPlayer.vue'
 import promoPosterUrl from '@/assets/promo-poster.jpg'
 
-const { t } = useI18n()
+// locale 用于按语言选共享者视频（见下方 contributorVideoUrl）
+const { t, locale } = useI18n()
 
 const appStore = useAppStore()
 const authStore = useAuthStore()
@@ -537,7 +583,7 @@ const heroStats = computed(() => [
   // 把「1.8折」写进 value 会让英文页面显示中文。
   { value: '14%', label: t('home.landing.hero.stats.discount') },
   { value: '100%', label: t('home.landing.hero.stats.attested') },
-  { value: 'Fable 5', label: t('home.landing.hero.stats.claude') },
+  { value: 'Fable 5.1', label: t('home.landing.hero.stats.claude') },
   { value: 'Hermes', label: t('home.landing.hero.stats.hermes') }
 ])
 
@@ -617,9 +663,38 @@ const supplyPayoutPoints = computed(() => [
   t('home.landing.supply.payout.freeze')
 ])
 
-// PROMO VIDEO
-const promoVideoUrl = 'https://publicai.s3.ap-east-1.amazonaws.com/common/apex1-launch-47s-v4.mp4'
+// ── 视频 ─────────────────────────────────────────────────────────────────────
+//
+// 两支片子面向两类人，各自跟着它说的那段内容走：
+//   consumer    → #personal（怎么用、便宜在哪、隐私怎么保证）
+//   contributor → #supply  （怎么共享订阅、钱怎么算）
+
+const VIDEO_BASE = 'https://publicai.s3.ap-east-1.amazonaws.com/common'
+
+const consumerVideoUrl = `${VIDEO_BASE}/apex1-launch-47s-v4.mp4`
 const promoVideoPoster = promoPosterUrl
+
+/**
+ * 共享者视频按界面语言取中/英版本。
+ *
+ * 用 locale 而不是浏览器语言：界面上写着什么语言，片子就该是什么语言，
+ * 用户手动切过语言之后尤其如此（切了界面却还在放另一种语言的片子，
+ * 会让人以为切换没生效）。
+ *
+ * locale 的取值只有 'en' | 'zh'（见 i18n/index.ts 的 LocaleCode），
+ * 但这里仍然写成「不是 zh 就走 en」而不是穷举：将来加第三种语言时，
+ * 缺失的片子退到英文，比拼出一个 404 的地址好。
+ */
+const contributorVideoUrl = computed(() =>
+  locale.value.startsWith('zh')
+    ? `${VIDEO_BASE}/apex1_contributor_zh.mp4`
+    : `${VIDEO_BASE}/apex1_contributor_en.mp4`
+)
+
+// 两支片子上方那条受众标签共用一份样式：它们的意义就是「这两块是同一种东西，
+// 只是给不同的人看」，分成两份迟早会有一边被顺手调走。
+const videoBadgeClass =
+  'inline-flex items-center gap-1.5 rounded-full border border-primary-500/30 bg-primary-500/10 px-3 py-1 text-fluid-2xs font-semibold text-primary-600 dark:bg-primary-500/20 dark:text-primary-400'
 
 // CTA pills
 const ctaPills = computed(() => [

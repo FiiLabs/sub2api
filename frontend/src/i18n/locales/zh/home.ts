@@ -31,7 +31,7 @@ export default {
       hero: {
         // 不写"今日/本周"这类带时效的词:首页文案改一次要走一次发版,
         // 而"今日上线"过了当天就是假的。
-        badge: 'Claude Fable 5 已上线',
+        badge: 'Claude Fable 5.1 已上线',
         title: '隐私不靠承诺，靠验证。TEE 加密路由',
         subtitle:
           '通过 TEE 加密网关调用 Claude 等前沿模型——数据全程私密，每次调用可验证，价格低至官方 API 的 1.4 折。',
@@ -149,7 +149,7 @@ export default {
           desc: '面向需要 Claude 接入、可验证私密路由和透明账单的开发者。',
           cta: '立即开始 →',
           features: {
-            f1: 'Claude Fable 5 现已可用；GPT 和 Gemini 即将上线',
+            f1: 'Claude Fable 5.1 现已可用；GPT 和 Gemini 即将上线',
             f2: '官方 API 计费价格 1.4 折',
             f3: 'TEE 认证网关 + 远程认证',
             f4: '控制面只接触元数据——提示词从不落日志',
@@ -164,6 +164,20 @@ export default {
         eyebrow: '// 共享订阅',
         title: '把闲置的订阅额度，变成收入。',
         subtitle: '你已经在为 Claude 订阅付费。别人用掉你没用完的那部分时，你按比例分成。',
+        // 共享者视频。这一支有中英两版,按界面语言取(见 HomeView 的
+        // contributorVideoUrl)。
+        //
+        // 文案两条约束:
+        //   1. 不出现收益金额——同一条红线,我们承诺的是分成比例不是具体收入。
+        //   2. **不许暗示片子讲了细节**。它是一支宣传片,不是说明片。写成
+        //      「凭证怎么保管、额度怎么被用掉、钱怎么算——一次讲清楚」那种
+        //      句式,看完发现没讲,比不放视频更伤信任。所以这里只说它是介绍,
+        //      并把人指向下面真正讲规则的那几块(怎么运作 / 收益 / 提现 / 隐私)。
+        video: {
+          audience: '给共享者',
+          title: '先看一眼是怎么回事',
+          subtitle: '一支介绍短片。具体怎么运作、收益怎么算，接着往下看。'
+        },
         howItWorks: {
           title: '怎么运作',
           s1: {
@@ -204,14 +218,20 @@ export default {
         },
         cta: '了解如何共享订阅'
       },
+      // 消费侧视频。这支是通用宣传片,只有一个版本,不随语言切换——
+      // 与共享者那支(supply.video)不同,那支有中英两版。
       video: {
+        // eyebrow 保留:这一段搬进 #personal 之后模板里没再用它,
+        // 但删掉会让 zh/en 两份文案对不齐(supplyLocales.spec 会逮到),
+        // 而且将来若把视频再拎回独立一节还要用。
         eyebrow: '// 为什么是 ApexOne',
+        audience: '给使用者',
         title: '价格 1.4 折，隐私不打折',
-        subtitle: '便宜和隐私，不用二选一。'
+        subtitle: '便宜和隐私，不用二选一。47 秒看完。'
       },
       cta: {
         title: '用得起，也信得过的 AI。',
-        description: 'Claude Fable 5，官方 1.4 折，TEE 全程密封。',
+        description: 'Claude Fable 5.1，官方 1.4 折，TEE 全程密封。',
         primary: '立即开始 →',
         secondary: '验证隐私 →',
         supply: '共享订阅赚钱 →',

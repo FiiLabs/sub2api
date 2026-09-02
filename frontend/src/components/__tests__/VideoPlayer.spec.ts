@@ -259,4 +259,56 @@ describe('VideoPlayer', () => {
 
     wrapper.unmount()
   })
+
+  // 换源：首页的共享者视频跟着界面语言在中英两版之间切。
+  //
+  // 必须显式 load()——<source> 是 v-for 出来的，src 变了 DOM 子节点会跟着变，
+  // 但 <video> **不会**因此重新选源，画面上仍是旧片子。这条用例逮的就是
+  // 「URL 算对了、片子没换」这种看起来一切正常的失败。
+  it('src 变化后重新加载新的源', async () => {
+    const wrapper = await mountPlayer()
+    expect(load).not.toHaveBeenCalled()
+
+    await wrapper.setProps({ src: 'https://cdn.example.com/promo-zh.mp4' })
+    await flushPromises()
+
+    expect(load).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('source').attributes('src')).toBe('https://cdn.example.com/promo-zh.mp4')
+
+    wrapper.unmount()
+  })
+
+  // 同一个地址重新赋值不该白跑一次 load()：那会把正在放的片子拽回开头。
+  it('src 没有真的变化时不重新加载', async () => {
+    const wrapper = await mountPlayer()
+
+    await wrapper.setProps({ src: 'https://cdn.example.com/promo.mp4' })
+    await flushPromises()
+
+    expect(load).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  // 换源不能沿用上一支片子的进度。reload() 为「同一支片子卡住了重试」保留
+  // resumeTime，换源时把新片子 seek 到旧片子的秒数是错的——长度不同的话
+  // 还会直接落在片尾。
+  it('换源后不把新片子 seek 到旧片子的进度', async () => {
+    const wrapper = await mountPlayer()
+    const { video } = await makeSeekable(wrapper, 100)
+    video.currentTime = 42
+
+    await wrapper.setProps({ src: 'https://cdn.example.com/promo-en.mp4' })
+    await flushPromises()
+
+    // 新源就绪时组件会尝试恢复进度；resumeTime 已归零，所以这里不该发生跳转。
+    Object.defineProperty(video, 'duration', { configurable: true, value: 90 })
+    video.currentTime = 0
+    video.dispatchEvent(new Event('loadeddata'))
+    await flushPromises()
+
+    expect(video.currentTime).toBe(0)
+
+    wrapper.unmount()
+  })
 })

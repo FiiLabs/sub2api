@@ -31,7 +31,7 @@ export default {
       hero: {
         // 不写"今日/本周"这类带时效的词:首页文案改一次要走一次发版,
         // 而"今日上线"过了当天就是假的。
-        badge: 'Claude Fable 5 Is Live',
+        badge: 'Claude Fable 5.1 Is Live',
         title: 'Data privacy you can verify. Powered by TEE',
         subtitle:
           'Access frontier models like Claude through a TEE-protected gateway — your data stays private, every call is verifiable, all at 14% of official API pricing.',
@@ -151,7 +151,7 @@ export default {
           desc: 'For developers who want Claude access with verifiable private routing and transparent billing.',
           cta: 'Get Started →',
           features: {
-            f1: 'Claude Fable 5 Available Now; GPT and Gemini Coming Soon',
+            f1: 'Claude Fable 5.1 Available Now; GPT and Gemini Coming Soon',
             f2: '14% of Official API Billing Price',
             f3: 'TEE-Attested Gateway + Remote Attestation',
             f4: 'Metadata-Only Control Plane — Prompts Never Logged',
@@ -167,6 +167,24 @@ export default {
         title: 'Turn idle subscription quota into income.',
         subtitle:
           "You're already paying for a Claude subscription. When someone uses the part you didn't, you take a share.",
+        // The provider film. This one ships in Chinese and English and follows
+        // the interface language (see contributorVideoUrl in HomeView).
+        //
+        // Two constraints on the copy:
+        //   1. No income figures - same red line as the rest of this block:
+        //      what we commit to is the share, not an amount.
+        //   2. **Do not imply the film covers the details.** It is a promo, not
+        //      an explainer. Copy shaped like "where your credential lives, how
+        //      your quota gets used, how the money is worked out" sets up a
+        //      promise the film does not keep, which costs more trust than
+        //      having no video at all. So it says what it is, and points at the
+        //      blocks below that do carry the rules.
+        video: {
+          audience: 'For providers',
+          title: 'A quick look at the idea',
+          subtitle:
+            'A short introduction. How it actually works and how earnings are calculated are just below.'
+        },
         howItWorks: {
           title: 'How It Works',
           s1: {
@@ -206,14 +224,20 @@ export default {
         },
         cta: 'See how sharing works'
       },
+      // The consumer film. Single cut, no localized versions - unlike the
+      // provider one (supply.video), which ships in Chinese and English.
       video: {
+        // eyebrow is kept although the template stopped using it when this
+        // block moved into #personal: dropping it would desync zh/en, and it
+        // comes back the moment the video is given its own section again.
         eyebrow: '// Why ApexOne',
+        audience: 'For users',
         title: '14% of the price, none of the trade-off.',
-        subtitle: "Why you don't have to trade privacy for cost."
+        subtitle: "Why you don't have to trade privacy for cost. 47 seconds."
       },
       cta: {
         title: 'Build on AI You Can Verify.',
-        description: 'Claude Fable 5, at 14% of official pricing, sealed inside a TEE.',
+        description: 'Claude Fable 5.1, at 14% of official pricing, sealed inside a TEE.',
         primary: 'Get Started →',
         secondary: 'Verify Privacy →',
         supply: 'Earn by Sharing →',
