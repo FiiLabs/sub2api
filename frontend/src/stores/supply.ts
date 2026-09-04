@@ -78,6 +78,11 @@ export const useSupplyStore = defineStore('supply', () => {
   // 在登出时来调 reset()——那要改上游的 clearAuth，而依赖方向反过来就不用。
   const statusUserID = ref<number | null>(null)
 
+  // 首页未登录时选的意图（响应式）。用来在首页把「当前选中」的入口高亮固定住——
+  // 点一下 setPendingMode 就同步更新，选中框立刻落到那个入口上，且能从一个换到另一个。
+  // 登录后被 ensureStatus 消化并清空。
+  const pendingMode = ref<ConsoleMode | null>(readPendingMode())
+
   // 手动选择的模式，null = 没选过、走自动判定。
   //
   // 刻意**不做**首次登录的二选一弹窗：绝大多数人只属于一侧，而弹窗会拦在他和
@@ -119,6 +124,7 @@ export const useSupplyStore = defineStore('supply', () => {
           /* 存储不可用：本次会话内内存里生效即可 */
         }
         clearPendingMode()
+        pendingMode.value = null
       }
     }
     inflight = (async () => {
@@ -174,12 +180,23 @@ export const useSupplyStore = defineStore('supply', () => {
 
   /** 记下「登录后想进哪套」的意图，给首页未登录入口用。登录后由 ensureStatus 消化。 */
   function setPendingMode(next: ConsoleMode): void {
+    pendingMode.value = next  // 同步更新，首页选中框立刻固定到这个入口
     try {
       localStorage.setItem(PENDING_MODE_KEY, next)
     } catch {
       /* 存储不可用：这次分流意图丢失，回到自动判定 */
     }
   }
+
+  /**
+   * 首页入口该把哪个标成「已选中」。
+   *   已登录 → 用生效中的 mode（他实际在哪套体验里）；
+   *   未登录 → 用 pendingMode（他刚在首页点的那个），没点过就是 null（都不高亮）。
+   */
+  const chosenEntry = computed<ConsoleMode | null>(() => {
+    if (useAuthStore().user?.id != null) return mode.value
+    return pendingMode.value
+  })
 
   /** 退出登录时调用：开关是按用户的，换个人登录必须重新问一次。 */
   function reset(): void {
@@ -203,6 +220,7 @@ export const useSupplyStore = defineStore('supply', () => {
     loaded,
     mode,
     canSwitchMode,
+    chosenEntry,
     setMode,
     setPendingMode,
     ensureStatus,

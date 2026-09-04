@@ -108,21 +108,30 @@
           「我有闲置额度」，登录后直接落进对应那套体验，而不是先进一个笼统的
           登录页再自己找方向。两个都去 /login，差别只在点击时预设的模式意图。
         -->
+        <!--
+          两个对等入口：谁被选中（chosenEntry）谁的外框固定高亮 + 打勾，另一个中性、
+          悬停预览。点一下 setMode/setPendingMode 同步更新 chosenEntry，选中框立刻
+          落到那个上、并能从一个换到另一个——这就是「让用户知道自己选了哪个」。
+        -->
         <template v-else>
           <router-link
             to="/login"
             data-testid="header-login-usage"
-            class="hidden md:inline-flex items-center rounded-xl border-2 border-gray-200 px-3 py-2 text-sm font-medium transition-colors hover:border-gray-400 dark:border-dark-700 dark:hover:border-dark-400 md:px-4 md:text-base"
+            :class="headerEntryClass(supplyStore.chosenEntry === 'usage')"
+            :aria-current="supplyStore.chosenEntry === 'usage' ? 'true' : undefined"
             @click="chooseUsage"
           >
+            <span v-if="supplyStore.chosenEntry === 'usage'" aria-hidden="true" class="mr-1">✓</span>
             {{ t('home.entryUse') }}
           </router-link>
           <router-link
             to="/login"
             data-testid="header-login-earn"
-            class="hidden md:inline-flex items-center rounded-xl border-2 border-primary-500 bg-primary-500/10 px-3 py-2 text-sm font-medium text-primary-600 transition-colors hover:bg-primary-500/20 dark:border-primary-500/60 dark:text-primary-400 md:px-4 md:text-base"
+            :class="headerEntryClass(supplyStore.chosenEntry === 'sharing')"
+            :aria-current="supplyStore.chosenEntry === 'sharing' ? 'true' : undefined"
             @click="chooseSharing"
           >
+            <span v-if="supplyStore.chosenEntry === 'sharing'" aria-hidden="true" class="mr-1">✓</span>
             {{ t('home.entryEarn') }}
           </router-link>
         </template>
@@ -296,6 +305,26 @@ const router = useRouter()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const supplyStore = useSupplyStore()
+
+// 两个登录入口的 class 按「是否选中」返回：
+//   选中 → 固定 primary 底 + 边框（不随 hover 变，代表"这就是你选的"）；
+//   未选中 → 中性，hover/focus 预览 primary（代表"点这个可以换过来"）。
+// 选中态由 chosenEntry 驱动、可在两者间移动，不是写死在某一个上。
+function headerEntryClass(selected: boolean): string {
+  const base =
+    'hidden md:inline-flex items-center rounded-xl border-2 px-3 py-2 text-sm font-medium ' +
+    'transition-colors focus-visible:outline-none md:px-4 md:text-base'
+  if (selected) {
+    return base +
+      ' border-primary-500 bg-primary-500/10 text-primary-600' +
+      ' dark:border-primary-500/60 dark:bg-primary-500/15 dark:text-primary-400'
+  }
+  return base +
+    ' border-gray-200 text-gray-700 hover:border-primary-500 hover:text-primary-600' +
+    ' focus-visible:border-primary-500 focus-visible:text-primary-600' +
+    ' dark:border-dark-700 dark:text-dark-200 dark:hover:border-primary-500 dark:hover:text-primary-400' +
+    ' dark:focus-visible:border-primary-500 dark:focus-visible:text-primary-400'
+}
 
 // 首页顶栏的两个登录入口分流意图：未登录时点哪个，登录后就进哪套控制台。
 // 与 HomeView 的两张卡同源（setPendingMode 由 supplyStore 在登录后消化）。

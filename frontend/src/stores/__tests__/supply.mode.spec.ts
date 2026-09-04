@@ -190,4 +190,32 @@ describe('supply store console mode', () => {
     // 意图仍在，等登录后消化。
     expect(localStorage.getItem('apexone.pendingConsoleMode')).toBe('sharing')
   })
+
+  // 首页入口的「已选中」指示：chosenEntry 驱动哪个入口高亮固定。
+  it('chosenEntry: null before any pick, then follows the pick, and can switch', () => {
+    currentUser.value = null
+    const store = useSupplyStore()
+
+    // 没选过 → 两个都不高亮。
+    expect(store.chosenEntry).toBeNull()
+
+    // 点「我有闲置额度」→ 选中框固定到 sharing。
+    store.setPendingMode('sharing')
+    expect(store.chosenEntry).toBe('sharing')
+
+    // 改点「我要用 AI」→ 选中框换到 usage（能从一个到另一个）。
+    store.setPendingMode('usage')
+    expect(store.chosenEntry).toBe('usage')
+  })
+
+  // 已登录时 chosenEntry 跟随生效中的 mode（他实际在哪套体验里）。
+  it('chosenEntry reflects the effective mode once logged in', async () => {
+    localStorage.setItem('apexone.pendingConsoleMode', 'sharing')  // 登录前点过共享
+    mockGetStatus.mockResolvedValue({ enabled: true, settlement_enabled: true, account_count: 0 })
+    const store = useSupplyStore()
+    await store.ensureStatus()
+
+    // 意图落地 → mode=sharing → chosenEntry 指向 sharing 入口。
+    expect(store.chosenEntry).toBe('sharing')
+  })
 })
