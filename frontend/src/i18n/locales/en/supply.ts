@@ -420,6 +420,7 @@ export default {
       loadFailed: 'Failed to load',
       startFailed: 'Failed to start authorization',
       completeFailed: 'Failed to connect',
+      noFableQuota: 'This account has no Claude Fable quota (likely a free account or no paid plan), so it can\'t be shared. Subscribe to a paid Claude plan, then connect again.',
       pauseFailed: 'Failed to take offline',
       resumeFailed: 'Failed to put back',
       detachFailed: 'Failed to disconnect',

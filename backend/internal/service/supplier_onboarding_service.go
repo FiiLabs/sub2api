@@ -414,7 +414,8 @@ func (s *SupplierOnboardingService) CompleteOAuth(ctx context.Context, input *Co
 	}
 	// 当场探一次。这一步之前，供给者点完授权要等 20~30 分钟才看得到「已上线」——
 	// 那段时间不是在观察他的号，是在等后台任务的两次轮询。见 probeOnAttach。
-	return s.probeOnAttach(ctx, account, view), nil
+	// 探测发现这个订阅没有 Fable 额度会返回错误，此时刚建的号已被清掉。
+	return s.probeOnAttach(ctx, account, view, input.UserID)
 }
 
 // probeOnAttach 在账号刚挂上来时同步探一次，并按既有规则决定要不要立刻入池。
@@ -449,19 +450,15 @@ func (s *SupplierOnboardingService) CompleteOAuth(ctx context.Context, input *Co
 //
 // 返回值永远非 nil：拿不到更新后的视图就退回接入时那一份，
 // 「接入成功」这件事不该因为一次读失败而变成失败。
-func (s *SupplierOnboardingService) probeOnAttach(ctx context.Context, account *Account, fallback *SupplierAccountView) *SupplierAccountView {
+func (s *SupplierOnboardingService) probeOnAttach(ctx context.Context, account *Account, fallback *SupplierAccountView, ownerUserID int64) (*SupplierAccountView, error) {
 	if s == nil || s.prober == nil || account == nil {
-		return fallback
+		return fallback, nil
 	}
 
 	settings := s.probationSettings(ctx)
-	probeModel := ""
-	if settings != nil {
-		probeModel = settings.ProbeModel
-	}
 
 	probeCtx, cancel := context.WithTimeout(ctx, supplierLifecycleProbeTimeout)
-	result, err := s.prober.RunTestBackground(probeCtx, account.ID, probeModel)
+	result, err := s.prober.RunTestBackground(probeCtx, account.ID, supplyResolveProbeModel(settings))
 	cancel()
 
 	now := time.Now()
@@ -471,6 +468,24 @@ func (s *SupplierOnboardingService) probeOnAttach(ctx context.Context, account *
 
 	if err != nil || result == nil || result.Status != "success" {
 		message := supplyProbeErrorMessage(err, result)
+
+		// 无额度（免费号 / 未订阅付费方案）：当场拒绝接入。这种号进来接不了单，
+		// 只会占着观察期、被后台每 15 分钟无谓地探一次。把刚建的号清掉（它没有任何
+		// 价值可留），返回一个明确错误让前端提示「请先订阅再重试」。
+		//
+		// best-effort 清号：清不掉也照样返回无额度错误——留一个还在列表里的死号，
+		// 好过让供给者以为接入成功了。日志里记下这次不干净，供给者重试或解绑即好。
+		if supplyProbeNoQuota(message) {
+			if delErr := s.detachOwnedAccount(ctx, ownerUserID, account.ID); delErr != nil {
+				slog.Error("[SupplierOnboarding] no-fable-quota account rejected but cleanup failed",
+					"account_id", account.ID, "user_id", ownerUserID, "error", delErr)
+			} else {
+				slog.Info("[SupplierOnboarding] rejected attach: account has no Fable quota",
+					"account_id", account.ID, "user_id", ownerUserID)
+			}
+			return nil, ErrSupplierAccountNoFableQuota
+		}
+
 		updates[SupplyProbePassesExtraKey] = 0
 		updates[SupplyProbeErrorExtraKey] = message
 		if updErr := s.accountRepo.UpdateExtra(ctx, account.ID, updates); updErr != nil {
@@ -481,7 +496,7 @@ func (s *SupplierOnboardingService) probeOnAttach(ctx context.Context, account *
 		// 和事件/通知是一整套。接入这一刻多写一个状态只会让两处判据各自演化。
 		slog.Info("[SupplierOnboarding] attach probe failed, account stays in review",
 			"account_id", account.ID, "reason", message)
-		return s.refreshView(ctx, account, fallback)
+		return s.refreshView(ctx, account, fallback), nil
 	}
 
 	updates[SupplyProbePassesExtraKey] = 1
@@ -489,18 +504,31 @@ func (s *SupplierOnboardingService) probeOnAttach(ctx context.Context, account *
 	if err := s.accountRepo.UpdateExtra(ctx, account.ID, updates); err != nil {
 		slog.Warn("[SupplierOnboarding] failed to record attach probe success",
 			"account_id", account.ID, "error", err)
-		return s.refreshView(ctx, account, fallback)
+		return s.refreshView(ctx, account, fallback), nil
 	}
 
 	if !supplyProbationEligible(account, settings, 1, now) {
 		// 够不上就留在观察期——这是配置说了算的正常结果，不是故障。
-		return s.refreshView(ctx, account, fallback)
+		return s.refreshView(ctx, account, fallback), nil
 	}
 	if err := supplyPromoteToActive(ctx, s.accountRepo, account, true); err != nil {
 		slog.Warn("[SupplierOnboarding] attach probe passed but promotion failed",
 			"account_id", account.ID, "error", err)
 	}
-	return s.refreshView(ctx, account, fallback)
+	return s.refreshView(ctx, account, fallback), nil
+}
+
+// detachOwnedAccount 是 DetachAccount 里的清号动作（关调度 → 抹凭证 → 删行），
+// 抽出来给接入拒绝复用。不走 DetachAccount 本体是因为那个入口要先 getOwnedAccount
+// 做归属校验，而这里的号是本次 CompleteOAuth 刚建、归属确定的，再查一遍多余。
+func (s *SupplierOnboardingService) detachOwnedAccount(ctx context.Context, userID, accountID int64) error {
+	if err := s.accountRepo.SetSchedulable(ctx, accountID, false); err != nil {
+		return err
+	}
+	if err := s.repo.ScrubAccountCredentials(ctx, accountID, userID); err != nil {
+		return err
+	}
+	return s.accountRepo.Delete(ctx, accountID)
 }
 
 // refreshView 重读账号并重建视图；读不到就退回 fallback。

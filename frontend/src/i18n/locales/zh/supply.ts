@@ -396,6 +396,9 @@ export default {
       loadFailed: '加载失败',
       startFailed: '发起授权失败',
       completeFailed: '接入失败',
+      // 没有 Fable 额度：这个号免费或没订阅付费方案，接进来接不了单，后端已当场
+      // 拒绝并清掉。措辞给出下一步（订阅→重试），不糊成一句'失败'。
+      noFableQuota: '这个账号没有 Claude Fable 额度（可能是免费账户或未订阅付费方案），无法共享。请先订阅 Claude 付费方案，再重新接入。',
       pauseFailed: '下线失败',
       resumeFailed: '挂回失败',
       detachFailed: '解绑失败',

@@ -482,7 +482,7 @@ func (s *SupplierLifecycleService) shouldProbe(account *Account, settings *Suppl
 // probeOnce 探一次并把结果写回 extra，达标时 promote。
 func (s *SupplierLifecycleService) probeOnce(ctx context.Context, account *Account, settings *SupplyProbationSettings) {
 	probeCtx, cancel := context.WithTimeout(ctx, supplierLifecycleProbeTimeout)
-	result, err := s.prober.RunTestBackground(probeCtx, account.ID, settings.ProbeModel)
+	result, err := s.prober.RunTestBackground(probeCtx, account.ID, supplyResolveProbeModel(settings))
 	cancel()
 
 	now := time.Now()
@@ -655,4 +655,39 @@ const supplyProbeErrorMaxLen = 300
 // 截断不影响匹配。
 func supplyProbeAuthFailure(message string) bool {
 	return strings.Contains(message, "API returned 401")
+}
+
+// supplyProbeDefaultModel 是供给号探测的默认模型。ops 没在 supply-probation
+// 里显式设 probe_model 时用它。
+//
+// 刻意用 Fable 而不是全局的 DefaultTestModel（sonnet）：探测的目的不是「这个号
+// 能不能回一个响应」，是「这个号能不能服务我们实际卖的东西」。免费号或没订阅的号
+// 打 Fable 会被上游以 429 + credits_required 拒掉（见 supplyProbeNoQuota），而
+// 打 sonnet 可能照样成功——那样一个接不了单的号会通过探测、白占观察期。
+//
+// 不改 DefaultTestModel：那个常量同时服务管理端「测试连接」按钮和全部自营号，
+// 在那里换成 Fable 会波及一大片与供给无关的路径。
+const supplyProbeDefaultModel = "claude-fable-5-1"
+
+// supplyProbeNoQuota 判定探测失败是不是「这个订阅没有 Fable 额度」。
+//
+// 判据是两段上游原文，取自生产 ops_error_logs 里免费/无额度号打 Fable 的真实返回：
+//   1. body 里的 error_code":"credits_required"（out_of_credits / org_level_disabled 都带它）
+//   2. 明文 "Usage credits are required for this model"
+//
+// 只认这两个精确信号，**不**把笼统的 429 当无额度——普通限流（"rate limit"）也是
+// 429，但它是瞬态、会自己好，把一个只是这一刻超速的付费号误判成「免费号」拒之门外
+// 比放进一个免费号严重得多。supplyProbeErrorMessage 截断 300 字符，而这两个信号都
+// 出现在上游 body 的前 ~120 字符，截断安全。
+func supplyProbeNoQuota(message string) bool {
+	return strings.Contains(message, "credits_required") ||
+		strings.Contains(message, "Usage credits are required")
+}
+
+// supplyResolveProbeModel 决定这次探测用哪个模型：ops 显式配了就用配的，否则 Fable。
+func supplyResolveProbeModel(settings *SupplyProbationSettings) string {
+	if settings != nil && strings.TrimSpace(settings.ProbeModel) != "" {
+		return settings.ProbeModel
+	}
+	return supplyProbeDefaultModel
 }

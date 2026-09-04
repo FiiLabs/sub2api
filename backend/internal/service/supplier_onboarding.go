@@ -45,6 +45,12 @@ var (
 	// ErrSupplierOAuthTooManyPending 同一个人堆积了太多未完成的授权会话。
 	ErrSupplierOAuthTooManyPending = infraerrors.BadRequest(
 		"SUPPLIER_OAUTH_TOO_MANY_PENDING", "too many pending authorization sessions")
+	// ErrSupplierAccountNoFableQuota 接入时探测发现这个订阅没有 Fable 额度
+	//（免费号或未订阅付费方案），当场拒绝：这种号进来也接不了单，只会占着观察期、
+	// 被后台每 15 分钟无谓地探一次。前端把它翻成「请先订阅再重试」。
+	ErrSupplierAccountNoFableQuota = infraerrors.BadRequest(
+		"SUPPLIER_ACCOUNT_NO_FABLE_QUOTA",
+		"this account has no Fable quota; subscribe to a paid Claude plan and retry")
 	// ErrSupplierAccountNotRetired 只有已下线或正在排空的账号能被重新挂回来。
 	//
 	// 这个错误不合并进 NotFound：调用方已经证明了自己是这个账号的主人（能读到它），

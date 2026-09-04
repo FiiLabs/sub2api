@@ -1755,12 +1755,24 @@ async function completeOAuth(): Promise<void> {
     cancelAuth()
     await Promise.all([loadAccounts(), loadWallet()])
   } catch (error) {
+    // 没有 Fable 额度（免费号 / 未订阅）：后端已经把刚建的号清掉了，这里给一句
+    // 说得清的话——「先订阅再重试」，而不是糊成"接入失败"让他去反复重挂一个
+    // 永远接不了单的号。
+    const fallback = isNoFableQuota(error)
+      ? t('supply.error.noFableQuota')
+      : t('supply.error.completeFailed')
     // 失败时保留 pendingAuth：会话可能还没被消费（比如授权码贴错了），
     // 清掉的话用户就得从第一步重来。
-    appStore.showError(extractApiErrorMessage(error, t('supply.error.completeFailed')))
+    appStore.showError(extractApiErrorMessage(error, fallback))
   } finally {
     submitting.value = false
   }
+}
+
+/** 后端的额度闸拒绝：SUPPLIER_ACCOUNT_NO_FABLE_QUOTA（免费号 / 未订阅）。 */
+function isNoFableQuota(error: unknown): boolean {
+  const code = (error as { response?: { data?: { code?: unknown } } })?.response?.data?.code
+  return code === 'SUPPLIER_ACCOUNT_NO_FABLE_QUOTA'
 }
 
 function replaceAccount(updated: SupplyAccount): void {
