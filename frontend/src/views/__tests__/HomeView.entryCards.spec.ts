@@ -98,10 +98,11 @@ describe('HomeView dual entry cards', () => {
     // 同一份卡片样式 = 视觉权重相当。谁被改小了这条会先炸。
     expect(usage.classes().join(' ')).toBe(supply.classes().join(' '))
 
-    // 消费入口未登录指向登录页；供给入口是本页锚点（/supply 要登录，
-    // 直接跳过去只会被守卫弹回来，访客不知道自己错过了什么）。
+    // 两个入口都是「直达登录」：未登录时两张卡都指向 /login，差别只在点击时
+    // 预设的模式意图（chooseUsage / chooseSharing），登录后落进对应那套体验。
+    // 供给卡不再只滚动到介绍段——供给者要的是「开始共享」，直达登录更符合意图。
     expect(usage.attributes('href')).toBe('/login')
-    expect(supply.attributes('href')).toBe('#supply')
+    expect(supply.attributes('href')).toBe('/login')
 
     wrapper.unmount()
   })

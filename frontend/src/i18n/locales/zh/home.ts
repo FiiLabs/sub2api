@@ -17,6 +17,9 @@ export default {
     switchToDark: '切换到深色模式',
     dashboard: '控制台',
     login: '登录',
+    // 首页顶栏的两个登录入口（用户 / 贡献者），登录后直接进对应模式
+    entryUse: '我要用 AI',
+    entryEarn: '我有闲置额度',
     getStarted: '立即开始',
     goToDashboard: '进入控制台',
     nav: {

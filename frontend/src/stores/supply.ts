@@ -28,8 +28,31 @@ export type ConsoleMode = 'usage' | 'sharing'
 // 会直接落到下一个人的控制台上——而后者可能一个供给账号都没有，看到的是一整屏 0。
 const MODE_KEY_PREFIX = 'apexone.consoleMode.'
 
+// 待应用意图：访客在首页点「我要用 AI / 我有闲置额度」时还没登录，按用户分的
+// key 存不下来（statusUserID 是 null）。先记在这个**不按用户分**的临时 key 里，
+// 登录后 ensureStatus 拿到真实 userID 时把它落到那个人名下、随即清掉。
+// 这样"从首页选了入口"这个意图能穿过登录活到登录后。
+const PENDING_MODE_KEY = 'apexone.pendingConsoleMode'
+
 function modeStorageKey(userID: number | null): string {
   return `${MODE_KEY_PREFIX}${userID ?? 'anonymous'}`
+}
+
+function readPendingMode(): ConsoleMode | null {
+  try {
+    const raw = localStorage.getItem(PENDING_MODE_KEY)
+    return raw === 'usage' || raw === 'sharing' ? raw : null
+  } catch {
+    return null
+  }
+}
+
+function clearPendingMode(): void {
+  try {
+    localStorage.removeItem(PENDING_MODE_KEY)
+  } catch {
+    /* 存储不可用：意图丢失只是回到自动判定，不该报错 */
+  }
 }
 
 function readStoredMode(userID: number | null): ConsoleMode | null {
@@ -84,6 +107,20 @@ export const useSupplyStore = defineStore('supply', () => {
     // 同步读，不等请求回来：模式判定的第一优先级是"他自己选过什么"，
     // 让这一条晚一个 tick 生效会让切过模式的人每次进控制台先闪一下另一种。
     manualMode.value = readStoredMode(currentUserID)
+    // 登录后消化首页选的意图：它压过历史选择（这次他明确点了另一侧），
+    // 落到本人名下后清掉。只在已登录（userID 非空）时消化——否则无处安放。
+    if (currentUserID != null) {
+      const pending = readPendingMode()
+      if (pending) {
+        manualMode.value = pending
+        try {
+          localStorage.setItem(modeStorageKey(currentUserID), pending)
+        } catch {
+          /* 存储不可用：本次会话内内存里生效即可 */
+        }
+        clearPendingMode()
+      }
+    }
     inflight = (async () => {
       try {
         apply(await supplyAPI.getStatus())
@@ -135,6 +172,15 @@ export const useSupplyStore = defineStore('supply', () => {
     }
   }
 
+  /** 记下「登录后想进哪套」的意图，给首页未登录入口用。登录后由 ensureStatus 消化。 */
+  function setPendingMode(next: ConsoleMode): void {
+    try {
+      localStorage.setItem(PENDING_MODE_KEY, next)
+    } catch {
+      /* 存储不可用：这次分流意图丢失，回到自动判定 */
+    }
+  }
+
   /** 退出登录时调用：开关是按用户的，换个人登录必须重新问一次。 */
   function reset(): void {
     enabled.value = false
@@ -158,6 +204,7 @@ export const useSupplyStore = defineStore('supply', () => {
     mode,
     canSwitchMode,
     setMode,
+    setPendingMode,
     ensureStatus,
     refresh,
     reset,

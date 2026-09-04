@@ -140,4 +140,54 @@ describe('supply store console mode', () => {
     // 落回自动判定，而不是把 'whatever' 当成一种模式传给组件。
     expect(store.mode).toBe('sharing')
   })
+
+  // 首页分流：访客未登录时点「我有闲置额度」→ setPendingMode('sharing')；登录后
+  // ensureStatus 把这个意图落到本人名下，即使他一个供给账号都没有，也直接进赚钱模式。
+  it('carries the homepage entry choice through login (pending → user-scoped)', async () => {
+    // 访客点了「共享」入口（还没登录）。
+    const guest = useSupplyStore()
+    guest.setPendingMode('sharing')
+    expect(localStorage.getItem('apexone.pendingConsoleMode')).toBe('sharing')
+
+    // 登录后：新会话、供给开着、但这个人 0 个供给账号（自动判定本会是 usage）。
+    setActivePinia(createPinia())
+    currentUser.value = { id: 1 }
+    mockGetStatus.mockResolvedValue({ enabled: true, settlement_enabled: true, account_count: 0 })
+    const store = useSupplyStore()
+    await store.ensureStatus()
+
+    // 意图生效 → 赚钱模式，而不是被自动判定拉回 usage。
+    expect(store.mode).toBe('sharing')
+    // 意图已落到本人名下，且临时 key 被清掉（不会再泄漏给下一个登录的人）。
+    expect(localStorage.getItem('apexone.consoleMode.1')).toBe('sharing')
+    expect(localStorage.getItem('apexone.pendingConsoleMode')).toBeNull()
+  })
+
+  // 明确的意图压过历史选择：老共享者之前选过 sharing，这次从首页点「我要用 AI」，
+  // 登录后应进 usage。
+  it('a fresh entry choice overrides the previously stored mode', async () => {
+    localStorage.setItem('apexone.consoleMode.1', 'sharing')  // 历史选择
+    localStorage.setItem('apexone.pendingConsoleMode', 'usage') // 这次点了「用 AI」
+    mockGetStatus.mockResolvedValue({ enabled: true, settlement_enabled: true, account_count: 5 })
+    const store = useSupplyStore()
+
+    await store.ensureStatus()
+
+    expect(store.mode).toBe('usage')
+    expect(localStorage.getItem('apexone.consoleMode.1')).toBe('usage')
+    expect(localStorage.getItem('apexone.pendingConsoleMode')).toBeNull()
+  })
+
+  // 未登录时不消化意图：没有 userID 可安放，等真登录了再落地。
+  it('does not consume the pending choice while logged out', async () => {
+    currentUser.value = null
+    localStorage.setItem('apexone.pendingConsoleMode', 'sharing')
+    mockGetStatus.mockResolvedValue(null)  // 未登录，status 拿不到
+    const store = useSupplyStore()
+
+    await store.ensureStatus()
+
+    // 意图仍在，等登录后消化。
+    expect(localStorage.getItem('apexone.pendingConsoleMode')).toBe('sharing')
+  })
 })

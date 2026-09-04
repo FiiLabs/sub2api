@@ -17,6 +17,9 @@ export default {
     switchToDark: 'Switch to Dark Mode',
     dashboard: 'Dashboard',
     login: 'Login',
+    // Two split login entries in the homepage header (consumer / contributor)
+    entryUse: 'Use AI',
+    entryEarn: 'Share & earn',
     getStarted: 'Get Started',
     goToDashboard: 'Go to Dashboard',
     nav: {

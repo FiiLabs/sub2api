@@ -103,13 +103,29 @@
           <span class="text-xs font-medium text-gray-900 dark:text-white">{{ t('home.dashboard') }}</span>
           <Icon name="externalLink" size="xs" class="text-gray-400" :stroke-width="2" />
         </router-link>
-        <router-link
-          v-else
-          to="/login"
-          class="hidden md:inline-flex items-center rounded-xl border-2 border-gray-200 px-3 py-2 text-sm font-medium transition-colors hover:border-gray-400 dark:border-dark-700 dark:hover:border-dark-400 md:px-4 md:text-base"
-        >
-          {{ t('home.login') }}
-        </router-link>
+        <!--
+          未登录时把「登录」拆成两个入口：访客一眼就能选「我要用 AI」还是
+          「我有闲置额度」，登录后直接落进对应那套体验，而不是先进一个笼统的
+          登录页再自己找方向。两个都去 /login，差别只在点击时预设的模式意图。
+        -->
+        <template v-else>
+          <router-link
+            to="/login"
+            data-testid="header-login-usage"
+            class="hidden md:inline-flex items-center rounded-xl border-2 border-gray-200 px-3 py-2 text-sm font-medium transition-colors hover:border-gray-400 dark:border-dark-700 dark:hover:border-dark-400 md:px-4 md:text-base"
+            @click="chooseUsage"
+          >
+            {{ t('home.entryUse') }}
+          </router-link>
+          <router-link
+            to="/login"
+            data-testid="header-login-earn"
+            class="hidden md:inline-flex items-center rounded-xl border-2 border-primary-500 bg-primary-500/10 px-3 py-2 text-sm font-medium text-primary-600 transition-colors hover:bg-primary-500/20 dark:border-primary-500/60 dark:text-primary-400 md:px-4 md:text-base"
+            @click="chooseSharing"
+          >
+            {{ t('home.entryEarn') }}
+          </router-link>
+        </template>
       </div>
     </nav>
   </header>
@@ -242,14 +258,22 @@
             </span>
             {{ t('home.dashboard') }}
           </router-link>
-          <router-link
-            v-else
-            to="/login"
-            class="flex w-full items-center justify-center rounded-xl bg-primary-500 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-primary-600"
-            @click="closeMobileMenu"
-          >
-            {{ t('home.login') }}
-          </router-link>
+          <template v-else>
+            <router-link
+              to="/login"
+              class="mb-2 flex w-full items-center justify-center rounded-xl border-2 border-gray-200 px-4 py-3 text-sm font-medium transition-colors hover:border-gray-400 dark:border-dark-700 dark:hover:border-dark-400"
+              @click="chooseUsage(); closeMobileMenu()"
+            >
+              {{ t('home.entryUse') }}
+            </router-link>
+            <router-link
+              to="/login"
+              class="flex w-full items-center justify-center rounded-xl bg-primary-500 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-primary-600"
+              @click="chooseSharing(); closeMobileMenu()"
+            >
+              {{ t('home.entryEarn') }}
+            </router-link>
+          </template>
         </div>
       </div>
     </aside>
@@ -264,12 +288,25 @@ import BrandLogo from '@/components/common/BrandLogo.vue'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { useAppStore, useAuthStore } from '@/stores'
+import { useSupplyStore } from '@/stores/supply'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const appStore = useAppStore()
 const authStore = useAuthStore()
+const supplyStore = useSupplyStore()
+
+// 首页顶栏的两个登录入口分流意图：未登录时点哪个，登录后就进哪套控制台。
+// 与 HomeView 的两张卡同源（setPendingMode 由 supplyStore 在登录后消化）。
+function chooseUsage(): void {
+  if (isAuthenticated.value) supplyStore.setMode('usage')
+  else supplyStore.setPendingMode('usage')
+}
+function chooseSharing(): void {
+  if (isAuthenticated.value) supplyStore.setMode('sharing')
+  else supplyStore.setPendingMode('sharing')
+}
 
 const docUrl = computed(() => appStore.cachedPublicSettings?.doc_url || appStore.docUrl || '')
 const isAuthenticated = computed(() => authStore.isAuthenticated)

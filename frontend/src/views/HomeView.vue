@@ -37,8 +37,13 @@
           也接不住。两张同样大的卡片让访客在第一屏就面对一个真正的分岔:
           你是来花钱的,还是来赚钱的。
         -->
+        <!--
+          两张卡是「你来花钱还是来赚钱」的分岔口，也是分流的起点：点哪张就把控制台
+          预设成对应模式（登录后由 supplyStore 消化，见 chooseUsage / chooseSharing），
+          登录后直接落进对应那套体验，而不是笼统进 dashboard 再自己找。
+        -->
         <div class="mb-6 grid gap-4 text-left md:grid-cols-2">
-          <router-link :to="ctaTarget" :class="entryCardClass" data-testid="home-entry-usage">
+          <router-link :to="ctaTarget" :class="entryCardClass" data-testid="home-entry-usage" @click="chooseUsage">
             <div class="mb-2 text-2xl">🚀</div>
             <div class="mb-1.5 text-fluid-lg font-bold text-gray-900 dark:text-white">
               {{ t('home.landing.hero.useAI') }}
@@ -53,18 +58,17 @@
           </router-link>
 
           <!--
-            锚点而非 /supply:那条路要登录,未登录用户点过去只会看到登录页,
-            不知道自己错过了什么。
-
-            未登录时**照常显示**——这张卡是获客入口,而访客身上读不到供给开关。
-            登录之后才按开关决定:此时进去撞上"尚未开放"是可预见的死路。
+            直接进入口：点了就去 supplyTarget——已登录进共享控制台(/supply)，未登录
+            进登录页。旧版是滚动到下方介绍段，但供给者要的是「我要开始共享」，一个
+            直达登录的入口比先读一屏介绍更符合意图。介绍段仍在下方（#supply）供想
+            了解的人手动往下看。
           -->
-          <a
+          <router-link
             v-if="showSupplyEntry"
-            href="#supply"
+            :to="supplyTarget"
             :class="entryCardClass"
             data-testid="home-entry-supply"
-            @click.prevent="scrollToSupply"
+            @click="chooseSharing"
           >
             <div class="mb-2 text-2xl">💰</div>
             <div class="mb-1.5 text-fluid-lg font-bold text-gray-900 dark:text-white">
@@ -74,10 +78,10 @@
               {{ t('home.landing.hero.shareSubscriptionDesc') }}
             </p>
             <span class="mt-auto inline-flex items-center gap-1 text-fluid-sm font-semibold text-primary-600 dark:text-primary-400">
-              {{ t('home.landing.hero.shareSubscriptionCta') }}
+              {{ isAuthenticated ? t('supply.navLabel') : t('home.getStarted') }}
               <span aria-hidden="true">→</span>
             </span>
-          </a>
+          </router-link>
         </div>
 
         <!-- /proof 是这个产品的核心差异化,降级成文字链接而不是删掉:
@@ -751,6 +755,17 @@ const showSupplyEntry = computed(() => !isAuthenticated.value || supplyStore.ena
 // 与 Header 的锚点导航保持同一种滚动手感
 function scrollToSupply() {
   document.getElementById('supply')?.scrollIntoView({ behavior: 'smooth' })
+}
+
+// 分流意图：已登录直接落到那个人名下（setMode），未登录先记成待应用意图
+// （setPendingMode），由 supplyStore 在登录后消化。跳转由 router-link 的 :to 负责。
+function chooseUsage(): void {
+  if (isAuthenticated.value) supplyStore.setMode('usage')
+  else supplyStore.setPendingMode('usage')
+}
+function chooseSharing(): void {
+  if (isAuthenticated.value) supplyStore.setMode('sharing')
+  else supplyStore.setPendingMode('sharing')
 }
 
 onMounted(() => {
