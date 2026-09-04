@@ -59,7 +59,7 @@ describe('AppSidebar header styles', () => {
 // 这组断言防的是一次"顺手的整理"：把 supplyNavItems 合回 userNavItems
 // 只需要删两行，代码更短、页面看起来也正常，而丢掉的是「使用」与「赚钱」
 // 这两种相反意图的区分——供给入口重新变回消费者菜单里的第 12 个图标。
-describe('AppSidebar two-sided navigation grouping', () => {
+describe('AppSidebar consumer/contributor separation', () => {
   it('keeps the supply entry out of the consumer nav list', () => {
     expect(componentSource).toContain("const SUPPLY_NAV_PATHS = new Set(['/supply'])")
     // 消费者那一组必须是**排除**供给路径后的结果，不是原样全量。
@@ -67,43 +67,35 @@ describe('AppSidebar two-sided navigation grouping', () => {
     expect(componentSource).toContain('SUPPLY_NAV_PATHS.has(item.path)')
   })
 
-  it('renders the supply group as its own titled section', () => {
-    expect(componentSource).toContain("t('supply.navSection')")
-    expect(componentSource).toContain('sidebar-section-title')
-  })
-
-  it('hides the whole section when supply is off instead of showing an empty heading', () => {
-    // 只有标题没有条目的分区比没有分区更糟：它看起来像功能坏了。
-    expect(componentSource).toContain('v-if="supplyNavItems.length > 0"')
-  })
-
-  it('puts the earning section first — and only — in sharing mode', () => {
-    // 顺序表是唯一的开关。共享模式下那个人每天来这里看的就是收益和号，
-    // 让他每次先划过十几个消费侧条目，等于每天替他确认一次"你是二等公民"。
+  it('renders only one section per mode — not both reordered', () => {
+    // 完全区分：userNavSections 单选，共享模式只有 sharing，消费模式只有 consumer。
     expect(componentSource).toContain(
-      "supplyStore.mode === 'sharing' ? ['supply', 'consumer'] : ['consumer', 'supply']"
+      "supplyStore.mode === 'sharing' ? ['sharing'] : ['consumer']"
     )
     expect(componentSource).toContain('v-for="section in userNavSections"')
     expect(componentSource).toContain(`v-if="section === 'consumer'"`)
+    expect(componentSource).toContain(`v-else-if="section === 'sharing'"`)
   })
 
-  it('changes only the order, never the contents of either group', () => {
-    // 模式是"我现在在干哪件事"，不是权限：任何一侧的入口都不该因为切模式而消失。
-    // 两个列表的定义里都不能出现 mode。
-    for (const decl of [
-      componentSource.match(/const userNavItems = computed[\s\S]*?\n\}\)/)?.[0],
-      componentSource.match(/const supplyNavItems = computed[\s\S]*?\n\)/)?.[0],
-    ]) {
-      expect(decl).toBeDefined()
-      expect(decl).not.toContain('mode')
-    }
+  it('sharing nav is a fixed flat list: dashboard, supply, profile', () => {
+    const decl = componentSource.match(/const sharingNavItems = computed[\s\S]*?\n\}\)/)?.[0]
+    expect(decl).toBeDefined()
+    expect(decl).toContain("'/dashboard'")
+    expect(decl).toContain('SUPPLY_NAV_PATHS')
+    expect(decl).toContain("'/profile'")
   })
 
-  it('derives both groups from one build so the two lists cannot drift', () => {
-    // 两个 computed 各调一次 buildSelfNavItems 的话，特性开关在两次调用之间
-    // 变化就会让同一个条目同时出现在两组里、或者两组都没有。
+  it('surfaces the mode switch as the single seam, gated on canSwitchMode', () => {
+    // 切换器是两套体验之间唯一的接缝——功能没开时不露出。
+    expect(componentSource).toContain('ConsoleModeSwitch')
+    expect(componentSource).toContain('supplyStore.canSwitchMode')
+    expect(componentSource).toContain('@update:mode="supplyStore.setMode"')
+  })
+
+  it('derives every nav list from one build so they cannot drift', () => {
+    // 各组都从同一份 selfNavItems 派生，避免同一条目在两次构造之间漂移。
     expect(componentSource).toContain('const selfNavItems = computed')
-    expect(componentSource).toContain('selfNavItems.value.filter')
+    expect(componentSource).toContain('selfNavItems.value.map')
   })
 })
 

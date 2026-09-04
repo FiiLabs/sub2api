@@ -2,17 +2,10 @@
   <AppLayout>
     <div class="space-y-6">
       <!--
-        APEXONE-EXT: 双边市场——模式切换器。
-
-        放在最外层、加载态之前：它必须在任何情况下都在（包括数据加载失败时），
-        否则一个被自动判进共享模式、又恰好赶上接口报错的人，会看到一个既没有数据
-        也没有出口的页面。
-
-        供给功能关着时整个不渲染——那时"切到共享模式"通向的是一句"尚未开放"。
+        APEXONE-EXT: 双边市场——模式切换器已移到侧边栏常驻（AppSidebar 顶部）。
+        原来放在这里是因为它是当时唯一的出口；现在侧栏顶部那个是全局的、任何页面都在，
+        再在 Dashboard 顶上放一个就重复了。切换逻辑不变，仍是 supplyStore.setMode。
       -->
-      <div v-if="supplyStore.canSwitchMode" class="flex justify-end">
-        <ConsoleModeSwitch :mode="supplyStore.mode" @update:mode="supplyStore.setMode" />
-      </div>
 
       <div v-if="loading" class="flex items-center justify-center py-12"><LoadingSpinner /></div>
       <template v-else-if="stats">
@@ -44,7 +37,7 @@ import { ref, computed, onMounted, watch } from 'vue'; import { useAuthStore } f
 import AppLayout from '@/components/layout/AppLayout.vue'; import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import UserDashboardStats from '@/components/user/dashboard/UserDashboardStats.vue'; import UserDashboardCharts from '@/components/user/dashboard/UserDashboardCharts.vue'
 import UserDashboardRecentUsage from '@/components/user/dashboard/UserDashboardRecentUsage.vue'; import UserDashboardQuickActions from '@/components/user/dashboard/UserDashboardQuickActions.vue'
-import ConsoleModeSwitch from '@/components/user/dashboard/ConsoleModeSwitch.vue'; import SupplyDashboardStats from '@/components/user/dashboard/SupplyDashboardStats.vue'; import SupplyQuickActions from '@/components/user/dashboard/SupplyQuickActions.vue'; import SupplyStartGuide from '@/components/user/dashboard/SupplyStartGuide.vue'
+import SupplyDashboardStats from '@/components/user/dashboard/SupplyDashboardStats.vue'; import SupplyQuickActions from '@/components/user/dashboard/SupplyQuickActions.vue'; import SupplyStartGuide from '@/components/user/dashboard/SupplyStartGuide.vue'
 import type { UsageLog, TrendDataPoint, ModelStat, PlatformQuotaItem } from '@/types'
 import { getMyPlatformQuotas } from '@/api/user'
 import { formatDateLocalInput } from '@/utils/format'

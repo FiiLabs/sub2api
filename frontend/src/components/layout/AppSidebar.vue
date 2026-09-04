@@ -129,13 +129,14 @@
       <!-- Regular User View -->
       <template v-else-if="!appStore.backendModeEnabled">
         <!--
-          APEXONE-EXT: 两个分区的**顺序**由控制台模式决定，内容一个字都不变。
-
-          共享模式下把「共享赚钱」提到最前：那个人每天来这里是为了看收益和管号，
-          让他每次先划过十几个消费侧菜单项才够到自己那一组，等于每天替他确认一次
-          "你是二等公民"。用 v-for 走一遍顺序表而不是把整块 markup 复制两份——
-          复制出来的那份迟早会和原件长得不一样。
+          APEXONE-EXT: 消费者与共享者是两套独立体验（见 userNavSections 注释）。
+          顶部切换器是两者之间唯一的接缝：同时用 AI 又共享订阅的人靠它来回切。
+          纯消费者也能从这里发现「赚钱」入口。功能没开时（canSwitchMode=false）不显示。
         -->
+        <div v-if="supplyStore.canSwitchMode && !sidebarCollapsed" class="sidebar-mode-switch">
+          <ConsoleModeSwitch :mode="supplyStore.mode" @update:mode="supplyStore.setMode" />
+        </div>
+
         <template v-for="section in userNavSections" :key="section">
         <div v-if="section === 'consumer'" class="sidebar-section">
           <template v-for="item in userNavItems" :key="item.path">
@@ -197,18 +198,11 @@
           </template>
         </div>
 
-        <!-- 共享赚钱。与上面那组是两种相反的意图，所以带标题单独成区；
-             供给功能没开时 supplyNavItems 为空，整区不渲染。 -->
-        <template v-else>
-        <div v-if="supplyNavItems.length > 0" class="sidebar-section">
-          <div class="sidebar-section-title" :class="{ 'sidebar-section-title-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
-            <span class="sidebar-section-title-text" :class="{ 'sidebar-section-title-text-collapsed': sidebarCollapsed }">
-              {{ t('supply.navSection') }}
-            </span>
-          </div>
-
+        <!-- 赚钱模式：Dashboard · 共享控制台 · 个人资料（sharingNavItems，扁平无小标题）。
+             这一整块就是共享者能看到的全部导航——消费侧的工具在这个模式下完全不存在。 -->
+        <div v-else-if="section === 'sharing'" class="sidebar-section">
           <router-link
-            v-for="item in supplyNavItems"
+            v-for="item in sharingNavItems"
             :key="item.path"
             :to="item.path"
             class="sidebar-link mb-1"
@@ -221,7 +215,6 @@
             <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">{{ item.label }}</span>
           </router-link>
         </div>
-        </template>
         </template>
       </template>
     </nav>
@@ -272,6 +265,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
 import { useSupplyStore } from '@/stores/supply'
+import ConsoleModeSwitch from '@/components/user/dashboard/ConsoleModeSwitch.vue'
 import VersionBadge from '@/components/common/VersionBadge.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { sanitizeSvg } from '@/utils/sanitize'
@@ -954,16 +948,27 @@ const userNavItems = computed((): NavItem[] => {
   return grouped.flatMap((item) => (item.children?.length ? item.children : [item]))
 })
 
-// 供给分组。为空 = 供给功能没开（featureFlag 已经把它滤掉了），
-// 此时整个分组连标题一起不渲染——一个只有标题没有条目的分区比没有更糟。
-const supplyNavItems = computed((): NavItem[] =>
-  selfNavItems.value.filter((item) => SUPPLY_NAV_PATHS.has(item.path))
-)
+// APEXONE-EXT: 双边市场——消费者与共享者是**两套独立体验**，不是同一列的两个分区。
+//
+// 早先两个分区只是随模式重排、内容都在。改成完全区分之后：消费模式看不到「共享
+// 赚钱」，共享模式看不到密钥/用量/购买/账单这些消费工具——从用户视角就是两个产品。
+// 唯一的接缝是顶部那个模式切换器（同时供给又消费的人靠它来回切）。
+//
+// 两模式共享的只有 Dashboard（它自己按模式显示用量或收益）和个人资料（设置性质，
+// 两边都要有出口）。中间部分完全隔离。
 
-// 两个分区的渲染顺序。只有顺序随模式变，两组的内容/过滤/开关都不受影响——
-// 模式是"我现在在干哪件事"，不是权限，不该让任何一个入口消失。
-const userNavSections = computed((): ('consumer' | 'supply')[] =>
-  supplyStore.mode === 'sharing' ? ['supply', 'consumer'] : ['consumer', 'supply']
+// 共享者模式的导航：Dashboard → 共享控制台 → 个人资料。刻意是这三项的扁平列表，
+// 不带消费侧的任何分组；顺序固定，profile 收尾（它是设置，不跟日常功能抢位）。
+const sharingNavItems = computed((): NavItem[] => {
+  const byPath = new Map(selfNavItems.value.map((item) => [item.path, item]))
+  const order = ['/dashboard', ...SUPPLY_NAV_PATHS, '/profile']
+  return order.map((p) => byPath.get(p)).filter((item): item is NavItem => item !== undefined)
+})
+
+// 消费者模式的导航：现有的完整消费菜单，本就不含 /supply。共享模式下整块不渲染。
+// 单选，不再是"两区重排"。
+const userNavSections = computed((): ('consumer' | 'sharing')[] =>
+  supplyStore.mode === 'sharing' ? ['sharing'] : ['consumer']
 )
 
 // Personal navigation items (for admin's "My Account" section, without Dashboard).
@@ -1249,6 +1254,17 @@ onBeforeUnmount(() => {
   min-height: 1.25rem;
   overflow: hidden;
   white-space: nowrap;
+}
+
+/* 模式切换器：常驻侧栏顶部，与下方菜单用一条分隔线隔开——它是两套体验的接缝，
+   视觉上要显得比普通菜单项更"高一级"。 */
+.sidebar-mode-switch {
+  padding: 0 0.25rem 0.75rem;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid rgb(0 0 0 / 0.06);
+}
+:global(.dark) .sidebar-mode-switch {
+  border-bottom-color: rgb(255 255 255 / 0.06);
 }
 
 .sidebar-section-title-text {

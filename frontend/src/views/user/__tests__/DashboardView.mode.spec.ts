@@ -1,9 +1,9 @@
 /**
  * APEXONE-EXT: 控制台的双模式。
  *
- * 三条：共享模式下顶部换成供给侧的数（消费侧那四个数对供给者一个都不成立）、
- * 切换器常驻（同时干两件事的人必须能随时切回去，而不是去设置里翻）、
- * 供给功能关着时切换器整个不出现（那一侧此刻没有任何一个可用页面）。
+ * 共享模式下顶部换成供给侧的数（消费侧那四个数对供给者一个都不成立），切过去要
+ * 补拉一次，否则看到一屏 0。模式切换器本身已移到侧栏常驻（见 AppSidebar.mode.spec），
+ * 这里只保证 Dashboard 不再自带一个（否则同页重复）。
  */
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -114,20 +114,11 @@ describe('DashboardView console modes', () => {
     wrapper.unmount()
   })
 
-  it('keeps the mode switch visible on the page, not tucked into a menu', async () => {
+  it('no longer hosts its own mode switch — it moved to the global sidebar', async () => {
+    // 2026-09：切换器提到了侧栏顶部常驻（AppSidebar），任何页面都在，不再是
+    // Dashboard 的一部分。同一页两个切换器会重复，所以这里断言它**不**在。
+    // 切换器本身的存在/门控测试见 AppSidebar.mode.spec.ts。
     holder.store.canSwitchMode = true
-
-    const wrapper = await mountDashboard()
-
-    expect(wrapper.find('[data-testid="console-mode-switch"]').exists()).toBe(true)
-    await wrapper.get('[data-testid="console-mode-sharing"]').trigger('click')
-    expect(holder.store.setMode).toHaveBeenCalledWith('sharing')
-
-    wrapper.unmount()
-  })
-
-  it('hides the switch entirely when supply is off', async () => {
-    holder.store.canSwitchMode = false
 
     const wrapper = await mountDashboard()
 
