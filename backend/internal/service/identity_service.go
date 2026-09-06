@@ -165,6 +165,21 @@ func (s *IdentityService) GetOrCreateFingerprint(ctx context.Context, accountID 
 			logger.LegacyPrintf("service.identity", "Updated fingerprint for account %d: %s (merge update)", accountID, clientUA)
 		}
 
+		// 版本地板自愈：Anthropic 会对新模型设客户端版本下限（如 claude-fable-5-1 需
+		// claude-cli >= 2.1.251），命中时上游直接 400 claude_code_version_too_old。
+		// 普通升级只由"更新的入站客户端 UA"触发，而我们自己抬高内置基线（CLICurrentVersion）
+		// 并不会碰到已经缓存在 Redis 里、钉在旧版本的指纹——那些账号会持续对新模型 400，
+		// 且系统内没有指纹重置入口。这里在读取时把低于基线的版本抬到基线，只换版本号、
+		// 保留 UA 其余部分（entrypoint / 嵌套 SDK 版本）。与上面的畸形 UA 自愈同一位置、
+		// 同一道理，都是对账号级持久身份的读取时纠偏，且方向只升不降。
+		if isBelowPinnedCLIVersion(cached.UserAgent) {
+			raised := bumpClaudeCLIVersionToPin(cached.UserAgent)
+			logger.LegacyPrintf("service.identity",
+				"Raised below-pin fingerprint for account %d: %q -> %q", accountID, cached.UserAgent, raised)
+			cached.UserAgent = raised
+			needWrite = true
+		}
+
 		if !needWrite && time.Since(time.Unix(cached.UpdatedAt, 0)) > 24*time.Hour {
 			// 距上次写入超过24小时，续期TTL
 			needWrite = true
@@ -211,6 +226,11 @@ func (s *IdentityService) createFingerprintFromHeaders(headers http.Header) *Fin
 		fp.UserAgent = ua
 	} else {
 		fp.UserAgent = defaultFingerprint.UserAgent
+	}
+	// 版本地板：形态合法但低于基线的入站 UA（如老版客户端 2.1.220）不能作为新号的
+	// 长期身份落库，否则这个号一建出来就对有版本下限的新模型 400。抬到基线。
+	if isBelowPinnedCLIVersion(fp.UserAgent) {
+		fp.UserAgent = bumpClaudeCLIVersionToPin(fp.UserAgent)
 	}
 
 	// 获取x-stainless-*头，如果没有则使用默认值
@@ -523,4 +543,34 @@ func isNewerVersion(newUA, cachedUA string) bool {
 	}
 
 	return newPatch > cachedPatch
+}
+
+// isBelowPinnedCLIVersion 判断一个 claude-cli User-Agent 的版本是否低于内置基线
+// claude.CLICurrentVersion。只对 claude-cli 生效——其它客户端不做版本下限约束，
+// 理由同 isAcceptableFingerprintUserAgent 的产品名判断。UA 形态非法时返回 false，
+// 交给既有的畸形自愈分支处理，不在这里兜。
+//
+// 存在的理由：Anthropic 会对新模型设客户端版本下限（如 claude-fable-5-1 需
+// claude-cli >= 2.1.251），而缓存指纹只被"更新的入站客户端 UA"升级；一个长期没有
+// 新版客户端流量经过的供给号，会卡在旧版本上持续对这些模型 400。
+func isBelowPinnedCLIVersion(ua string) bool {
+	if extractProduct(ua) != claudeCLIUserAgentProduct {
+		return false
+	}
+	// pin 比 cached 新 ⟺ cached 低于基线。复用 isNewerVersion 的产品名 + 三段比较。
+	return isNewerVersion(claudeCLIUserAgentProduct+"/"+claude.CLICurrentVersion, ua)
+}
+
+// bumpClaudeCLIVersionToPin 把 UA 里的第一处 x.y.z 版本号替换成内置基线，保留产品名
+// 与括号内其余信息（entrypoint、嵌套的 agent-sdk/x.y.z 等）。
+//
+// 只替换第一处：真实 CLI 的 UA 里可能带第二个版本号（agent-sdk/0.3.x），那个不能被
+// 一起改掉——否则又造出一个 Anthropic 眼里"不存在的组合"，反而被判非正版。
+func bumpClaudeCLIVersionToPin(ua string) string {
+	loc := userAgentVersionRegex.FindStringIndex(ua)
+	if loc == nil {
+		// 解析不出版本号：回落到默认指纹 UA（已是基线版本），不硬拼。
+		return defaultFingerprint.UserAgent
+	}
+	return ua[:loc[0]] + "/" + claude.CLICurrentVersion + ua[loc[1]:]
 }

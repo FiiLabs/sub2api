@@ -105,8 +105,10 @@ func TestGetOrCreateFingerprintRejectsMalformedUserAgentOnCreate(t *testing.T) {
 // 升级路径：哨兵版本号不得覆盖已缓存的真实指纹。
 // isNewerVersion 是纯数值比较，999.0.0 恒大于任何真实版本，一旦写入永远无法夺回。
 func TestGetOrCreateFingerprintRejectsSentinelVersionOnUpgrade(t *testing.T) {
+	// 缓存用高于内置基线的版本：本测试盯的是"哨兵版本不得覆盖真实指纹"，
+	// 版本地板对 ≥ 基线的缓存 no-op，避免与地板自愈相撞。
 	cached := &Fingerprint{
-		UserAgent: "claude-cli/2.1.22 (external, cli)",
+		UserAgent: "claude-cli/2.4.0 (external, cli)",
 		ClientID:  "cid-1",
 		UpdatedAt: time.Now().Unix(),
 	}
@@ -119,21 +121,23 @@ func TestGetOrCreateFingerprintRejectsSentinelVersionOnUpgrade(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	require.Equal(t, "claude-cli/2.1.22 (external, cli)", fp.UserAgent,
+	require.Equal(t, "claude-cli/2.4.0 (external, cli)", fp.UserAgent,
 		"真实指纹不得被哨兵版本覆盖")
 	require.Zero(t, cache.setCalls, "被拒的 UA 不应触发任何写入")
 }
 
 // 合法的真实版本升级必须照常生效，校验不能把正常升级一起挡掉。
 func TestGetOrCreateFingerprintStillUpgradesOnValidNewerVersion(t *testing.T) {
+	// 缓存与新版都取 ≥ 基线：本测试盯的是"合法的更新版本仍会升级缓存"，
+	// 用高于基线的版本让地板 no-op，断言的就是升级这一件事本身。
 	cache := &stubIdentityCache{fingerprint: &Fingerprint{
-		UserAgent: "claude-cli/2.1.22 (external, cli)",
+		UserAgent: "claude-cli/2.1.251 (external, cli)",
 		ClientID:  "cid-1",
 		UpdatedAt: time.Now().Unix(),
 	}}
 	svc := NewIdentityService(cache)
 
-	newUA := "claude-cli/2.1.223 (external, cli)"
+	newUA := "claude-cli/2.4.0 (external, cli)"
 	fp, err := svc.GetOrCreateFingerprint(context.Background(), 1, headersWithUA(newUA))
 
 	require.NoError(t, err)
@@ -172,7 +176,10 @@ func TestGetOrCreateFingerprintHealsPoisonedCacheUsingValidClientUA(t *testing.T
 	}}
 	svc := NewIdentityService(cache)
 
-	realUA := "claude-cli/2.1.22 (external, cli)"
+	// 用高于内置基线的版本：这条测试盯的是"真实客户端从毒化指纹夺回身份"，
+	// 版本地板对它 no-op（地板另有 TestGetOrCreateFingerprintRaisesBelowPinCache 专测），
+	// 这样断言的就是客户端那串确切 UA，不被地板改写、也区别于默认指纹回退。
+	realUA := "claude-cli/2.4.0 (external, cli)"
 	fp, err := svc.GetOrCreateFingerprint(context.Background(), 1, headersWithUA(realUA))
 
 	require.NoError(t, err)
@@ -203,9 +210,11 @@ func TestGetOrCreateFingerprintHealsPoisonedCacheWithoutValidClientUA(t *testing
 }
 
 // 自愈只针对畸形缓存：合法缓存 + 非更新版本的合法 UA 不得触发额外写入。
+// 缓存 UA 用 defaultFingerprint.UserAgent（恒等于内置基线），避免与版本地板自愈相撞——
+// 本测试盯的是"更老的入站 UA 不改写健康缓存"，不是地板。
 func TestGetOrCreateFingerprintDoesNotRewriteHealthyCache(t *testing.T) {
 	cache := &stubIdentityCache{fingerprint: &Fingerprint{
-		UserAgent: "claude-cli/2.1.220 (external, cli)",
+		UserAgent: defaultFingerprint.UserAgent,
 		ClientID:  "cid-1",
 		UpdatedAt: time.Now().Unix(),
 	}}
@@ -217,8 +226,27 @@ func TestGetOrCreateFingerprintDoesNotRewriteHealthyCache(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	require.Equal(t, "claude-cli/2.1.220 (external, cli)", fp.UserAgent)
+	require.Equal(t, defaultFingerprint.UserAgent, fp.UserAgent)
 	require.Zero(t, cache.setCalls)
+}
+
+// 版本地板自愈：缓存里低于内置基线的 claude-cli 指纹，在读取时被抬到基线并回写。
+// 这是 fable-5-1 版本下限问题的回归测试——一个长期没有新版客户端流量经过、指纹钉在
+// 2.1.220 的供给号，会对有版本下限的新模型持续 400；地板不依赖入站 UA 是否带新版本。
+func TestGetOrCreateFingerprintRaisesBelowPinCache(t *testing.T) {
+	cache := &stubIdentityCache{fingerprint: &Fingerprint{
+		UserAgent: "claude-cli/2.1.220 (external, cli)", // 低于基线
+		ClientID:  "cid-1",
+		UpdatedAt: time.Now().Unix(),
+	}}
+	svc := NewIdentityService(cache)
+
+	// 入站 UA 不带可用版本（如 curl）——地板不依赖它。
+	fp, err := svc.GetOrCreateFingerprint(context.Background(), 1, headersWithUA("curl/8.0"))
+
+	require.NoError(t, err)
+	require.Equal(t, defaultFingerprint.UserAgent, fp.UserAgent) // 抬到基线
+	require.Equal(t, 1, cache.setCalls)                          // 回写一次
 }
 
 // 无 UA 时的既有行为（回退默认指纹）保持不变。
