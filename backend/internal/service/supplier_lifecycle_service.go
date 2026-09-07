@@ -482,7 +482,7 @@ func (s *SupplierLifecycleService) shouldProbe(account *Account, settings *Suppl
 // probeOnce 探一次并把结果写回 extra，达标时 promote。
 func (s *SupplierLifecycleService) probeOnce(ctx context.Context, account *Account, settings *SupplyProbationSettings) {
 	probeCtx, cancel := context.WithTimeout(ctx, supplierLifecycleProbeTimeout)
-	result, err := s.prober.RunTestBackground(probeCtx, account.ID, supplyResolveProbeModel(settings))
+	result, err := s.prober.RunTestBackground(probeCtx, account.ID, supplyResolveProbeModel(settings, account.Platform))
 	cancel()
 
 	now := time.Now()
@@ -669,23 +669,41 @@ func supplyProbeAuthFailure(message string) bool {
 // 在那里换成 Fable 会波及一大片与供给无关的路径。
 const supplyProbeDefaultModel = "claude-fable-5-1"
 
-// supplyProbeNoQuota 判定探测失败是不是「这个订阅没有 Fable 额度」。
+// supplyProbeDefaultModelOpenAI 是 OpenAI 供给号探测的默认模型。
 //
-// 判据是两段上游原文，取自生产 ops_error_logs 里免费/无额度号打 Fable 的真实返回：
-//   1. body 里的 error_code":"credits_required"（out_of_credits / org_level_disabled 都带它）
-//   2. 明文 "Usage credits are required for this model"
+// 用 gpt-5.x（对齐 openai.DefaultTestModel）而不是 gpt-6：探测只需确认「这是一个能经
+// Codex 服务的活账号」。gpt-6 Astra 有客户端版本下限（Codex CLI ≥ 0.153.0），拿它探测
+// 会把「账号可用但我们伪装的 Codex 版本偏旧」也算成探测失败——那是转发路径要解决的
+// 版本问题（与 [[fable-cli-version-floor]] 同型），不该在准入探测里连带拒掉一个好账号。
+// gpt-6 专属额度校验作为后续项（同 Fable no-quota 的演进）。
+const supplyProbeDefaultModelOpenAI = "gpt-5.4"
+
+// supplyProbeNoQuota 判定探测失败是不是「这个订阅没有额度服务我们卖的模型」。
 //
-// 只认这两个精确信号，**不**把笼统的 429 当无额度——普通限流（"rate limit"）也是
-// 429，但它是瞬态、会自己好，把一个只是这一刻超速的付费号误判成「免费号」拒之门外
-// 比放进一个免费号严重得多。supplyProbeErrorMessage 截断 300 字符，而这两个信号都
-// 出现在上游 body 的前 ~120 字符，截断安全。
-func supplyProbeNoQuota(message string) bool {
+// 按平台分：
+//   - anthropic：两段上游原文，取自生产 ops_error_logs 里免费/无额度号打 Fable 的真实返回
+//     （error_code":"credits_required" / 明文 "Usage credits are required for this model"）。
+//     只认这两个精确信号，**不**把笼统 429 当无额度——普通限流也是 429 但瞬态会自愈，
+//     误拒一个超速的付费号比放进一个免费号严重。
+//   - openai：暂无可靠的「无额度」精确信号（不同于 Anthropic 的 credits_required），
+//     返回 false = 不在准入时以「无额度」为由拒绝。宁可放进一个后续被探测判死的号，
+//     也不误拒。gpt-6 专属额度判定作为后续项。
+func supplyProbeNoQuota(message string, platform string) bool {
+	if platform == PlatformOpenAI {
+		return false
+	}
 	return strings.Contains(message, "credits_required") ||
 		strings.Contains(message, "Usage credits are required")
 }
 
-// supplyResolveProbeModel 决定这次探测用哪个模型：ops 显式配了就用配的，否则 Fable。
-func supplyResolveProbeModel(settings *SupplyProbationSettings) string {
+// supplyResolveProbeModel 决定这次探测用哪个模型。
+//
+// openai 恒用它自己的默认（gpt-5.x）——全局 ProbeModel 覆盖是 Claude 形状的模型名，
+// 套到 openai 号上会必然探失败。anthropic：ops 显式配了就用配的，否则 Fable。
+func supplyResolveProbeModel(settings *SupplyProbationSettings, platform string) string {
+	if platform == PlatformOpenAI {
+		return supplyProbeDefaultModelOpenAI
+	}
 	if settings != nil && strings.TrimSpace(settings.ProbeModel) != "" {
 		return settings.ProbeModel
 	}

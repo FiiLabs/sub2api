@@ -532,7 +532,7 @@ func (s *SupplierOnboardingService) probeOnAttach(ctx context.Context, account *
 	settings := s.probationSettings(ctx)
 
 	probeCtx, cancel := context.WithTimeout(ctx, supplierLifecycleProbeTimeout)
-	result, err := s.prober.RunTestBackground(probeCtx, account.ID, supplyResolveProbeModel(settings))
+	result, err := s.prober.RunTestBackground(probeCtx, account.ID, supplyResolveProbeModel(settings, account.Platform))
 	cancel()
 
 	now := time.Now()
@@ -549,7 +549,7 @@ func (s *SupplierOnboardingService) probeOnAttach(ctx context.Context, account *
 		//
 		// best-effort 清号：清不掉也照样返回无额度错误——留一个还在列表里的死号，
 		// 好过让供给者以为接入成功了。日志里记下这次不干净，供给者重试或解绑即好。
-		if supplyProbeNoQuota(message) {
+		if supplyProbeNoQuota(message, account.Platform) {
 			if delErr := s.detachOwnedAccount(ctx, ownerUserID, account.ID); delErr != nil {
 				slog.Error("[SupplierOnboarding] no-fable-quota account rejected but cleanup failed",
 					"account_id", account.ID, "user_id", ownerUserID, "error", delErr)

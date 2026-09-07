@@ -38,7 +38,9 @@ func TestSupplyProbeNoQuotaClassifier(t *testing.T) {
 		"plain_credits":      plainCredits,
 	} {
 		t.Run("noquota/"+name, func(t *testing.T) {
-			assert.True(t, supplyProbeNoQuota(msg))
+			assert.True(t, supplyProbeNoQuota(msg, PlatformAnthropic))
+			// 同样的信号在 openai 平台不触发拒绝（无可靠 OpenAI 无额度信号，宁放勿误拒）。
+			assert.False(t, supplyProbeNoQuota(msg, PlatformOpenAI))
 		})
 	}
 
@@ -55,22 +57,26 @@ func TestSupplyProbeNoQuotaClassifier(t *testing.T) {
 		"empty":               "",
 	} {
 		t.Run("notnoquota/"+name, func(t *testing.T) {
-			assert.False(t, supplyProbeNoQuota(msg))
+			assert.False(t, supplyProbeNoQuota(msg, PlatformAnthropic))
 		})
 	}
 }
 
 // 没配 probe_model 时探测用 Fable，而不是全局默认的 sonnet。
 func TestSupplyResolveProbeModelDefaultsToFable(t *testing.T) {
-	assert.Equal(t, supplyProbeDefaultModel, supplyResolveProbeModel(nil))
+	assert.Equal(t, supplyProbeDefaultModel, supplyResolveProbeModel(nil, PlatformAnthropic))
 	assert.Equal(t, "claude-fable-5-1", supplyProbeDefaultModel)
 
 	empty := &SupplyProbationSettings{ProbeModel: ""}
-	assert.Equal(t, supplyProbeDefaultModel, supplyResolveProbeModel(empty))
+	assert.Equal(t, supplyProbeDefaultModel, supplyResolveProbeModel(empty, PlatformAnthropic))
 
 	configured := &SupplyProbationSettings{ProbeModel: "claude-opus-5"}
-	assert.Equal(t, "claude-opus-5", supplyResolveProbeModel(configured),
+	assert.Equal(t, "claude-opus-5", supplyResolveProbeModel(configured, PlatformAnthropic),
 		"ops 显式配了就尊重配置，不强塞 Fable")
+
+	// openai 恒用自己的默认（gpt-5.x），忽略 Claude 形状的全局 ProbeModel 覆盖。
+	assert.Equal(t, supplyProbeDefaultModelOpenAI, supplyResolveProbeModel(configured, PlatformOpenAI))
+	assert.Equal(t, "gpt-5.4", supplyProbeDefaultModelOpenAI)
 }
 
 // 接入探测探到「没额度」→ CompleteOAuth 报错 + 刚建的号被干净清掉。
