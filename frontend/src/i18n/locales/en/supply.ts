@@ -513,9 +513,12 @@ export default {
       enabled: 'Enable settlement',
       enabledHint:
         'When off, supply accounts degrade to ordinary first-party accounts: they still serve traffic, but no revenue share is produced.',
-      shareRatio: 'Share ratio',
+      shareRatio: 'Share ratio (default / Claude)',
       shareRatioHint:
         'Applied to what the consumer actually paid (not list price). 0.7 means the supplier keeps 70%. Max {max}.',
+      openaiShareRatio: 'OpenAI share ratio (optional)',
+      openaiShareRatioHint:
+        'Applies only to OpenAI supply accounts. 0 = not set, falls back to the default above. The two platforms have different subscription economics, so they can be tuned separately.',
       freezeHours: 'Freeze hours',
       freezeHoursHint:
         'How long an accrual stays frozen. Must be at least as long as your payment provider chargeback window, or a chargeback after the freeze expires comes out of the platform. Max {max} hours.',
@@ -534,6 +537,9 @@ export default {
       supplyGroupId: 'Supply group ID',
       supplyGroupIdHint:
         'Only requests that resolve to this group overflow. The narrow gate is deliberate: if any empty group could overflow, one misconfigured group would silently serve traffic from platform-owned accounts.',
+      openaiTitle: 'OpenAI supply pool (optional)',
+      openaiHint:
+        'The three fields above are the Claude (anthropic) default pool; this block is the separate OpenAI pool. Leave supply group as 0 to not configure an OpenAI pool.',
       overflowGroupId: 'Fallback group ID (first-party pool)',
       overflowGroupIdHint:
         'Must differ from the supply group. Existence is not validated here — a group can be deleted after configuration, so the real backstop lives in the scheduler.',

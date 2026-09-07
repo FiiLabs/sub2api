@@ -286,6 +286,25 @@
               </p>
             </div>
 
+            <!-- OpenAI 供给者的单独分成。0 = 不单独配，回落上面的默认分成。 -->
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('supplyAdmin.settlement.openaiShareRatio') }}
+              </label>
+              <input
+                v-model.number="openaiShareRatio"
+                type="number"
+                step="0.01"
+                min="0"
+                :max="settlementBounds.share_ratio_max"
+                class="input"
+                data-testid="supply-openai-share-ratio"
+              />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('supplyAdmin.settlement.openaiShareRatioHint') }}
+              </p>
+            </div>
+
             <div>
               <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
                 {{ t('supplyAdmin.settlement.freezeHours') }}
@@ -395,6 +414,27 @@
                   })
                 }}
               </p>
+            </div>
+
+            <!-- OpenAI 供给池（多对里的 openai 那一对）。供给组填 0 = 不配 OpenAI 池。
+                 顶层三个字段是 anthropic 默认池；这一块是 openai 平台的独立池。 -->
+            <div class="rounded-lg border border-gray-200 p-3 dark:border-dark-700" data-testid="supply-openai-pool">
+              <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.pool.openaiTitle') }}</p>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.pool.openaiHint') }}</p>
+              <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div>
+                  <label class="mb-1 block text-xs text-gray-600 dark:text-gray-400">{{ t('supplyAdmin.pool.supplyGroupId') }}</label>
+                  <input v-model.number="openaiPoolForm.supply_group_id" type="number" min="0" step="1" class="input" data-testid="supply-openai-supply-group-id" />
+                </div>
+                <div>
+                  <label class="mb-1 block text-xs text-gray-600 dark:text-gray-400">{{ t('supplyAdmin.pool.overflowGroupId') }}</label>
+                  <input v-model.number="openaiPoolForm.overflow_group_id" type="number" min="0" step="1" class="input" data-testid="supply-openai-overflow-group-id" />
+                </div>
+                <div>
+                  <label class="mb-1 block text-xs text-gray-600 dark:text-gray-400">{{ t('supplyAdmin.pool.dailyOverflowLimit') }}</label>
+                  <input v-model.number="openaiPoolForm.daily_overflow_limit" type="number" min="0" step="1" class="input" data-testid="supply-openai-daily-overflow-limit" />
+                </div>
+              </div>
             </div>
 
             <div
@@ -903,6 +943,12 @@ const poolForm = reactive<SupplyPoolPayload>({
 // 今日用量与表单分开存：它是只读读数，混进 poolForm 会让保存时不小心把它一起 PUT 上去。
 const poolUsage = reactive({ usage_day: '', overflow_used_today: 0, overflow_denied_today: 0 })
 
+// OpenAI 供给池（多对里的 openai 那一对）。顶层 poolForm 是 anthropic 默认池。
+// 供给组填 0 = 不配 OpenAI 池（保存时不写进 pools）。
+const openaiPoolForm = reactive({ supply_group_id: 0, overflow_group_id: 0, daily_overflow_limit: 0 })
+// OpenAI 供给者分成（0 = 不单独配，回落全局 share_ratio）。
+const openaiShareRatio = ref(0)
+
 function applyPoolUsage(settings: SupplyPoolSettings): void {
   poolUsage.usage_day = settings.usage_day ?? ''
   poolUsage.overflow_used_today = settings.overflow_used_today ?? 0
@@ -1038,6 +1084,7 @@ async function loadSettlement(): Promise<void> {
   settlementForm.share_ratio = settings.share_ratio
   settlementForm.freeze_hours = settings.freeze_hours
   settlementForm.spend_from_wallet_first = settings.spend_from_wallet_first
+  openaiShareRatio.value = settings.share_ratio_by_platform?.openai ?? 0
   if (settings.share_ratio_max > 0) settlementBounds.share_ratio_max = settings.share_ratio_max
   if (settings.freeze_hours_max > 0) settlementBounds.freeze_hours_max = settings.freeze_hours_max
 }
@@ -1049,6 +1096,15 @@ async function loadPool(): Promise<void> {
   poolForm.overflow_group_id = settings.overflow_group_id
   poolForm.daily_overflow_limit = settings.daily_overflow_limit ?? 0
   applyPoolUsage(settings)
+  applyOpenAIPool(settings)
+}
+
+// 从供给池设置里取出 openai 那一对填进表单。没有则清零（= 未配 OpenAI 池）。
+function applyOpenAIPool(settings: { pools?: Record<string, { supply_group_id: number; overflow_group_id: number; daily_overflow_limit: number }> }): void {
+  const op = settings.pools?.openai
+  openaiPoolForm.supply_group_id = op?.supply_group_id ?? 0
+  openaiPoolForm.overflow_group_id = op?.overflow_group_id ?? 0
+  openaiPoolForm.daily_overflow_limit = op?.daily_overflow_limit ?? 0
 }
 
 async function loadProbation(): Promise<void> {
@@ -1166,15 +1222,19 @@ async function saveSettlement(): Promise<void> {
   try {
     // 不在前端重复后端的区间校验：那边写路径已经对越界值报错，
     // 抄一份就是给同一条规则立两个源头。这里只负责把用户填的原样送过去。
+    const shareByPlatform: Record<string, number> = {}
+    if (openaiShareRatio.value > 0) shareByPlatform.openai = openaiShareRatio.value
     const saved = await adminSupplyMarketAPI.updateSettlementSettings({
       enabled: settlementForm.enabled,
       share_ratio: settlementForm.share_ratio,
       freeze_hours: settlementForm.freeze_hours,
       spend_from_wallet_first: settlementForm.spend_from_wallet_first,
+      share_ratio_by_platform: Object.keys(shareByPlatform).length > 0 ? shareByPlatform : undefined,
     })
     // 回填后端返回值：写路径会 normalize，表单必须显示库里真正存下的数。
     settlementForm.share_ratio = saved.share_ratio
     settlementForm.freeze_hours = saved.freeze_hours
+    openaiShareRatio.value = saved.share_ratio_by_platform?.openai ?? 0
     appStore.showSuccess(t('supplyAdmin.settlement.saved'))
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, t('supplyAdmin.error.saveFailed')))
@@ -1186,16 +1246,26 @@ async function saveSettlement(): Promise<void> {
 async function savePool(): Promise<void> {
   savingPool.value = true
   try {
+    const pools: Record<string, { supply_group_id: number; overflow_group_id: number; daily_overflow_limit: number }> = {}
+    if (openaiPoolForm.supply_group_id > 0) {
+      pools.openai = {
+        supply_group_id: openaiPoolForm.supply_group_id,
+        overflow_group_id: openaiPoolForm.overflow_group_id,
+        daily_overflow_limit: openaiPoolForm.daily_overflow_limit,
+      }
+    }
     const saved = await adminSupplyMarketAPI.updatePoolSettings({
       enabled: poolForm.enabled,
       supply_group_id: poolForm.supply_group_id,
       overflow_group_id: poolForm.overflow_group_id,
       daily_overflow_limit: poolForm.daily_overflow_limit,
+      pools: Object.keys(pools).length > 0 ? pools : undefined,
     })
     poolForm.enabled = saved.enabled
     poolForm.supply_group_id = saved.supply_group_id
     poolForm.overflow_group_id = saved.overflow_group_id
     poolForm.daily_overflow_limit = saved.daily_overflow_limit ?? 0
+    applyOpenAIPool(saved)
     // 保存的响应里带着最新用量，顺手刷新——否则保存完这块读数就停在打开页面那一刻。
     applyPoolUsage(saved)
     appStore.showSuccess(t('supplyAdmin.pool.saved'))

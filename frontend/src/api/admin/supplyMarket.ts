@@ -16,6 +16,8 @@ export interface SupplierSettlementSettings {
   freeze_hours: number
   /** 为真时消费者的赚取钱包余额优先于 users.balance 被扣。 */
   spend_from_wallet_first: boolean
+  /** 按平台覆盖分成（键=账号平台，如 openai）。缺省或值 <=0 回落 share_ratio。 */
+  share_ratio_by_platform?: Record<string, number>
   /** 后端下发的边界值，前端不要另抄一份。 */
   share_ratio_max: number
   freeze_hours_max: number
@@ -26,6 +28,13 @@ export type SupplierSettlementPayload = Omit<
   'share_ratio_max' | 'freeze_hours_max'
 >
 
+/** 一个平台的供给池对（供给组 + 兜底组 + 每日上限）。 */
+export interface SupplyPoolPair {
+  supply_group_id: number
+  overflow_group_id: number
+  daily_overflow_limit: number
+}
+
 export interface SupplyPoolSettings {
   enabled: boolean
   /** 供给池分组 id。只有解析后落在这个分组上的请求才会溢出。 */
@@ -34,6 +43,8 @@ export interface SupplyPoolSettings {
   overflow_group_id: number
   /** 当日溢出次数上限，0 = 不限量（仍然计数）。每次溢出平台都在按自营成本供货。 */
   daily_overflow_limit: number
+  /** 非 anthropic 平台的池（键=平台，如 openai）。顶层三字段是 anthropic 默认池。 */
+  pools?: Record<string, SupplyPoolPair>
 
   /** 以下为后端下发的只读用量，PUT 时会被忽略。 */
   usage_day: string
