@@ -30,28 +30,38 @@ import (
 // SettingKeySupplyPool 供给池路由配置的 settings key。
 const SettingKeySupplyPool = "supply_pool_settings"
 
-// SupplyPoolSettings 描述「供给池干涸时溢出到自营池」这一条路由规则。
+// SupplyPoolPair 描述一条「供给池干涸时溢出到自营池」的路由规则（一个平台一对）。
+type SupplyPoolPair struct {
+	// SupplyGroupID 供给池分组 id。只有解析后落在这个分组上的请求才会溢出。
+	SupplyGroupID int64 `json:"supply_group_id"`
+	// OverflowGroupID 兜底分组 id（自营池）。
+	OverflowGroupID int64 `json:"overflow_group_id"`
+	// DailyOverflowLimit 当日最多溢出多少次，0 = 不限量（仍然计数）。
+	DailyOverflowLimit int `json:"daily_overflow_limit"`
+}
+
+// SupplyPoolSettings 描述各平台「供给池干涸时溢出到自营池」的路由规则。
 //
 // 零值 = 不启用，调度行为与上游原逻辑一字不差。
+//
+// **按平台多对**（2026-09 加）：顶层的三个单字段是 anthropic（Claude）那一对，保持不变、
+// 向后兼容——存量配置无 Pools 时行为与从前逐字一致。其它平台（openai 等）的池放进 Pools，
+// 键是账号 Platform 值。这样一个部署可以同时跑 Claude 供给池 + OpenAI 供给池，各自的
+// 供给组/兜底组/每日上限互不相干。文件头当年预告的「下一刀」就是这个。
 type SupplyPoolSettings struct {
-	// Enabled 总开关。
+	// Enabled 总开关（对所有平台池生效）。
 	Enabled bool `json:"enabled"`
-	// SupplyGroupID 供给池分组 id。只有解析后落在这个分组上的请求才会溢出。
+	// SupplyGroupID / OverflowGroupID / DailyOverflowLimit 是 anthropic 默认池（向后兼容）。
 	//
 	// 这个门开得很窄是有意的：如果「任何分组没号都往自营池溢」，一个配错的空分组
 	// 会静默地拿平台自有账号服务，成本全由平台吃，而且现象是「一切正常」。
 	SupplyGroupID int64 `json:"supply_group_id"`
 	// OverflowGroupID 兜底分组 id（自营池）。
 	OverflowGroupID int64 `json:"overflow_group_id"`
-	// DailyOverflowLimit 当日最多溢出多少次，0 = 不限量（仍然计数）。
-	//
-	// 这是成本闸门，不是限流：每次溢出平台都在按自营成本供货却按供给池价收费，
-	// 没有上限的话，一个能持续把供给池打空的消费者就能长期薅这个差价（§3.2 的遗留
-	// 风险）。配额用完后请求拿回它原本就会拿到的 ErrNoAvailableAccounts——
-	// 也就是「溢出没开」时的行为，不是新增的故障面。
-	//
-	// 判定与计数在同一条 SQL 里完成，见 supply_overflow_budget.go。
+	// DailyOverflowLimit 当日最多溢出多少次，0 = 不限量（仍然计数）。见 supply_overflow_budget.go。
 	DailyOverflowLimit int `json:"daily_overflow_limit"`
+	// Pools 是非 anthropic 平台的池，键 = 账号 Platform（如 "openai"）。可空。
+	Pools map[string]SupplyPoolPair `json:"pools,omitempty"`
 }
 
 // DefaultSupplyPoolSettings 返回「不启用」的默认配置。
@@ -59,24 +69,84 @@ func DefaultSupplyPoolSettings() *SupplyPoolSettings {
 	return &SupplyPoolSettings{}
 }
 
+// poolFor 返回某平台的池对。anthropic（或空串）用顶层单字段；其它平台查 Pools。
+// 第二返回值表示这个平台是否配了池（供给组 id 为正）。
+func (s *SupplyPoolSettings) poolFor(platform string) (SupplyPoolPair, bool) {
+	if s == nil {
+		return SupplyPoolPair{}, false
+	}
+	if platform == "" || platform == PlatformAnthropic {
+		pair := SupplyPoolPair{
+			SupplyGroupID:      s.SupplyGroupID,
+			OverflowGroupID:    s.OverflowGroupID,
+			DailyOverflowLimit: s.DailyOverflowLimit,
+		}
+		return pair, pair.SupplyGroupID > 0
+	}
+	pair, ok := s.Pools[platform]
+	return pair, ok && pair.SupplyGroupID > 0
+}
+
+// supplyGroupIDFor 返回某平台的供给组 id（接入时挂号用）。0 = 该平台未配供给池。
+func (s *SupplyPoolSettings) supplyGroupIDFor(platform string) int64 {
+	pair, ok := s.poolFor(platform)
+	if !ok {
+		return 0
+	}
+	return pair.SupplyGroupID
+}
+
+// allPools 汇总所有平台的池对（anthropic 顶层 + Pools），供溢出解析遍历。
+func (s *SupplyPoolSettings) allPools() []SupplyPoolPair {
+	if s == nil {
+		return nil
+	}
+	out := make([]SupplyPoolPair, 0, 1+len(s.Pools))
+	if s.SupplyGroupID > 0 {
+		out = append(out, SupplyPoolPair{s.SupplyGroupID, s.OverflowGroupID, s.DailyOverflowLimit})
+	}
+	for _, p := range s.Pools {
+		if p.SupplyGroupID > 0 {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // overflowTargetFor 返回 resolvedGroupID 这个分组应当溢出到的目标分组。
 //
 // 把「是否该溢出」的全部判据收在一个函数里，调用方不必知道任何一条规则。
+// 现按平台多对：在所有已配置的池里找供给组匹配的那一对，返回它的兜底组。
 func (s *SupplyPoolSettings) overflowTargetFor(resolvedGroupID int64) (int64, bool) {
 	if s == nil || !s.Enabled {
 		return 0, false
 	}
-	if s.SupplyGroupID <= 0 || s.OverflowGroupID <= 0 {
-		return 0, false
+	for _, p := range s.allPools() {
+		if p.OverflowGroupID <= 0 {
+			continue
+		}
+		// 自己溢出到自己 = 把一次失败的调度原样再跑一遍，纯浪费。
+		if p.SupplyGroupID == p.OverflowGroupID {
+			continue
+		}
+		if resolvedGroupID == p.SupplyGroupID {
+			return p.OverflowGroupID, true
+		}
 	}
-	// 自己溢出到自己 = 把一次失败的调度原样再跑一遍，纯浪费。
-	if s.SupplyGroupID == s.OverflowGroupID {
-		return 0, false
+	return 0, false
+}
+
+// overflowLimitFor 返回某供给组的当日溢出上限（0 = 不限）。找不到对应池返回 0。
+func (s *SupplyPoolSettings) overflowLimitFor(supplyGroupID int64) int {
+	if s == nil {
+		return 0
 	}
-	if resolvedGroupID != s.SupplyGroupID {
-		return 0, false
+	for _, p := range s.allPools() {
+		if p.SupplyGroupID == supplyGroupID {
+			return p.DailyOverflowLimit
+		}
 	}
-	return s.OverflowGroupID, true
+	return 0
 }
 
 // ============================================================================
@@ -167,19 +237,41 @@ func (s *SettingService) SetSupplyPoolSettings(ctx context.Context, settings *Su
 		return fmt.Errorf("settings cannot be nil")
 	}
 	// 负数在闸门那边与 0 同义（不限量），但存下去会让面板显示一个看起来像限制、
-	// 实际不限制的数字。夹成 0，让「不限量」在库里只有一种写法。
+	// 实际不限制的数字。夹成 0，让「不限量」在库里只有一种写法。anthropic 顶层 + 各平台池同处理。
 	if settings.DailyOverflowLimit < 0 {
 		settings.DailyOverflowLimit = 0
 	}
+	for k, p := range settings.Pools {
+		if p.DailyOverflowLimit < 0 {
+			p.DailyOverflowLimit = 0
+			settings.Pools[k] = p
+		}
+	}
 	if settings.Enabled {
-		if settings.SupplyGroupID <= 0 {
-			return fmt.Errorf("supply_group_id must be a positive group id when overflow is enabled")
+		// anthropic 顶层池：仅当填了供给组才校验（允许只配 openai 池、anthropic 不配）。
+		if settings.SupplyGroupID > 0 {
+			if settings.OverflowGroupID <= 0 {
+				return fmt.Errorf("overflow_group_id must be a positive group id when supply_group_id is set")
+			}
+			if settings.SupplyGroupID == settings.OverflowGroupID {
+				return fmt.Errorf("overflow_group_id must differ from supply_group_id")
+			}
 		}
-		if settings.OverflowGroupID <= 0 {
-			return fmt.Errorf("overflow_group_id must be a positive group id when overflow is enabled")
+		// 各平台池：配了就要成对且不自溢。
+		for platform, p := range settings.Pools {
+			if p.SupplyGroupID <= 0 {
+				return fmt.Errorf("pools[%s].supply_group_id must be a positive group id", platform)
+			}
+			if p.OverflowGroupID <= 0 {
+				return fmt.Errorf("pools[%s].overflow_group_id must be a positive group id", platform)
+			}
+			if p.SupplyGroupID == p.OverflowGroupID {
+				return fmt.Errorf("pools[%s].overflow_group_id must differ from supply_group_id", platform)
+			}
 		}
-		if settings.SupplyGroupID == settings.OverflowGroupID {
-			return fmt.Errorf("overflow_group_id must differ from supply_group_id")
+		// 开着却一个池都没配 = 没有任何效果，挡下来避免管理员以为配好了。
+		if settings.SupplyGroupID <= 0 && len(settings.Pools) == 0 {
+			return fmt.Errorf("at least one pool (top-level anthropic or pools[...]) must be configured when enabled")
 		}
 	}
 
@@ -220,5 +312,12 @@ func cloneSupplyPoolSettings(settings *SupplyPoolSettings) *SupplyPoolSettings {
 		return DefaultSupplyPoolSettings()
 	}
 	clone := *settings
+	// 深拷贝 Pools：浅拷贝会让缓存副本与调用方共享同一个 map，一方改动串到另一方。
+	if settings.Pools != nil {
+		clone.Pools = make(map[string]SupplyPoolPair, len(settings.Pools))
+		for k, v := range settings.Pools {
+			clone.Pools[k] = v
+		}
+	}
 	return &clone
 }
