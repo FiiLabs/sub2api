@@ -117,5 +117,7 @@ func (s *GatewayService) resolveSupplyOverflowGroupID(ctx context.Context, group
 	if !ok {
 		return 0, 0, false
 	}
-	return target, settings.DailyOverflowLimit, true
+	// 按平台多对：每日上限取**匹配到的那个池**的（不再恒用顶层 anthropic 的），
+	// 多平台并存时各池预算互不相干。anthropic 顶层池时 overflowLimitFor 返回的就是它自己。
+	return target, settings.overflowLimitFor(*resolvedGroupID), true
 }
