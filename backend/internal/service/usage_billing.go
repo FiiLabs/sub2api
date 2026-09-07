@@ -56,12 +56,39 @@ type UsageBillingCommand struct {
 // 全零值即「关闭」：ShareRatio <= 0 不入账，SpendFromWalletFirst=false 不动扣费顺序。
 // 这让供给能力可以先带着代码上线、观察，再由配置开关打开。
 type UsageBillingSupplierParams struct {
-	// ShareRatio 供给者分成比例（如 0.70）。基数是消费者实付，不是官方价。
+	// ShareRatio 默认供给者分成比例（如 0.50）。基数是消费者实付，不是官方价。
+	// 某平台在 ShareRatioByPlatform 里有 >0 的值时，那个平台用它、其余用本默认值。
 	ShareRatio float64
+	// ShareRatioByPlatform 按供给账号平台（accounts.platform）覆盖分成比例。可空。
+	// 存在的理由：不同平台（Claude / OpenAI）订阅经济账不同，最优分成可以不一样。
+	ShareRatioByPlatform map[string]float64
 	// FreezeHours 入账冻结小时数，必须 ≥ 支付通道拒付窗。<= 0 表示直接可用。
 	FreezeHours int
 	// SpendFromWalletFirst 为真时，消费者的赚取钱包余额优先于 users.balance 被扣。
 	SpendFromWalletFirst bool
+}
+
+// ShareRatioFor 返回某平台生效的分成比例：平台有 >0 覆盖用覆盖，否则用默认 ShareRatio。
+func (p UsageBillingSupplierParams) ShareRatioFor(platform string) float64 {
+	if p.ShareRatioByPlatform != nil {
+		if r, ok := p.ShareRatioByPlatform[platform]; ok && r > 0 {
+			return r
+		}
+	}
+	return p.ShareRatio
+}
+
+// AnyRatioConfigured 是否配了任何 >0 的分成（默认或某平台）。用于「结算是否开着」的早退判断。
+func (p UsageBillingSupplierParams) AnyRatioConfigured() bool {
+	if p.ShareRatio > 0 {
+		return true
+	}
+	for _, r := range p.ShareRatioByPlatform {
+		if r > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *UsageBillingCommand) Normalize() {

@@ -36,25 +36,26 @@ func supplierSettlementBasis(cmd *service.UsageBillingCommand) float64 {
 //
 // 在事务里现查而不是让 UsageBillingCommand 多带一个字段：这是一次主键点查，
 // 代价可以忽略，换来的是 service.Account、账号映射器、调度链路全都不用动。
-func resolveSupplierOwnerID(ctx context.Context, tx *sql.Tx, accountID int64) (int64, error) {
+func resolveSupplierOwnerID(ctx context.Context, tx *sql.Tx, accountID int64) (int64, string, error) {
 	if accountID <= 0 {
-		return 0, nil
+		return 0, "", nil
 	}
 	var ownerUserID sql.NullInt64
+	var platform sql.NullString
 	err := tx.QueryRowContext(ctx,
-		"SELECT owner_user_id FROM accounts WHERE id = $1 AND deleted_at IS NULL",
-		accountID).Scan(&ownerUserID)
+		"SELECT owner_user_id, platform FROM accounts WHERE id = $1 AND deleted_at IS NULL",
+		accountID).Scan(&ownerUserID, &platform)
 	if errors.Is(err, sql.ErrNoRows) {
 		// 账号在本次请求期间被删了。计费照常收敛，只是没有结算对象。
-		return 0, nil
+		return 0, "", nil
 	}
 	if err != nil {
-		return 0, fmt.Errorf("resolve supplier owner: %w", err)
+		return 0, "", fmt.Errorf("resolve supplier owner: %w", err)
 	}
 	if !ownerUserID.Valid {
-		return 0, nil
+		return 0, "", nil
 	}
-	return ownerUserID.Int64, nil
+	return ownerUserID.Int64, platform.String, nil
 }
 
 // accrueSupplierRevenue 给供给者入账本次请求的分成。
@@ -63,7 +64,7 @@ func resolveSupplierOwnerID(ctx context.Context, tx *sql.Tx, accountID int64) (i
 // 等于平台单方面吞掉供给者的收入；宁可让这次计费失败、由上层重试，
 // 也不能留下对不上的账。
 func accrueSupplierRevenue(ctx context.Context, tx *sql.Tx, cmd *service.UsageBillingCommand) error {
-	if cmd == nil || cmd.Supplier.ShareRatio <= 0 {
+	if cmd == nil || !cmd.Supplier.AnyRatioConfigured() {
 		return nil
 	}
 	basis := supplierSettlementBasis(cmd)
@@ -72,7 +73,7 @@ func accrueSupplierRevenue(ctx context.Context, tx *sql.Tx, cmd *service.UsageBi
 		return nil
 	}
 
-	ownerUserID, err := resolveSupplierOwnerID(ctx, tx, cmd.AccountID)
+	ownerUserID, platform, err := resolveSupplierOwnerID(ctx, tx, cmd.AccountID)
 	if err != nil {
 		return err
 	}
@@ -85,6 +86,13 @@ func accrueSupplierRevenue(ctx context.Context, tx *sql.Tx, cmd *service.UsageBi
 		return nil
 	}
 
+	// 分成按账号平台取：OpenAI 供给号用 OpenAI 分成，Claude 用 Claude 分成，
+	// 未单独配的平台回落到默认 ShareRatio。
+	shareRatio := cmd.Supplier.ShareRatioFor(platform)
+	if shareRatio <= 0 {
+		return nil
+	}
+
 	accountID := cmd.AccountID
 	consumerUserID := cmd.UserID
 	_, err = accrueSupplierCreditTx(ctx, tx, service.SupplierAccrueParams{
@@ -93,7 +101,7 @@ func accrueSupplierRevenue(ctx context.Context, tx *sql.Tx, cmd *service.UsageBi
 		AccountID:      &accountID,
 		ConsumerUserID: &consumerUserID,
 		BasisAmount:    basis,
-		ShareRatio:     cmd.Supplier.ShareRatio,
+		ShareRatio:     shareRatio,
 		FreezeHours:    cmd.Supplier.FreezeHours,
 	})
 	return err

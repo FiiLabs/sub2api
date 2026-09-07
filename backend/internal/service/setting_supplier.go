@@ -80,8 +80,11 @@ const (
 type SupplierSettlementSettings struct {
 	// Enabled 总开关。关闭时不入账、不走钱包，供给账号退化为普通自营账号。
 	Enabled bool `json:"enabled"`
-	// ShareRatio 供给者分成比例，基数是消费者实付金额（不是官方价）。
+	// ShareRatio 默认供给者分成比例，基数是消费者实付金额（不是官方价）。
 	ShareRatio float64 `json:"share_ratio"`
+	// ShareRatioByPlatform 按供给账号平台覆盖分成（键=accounts.platform，如 "openai"）。可空。
+	// 同一个 JSON key、无迁移。缺省或值 <=0 的平台回落到 ShareRatio。
+	ShareRatioByPlatform map[string]float64 `json:"share_ratio_by_platform,omitempty"`
 	// FreezeHours 入账冻结小时数。0 = 不冻结（仅测试/特例）。
 	FreezeHours int `json:"freeze_hours"`
 	// SpendFromWalletFirst 为真时，消费者的赚取钱包余额优先于 users.balance 被扣。
@@ -136,6 +139,7 @@ func (s *SupplierSettlementSettings) ToBillingParams() UsageBillingSupplierParam
 	}
 	return UsageBillingSupplierParams{
 		ShareRatio:           s.ShareRatio,
+		ShareRatioByPlatform: s.ShareRatioByPlatform,
 		FreezeHours:          s.FreezeHours,
 		SpendFromWalletFirst: s.SpendFromWalletFirst,
 	}

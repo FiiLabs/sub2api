@@ -21,7 +21,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
-const supplierOwnerLookupSQL = `SELECT owner_user_id FROM accounts WHERE id = \$1 AND deleted_at IS NULL`
+const supplierOwnerLookupSQL = `SELECT owner_user_id, platform FROM accounts WHERE id = \$1 AND deleted_at IS NULL`
 
 func newBillingTx(t *testing.T) (*sql.Tx, sqlmock.Sqlmock) {
 	t.Helper()
@@ -68,7 +68,7 @@ func TestApplyUsageBillingEffects_AccruesSupplierShareInSameTransaction(t *testi
 		WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow(90.0))
 	mock.ExpectQuery(supplierOwnerLookupSQL).
 		WithArgs(int64(7)).
-		WillReturnRows(sqlmock.NewRows([]string{"owner_user_id"}).AddRow(int64(99)))
+		WillReturnRows(sqlmock.NewRows([]string{"owner_user_id", "platform"}).AddRow(int64(99), "anthropic"))
 	// 基数 = 消费者实付 10，比例 0.5 → 入账 5，且带冻结窗。
 	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO supplier_credit_ledger")).
 		WithArgs(int64(99), service.SupplierCreditActionAccrue, 5.0, "req-accrue", int64(7), int64(42), 10.0, 0.5, int64(168)).
@@ -96,6 +96,46 @@ func TestApplyUsageBillingEffects_AccruesSupplierShareInSameTransaction(t *testi
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+// 按平台分成：openai 供给号命中 ShareRatioByPlatform["openai"]=0.6，而不是默认 0.5。
+func TestApplyUsageBillingEffects_AccruesPerPlatformShareRatio(t *testing.T) {
+	ctx := context.Background()
+	tx, mock := newBillingTx(t)
+
+	mock.ExpectQuery(conditionalBalanceDeductSQL).
+		WithArgs(10.0, int64(42)).
+		WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow(90.0))
+	// 归属查询返回 openai 平台。
+	mock.ExpectQuery(supplierOwnerLookupSQL).
+		WithArgs(int64(7)).
+		WillReturnRows(sqlmock.NewRows([]string{"owner_user_id", "platform"}).AddRow(int64(99), "openai"))
+	// 基数 10 × openai 分成 0.6 → 入账 6.0（不是默认 0.5 的 5.0）。
+	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO supplier_credit_ledger")).
+		WithArgs(int64(99), service.SupplierCreditActionAccrue, 6.0, "req-openai", int64(7), int64(42), 10.0, 0.6, int64(168)).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(701)))
+	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO supplier_credits")).
+		WithArgs(int64(99), 0.0, 6.0, 6.0).
+		WillReturnRows(sqlmock.NewRows([]string{"available_credit", "frozen_credit", "history_credit"}).
+			AddRow(0.0, 6.0, 6.0))
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE supplier_credit_ledger")).
+		WithArgs(int64(701), 0.0, 6.0, 6.0).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	result := &service.UsageBillingApplyResult{Applied: true}
+	err := (&usageBillingRepository{}).applyUsageBillingEffects(ctx, tx, &service.UsageBillingCommand{
+		RequestID:   "req-openai",
+		UserID:      42,
+		AccountID:   7,
+		BalanceCost: 10,
+		Supplier: service.UsageBillingSupplierParams{
+			ShareRatio:           0.5,
+			ShareRatioByPlatform: map[string]float64{"openai": 0.6},
+			FreezeHours:          168,
+		},
+	}, result)
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 // 订阅额度付费同样构成「实付」，供给者照样分成——否则订阅用户消耗的供给量白嫖。
 func TestApplyUsageBillingEffects_SubscriptionCostCountsAsSettlementBasis(t *testing.T) {
 	ctx := context.Background()
@@ -107,7 +147,7 @@ func TestApplyUsageBillingEffects_SubscriptionCostCountsAsSettlementBasis(t *tes
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectQuery(supplierOwnerLookupSQL).
 		WithArgs(int64(7)).
-		WillReturnRows(sqlmock.NewRows([]string{"owner_user_id"}).AddRow(int64(99)))
+		WillReturnRows(sqlmock.NewRows([]string{"owner_user_id", "platform"}).AddRow(int64(99), "anthropic"))
 	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO supplier_credit_ledger")).
 		WithArgs(int64(99), service.SupplierCreditActionAccrue, 4.0, "req-sub", int64(7), int64(42), 8.0, 0.5, int64(0)).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(502)))
@@ -145,7 +185,7 @@ func TestApplyUsageBillingEffects_FirstPartyAccountAccruesNothing(t *testing.T) 
 		WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow(90.0))
 	mock.ExpectQuery(supplierOwnerLookupSQL).
 		WithArgs(int64(7)).
-		WillReturnRows(sqlmock.NewRows([]string{"owner_user_id"}).AddRow(nil))
+		WillReturnRows(sqlmock.NewRows([]string{"owner_user_id", "platform"}).AddRow(nil, nil))
 
 	result := &service.UsageBillingApplyResult{Applied: true}
 	err := (&usageBillingRepository{}).applyUsageBillingEffects(ctx, tx, &service.UsageBillingCommand{
@@ -170,7 +210,7 @@ func TestApplyUsageBillingEffects_SelfSuppliedRequestAccruesNothing(t *testing.T
 		WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow(90.0))
 	mock.ExpectQuery(supplierOwnerLookupSQL).
 		WithArgs(int64(7)).
-		WillReturnRows(sqlmock.NewRows([]string{"owner_user_id"}).AddRow(int64(42)))
+		WillReturnRows(sqlmock.NewRows([]string{"owner_user_id", "platform"}).AddRow(int64(42), "anthropic"))
 
 	result := &service.UsageBillingApplyResult{Applied: true}
 	err := (&usageBillingRepository{}).applyUsageBillingEffects(ctx, tx, &service.UsageBillingCommand{
@@ -221,7 +261,7 @@ func TestApplyUsageBillingEffects_WalletPaymentSkipsBalanceDeduction(t *testing.
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectQuery(supplierOwnerLookupSQL).
 		WithArgs(int64(7)).
-		WillReturnRows(sqlmock.NewRows([]string{"owner_user_id"}).AddRow(nil))
+		WillReturnRows(sqlmock.NewRows([]string{"owner_user_id", "platform"}).AddRow(nil, nil))
 
 	result := &service.UsageBillingApplyResult{Applied: true}
 	err := (&usageBillingRepository{}).applyUsageBillingEffects(ctx, tx, &service.UsageBillingCommand{
@@ -254,7 +294,7 @@ func TestApplyUsageBillingEffects_InsufficientWalletFallsBackToBalance(t *testin
 		WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow(90.0))
 	mock.ExpectQuery(supplierOwnerLookupSQL).
 		WithArgs(int64(7)).
-		WillReturnRows(sqlmock.NewRows([]string{"owner_user_id"}).AddRow(nil))
+		WillReturnRows(sqlmock.NewRows([]string{"owner_user_id", "platform"}).AddRow(nil, nil))
 
 	result := &service.UsageBillingApplyResult{Applied: true}
 	err := (&usageBillingRepository{}).applyUsageBillingEffects(ctx, tx, &service.UsageBillingCommand{
