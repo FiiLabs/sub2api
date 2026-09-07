@@ -327,9 +327,12 @@ async function acceptAgreement(version: string): Promise<SupplyAgreement> {
 /**
  * 发起一次授权。返回的 session_id 必须原样带回 completeOAuth——
  * state 和 code_verifier 留在服务端，前端拿不到，也就无从把它们喂给别的流程。
+ *
+ * platform 决定接哪个平台的订阅（anthropic / openai）。省略 = anthropic（服务端兜底），
+ * 兼容不传平台的旧调用。会话里存的平台是服务端权威，completeOAuth 不再重复传。
  */
-async function startOAuth(): Promise<StartOAuthResponse> {
-  const { data } = await apiClient.post<StartOAuthResponse>('/user/supply/oauth/start')
+async function startOAuth(platform?: string): Promise<StartOAuthResponse> {
+  const { data } = await apiClient.post<StartOAuthResponse>('/user/supply/oauth/start', { platform })
   return data
 }
 

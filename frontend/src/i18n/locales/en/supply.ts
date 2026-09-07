@@ -130,6 +130,9 @@ export default {
       // Served by the backend rather than hardcoded: it is an operator setting, and a
       // hardcoded number becomes a lie the moment operations changes it.
       shareRatio: 'Current revenue share: you keep {ratio} of every fee the platform charges the user.',
+      platformLabel: 'Which subscription do you want to share?',
+      platformAnthropic: 'Claude (Anthropic)',
+      platformOpenAI: 'ChatGPT (OpenAI / Codex)',
       start: 'Connect my subscription',
       starting: 'Generating authorization link…',
       step1: 'Step 1 — authorize in a new tab',

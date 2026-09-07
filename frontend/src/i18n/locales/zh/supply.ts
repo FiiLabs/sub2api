@@ -119,6 +119,9 @@ export default {
       // 比例由后端下发，不写死在文案里：它是运营随时可改的设置，
       // 写死的那个数会在运营改配置的那一刻变成一句谎话。
       shareRatio: '当前分成比例：平台向用户收取的每一笔费用，你拿其中的 {ratio}。',
+      platformLabel: '选择要共享的订阅平台',
+      platformAnthropic: 'Claude（Anthropic）',
+      platformOpenAI: 'ChatGPT（OpenAI / Codex）',
       start: '连接我的订阅',
       starting: '正在生成授权链接…',
       step1: '第 1 步：在新标签页里完成授权',

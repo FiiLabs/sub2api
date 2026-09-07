@@ -249,6 +249,27 @@
               }}
             </p>
 
+            <!-- 平台选择：接哪个平台的订阅。放在接入按钮之前——接入前先选平台，
+                 授权链接与探测模型都随之不同。只在还没发起授权时显示。 -->
+            <div v-if="!pendingAuth" class="mt-4" data-testid="supply-platform-select">
+              <p class="text-xs font-medium text-gray-500 dark:text-dark-400">{{ t('supply.connect.platformLabel') }}</p>
+              <div class="mt-2 inline-flex rounded-lg border border-gray-200 p-0.5 dark:border-dark-700">
+                <button
+                  v-for="opt in supplyPlatformOptions"
+                  :key="opt.value"
+                  type="button"
+                  class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
+                  :class="selectedPlatform === opt.value
+                    ? 'bg-primary-600 text-white'
+                    : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-800'"
+                  :data-testid="`supply-platform-${opt.value}`"
+                  @click="selectedPlatform = opt.value"
+                >
+                  {{ t(opt.labelKey) }}
+                </button>
+              </div>
+            </div>
+
             <button
               v-if="!pendingAuth"
               class="btn btn-primary mt-4"
@@ -1284,6 +1305,16 @@ const agreement = ref<SupplyAgreement>({ version: '', published: false, accepted
 
 const pendingAuth = ref<StartOAuthResponse | null>(null)
 
+// 接入哪个平台的订阅。默认 anthropic（旧行为）。服务端会把它写进会话、并作为权威。
+// 两个平台各自的接入是否开放由管理端配供给组决定；这里都列出来，服务端对未开放的平台
+// 会返回明确错误（比藏起来让人以为不存在更好排查）。
+type SupplyPlatform = 'anthropic' | 'openai'
+const selectedPlatform = ref<SupplyPlatform>('anthropic')
+const supplyPlatformOptions: { value: SupplyPlatform; labelKey: string }[] = [
+  { value: 'anthropic', labelKey: 'supply.connect.platformAnthropic' },
+  { value: 'openai', labelKey: 'supply.connect.platformOpenAI' },
+]
+
 // 中转接入（M7）。key 是 password 框、提交成功即清空——凭证不多留一秒。
 const submittingRelay = ref(false)
 const relayForm = ref({ base_url: '', api_key: '', name: '' })
@@ -1713,7 +1744,7 @@ async function submitRelay(): Promise<void> {
 async function startOAuth(): Promise<void> {
   starting.value = true
   try {
-    pendingAuth.value = await supplyAPI.startOAuth()
+    pendingAuth.value = await supplyAPI.startOAuth(selectedPlatform.value)
     authCode.value = ''
     accountName.value = ''
   } catch (error) {
