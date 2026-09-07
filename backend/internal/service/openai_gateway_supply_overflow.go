@@ -56,7 +56,7 @@ func (s *OpenAIGatewayService) overflowToFirstParty(
 		return result, err
 	}
 
-	if !allowSupplyOverflow(ctx, dailyLimit) {
+	if !allowSupplyOverflow(ctx, PlatformOpenAI, dailyLimit) {
 		slog.Warn("[SupplyPool][openai] daily overflow budget exhausted, not overflowing",
 			"supply_group_id", derefGroupID(groupID),
 			"overflow_group_id", overflowGroupID,
@@ -79,7 +79,7 @@ func (s *OpenAIGatewayService) overflowToFirstParty(
 			"overflow_group_id", overflowGroupID,
 			"model", requestedModel,
 			"error", overflowErr)
-		recordSupplyOverflowExhausted(ctx)
+		recordSupplyOverflowExhausted(ctx, PlatformOpenAI)
 		// 还回原始错误：请求打的是消费者自己的分组，报一个指向自营池的错误会误导排查。
 		return result, err
 	}

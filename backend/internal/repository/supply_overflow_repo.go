@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"strings"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -34,12 +35,12 @@ import (
 // 注意 INSERT 分支不受 limit 约束：当日第一次溢出时表里还没有行，没有可比的计数。
 // 这意味着 limit 实际的下限是 1（配成 0 表示不限量，不是禁止溢出——禁止溢出请关总开关）。
 const supplyOverflowConsumeSQL = `
-INSERT INTO supply_overflow_daily (day, overflow_count, denied_count)
-VALUES ($1, 1, 0)
-ON CONFLICT (day) DO UPDATE
+INSERT INTO supply_overflow_daily (day, pool_key, overflow_count, denied_count)
+VALUES ($1, $2, 1, 0)
+ON CONFLICT (day, pool_key) DO UPDATE
 SET overflow_count = supply_overflow_daily.overflow_count + 1,
     updated_at = NOW()
-WHERE supply_overflow_daily.overflow_count < $2
+WHERE supply_overflow_daily.overflow_count < $3
 RETURNING overflow_count`
 
 // supplyOverflowDenySQL 记一次「配额已满、没有溢出」。
@@ -48,9 +49,9 @@ RETURNING overflow_count`
 // 表示花了钱也可能表示省了钱。这条语句失败不影响判定结果（已经判定为拒绝了），
 // 所以调用方只记日志、不改变返回值。
 const supplyOverflowDenySQL = `
-INSERT INTO supply_overflow_daily (day, overflow_count, denied_count)
-VALUES ($1, 0, 1)
-ON CONFLICT (day) DO UPDATE
+INSERT INTO supply_overflow_daily (day, pool_key, overflow_count, denied_count)
+VALUES ($1, $2, 0, 1)
+ON CONFLICT (day, pool_key) DO UPDATE
 SET denied_count = supply_overflow_daily.denied_count + 1,
     updated_at = NOW()`
 
@@ -59,14 +60,21 @@ SET denied_count = supply_overflow_daily.denied_count + 1,
 // 形状与 denySQL 相同、语义正交：那个数的是「配额把我们拦住了」，这个数的是
 // 「我们放行了，但没货」。前者是平台在省钱，后者是**用户拿到了一个错误**。
 const supplyOverflowExhaustedSQL = `
-INSERT INTO supply_overflow_daily (day, overflow_count, denied_count, exhausted_count)
-VALUES ($1, 0, 0, 1)
-ON CONFLICT (day) DO UPDATE
+INSERT INTO supply_overflow_daily (day, pool_key, overflow_count, denied_count, exhausted_count)
+VALUES ($1, $2, 0, 0, 1)
+ON CONFLICT (day, pool_key) DO UPDATE
 SET exhausted_count = supply_overflow_daily.exhausted_count + 1,
     updated_at = NOW()`
 
+// 按池读当日计数。
 const supplyOverflowUsageSQL = `
 SELECT overflow_count, denied_count, exhausted_count
+FROM supply_overflow_daily
+WHERE day = $1 AND pool_key = $2`
+
+// 跨池汇总当日计数（poolKey 为空时用）：给面板/健康度的「今天全平台一共」读数。
+const supplyOverflowUsageAllSQL = `
+SELECT COALESCE(SUM(overflow_count), 0), COALESCE(SUM(denied_count), 0), COALESCE(SUM(exhausted_count), 0)
 FROM supply_overflow_daily
 WHERE day = $1`
 
@@ -83,13 +91,14 @@ func NewSupplyOverflowCounter(client *dbent.Client) service.SupplyOverflowCounte
 //
 // 返回 error 时调用方按 fail-closed 处理（不溢出）——所以这里**不吞任何错误**，
 // 只有 sql.ErrNoRows 被翻译成「配额已满」这个正常结果。
-func (r *supplyOverflowRepository) TryConsumeDailyOverflow(ctx context.Context, day time.Time, limit int) (bool, error) {
+func (r *supplyOverflowRepository) TryConsumeDailyOverflow(ctx context.Context, day time.Time, poolKey string, limit int) (bool, error) {
 	if r == nil || r.client == nil {
 		return false, fmt.Errorf("supply overflow counter unavailable")
 	}
 
+	poolKey = supplyOverflowPoolKey(poolKey)
 	dayKey := supplyOverflowDayKey(day)
-	rows, err := r.client.QueryContext(ctx, supplyOverflowConsumeSQL, dayKey, supplyOverflowLimitBound(limit))
+	rows, err := r.client.QueryContext(ctx, supplyOverflowConsumeSQL, dayKey, poolKey, supplyOverflowLimitBound(limit))
 	if err != nil {
 		return false, fmt.Errorf("consume supply overflow budget: %w", err)
 	}
@@ -114,14 +123,15 @@ func (r *supplyOverflowRepository) TryConsumeDailyOverflow(ctx context.Context, 
 
 	// 配额已满。记一次 denied 供运营看，写不进去也不改变判定——判定已经做完了，
 	// 因为一次统计写失败而放行才是错的那一边。
-	if _, denyErr := r.client.ExecContext(ctx, supplyOverflowDenySQL, dayKey); denyErr != nil {
-		slog.Warn("[SupplyPool] failed to record a denied overflow", "error", denyErr, "day", dayKey)
+	if _, denyErr := r.client.ExecContext(ctx, supplyOverflowDenySQL, dayKey, poolKey); denyErr != nil {
+		slog.Warn("[SupplyPool] failed to record a denied overflow", "error", denyErr, "day", dayKey, "pool", poolKey)
 	}
 	return false, nil
 }
 
 // GetDailyOverflowUsage 见 service.SupplyOverflowCounter。当日无记录返回零值而非错误。
-func (r *supplyOverflowRepository) GetDailyOverflowUsage(ctx context.Context, day time.Time) (*service.SupplyOverflowUsage, error) {
+// poolKey 为空 = 跨池汇总（面板/健康度的「今天全平台」读数）；非空 = 只看那个池。
+func (r *supplyOverflowRepository) GetDailyOverflowUsage(ctx context.Context, day time.Time, poolKey string) (*service.SupplyOverflowUsage, error) {
 	if r == nil || r.client == nil {
 		return nil, fmt.Errorf("supply overflow counter unavailable")
 	}
@@ -129,7 +139,13 @@ func (r *supplyOverflowRepository) GetDailyOverflowUsage(ctx context.Context, da
 	dayKey := supplyOverflowDayKey(day)
 	usage := &service.SupplyOverflowUsage{Day: dayKey}
 
-	rows, err := r.client.QueryContext(ctx, supplyOverflowUsageSQL, dayKey)
+	usageSQL := supplyOverflowUsageAllSQL
+	args := []any{dayKey}
+	if strings.TrimSpace(poolKey) != "" {
+		usageSQL = supplyOverflowUsageSQL
+		args = []any{dayKey, supplyOverflowPoolKey(poolKey)}
+	}
+	rows, err := r.client.QueryContext(ctx, usageSQL, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read supply overflow usage: %w", err)
 	}
@@ -148,14 +164,23 @@ func (r *supplyOverflowRepository) GetDailyOverflowUsage(ctx context.Context, da
 }
 
 // RecordOverflowExhausted 见 service.SupplyOverflowCounter。
-func (r *supplyOverflowRepository) RecordOverflowExhausted(ctx context.Context, day time.Time) error {
+func (r *supplyOverflowRepository) RecordOverflowExhausted(ctx context.Context, day time.Time, poolKey string) error {
 	if r == nil || r.client == nil {
 		return fmt.Errorf("supply overflow counter unavailable")
 	}
-	if _, err := r.client.ExecContext(ctx, supplyOverflowExhaustedSQL, supplyOverflowDayKey(day)); err != nil {
+	if _, err := r.client.ExecContext(ctx, supplyOverflowExhaustedSQL, supplyOverflowDayKey(day), supplyOverflowPoolKey(poolKey)); err != nil {
 		return fmt.Errorf("record exhausted overflow: %w", err)
 	}
 	return nil
+}
+
+// supplyOverflowPoolKey 归一化池键：空串兜底成 anthropic（历史/自营口径），与迁移 239 的列默认一致。
+func supplyOverflowPoolKey(poolKey string) string {
+	poolKey = strings.TrimSpace(poolKey)
+	if poolKey == "" {
+		return "anthropic"
+	}
+	return poolKey
 }
 
 // supplyOverflowDayKey 取平台时区下的自然日。

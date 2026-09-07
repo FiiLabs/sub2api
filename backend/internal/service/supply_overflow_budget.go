@@ -35,9 +35,9 @@ type SupplyOverflowCounter interface {
 	// limit <= 0 表示不限量（仍然计数）。返回 allowed=false 表示当日配额已满，
 	// 此时实现方应当把这一次记进 denied_count。error 非 nil 表示计数不可用，
 	// 调用方必须按 fail-closed 处理（不溢出）。
-	TryConsumeDailyOverflow(ctx context.Context, day time.Time, limit int) (allowed bool, err error)
-	// GetDailyOverflowUsage 读当日计数，不改动任何计数。
-	GetDailyOverflowUsage(ctx context.Context, day time.Time) (*SupplyOverflowUsage, error)
+	TryConsumeDailyOverflow(ctx context.Context, day time.Time, poolKey string, limit int) (allowed bool, err error)
+	// GetDailyOverflowUsage 读当日计数，不改动任何计数。poolKey 为空 = 跨池汇总。
+	GetDailyOverflowUsage(ctx context.Context, day time.Time, poolKey string) (*SupplyOverflowUsage, error)
 	// RecordOverflowExhausted 记一次「溢出了，但兜底池也空了」。
 	//
 	// 与前两个计数正交：那两个说的是溢出这条路上发生了什么，这个说的是
@@ -45,7 +45,7 @@ type SupplyOverflowCounter interface {
 	//
 	// 不返回给调用方任何判定——写失败只记日志。这一步发生在请求已经注定失败
 	// 之后，为一次统计写失败再叠一层错误没有任何人受益。
-	RecordOverflowExhausted(ctx context.Context, day time.Time) error
+	RecordOverflowExhausted(ctx context.Context, day time.Time, poolKey string) error
 }
 
 // SupplyOverflowUsage 是管理端要看的当日读数。
@@ -103,16 +103,16 @@ func loadSupplyOverflowCounter() SupplyOverflowCounter {
 // 没有配置计数器时（例如单实例部署下这个 provider 没接上、或单测里）返回 true：
 // 那是「本功能没装」而不是「配额已满」，把它当成满会静默地关掉溢出，比不装更难查。
 // 真正的 fail-closed 只针对**装了但报错**——那是「装了却不知道花了多少」。
-func allowSupplyOverflow(ctx context.Context, limit int) bool {
+func allowSupplyOverflow(ctx context.Context, poolKey string, limit int) bool {
 	counter := loadSupplyOverflowCounter()
 	if counter == nil {
 		return true
 	}
 
-	allowed, err := counter.TryConsumeDailyOverflow(ctx, timezone.Now(), limit)
+	allowed, err := counter.TryConsumeDailyOverflow(ctx, timezone.Now(), poolKey, limit)
 	if err != nil {
 		slog.Warn("[SupplyPool] overflow budget counter unavailable, refusing to overflow",
-			"error", err, "daily_limit", limit)
+			"error", err, "pool", poolKey, "daily_limit", limit)
 		return false
 	}
 	return allowed
@@ -127,15 +127,15 @@ func allowSupplyOverflow(ctx context.Context, limit int) bool {
 // 用 context.WithoutCancel：客户端此刻多半正在断开（他刚拿到一个错误），
 // 而这个计数恰恰在那种时刻最该被记下来。跟着请求 ctx 一起被取消的话，
 // 越是集中爆发的耗尽，越是数不到。
-func recordSupplyOverflowExhausted(ctx context.Context) {
+func recordSupplyOverflowExhausted(ctx context.Context, poolKey string) {
 	counter := loadSupplyOverflowCounter()
 	if counter == nil {
 		return
 	}
 	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), supplyOverflowRecordTimeout)
 	defer cancel()
-	if err := counter.RecordOverflowExhausted(writeCtx, timezone.Now()); err != nil {
-		slog.Warn("[SupplyPool] failed to record an exhausted overflow", "error", err)
+	if err := counter.RecordOverflowExhausted(writeCtx, timezone.Now(), poolKey); err != nil {
+		slog.Warn("[SupplyPool] failed to record an exhausted overflow", "error", err, "pool", poolKey)
 	}
 }
 
@@ -156,7 +156,8 @@ func (s *SettingService) GetSupplyOverflowUsage(ctx context.Context) *SupplyOver
 	if counter == nil {
 		return empty
 	}
-	usage, err := counter.GetDailyOverflowUsage(ctx, day)
+	// poolKey 传空 = 跨池汇总：面板/健康度的 ExhaustedToday 是「今天全平台一共」。
+	usage, err := counter.GetDailyOverflowUsage(ctx, day, "")
 	if err != nil {
 		slog.Warn("[SupplyPool] failed to read overflow usage", "error", err)
 		return empty

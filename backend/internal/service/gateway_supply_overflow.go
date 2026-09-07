@@ -55,7 +55,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 
 	// 日配额闸门。放在解析之后是有意的：只有确实该溢出的请求才去消耗配额，
 	// 否则任何一个空分组的耗尽都会把供给池的预算吃掉。
-	if !allowSupplyOverflow(ctx, dailyLimit) {
+	if !allowSupplyOverflow(ctx, PlatformAnthropic, dailyLimit) {
 		// Warn 而非 Error：配额生效时平台在**省钱**，这不是故障。但它同时说明
 		// 供给侧规模已经明显跟不上需求，是要人看的经营信号。
 		slog.Warn("[SupplyPool] daily overflow budget exhausted, not overflowing",
@@ -83,7 +83,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 			"error", overflowErr)
 		// 这一刻消费者会拿到 "No available accounts"。数下来（迁移 236）——
 		// 它是「兜底账号够不够」的唯一信号，只留一条日志等于没人会回答这个问题。
-		recordSupplyOverflowExhausted(ctx)
+		recordSupplyOverflowExhausted(ctx, PlatformAnthropic)
 		// 还回**原始**错误：请求打的是消费者自己的分组，报一个指向自营池的错误
 		// 会把排查的人引到错误的池子上去。溢出池的失败已经单独记在上面那条日志里。
 		return result, err

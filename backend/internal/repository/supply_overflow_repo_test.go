@@ -26,10 +26,10 @@ func overflowDay(t *testing.T) time.Time {
 func TestSupplyOverflowConsumeSQLDecidesAndCountsInOneStatement(t *testing.T) {
 	normalized := normalizeSQL(supplyOverflowConsumeSQL)
 
-	require.Contains(t, normalized, "ON CONFLICT (day) DO UPDATE")
+	require.Contains(t, normalized, "ON CONFLICT (day, pool_key) DO UPDATE")
 	require.Contains(t, normalized, "SET overflow_count = supply_overflow_daily.overflow_count + 1")
-	// WHERE 挂在 DO UPDATE 上：判定和加一发生在同一个行锁里。
-	require.Contains(t, normalized, "WHERE supply_overflow_daily.overflow_count < $2")
+	// WHERE 挂在 DO UPDATE 上：判定和加一发生在同一个行锁里。limit 现是 $3（$2 是 pool_key）。
+	require.Contains(t, normalized, "WHERE supply_overflow_daily.overflow_count < $3")
 	// 有没有返回行就是判定结果，所以 RETURNING 不能被删掉。
 	require.Contains(t, normalized, "RETURNING overflow_count")
 }
@@ -48,21 +48,26 @@ func TestSupplyOverflowSQLMatchesMigration(t *testing.T) {
 	normalized := normalizeSQL(string(migration))
 
 	require.Contains(t, normalized, "CREATE TABLE IF NOT EXISTS supply_overflow_daily")
-	// day 是主键，ON CONFLICT (day) 才有可推断的唯一约束——写成普通列会直接报错。
-	require.Contains(t, normalized, "day DATE PRIMARY KEY")
 	require.Contains(t, normalized, "overflow_count BIGINT NOT NULL DEFAULT 0")
 	require.Contains(t, normalized, "denied_count BIGINT NOT NULL DEFAULT 0")
+
+	// 迁移 239 把主键改成 (day, pool_key)——ON CONFLICT (day, pool_key) 的唯一约束靠它。
+	migration239, err := os.ReadFile("../../migrations/239_supply_overflow_daily_pool_key.sql")
+	require.NoError(t, err)
+	normalized239 := normalizeSQL(string(migration239))
+	require.Contains(t, normalized239, "ADD COLUMN IF NOT EXISTS pool_key")
+	require.Contains(t, normalized239, "ADD PRIMARY KEY (day, pool_key)")
 }
 
 func TestTryConsumeDailyOverflowAllowsWhenRowReturned(t *testing.T) {
 	client, mock := newSupplierCreditMock(t)
 
 	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO supply_overflow_daily")).
-		WithArgs("2026-08-18", int64(500)).
+		WithArgs("2026-08-18", "anthropic", int64(500)).
 		WillReturnRows(sqlmock.NewRows([]string{"overflow_count"}).AddRow(int64(12)))
 
 	allowed, err := NewSupplyOverflowCounter(client).
-		TryConsumeDailyOverflow(context.Background(), overflowDay(t), 500)
+		TryConsumeDailyOverflow(context.Background(), overflowDay(t), "anthropic", 500)
 	require.NoError(t, err)
 	require.True(t, allowed)
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -73,14 +78,14 @@ func TestTryConsumeDailyOverflowDeniesAndRecordsWhenExhausted(t *testing.T) {
 	client, mock := newSupplierCreditMock(t)
 
 	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO supply_overflow_daily")).
-		WithArgs("2026-08-18", int64(5)).
+		WithArgs("2026-08-18", "anthropic", int64(5)).
 		WillReturnRows(sqlmock.NewRows([]string{"overflow_count"}))
 	mock.ExpectExec(regexp.QuoteMeta("SET denied_count")).
-		WithArgs("2026-08-18").
+		WithArgs("2026-08-18", "anthropic").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	allowed, err := NewSupplyOverflowCounter(client).
-		TryConsumeDailyOverflow(context.Background(), overflowDay(t), 5)
+		TryConsumeDailyOverflow(context.Background(), overflowDay(t), "anthropic", 5)
 	require.NoError(t, err)
 	require.False(t, allowed)
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -96,7 +101,7 @@ func TestTryConsumeDailyOverflowStaysDeniedWhenDenyWriteFails(t *testing.T) {
 		WillReturnError(errors.New("write failed"))
 
 	allowed, err := NewSupplyOverflowCounter(client).
-		TryConsumeDailyOverflow(context.Background(), overflowDay(t), 5)
+		TryConsumeDailyOverflow(context.Background(), overflowDay(t), "anthropic", 5)
 	require.NoError(t, err)
 	require.False(t, allowed)
 }
@@ -110,7 +115,7 @@ func TestTryConsumeDailyOverflowReturnsErrorOnQueryFailure(t *testing.T) {
 		WillReturnError(errors.New("db down"))
 
 	allowed, err := NewSupplyOverflowCounter(client).
-		TryConsumeDailyOverflow(context.Background(), overflowDay(t), 5)
+		TryConsumeDailyOverflow(context.Background(), overflowDay(t), "anthropic", 5)
 	require.Error(t, err)
 	require.False(t, allowed)
 }
@@ -127,11 +132,11 @@ func TestGetDailyOverflowUsageReturnsZeroForDayWithoutRow(t *testing.T) {
 	client, mock := newSupplierCreditMock(t)
 
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT overflow_count, denied_count")).
-		WithArgs("2026-08-18").
+		WithArgs("2026-08-18", "anthropic").
 		WillReturnRows(sqlmock.NewRows([]string{"overflow_count", "denied_count"}))
 
 	usage, err := NewSupplyOverflowCounter(client).
-		GetDailyOverflowUsage(context.Background(), overflowDay(t))
+		GetDailyOverflowUsage(context.Background(), overflowDay(t), "anthropic")
 	require.NoError(t, err)
 	require.NotNil(t, usage)
 	require.Equal(t, "2026-08-18", usage.Day)
@@ -148,12 +153,12 @@ func TestGetDailyOverflowUsageReadsAllThreeCounters(t *testing.T) {
 	client, mock := newSupplierCreditMock(t)
 
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT overflow_count, denied_count, exhausted_count")).
-		WithArgs("2026-08-18").
+		WithArgs("2026-08-18", "anthropic").
 		WillReturnRows(sqlmock.NewRows([]string{"overflow_count", "denied_count", "exhausted_count"}).
 			AddRow(int64(31), int64(4), int64(7)))
 
 	usage, err := NewSupplyOverflowCounter(client).
-		GetDailyOverflowUsage(context.Background(), overflowDay(t))
+		GetDailyOverflowUsage(context.Background(), overflowDay(t), "anthropic")
 	require.NoError(t, err)
 	require.Equal(t, int64(31), usage.OverflowCount)
 	require.Equal(t, int64(4), usage.DeniedCount)
@@ -169,11 +174,11 @@ func TestRecordOverflowExhaustedTouchesOnlyItsOwnColumn(t *testing.T) {
 	client, mock := newSupplierCreditMock(t)
 
 	mock.ExpectExec(regexp.QuoteMeta("SET exhausted_count = supply_overflow_daily.exhausted_count + 1")).
-		WithArgs("2026-08-18").
+		WithArgs("2026-08-18", "anthropic").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	err := NewSupplyOverflowCounter(client).
-		RecordOverflowExhausted(context.Background(), overflowDay(t))
+		RecordOverflowExhausted(context.Background(), overflowDay(t), "anthropic")
 	require.NoError(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
@@ -187,11 +192,11 @@ func TestRecordOverflowExhaustedReportsWriteFailure(t *testing.T) {
 	client, mock := newSupplierCreditMock(t)
 
 	mock.ExpectExec(regexp.QuoteMeta("SET exhausted_count")).
-		WithArgs("2026-08-18").
+		WithArgs("2026-08-18", "anthropic").
 		WillReturnError(errors.New("db down"))
 
 	err := NewSupplyOverflowCounter(client).
-		RecordOverflowExhausted(context.Background(), overflowDay(t))
+		RecordOverflowExhausted(context.Background(), overflowDay(t), "anthropic")
 	require.Error(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())
 }

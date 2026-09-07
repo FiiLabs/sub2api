@@ -52,16 +52,16 @@ func TestSupplyOverflow_QuotaAllowsExactlyLimitTimes(t *testing.T) {
 	const limit = 3
 
 	for i := 1; i <= limit; i++ {
-		allowed, err := counter.TryConsumeDailyOverflow(txCtx, day, limit)
+		allowed, err := counter.TryConsumeDailyOverflow(txCtx, day, "anthropic", limit)
 		require.NoError(t, err)
 		require.True(t, allowed, "第 %d 次溢出应在配额内", i)
 	}
 
-	allowed, err := counter.TryConsumeDailyOverflow(txCtx, day, limit)
+	allowed, err := counter.TryConsumeDailyOverflow(txCtx, day, "anthropic", limit)
 	require.NoError(t, err)
 	require.False(t, allowed, "配额用满后必须拒绝")
 
-	usage, err := counter.GetDailyOverflowUsage(txCtx, day)
+	usage, err := counter.GetDailyOverflowUsage(txCtx, day, "anthropic")
 	require.NoError(t, err)
 	require.Equal(t, int64(limit), usage.OverflowCount, "被拒的那次不能计进已花的钱")
 	require.Equal(t, int64(1), usage.DeniedCount)
@@ -79,12 +79,12 @@ func TestSupplyOverflow_ZeroLimitMeansUnlimitedButStillCounts(t *testing.T) {
 
 	day := nextOverflowDay(t)
 	for i := 0; i < 5; i++ {
-		allowed, err := counter.TryConsumeDailyOverflow(txCtx, day, 0)
+		allowed, err := counter.TryConsumeDailyOverflow(txCtx, day, "anthropic", 0)
 		require.NoError(t, err)
 		require.True(t, allowed)
 	}
 
-	usage, err := counter.GetDailyOverflowUsage(txCtx, day)
+	usage, err := counter.GetDailyOverflowUsage(txCtx, day, "anthropic")
 	require.NoError(t, err)
 	require.Equal(t, int64(5), usage.OverflowCount)
 	require.Zero(t, usage.DeniedCount)
@@ -101,19 +101,19 @@ func TestSupplyOverflow_QuotaResetsPerDay(t *testing.T) {
 	yesterday := nextOverflowDay(t)
 	today := yesterday.AddDate(0, 0, 1)
 
-	allowed, err := counter.TryConsumeDailyOverflow(txCtx, yesterday, 1)
+	allowed, err := counter.TryConsumeDailyOverflow(txCtx, yesterday, "anthropic", 1)
 	require.NoError(t, err)
 	require.True(t, allowed)
-	allowed, err = counter.TryConsumeDailyOverflow(txCtx, yesterday, 1)
+	allowed, err = counter.TryConsumeDailyOverflow(txCtx, yesterday, "anthropic", 1)
 	require.NoError(t, err)
 	require.False(t, allowed)
 
-	allowed, err = counter.TryConsumeDailyOverflow(txCtx, today, 1)
+	allowed, err = counter.TryConsumeDailyOverflow(txCtx, today, "anthropic", 1)
 	require.NoError(t, err)
 	require.True(t, allowed, "跨日必须重置")
 
 	// 两天各自独立记账。
-	usage, err := counter.GetDailyOverflowUsage(txCtx, yesterday)
+	usage, err := counter.GetDailyOverflowUsage(txCtx, yesterday, "anthropic")
 	require.NoError(t, err)
 	require.Equal(t, int64(1), usage.OverflowCount)
 	require.Equal(t, int64(1), usage.DeniedCount)
@@ -127,7 +127,7 @@ func TestSupplyOverflow_UsageIsZeroWhenNothingHappened(t *testing.T) {
 	client := tx.Client()
 	counter := NewSupplyOverflowCounter(client)
 
-	usage, err := counter.GetDailyOverflowUsage(txCtx, nextOverflowDay(t))
+	usage, err := counter.GetDailyOverflowUsage(txCtx, nextOverflowDay(t), "anthropic")
 	require.NoError(t, err)
 	require.NotNil(t, usage)
 	require.Zero(t, usage.OverflowCount)
@@ -168,7 +168,7 @@ func TestSupplyOverflow_ConcurrentConsumersNeverExceedQuota(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start // 尽量让所有请求挤在同一瞬间
-			allowed, err := counter.TryConsumeDailyOverflow(ctx, day, limit)
+			allowed, err := counter.TryConsumeDailyOverflow(ctx, day, "anthropic", limit)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
@@ -186,7 +186,7 @@ func TestSupplyOverflow_ConcurrentConsumersNeverExceedQuota(t *testing.T) {
 	require.Empty(t, errs, "并发消耗配额不该报错：报错会被上层当成 fail-closed，白白拒掉本可溢出的请求")
 	require.Equal(t, limit, granted, "放行次数必须恰好等于配额——多一次就是平台多亏一次钱")
 
-	usage, err := counter.GetDailyOverflowUsage(ctx, day)
+	usage, err := counter.GetDailyOverflowUsage(ctx, day, "anthropic")
 	require.NoError(t, err)
 	require.Equal(t, int64(limit), usage.OverflowCount)
 	require.Equal(t, int64(attempts-limit), usage.DeniedCount,
@@ -209,21 +209,21 @@ func TestSupplyOverflow_ExhaustedCountIsIndependentOfTheOtherTwo(t *testing.T) {
 
 	// 先只记「兜底也空了」——此时当日还没有任何一行。
 	// 这一步同时钉住 INSERT 分支：第一次记录时不能因为缺行而丢掉。
-	require.NoError(t, counter.RecordOverflowExhausted(txCtx, day))
-	require.NoError(t, counter.RecordOverflowExhausted(txCtx, day))
+	require.NoError(t, counter.RecordOverflowExhausted(txCtx, day, "anthropic"))
+	require.NoError(t, counter.RecordOverflowExhausted(txCtx, day, "anthropic"))
 
-	usage, err := counter.GetDailyOverflowUsage(txCtx, day)
+	usage, err := counter.GetDailyOverflowUsage(txCtx, day, "anthropic")
 	require.NoError(t, err)
 	require.Equal(t, int64(2), usage.ExhaustedCount)
 	require.Zero(t, usage.OverflowCount, "记兜底耗尽却把溢出数也加了——面板会以为平台在花钱供货")
 	require.Zero(t, usage.DeniedCount, "记兜底耗尽却把配额拒绝数也加了——运营会去调预算，而该做的是加账号")
 
 	// 再叠一次真实溢出：走的是 UPDATE 分支，不能把已有的 exhausted 抹掉。
-	allowed, err := counter.TryConsumeDailyOverflow(txCtx, day, 0)
+	allowed, err := counter.TryConsumeDailyOverflow(txCtx, day, "anthropic", 0)
 	require.NoError(t, err)
 	require.True(t, allowed)
 
-	usage, err = counter.GetDailyOverflowUsage(txCtx, day)
+	usage, err = counter.GetDailyOverflowUsage(txCtx, day, "anthropic")
 	require.NoError(t, err)
 	require.Equal(t, int64(1), usage.OverflowCount)
 	require.Equal(t, int64(2), usage.ExhaustedCount, "溢出计数的 upsert 把兜底耗尽数覆盖掉了")

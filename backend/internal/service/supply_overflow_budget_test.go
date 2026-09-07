@@ -34,18 +34,18 @@ type stubOverflowCounter struct {
 	exhaustedDays []string
 }
 
-func (s *stubOverflowCounter) TryConsumeDailyOverflow(_ context.Context, day time.Time, limit int) (bool, error) {
+func (s *stubOverflowCounter) TryConsumeDailyOverflow(_ context.Context, day time.Time, _ string, limit int) (bool, error) {
 	s.calls = append(s.calls, limit)
 	s.daysSeen = append(s.daysSeen, day.Format("2006-01-02"))
 	return s.allowed, s.err
 }
 
-func (s *stubOverflowCounter) GetDailyOverflowUsage(_ context.Context, _ time.Time) (*SupplyOverflowUsage, error) {
+func (s *stubOverflowCounter) GetDailyOverflowUsage(_ context.Context, _ time.Time, _ string) (*SupplyOverflowUsage, error) {
 	s.usageCalls++
 	return s.usage, s.usageErr
 }
 
-func (s *stubOverflowCounter) RecordOverflowExhausted(_ context.Context, day time.Time) error {
+func (s *stubOverflowCounter) RecordOverflowExhausted(_ context.Context, day time.Time, _ string) error {
 	s.exhaustedCalls++
 	s.exhaustedDays = append(s.exhaustedDays, day.Format("2006-01-02"))
 	return s.exhaustedErr
@@ -64,27 +64,27 @@ func withOverflowCounter(t *testing.T, counter SupplyOverflowCounter) {
 func TestAllowSupplyOverflow_NoCounterInstalledAllows(t *testing.T) {
 	// 「本功能没装」不等于「配额已满」。当成满会静默地关掉溢出，比不装更难查。
 	SetSupplyOverflowCounter(nil)
-	assert.True(t, allowSupplyOverflow(context.Background(), 100))
+	assert.True(t, allowSupplyOverflow(context.Background(), "anthropic", 100))
 }
 
 func TestAllowSupplyOverflow_PassesLimitThroughAndHonorsVerdict(t *testing.T) {
 	counter := &stubOverflowCounter{allowed: true}
 	withOverflowCounter(t, counter)
 
-	assert.True(t, allowSupplyOverflow(context.Background(), 42))
+	assert.True(t, allowSupplyOverflow(context.Background(), "anthropic", 42))
 	require.Equal(t, []int{42}, counter.calls)
 	// 「今天」按平台时区算，不是 UTC：否则中国部署的配额会在早上八点才重置。
 	assert.Equal(t, []string{timezone.Now().Format("2006-01-02")}, counter.daysSeen)
 
 	counter.allowed = false
-	assert.False(t, allowSupplyOverflow(context.Background(), 42))
+	assert.False(t, allowSupplyOverflow(context.Background(), "anthropic", 42))
 	require.Len(t, counter.calls, 2)
 }
 
 func TestAllowSupplyOverflow_FailsClosedOnCounterError(t *testing.T) {
 	// 装了却读不出来 = 「不知道今天花了多少」。花平台的钱的决定不能建立在这个之上。
 	withOverflowCounter(t, &stubOverflowCounter{allowed: true, err: errors.New("db down")})
-	assert.False(t, allowSupplyOverflow(context.Background(), 100))
+	assert.False(t, allowSupplyOverflow(context.Background(), "anthropic", 100))
 }
 
 func TestGetSupplyOverflowUsage_ReturnsZeroValueInsteadOfError(t *testing.T) {
