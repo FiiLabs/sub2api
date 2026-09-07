@@ -21,10 +21,11 @@ import (
 // 单独定义而不是直接回 service 结构体：service 那个类型在计费热路径上被读，
 // 给它加 json tag 之外的展示字段（比如下面的 *_max）会让热路径带上只有面板需要的东西。
 type SupplierSettlementSettingsResponse struct {
-	Enabled              bool    `json:"enabled"`
-	ShareRatio           float64 `json:"share_ratio"`
-	FreezeHours          int     `json:"freeze_hours"`
-	SpendFromWalletFirst bool    `json:"spend_from_wallet_first"`
+	Enabled              bool               `json:"enabled"`
+	ShareRatio           float64            `json:"share_ratio"`
+	FreezeHours          int                `json:"freeze_hours"`
+	SpendFromWalletFirst bool               `json:"spend_from_wallet_first"`
+	ShareRatioByPlatform map[string]float64 `json:"share_ratio_by_platform,omitempty"`
 
 	// 边界值随配置一起下发，前端不必把这两个数抄一遍。抄一遍的下场是后端改了上限、
 	// 前端还在按旧值拦，用户看到的是一个前端说不行、后端其实允许的值。
@@ -44,6 +45,7 @@ func newSupplierSettlementSettingsResponse(s *service.SupplierSettlementSettings
 	resp.ShareRatio = s.ShareRatio
 	resp.FreezeHours = s.FreezeHours
 	resp.SpendFromWalletFirst = s.SpendFromWalletFirst
+	resp.ShareRatioByPlatform = s.ShareRatioByPlatform
 	return resp
 }
 
@@ -68,6 +70,8 @@ type UpdateSupplierSettlementSettingsRequest struct {
 	ShareRatio           float64 `json:"share_ratio"`
 	FreezeHours          int     `json:"freeze_hours"`
 	SpendFromWalletFirst bool    `json:"spend_from_wallet_first"`
+	// ShareRatioByPlatform 按平台覆盖分成（键=账号平台，如 openai）。可空，缺省回落 ShareRatio。
+	ShareRatioByPlatform map[string]float64 `json:"share_ratio_by_platform"`
 }
 
 // UpdateSupplierSettlementSettings 写结算参数
@@ -88,6 +92,7 @@ func (h *SettingHandler) UpdateSupplierSettlementSettings(c *gin.Context) {
 		ShareRatio:           req.ShareRatio,
 		FreezeHours:          req.FreezeHours,
 		SpendFromWalletFirst: req.SpendFromWalletFirst,
+		ShareRatioByPlatform: req.ShareRatioByPlatform,
 	}
 	if err := h.settingService.SetSupplierSettlementSettings(c.Request.Context(), settings); err != nil {
 		response.BadRequest(c, err.Error())
@@ -105,10 +110,11 @@ func (h *SettingHandler) UpdateSupplierSettlementSettings(c *gin.Context) {
 // 配置与当日用量放在同一个响应里，是因为它们只有对照着看才有意义：单看「配额 500」
 // 说明不了任何事，「配额 500 / 今天已用 487」才是一个要管理员做决定的画面。
 type SupplyPoolSettingsResponse struct {
-	Enabled            bool  `json:"enabled"`
-	SupplyGroupID      int64 `json:"supply_group_id"`
-	OverflowGroupID    int64 `json:"overflow_group_id"`
-	DailyOverflowLimit int   `json:"daily_overflow_limit"`
+	Enabled            bool                              `json:"enabled"`
+	SupplyGroupID      int64                             `json:"supply_group_id"`
+	OverflowGroupID    int64                             `json:"overflow_group_id"`
+	DailyOverflowLimit int                               `json:"daily_overflow_limit"`
+	Pools              map[string]service.SupplyPoolPair `json:"pools,omitempty"`
 
 	// 以下为只读用量，PUT 时会被忽略。
 	UsageDay            string `json:"usage_day"`
@@ -123,6 +129,7 @@ func newSupplyPoolSettingsResponse(s *service.SupplyPoolSettings, usage *service
 		resp.SupplyGroupID = s.SupplyGroupID
 		resp.OverflowGroupID = s.OverflowGroupID
 		resp.DailyOverflowLimit = s.DailyOverflowLimit
+		resp.Pools = s.Pools
 	}
 	if usage != nil {
 		resp.UsageDay = usage.Day
@@ -151,6 +158,8 @@ type UpdateSupplyPoolSettingsRequest struct {
 	SupplyGroupID      int64 `json:"supply_group_id"`
 	OverflowGroupID    int64 `json:"overflow_group_id"`
 	DailyOverflowLimit *int  `json:"daily_overflow_limit"`
+	// Pools 非 anthropic 平台的池（键=平台，如 openai）。顶层三字段是 anthropic 默认池。
+	Pools map[string]service.SupplyPoolPair `json:"pools"`
 }
 
 // UpdateSupplyPoolSettings 写供给池路由配置
@@ -171,6 +180,7 @@ func (h *SettingHandler) UpdateSupplyPoolSettings(c *gin.Context) {
 		SupplyGroupID:      req.SupplyGroupID,
 		OverflowGroupID:    req.OverflowGroupID,
 		DailyOverflowLimit: h.settingService.GetSupplyPoolSettings(ctx).DailyOverflowLimit,
+		Pools:              req.Pools,
 	}
 	if req.DailyOverflowLimit != nil {
 		if *req.DailyOverflowLimit < 0 {
