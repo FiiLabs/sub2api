@@ -181,6 +181,11 @@ type SupplierStartOAuthResponse struct {
 	SessionID string `json:"session_id"`
 }
 
+// SupplierStartOAuthRequest 发起授权的请求体。platform 可空（默认 anthropic）。
+type SupplierStartOAuthRequest struct {
+	Platform string `json:"platform"`
+}
+
 // StartOAuth 发起一次授权。
 // POST /api/v1/user/supply/oauth/start
 func (h *SupplierHandler) StartOAuth(c *gin.Context) {
@@ -193,8 +198,12 @@ func (h *SupplierHandler) StartOAuth(c *gin.Context) {
 		return
 	}
 
+	// platform 可空（旧前端不传 = anthropic，服务端 normalize 兜底）。body 可缺省。
+	var req SupplierStartOAuthRequest
+	_ = c.ShouldBindJSON(&req)
+
 	// IP 在这一层取，理由同 AcceptAgreement：它是 HTTP 层的事实。
-	auth, err := h.onboardingService.StartOAuth(c.Request.Context(), userID, c.ClientIP())
+	auth, err := h.onboardingService.StartOAuth(c.Request.Context(), userID, req.Platform, c.ClientIP())
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

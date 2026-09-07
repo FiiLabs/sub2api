@@ -25,8 +25,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/Wei-Shaw/sub2api/internal/pkg/oauth"
 )
 
 const (
@@ -121,8 +119,10 @@ type supplierAccountStore interface {
 type SupplierOnboardingService struct {
 	repo        SupplierOnboardingRepository
 	accountRepo supplierAccountStore
-	oauth       supplierClaudeOAuth
-	settings    supplierSettingsReader
+	// providers 按平台（accounts.Platform 值）分发 OAuth 协议能力。
+	// anthropic 恒有；openai 在 OpenAIOAuthService 可用时注入。见 supplier_oauth_provider.go。
+	providers map[string]supplierOAuthProvider
+	settings  supplierSettingsReader
 	// incidents 失效熔断的判据来源。可选，见 SetIncidentGuard。
 	incidents supplierIncidentGuard
 	// dailyUsageReader 每日共享上限的「今日已用」来源。可选，见 SetDailyUsageReader。
@@ -155,18 +155,49 @@ type supplierIncidentGuard interface {
 }
 
 // NewSupplierOnboardingService 构造自助接入服务。
+//
+// openaiOAuthService 可为 nil（部署未启用 OpenAI 时）——那时只注册 anthropic provider，
+// 请求 openai 接入会在 providerFor 处拿到「平台不支持」。anthropic provider 恒注册。
 func NewSupplierOnboardingService(
 	repo SupplierOnboardingRepository,
 	accountRepo AccountRepository,
 	oauthService *OAuthService,
+	openaiOAuthService *OpenAIOAuthService,
 	settingService *SettingService,
 ) *SupplierOnboardingService {
+	providers := map[string]supplierOAuthProvider{
+		PlatformAnthropic: claudeSupplierProvider{svc: oauthService},
+	}
+	if openaiOAuthService != nil {
+		providers[PlatformOpenAI] = openaiSupplierProvider{svc: openaiOAuthService}
+	}
 	return &SupplierOnboardingService{
 		repo:        repo,
 		accountRepo: accountRepo,
-		oauth:       oauthService,
+		providers:   providers,
 		settings:    settingService,
 	}
+}
+
+// providerFor 取某平台的 OAuth provider。未注册 → ErrSupplierOnboardingUnsupportedPlatform。
+func (s *SupplierOnboardingService) providerFor(platform string) (supplierOAuthProvider, error) {
+	if s == nil || s.providers == nil {
+		return nil, ErrSupplierOnboardingDisabled
+	}
+	p, ok := s.providers[platform]
+	if !ok || p == nil {
+		return nil, ErrSupplierOnboardingUnsupportedPlatform
+	}
+	return p, nil
+}
+
+// normalizeSupplyPlatform 把外部传入的平台值归一；空串默认 anthropic（向后兼容旧前端）。
+func normalizeSupplyPlatform(platform string) string {
+	platform = strings.TrimSpace(strings.ToLower(platform))
+	if platform == "" {
+		return PlatformAnthropic
+	}
+	return platform
 }
 
 // SetIncidentGuard 注入失效熔断的判据来源。为 nil 时这道闸整个不存在。
@@ -203,20 +234,46 @@ func (s *SupplierOnboardingService) SetIncidentGuard(guard *SupplierIncidentServ
 //
 // 两件事合成一个判断是刻意的：没有供给池分组，账号建出来就没有池可进，
 // 「接入成功但永远不会被调度」是一个比「暂不开放」更难解释的状态。
-func (s *SupplierOnboardingService) supplyGroupID(ctx context.Context) (int64, bool) {
+func (s *SupplierOnboardingService) supplyGroupID(ctx context.Context, platform string) (int64, bool) {
 	if s == nil || s.settings == nil {
 		return 0, false
 	}
 	settings := s.settings.GetSupplyPoolSettings(ctx)
-	if settings == nil || !settings.Enabled || settings.SupplyGroupID <= 0 {
+	if settings == nil || !settings.Enabled {
 		return 0, false
 	}
-	return settings.SupplyGroupID, true
+	gid := settings.supplyGroupIDFor(platform)
+	if gid <= 0 {
+		return 0, false
+	}
+	return gid, true
 }
 
-// IsEnabled 供前端决定要不要显示接入入口。
+// IsEnabled 供前端决定要不要显示接入入口：任一支持的平台配了供给组即视为开放。
 func (s *SupplierOnboardingService) IsEnabled(ctx context.Context) bool {
-	_, ok := s.supplyGroupID(ctx)
+	if s == nil || s.settings == nil {
+		return false
+	}
+	settings := s.settings.GetSupplyPoolSettings(ctx)
+	if settings == nil || !settings.Enabled {
+		return false
+	}
+	for platform := range s.providers {
+		if settings.supplyGroupIDFor(platform) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// IsEnabledForPlatform 某个平台的接入是否开放（有 provider 且配了供给组）。
+// 供前端接入卡决定平台选项亮不亮。
+func (s *SupplierOnboardingService) IsEnabledForPlatform(ctx context.Context, platform string) bool {
+	platform = normalizeSupplyPlatform(platform)
+	if _, err := s.providerFor(platform); err != nil {
+		return false
+	}
+	_, ok := s.supplyGroupID(ctx, platform)
 	return ok
 }
 
@@ -231,29 +288,34 @@ func (s *SupplierOnboardingService) probationSettings(ctx context.Context) *Supp
 	return s.settings.GetSupplyProbationSettings(ctx)
 }
 
-// StartOAuth 为 userID 发起一次授权，返回授权链接与会话句柄。
+// StartOAuth 为 userID 在指定平台发起一次授权，返回授权链接与会话句柄。
 //
-// clientIP 是发起方的出口地址，只用来判每 IP 上限。取不到（空串）时那道闸跳过，
-// 理由见 requireCapacity。
-func (s *SupplierOnboardingService) StartOAuth(ctx context.Context, userID int64, clientIP string) (*SupplierAuthorization, error) {
-	if s == nil || s.repo == nil || s.oauth == nil {
+// platform 空串默认 anthropic（向后兼容旧前端）。clientIP 是发起方的出口地址，
+// 只用来判每 IP 上限；取不到（空串）时那道闸跳过，理由见 requireCapacity。
+func (s *SupplierOnboardingService) StartOAuth(ctx context.Context, userID int64, platform string, clientIP string) (*SupplierAuthorization, error) {
+	if s == nil || s.repo == nil {
 		return nil, ErrSupplierOnboardingDisabled
 	}
 	if userID <= 0 {
 		return nil, ErrSupplierOnboardingDisabled
 	}
-	if _, ok := s.supplyGroupID(ctx); !ok {
+	platform = normalizeSupplyPlatform(platform)
+	provider, err := s.providerFor(platform)
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := s.supplyGroupID(ctx, platform); !ok {
 		return nil, ErrSupplierOnboardingDisabled
 	}
 	// 协议门禁在这里纯粹是为了体验：真正不可绕过的那一道在 CompleteOAuth。
 	// 不拦的话，供给者会跑完一整遍上游授权之后才被告知"你还没同意协议"，
-	// 而那时他已经在 Anthropic 那边生成了一个 setup token。
+	// 而那时他已经在上游那边生成了一个 token。
 	if err := s.requireAgreement(ctx, userID); err != nil {
 		return nil, err
 	}
 	// 数量上限在这里同样只是体验（真正的那道也在 CompleteOAuth）。差别在于它比
 	// 协议门禁更值得前置：一个已经挂满的人走完整遍授权，末了被拒，手上还多出一个
-	// 他并不需要、也无从撤销的上游 setup token。
+	// 他并不需要、也无从撤销的上游 token。
 	if err := s.requireCapacity(ctx, userID, clientIP); err != nil {
 		return nil, err
 	}
@@ -266,10 +328,9 @@ func (s *SupplierOnboardingService) StartOAuth(ctx context.Context, userID int64
 		return nil, ErrSupplierOAuthTooManyPending
 	}
 
-	// setup-token（user:inference）而不是完整 scope：平台需要的只是替供给者转发推理请求。
-	// 完整 scope 还能读 profile、建 API key、列会话——供给者把订阅挂上来不等于把账号交出来，
-	// 多要一分权限就多一分「平台能拿它干别的」的空间。
-	auth, err := s.oauth.NewSupplierAuthorization(oauth.ScopeInference)
+	// 授权材料由平台 provider 生成：Claude 用 setup-token（user:inference）最小权限，
+	// OpenAI 走 Codex OAuth。平台细节封在 provider 里，这里只拿回统一的 SupplierAuthorization。
+	auth, err := provider.NewSupplierAuthorization()
 	if err != nil {
 		return nil, err
 	}
@@ -277,7 +338,7 @@ func (s *SupplierOnboardingService) StartOAuth(ctx context.Context, userID int64
 	session := &SupplierOAuthSession{
 		SessionID:    auth.SessionID,
 		UserID:       userID,
-		Platform:     PlatformAnthropic,
+		Platform:     platform,
 		State:        auth.State,
 		CodeVerifier: auth.CodeVerifier,
 		Scope:        auth.Scope,
@@ -331,14 +392,16 @@ type CompleteOAuthInput struct {
 // 顺序是 领会话 → 换 token → 查重 → 建号 → 写归属 → 绑分组，每一步都在为
 // 「账号在有主之前不能服务任何请求」这一条让路。
 func (s *SupplierOnboardingService) CompleteOAuth(ctx context.Context, input *CompleteOAuthInput) (*SupplierAccountView, error) {
-	if s == nil || s.repo == nil || s.oauth == nil || s.accountRepo == nil {
+	if s == nil || s.repo == nil || s.accountRepo == nil {
 		return nil, ErrSupplierOnboardingDisabled
 	}
 	if input == nil || input.UserID <= 0 {
 		return nil, ErrSupplierOnboardingDisabled
 	}
-	groupID, ok := s.supplyGroupID(ctx)
-	if !ok {
+	// 早退：整个接入未开放（任何平台都没配供给组）就别领会话——领取是一次性消费，
+	// 在它之后才拒会白烧掉授权码。平台**专属**的供给组缺失在领会话拿到 session.Platform
+	// 之后再判（那时才知道是哪个平台，且属罕见：start 时配着、complete 时被撤了）。
+	if !s.IsEnabled(ctx) {
 		return nil, ErrSupplierOnboardingDisabled
 	}
 	if strings.TrimSpace(input.Code) == "" || strings.TrimSpace(input.SessionID) == "" {
@@ -372,7 +435,18 @@ func (s *SupplierOnboardingService) CompleteOAuth(ctx context.Context, input *Co
 		return nil, err
 	}
 
-	tokenInfo, err := s.oauth.ExchangeSupplierCode(ctx, strings.TrimSpace(input.Code), &SupplierAuthorization{
+	// 平台以**会话里存的**为准（StartOAuth 写入），不信任任何客户端重复传的值——
+	// 会话的归属与平台都是服务端权威。provider 与供给组按此平台解析。
+	provider, err := s.providerFor(session.Platform)
+	if err != nil {
+		return nil, err
+	}
+	groupID, ok := s.supplyGroupID(ctx, session.Platform)
+	if !ok {
+		return nil, ErrSupplierOnboardingDisabled
+	}
+
+	result, err := provider.ExchangeSupplierCode(ctx, strings.TrimSpace(input.Code), &SupplierAuthorization{
 		State:        session.State,
 		CodeVerifier: session.CodeVerifier,
 		Scope:        session.Scope,
@@ -383,16 +457,16 @@ func (s *SupplierOnboardingService) CompleteOAuth(ctx context.Context, input *Co
 
 	// 查重必须在建号之前。同一个上游订阅被挂两次（自己挂两遍，或被两个人分别挂），
 	// 两个账号会按同一份额度各算各的分成——平台按两份供给计价，实际只有一份。
-	if err := s.rejectDuplicateSubscription(ctx, session.Platform, tokenInfo); err != nil {
+	if err := s.rejectDuplicateSubscription(ctx, session.Platform, result.Identity); err != nil {
 		return nil, err
 	}
 
 	account := &Account{
-		Name:     s.accountName(input.Name, tokenInfo),
+		Name:     s.accountName(input.Name, result.DefaultName),
 		Platform: session.Platform,
-		// setup-token：与 scope 一致。类型判错会让 token 刷新走错分支。
-		Type:        AccountTypeSetupToken,
-		Credentials: buildSupplierClaudeCredentials(tokenInfo),
+		// 账号类型由 provider 决定：Claude=setup-token，OpenAI=oauth。类型判错会让 token 刷新走错分支。
+		Type:        result.AccountType,
+		Credentials: result.Credentials,
 		Extra: map[string]any{
 			SupplyStateExtraKey: SupplyStatePendingReview,
 			// 观察窗从建号这一刻开始计时，不等第一次探测。探测只证明「这个号能用」，
@@ -653,10 +727,10 @@ func (s *SupplierOnboardingService) requireCapacity(ctx context.Context, userID 
 }
 
 // accountName 决定新号在管理端和供给者仪表盘里叫什么。
-func (s *SupplierOnboardingService) accountName(requested string, tokenInfo *TokenInfo) string {
+func (s *SupplierOnboardingService) accountName(requested string, defaultName string) string {
 	name := strings.TrimSpace(requested)
-	if name == "" && tokenInfo != nil {
-		name = strings.TrimSpace(tokenInfo.EmailAddress)
+	if name == "" {
+		name = strings.TrimSpace(defaultName)
 	}
 	if name == "" {
 		name = "supply-" + strconv.FormatInt(time.Now().UnixNano(), 36)
@@ -730,20 +804,20 @@ func supplierIdentityValues(tokenInfo *TokenInfo) map[SupplierIdentityKey]string
 //
 // 查询本身出错一律往上抛：查重失败时放行等于关掉闸门，而这个闸门的开关不能建立在
 // 「数据库这一刻是否健康」之上。
-func (s *SupplierOnboardingService) rejectDuplicateSubscription(ctx context.Context, platform string, tokenInfo *TokenInfo) error {
-	values := supplierIdentityValues(tokenInfo)
-	if len(values) == 0 {
+// rejectDuplicateSubscription 按 provider 给出的**有序**身份键值（强度从高到低）逐个查重。
+// identity 由平台 provider 组装（Claude=account_uuid/email_address；OpenAI=chatgpt_account_id/email）。
+func (s *SupplierOnboardingService) rejectDuplicateSubscription(ctx context.Context, platform string, identity []supplierIdentityValue) error {
+	if len(identity) == 0 {
 		slog.Warn("[SupplierOnboarding] upstream returned no identity field, refusing to bind",
 			"platform", platform)
 		return ErrSupplierAccountIdentityUnavailable
 	}
 
-	for _, key := range SupplierIdentityKeys {
-		value, ok := values[key]
-		if !ok {
+	for _, iv := range identity {
+		if iv.Value == "" {
 			continue
 		}
-		existingID, err := s.repo.FindAccountIDByUpstreamIdentity(ctx, platform, key, value)
+		existingID, err := s.repo.FindAccountIDByUpstreamIdentity(ctx, platform, iv.Key, iv.Value)
 		if err != nil {
 			return err
 		}
@@ -751,7 +825,7 @@ func (s *SupplierOnboardingService) rejectDuplicateSubscription(ctx context.Cont
 			// 不把命中的是哪个键、哪个账号告诉调用方：那会让接入端点变成一个
 			// 「这个邮箱在平台上挂过号吗」的探针。日志里留全，响应里不留。
 			slog.Info("[SupplierOnboarding] duplicate subscription rejected",
-				"platform", platform, "identity_key", string(key), "existing_account_id", existingID)
+				"platform", platform, "identity_key", string(iv.Key), "existing_account_id", existingID)
 			return ErrSupplierAccountAlreadyBound
 		}
 	}

@@ -102,7 +102,8 @@ func (s *SupplierOnboardingService) SubmitRelay(ctx context.Context, input *Supp
 	if input == nil || input.UserID <= 0 {
 		return nil, ErrSupplierOnboardingDisabled
 	}
-	groupID, ok := s.supplyGroupID(ctx)
+	// 中转（M7）是 Anthropic 兼容端点，恒挂 anthropic 供给组。
+	groupID, ok := s.supplyGroupID(ctx, PlatformAnthropic)
 	if !ok {
 		return nil, ErrSupplierOnboardingDisabled
 	}

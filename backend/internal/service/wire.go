@@ -1138,12 +1138,13 @@ func ProvideSupplierOnboardingService(
 	repo SupplierOnboardingRepository,
 	accountRepo AccountRepository,
 	oauthService *OAuthService,
+	openaiOAuthService *OpenAIOAuthService,
 	settingService *SettingService,
 	incidents *SupplierIncidentService,
 	usageLogRepo UsageLogRepository,
 	testService *AccountTestService,
 ) *SupplierOnboardingService {
-	svc := NewSupplierOnboardingService(repo, accountRepo, oauthService, settingService)
+	svc := NewSupplierOnboardingService(repo, accountRepo, oauthService, openaiOAuthService, settingService)
 	svc.SetIncidentGuard(incidents)
 	// 接入完成时当场探一次（见 probeOnAttach）。与观察期任务用的是同一个实现，
 	// 所以「探测」这件事在两条路径上是同一种行为。

@@ -526,8 +526,8 @@ type supplierOAuthStub struct {
 	requestScope  string
 }
 
-func (s *supplierOAuthStub) NewSupplierAuthorization(scope string) (*SupplierAuthorization, error) {
-	s.requestScope = scope
+func (s *supplierOAuthStub) NewSupplierAuthorization() (*SupplierAuthorization, error) {
+	s.requestScope = "user:inference"
 	if s.authErr != nil {
 		return nil, s.authErr
 	}
@@ -539,28 +539,38 @@ func (s *supplierOAuthStub) NewSupplierAuthorization(scope string) (*SupplierAut
 		AuthURL:      "https://claude.ai/oauth/authorize?state=st-1",
 		State:        "st-1",
 		CodeVerifier: "verifier-1",
-		Scope:        scope,
+		Scope:        "user:inference",
 	}, nil
 }
 
-func (s *supplierOAuthStub) ExchangeSupplierCode(_ context.Context, code string, auth *SupplierAuthorization) (*TokenInfo, error) {
+func (s *supplierOAuthStub) ExchangeSupplierCode(_ context.Context, code string, auth *SupplierAuthorization) (*supplierOnboardResult, error) {
 	s.exchangedCode = code
 	s.exchangedAuth = auth
 	if s.tokenErr != nil {
 		return nil, s.tokenErr
 	}
-	if s.token != nil {
-		return s.token, nil
+	ti := s.token
+	if ti == nil {
+		ti = &TokenInfo{
+			AccessToken:  "at",
+			TokenType:    "Bearer",
+			ExpiresIn:    3600,
+			ExpiresAt:    1700003600,
+			RefreshToken: "rt",
+			Scope:        "user:inference",
+			AccountUUID:  "uuid-1",
+			EmailAddress: "supplier@example.com",
+		}
 	}
-	return &TokenInfo{
-		AccessToken:  "at",
-		TokenType:    "Bearer",
-		ExpiresIn:    3600,
-		ExpiresAt:    1700003600,
-		RefreshToken: "rt",
-		Scope:        "user:inference",
-		AccountUUID:  "uuid-1",
-		EmailAddress: "supplier@example.com",
+	// 与 claudeSupplierProvider 同款组装：保证账号凭证/身份断言与重构前逐字一致。
+	return &supplierOnboardResult{
+		AccountType: AccountTypeSetupToken,
+		Credentials: buildSupplierClaudeCredentials(ti),
+		Identity: nonEmptyIdentity(
+			supplierIdentityValue{SupplierIdentityAccountUUID, ti.AccountUUID},
+			supplierIdentityValue{SupplierIdentityEmailAddress, ti.EmailAddress},
+		),
+		DefaultName: ti.EmailAddress,
 	}, nil
 }
 
@@ -614,7 +624,7 @@ func newOnboardingServiceWithLimits(
 	return &SupplierOnboardingService{
 		repo:        repo,
 		accountRepo: store,
-		oauth:       oauth,
+		providers:   map[string]supplierOAuthProvider{PlatformAnthropic: oauth},
 		settings:    newSupplyPoolSettingService(t, settingRepo),
 	}
 }
@@ -651,7 +661,7 @@ func TestSupplierOnboardingDisabledWhenSupplyPoolNotConfigured(t *testing.T) {
 
 			assert.False(t, svc.IsEnabled(context.Background()))
 
-			_, err := svc.StartOAuth(context.Background(), 7, testClientIP)
+			_, err := svc.StartOAuth(context.Background(), 7, "", testClientIP)
 			assert.ErrorIs(t, err, ErrSupplierOnboardingDisabled)
 
 			_, err = svc.CompleteOAuth(context.Background(), &CompleteOAuthInput{UserID: 7, SessionID: "s", Code: "c"})
@@ -675,7 +685,7 @@ func TestStartOAuthPersistsSessionWithOwner(t *testing.T) {
 	svc := newOnboardingService(t, repo, newSupplierAccountStoreStub(), oauth, enabledSupplyPoolJSON())
 
 	before := time.Now()
-	auth, err := svc.StartOAuth(context.Background(), 7, testClientIP)
+	auth, err := svc.StartOAuth(context.Background(), 7, "", testClientIP)
 	require.NoError(t, err)
 
 	assert.Equal(t, "https://claude.ai/oauth/authorize?state=st-1", auth.AuthURL)
@@ -698,7 +708,7 @@ func TestStartOAuthRequestsInferenceScopeOnly(t *testing.T) {
 	oauth := &supplierOAuthStub{}
 	svc := newOnboardingService(t, &supplierOnboardingRepoStub{}, newSupplierAccountStoreStub(), oauth, enabledSupplyPoolJSON())
 
-	_, err := svc.StartOAuth(context.Background(), 7, testClientIP)
+	_, err := svc.StartOAuth(context.Background(), 7, "", testClientIP)
 	require.NoError(t, err)
 	assert.Equal(t, "user:inference", oauth.requestScope)
 }
@@ -707,14 +717,14 @@ func TestStartOAuthRejectsTooManyPendingSessions(t *testing.T) {
 	repo := &supplierOnboardingRepoStub{pendingCount: supplierMaxPendingSessions}
 	svc := newOnboardingService(t, repo, newSupplierAccountStoreStub(), &supplierOAuthStub{}, enabledSupplyPoolJSON())
 
-	_, err := svc.StartOAuth(context.Background(), 7, testClientIP)
+	_, err := svc.StartOAuth(context.Background(), 7, "", testClientIP)
 	assert.ErrorIs(t, err, ErrSupplierOAuthTooManyPending)
 	assert.Nil(t, repo.createdSession, "超限时不该再写一条会话")
 }
 
 func TestStartOAuthRejectsAnonymousCaller(t *testing.T) {
 	svc := newOnboardingService(t, &supplierOnboardingRepoStub{}, newSupplierAccountStoreStub(), &supplierOAuthStub{}, enabledSupplyPoolJSON())
-	_, err := svc.StartOAuth(context.Background(), 0, testClientIP)
+	_, err := svc.StartOAuth(context.Background(), 0, "", testClientIP)
 	assert.ErrorIs(t, err, ErrSupplierOnboardingDisabled)
 }
 
@@ -722,7 +732,7 @@ func TestStartOAuthPropagatesSessionWriteError(t *testing.T) {
 	repo := &supplierOnboardingRepoStub{createErr: errors.New("db down")}
 	svc := newOnboardingService(t, repo, newSupplierAccountStoreStub(), &supplierOAuthStub{}, enabledSupplyPoolJSON())
 
-	_, err := svc.StartOAuth(context.Background(), 7, testClientIP)
+	_, err := svc.StartOAuth(context.Background(), 7, "", testClientIP)
 	assert.Error(t, err)
 }
 
@@ -1149,8 +1159,9 @@ func TestPauseAccountGracefulWithZeroWindowRetiresDirectly(t *testing.T) {
 		probationValue: `{"enabled":true,"drain_window_minutes":0}`,
 	}
 	svc := &SupplierOnboardingService{
-		repo: repo, accountRepo: store, oauth: &supplierOAuthStub{},
-		settings: newSupplyPoolSettingService(t, settingRepo),
+		repo: repo, accountRepo: store,
+		providers: map[string]supplierOAuthProvider{PlatformAnthropic: &supplierOAuthStub{}},
+		settings:  newSupplyPoolSettingService(t, settingRepo),
 	}
 
 	require.NoError(t, svc.PauseAccount(context.Background(), 7, 100, SupplyPauseModeGraceful))
@@ -1429,7 +1440,7 @@ func TestSupplierOnboardingServiceIsNilSafe(t *testing.T) {
 	var svc *SupplierOnboardingService
 	assert.False(t, svc.IsEnabled(context.Background()))
 
-	_, err := svc.StartOAuth(context.Background(), 7, testClientIP)
+	_, err := svc.StartOAuth(context.Background(), 7, "", testClientIP)
 	assert.ErrorIs(t, err, ErrSupplierOnboardingDisabled)
 
 	_, err = svc.CompleteOAuth(context.Background(), &CompleteOAuthInput{UserID: 7})

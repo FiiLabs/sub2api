@@ -57,7 +57,7 @@ func newAttachFixture(t *testing.T, probationJSON string, prober *supplierProber
 	svc := &SupplierOnboardingService{
 		repo:        repo,
 		accountRepo: store,
-		oauth:       &supplierOAuthStub{},
+		providers: map[string]supplierOAuthProvider{PlatformAnthropic: &supplierOAuthStub{}},
 		settings:    newSupplyPoolSettingService(t, settingRepo),
 	}
 	if prober != nil {

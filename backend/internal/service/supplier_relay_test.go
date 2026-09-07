@@ -183,7 +183,7 @@ func TestSubmitRelayProbesWithTheProbationModel(t *testing.T) {
 	svc := &SupplierOnboardingService{
 		repo:             repo,
 		accountRepo:      store,
-		oauth:            &supplierOAuthStub{},
+		providers: map[string]supplierOAuthProvider{PlatformAnthropic: &supplierOAuthStub{}},
 		settings:         newSupplyPoolSettingService(t, settingRepo),
 		relayProbeClient: &http.Client{Transport: probe},
 	}

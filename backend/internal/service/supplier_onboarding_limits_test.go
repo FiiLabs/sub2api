@@ -39,7 +39,7 @@ func TestStartOAuthRejectsWhenUserCapReached(t *testing.T) {
 	repo := &supplierOnboardingRepoStub{ownedCount: 3}
 	svc := newLimitsService(t, repo, 3, 0)
 
-	_, err := svc.StartOAuth(context.Background(), 7, testClientIP)
+	_, err := svc.StartOAuth(context.Background(), 7, "", testClientIP)
 
 	assert.ErrorIs(t, err, ErrSupplierAccountLimitReached)
 	// 拦在建会话之前：一个挂满了的人不该先跑完一整遍上游授权，末了才被告知这件事——
@@ -52,7 +52,7 @@ func TestStartOAuthAllowsWhenBelowUserCap(t *testing.T) {
 	repo := &supplierOnboardingRepoStub{ownedCount: 2}
 	svc := newLimitsService(t, repo, 3, 0)
 
-	auth, err := svc.StartOAuth(context.Background(), 7, testClientIP)
+	auth, err := svc.StartOAuth(context.Background(), 7, "", testClientIP)
 
 	require.NoError(t, err)
 	require.NotNil(t, auth)

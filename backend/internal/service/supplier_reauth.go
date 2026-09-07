@@ -27,8 +27,6 @@ import (
 	"log/slog"
 	"strings"
 	"time"
-
-	"github.com/Wei-Shaw/sub2api/internal/pkg/oauth"
 )
 
 // CompleteReauthInput 兑换一次重新授权。
@@ -55,7 +53,7 @@ type CompleteReauthInput struct {
 //
 // 协议门禁保留：那是「这个人还能不能供货」，与他是在挂新号还是在修旧号无关。
 func (s *SupplierOnboardingService) StartReauth(ctx context.Context, userID, accountID int64) (*SupplierAuthorization, error) {
-	if s == nil || s.repo == nil || s.oauth == nil {
+	if s == nil || s.repo == nil {
 		return nil, ErrSupplierOnboardingDisabled
 	}
 	account, err := s.getOwnedAccount(ctx, userID, accountID)
@@ -63,6 +61,11 @@ func (s *SupplierOnboardingService) StartReauth(ctx context.Context, userID, acc
 		return nil, err
 	}
 	if err := reauthEligible(account); err != nil {
+		return nil, err
+	}
+	// provider 按**这个号的平台**取：重新授权走的是它当初接入的那条协议路径。
+	provider, err := s.providerFor(account.Platform)
+	if err != nil {
 		return nil, err
 	}
 	if err := s.requireAgreement(ctx, userID); err != nil {
@@ -77,9 +80,9 @@ func (s *SupplierOnboardingService) StartReauth(ctx context.Context, userID, acc
 		return nil, ErrSupplierOAuthTooManyPending
 	}
 
-	// scope 与接入路径**一字不差**。一次重新授权不是重新协商权限的时机——
+	// 授权材料与接入路径**同一个 provider**。一次重新授权不是重新协商权限的时机——
 	// 供给者当初同意的是「平台替我转发推理请求」，换一份 token 不改变这一点。
-	auth, err := s.oauth.NewSupplierAuthorization(oauth.ScopeInference)
+	auth, err := provider.NewSupplierAuthorization()
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +90,7 @@ func (s *SupplierOnboardingService) StartReauth(ctx context.Context, userID, acc
 	session := &SupplierOAuthSession{
 		SessionID:    auth.SessionID,
 		UserID:       userID,
-		Platform:     PlatformAnthropic,
+		Platform:     account.Platform,
 		State:        auth.State,
 		CodeVerifier: auth.CodeVerifier,
 		Scope:        auth.Scope,
@@ -149,7 +152,7 @@ func (s *SupplierOnboardingService) StartReauth(ctx context.Context, userID, acc
 // 天然限流（每次都是一次深思熟虑的操作），且 notified_at 保证每条事件只发一封。
 // 写在这里是为了它日后被人当成 bug 时，能读到这是权衡过的。
 func (s *SupplierOnboardingService) CompleteReauth(ctx context.Context, input *CompleteReauthInput) (*SupplierAccountView, error) {
-	if s == nil || s.repo == nil || s.oauth == nil || s.accountRepo == nil {
+	if s == nil || s.repo == nil || s.accountRepo == nil {
 		return nil, ErrSupplierOnboardingDisabled
 	}
 	if input == nil {
@@ -177,10 +180,16 @@ func (s *SupplierOnboardingService) CompleteReauth(ctx context.Context, input *C
 		return nil, err
 	}
 
+	// provider 按会话平台取（= 号的平台，StartReauth 写入）。
+	provider, err := s.providerFor(session.Platform)
+	if err != nil {
+		return nil, err
+	}
+
 	// token 交换本身就是「这份凭证是活的」的证明——与中转路径当场探测同一个标准
 	// （见 supplier_relay.go 里那句「OAuth 路径有 token 交换兜真伪」）。
 	// 不再额外打一次探测：那只会多烧供给者一次额度去证明同一件事。
-	tokenInfo, err := s.oauth.ExchangeSupplierCode(ctx, strings.TrimSpace(input.Code), &SupplierAuthorization{
+	result, err := provider.ExchangeSupplierCode(ctx, strings.TrimSpace(input.Code), &SupplierAuthorization{
 		State:        session.State,
 		CodeVerifier: session.CodeVerifier,
 		Scope:        session.Scope,
@@ -189,7 +198,7 @@ func (s *SupplierOnboardingService) CompleteReauth(ctx context.Context, input *C
 		return nil, fmt.Errorf("exchange authorization code: %w", err)
 	}
 
-	if err := s.requireSameSubscription(ctx, account, tokenInfo); err != nil {
+	if err := s.requireSameSubscription(ctx, account, result.Identity); err != nil {
 		return nil, err
 	}
 
@@ -215,7 +224,7 @@ func (s *SupplierOnboardingService) CompleteReauth(ctx context.Context, input *C
 	}
 
 	if err := s.repo.ApplyReauthCredentials(
-		ctx, account.ID, input.UserID, buildSupplierClaudeCredentials(tokenInfo), extra,
+		ctx, account.ID, input.UserID, result.Credentials, extra,
 	); err != nil {
 		return nil, err
 	}
@@ -300,12 +309,11 @@ func reauthEligible(account *Account) error {
 // 之所以敢不让它掉回观察期，唯一的依据就是这里保证了换进来的是同一份订阅。
 // 一旦削弱这道闸，必须同时把那个分支改成 pending_review + schedulable=false +
 // 重置观察期，否则 account id 就成了未审订阅的洗白通道。
-func (s *SupplierOnboardingService) requireSameSubscription(ctx context.Context, account *Account, tokenInfo *TokenInfo) error {
-	incoming := supplierIdentityValues(tokenInfo)
-
-	for _, key := range SupplierIdentityKeys {
-		newValue, ok := incoming[key]
-		if !ok {
+func (s *SupplierOnboardingService) requireSameSubscription(ctx context.Context, account *Account, identity []supplierIdentityValue) error {
+	for _, iv := range identity {
+		key := iv.Key
+		newValue := iv.Value
+		if newValue == "" {
 			continue
 		}
 		storedValue := strings.TrimSpace(account.GetCredential(string(key)))

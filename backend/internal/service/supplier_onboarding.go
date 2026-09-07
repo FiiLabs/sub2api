@@ -19,6 +19,10 @@ var (
 	// ErrSupplierOnboardingDisabled 供给池未配置——没有可挂靠的分组，接入无从谈起。
 	ErrSupplierOnboardingDisabled = infraerrors.BadRequest(
 		"SUPPLIER_ONBOARDING_DISABLED", "supplier onboarding is not enabled")
+	// ErrSupplierOnboardingUnsupportedPlatform 请求的平台没有注册 OAuth provider
+	//（如部署未启用 OpenAI）。与「未配置供给组」分开：这是「这个平台压根不支持接入」。
+	ErrSupplierOnboardingUnsupportedPlatform = infraerrors.BadRequest(
+		"SUPPLIER_ONBOARDING_UNSUPPORTED_PLATFORM", "supplier onboarding is not supported for this platform")
 	// ErrSupplierOAuthSessionInvalid 会话不存在、已过期、已被兑换，或不属于当前用户。
 	//
 	// 四种情况刻意合成一个错误：区分它们等于告诉调用方「这个 session_id 存在但不是你的」，
