@@ -372,10 +372,14 @@ type SupplierOnboardingRepository interface {
 type SupplierIdentityKey string
 
 const (
-	// SupplierIdentityAccountUUID 上游账号 uuid。最强的键：一个订阅一个值。
+	// SupplierIdentityAccountUUID 上游账号 uuid（Claude）。最强的键：一个订阅一个值。
 	SupplierIdentityAccountUUID SupplierIdentityKey = "account_uuid"
-	// SupplierIdentityEmailAddress 上游账号邮箱。次强：同一个人重挂会被它抓住。
+	// SupplierIdentityEmailAddress 上游账号邮箱（Claude）。次强：同一个人重挂会被它抓住。
 	SupplierIdentityEmailAddress SupplierIdentityKey = "email_address"
+	// SupplierIdentityChatGPTAccountID ChatGPT 账号 id（OpenAI）。最强的键：一份订阅一个值。
+	SupplierIdentityChatGPTAccountID SupplierIdentityKey = "chatgpt_account_id"
+	// SupplierIdentityEmail 上游账号邮箱（OpenAI 凭证里键名是 email，非 Claude 的 email_address）。
+	SupplierIdentityEmail SupplierIdentityKey = "email"
 )
 
 // SupplierIdentityKeys 是查重时依次尝试的键，强度从高到低。

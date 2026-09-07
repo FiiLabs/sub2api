@@ -320,6 +320,24 @@ WHERE deleted_at IS NULL
   AND LOWER(credentials->>'email_address') = LOWER($2)
 LIMIT 1`
 
+// OpenAI 去重（凭证键名与 Claude 不同：chatgpt_account_id / email）。
+// platform=$1 已把跨平台误命中挡在外面（OpenAI 号 platform='openai'）。
+const supplierAccountFindByChatGPTAccountIDSQL = `
+SELECT id
+FROM accounts
+WHERE deleted_at IS NULL
+  AND platform = $1
+  AND credentials->>'chatgpt_account_id' = $2
+LIMIT 1`
+
+const supplierAccountFindByOpenAIEmailSQL = `
+SELECT id
+FROM accounts
+WHERE deleted_at IS NULL
+  AND platform = $1
+  AND LOWER(credentials->>'email') = LOWER($2)
+LIMIT 1`
+
 // supplierAccountFindByRelayEndpointSQL 中转账号查重（M7）。
 //
 // 键是 (base_url, api_key) 组合而不是单独的 key：同一把 key 在两个不同端点
@@ -698,6 +716,10 @@ func supplierIdentitySQL(key service.SupplierIdentityKey) string {
 		return supplierAccountFindByAccountUUIDSQL
 	case service.SupplierIdentityEmailAddress:
 		return supplierAccountFindByEmailSQL
+	case service.SupplierIdentityChatGPTAccountID:
+		return supplierAccountFindByChatGPTAccountIDSQL
+	case service.SupplierIdentityEmail:
+		return supplierAccountFindByOpenAIEmailSQL
 	default:
 		return ""
 	}
