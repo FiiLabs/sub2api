@@ -74,6 +74,7 @@ const supplyHealthAccountsSQL = `
 SELECT
     a.id,
     a.name,
+    a.platform,
     a.owner_user_id,
     COALESCE(SUM(u.total_cost), 0) AS list_value,
     COUNT(*)                       AS requests,
@@ -89,7 +90,7 @@ JOIN accounts a ON a.id = u.account_id
 WHERE u.created_at >= NOW() - ($1 || ' days')::interval
   AND a.owner_user_id IS NOT NULL
   AND a.deleted_at IS NULL
-GROUP BY a.id, a.name, a.owner_user_id
+GROUP BY a.id, a.name, a.platform, a.owner_user_id
 ORDER BY list_value DESC
 LIMIT 200`
 
@@ -186,7 +187,7 @@ func (r *supplyMarketHealthRepository) scanAccounts(
 			out   service.SupplyAccountOutput
 			owner sql.NullInt64
 		)
-		if err := rows.Scan(&out.AccountID, &out.Name, &owner, &out.ListValue, &out.Requests, &out.SupplierEarned); err != nil {
+		if err := rows.Scan(&out.AccountID, &out.Name, &out.Platform, &owner, &out.ListValue, &out.Requests, &out.SupplierEarned); err != nil {
 			return fmt.Errorf("scan supply health account: %w", err)
 		}
 		out.OwnerUserID = owner.Int64

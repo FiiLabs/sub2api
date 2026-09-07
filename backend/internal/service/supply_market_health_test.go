@@ -211,7 +211,7 @@ func TestSupplyHealthWireShapeIsSnakeCase(t *testing.T) {
 	assert.Equal(t,
 		[]string{
 			"account_id", "list_value", "monthly_output", "name",
-			"owner_user_id", "requests", "supplier_earned",
+			"owner_user_id", "platform", "requests", "supplier_earned",
 		},
 		jsonKeys(t, SupplyAccountOutput{}))
 }

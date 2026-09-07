@@ -99,12 +99,29 @@ type SupplyMarketHealth struct {
 	MedianMonthlyOutput float64 `json:"median_monthly_output"`
 	// SupplierCount 窗口内有过产出的供给者人数。
 	SupplierCount int `json:"supplier_count"`
+
+	// ByPlatform 按供给账号平台拆分的读数。存在的理由：Claude 与 OpenAI 两个供给池
+	// 经济账不同，各自的中位月产出/人数/倍率要分开看，才能分别校准两边的分成与折扣。
+	// 键 = 平台（anthropic / openai）。
+	ByPlatform map[string]*SupplyPlatformStat `json:"by_platform,omitempty"`
+}
+
+// SupplyPlatformStat 是某个平台供给池的分项读数。
+type SupplyPlatformStat struct {
+	Platform            string  `json:"platform"`
+	ListValue           float64 `json:"list_value"`
+	MedianMonthlyOutput float64 `json:"median_monthly_output"`
+	SupplierCount       int     `json:"supplier_count"`
+	// ConfiguredMultiplier 该平台供给组此刻配的倍率（0 = 没配或读不到）。
+	ConfiguredMultiplier float64 `json:"configured_multiplier"`
 }
 
 // SupplyAccountOutput 是产出榜上的一行。
 type SupplyAccountOutput struct {
 	AccountID int64  `json:"account_id"`
 	Name      string `json:"name"`
+	// Platform 供给账号平台（anthropic / openai）。用于按平台拆读数。
+	Platform string `json:"platform"`
 	// OwnerUserID 挂号的人。榜上只有他人挂的号，所以恒非零。
 	OwnerUserID int64 `json:"owner_user_id"`
 	// ListValue 窗口内产出的牌价等值。
@@ -187,9 +204,44 @@ func (s *SupplyMarketHealthService) Get(ctx context.Context, windowDays int) (*S
 	health.EffectiveMultiplier = safeRatio(health.Revenue, health.ListValue)
 	health.OverflowShare = safeRatio(health.OverflowListValue, health.ListValue)
 	health.MedianMonthlyOutput = medianMonthlyOutput(health.SupplyAccounts)
+	health.ByPlatform = computeSupplyPlatformStats(health.SupplyAccounts)
 
 	s.applyConfiguredValues(ctx, health)
 	return health, nil
+}
+
+// computeSupplyPlatformStats 把账号榜按平台分组，各出中位月产出、供给者人数、牌价等值。
+// 空平台归 anthropic（历史/自营口径兜底）。空榜返回 nil。
+func computeSupplyPlatformStats(accounts []SupplyAccountOutput) map[string]*SupplyPlatformStat {
+	if len(accounts) == 0 {
+		return nil
+	}
+	grouped := map[string][]SupplyAccountOutput{}
+	for _, a := range accounts {
+		p := a.Platform
+		if p == "" {
+			p = PlatformAnthropic
+		}
+		grouped[p] = append(grouped[p], a)
+	}
+	out := make(map[string]*SupplyPlatformStat, len(grouped))
+	for platform, rows := range grouped {
+		owners := map[int64]struct{}{}
+		var listValue float64
+		for _, r := range rows {
+			listValue += r.ListValue
+			if r.OwnerUserID > 0 {
+				owners[r.OwnerUserID] = struct{}{}
+			}
+		}
+		out[platform] = &SupplyPlatformStat{
+			Platform:            platform,
+			ListValue:           listValue,
+			MedianMonthlyOutput: medianMonthlyOutput(rows),
+			SupplierCount:       len(owners),
+		}
+	}
+	return out
 }
 
 // applyConfiguredValues 填自检对照项。每一项独立 fail-open。
@@ -205,14 +257,28 @@ func (s *SupplyMarketHealthService) applyConfiguredValues(ctx context.Context, h
 	}
 
 	pool := s.settings.GetSupplyPoolSettings(ctx)
-	if pool == nil || pool.SupplyGroupID <= 0 || s.groups == nil {
+	if pool == nil || s.groups == nil {
 		return
 	}
-	group, err := s.groups.GetByID(ctx, pool.SupplyGroupID)
-	if err != nil || group == nil {
-		return
+	// 顶层（anthropic）倍率保持在 ConfiguredMultiplier（向后兼容）。
+	if pool.SupplyGroupID > 0 {
+		if group, err := s.groups.GetByID(ctx, pool.SupplyGroupID); err == nil && group != nil {
+			health.ConfiguredMultiplier = group.RateMultiplier
+		}
 	}
-	health.ConfiguredMultiplier = group.RateMultiplier
+	// 每个平台供给组的倍率回填到对应分项。
+	for platform, stat := range health.ByPlatform {
+		if stat == nil {
+			continue
+		}
+		gid := pool.supplyGroupIDFor(platform)
+		if gid <= 0 {
+			continue
+		}
+		if group, err := s.groups.GetByID(ctx, gid); err == nil && group != nil {
+			stat.ConfiguredMultiplier = group.RateMultiplier
+		}
+	}
 }
 
 // clampSupplyHealthWindow 越界夹取而不是报错。
