@@ -266,6 +266,10 @@ func (Group) Fields() []ent.Field {
 			Default(domain.GroupModelsListConfig{}).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}).
 			Comment("自定义 /v1/models 展示列表配置；仅影响模型列表响应，不影响调度"),
+		field.JSON("codex_models_manifest_config", domain.GroupCodexModelsManifestConfig{}).
+			Default(domain.GroupCodexModelsManifestConfig{}).
+			SchemaType(map[string]string{dialect.Postgres: "jsonb"}).
+			Comment("固定账号获取 Codex Model Manifest 配置；开启后 /models 请求只用选定账号拉取（仅 openai 平台）"),
 
 		// 分组级每分钟请求数上限（0 = 不限制）。设置后优先于用户级兜底生效。
 		field.Int("rpm_limit").
@@ -284,7 +288,7 @@ func (Group) Fields() []ent.Field {
 		field.JSON("reasoning_effort_mappings", []domain.ReasoningEffortMapping{}).
 			Default([]domain.ReasoningEffortMapping{}).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}).
-			Comment("OpenAI reasoning effort 自定义精确映射；先映射再应用上限"),
+			Comment("OpenAI reasoning effort 自定义映射；可按模型精确名、前缀或后缀限定，先映射再应用上限"),
 
 		// 分组利润控制（migration 192/193）：openai/anthropic/gemini/grok/antigravity
 		// 的 token 分组可启用，composite 分组不能直接启用。

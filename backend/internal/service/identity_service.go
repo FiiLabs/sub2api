@@ -36,7 +36,7 @@ const (
 	// maxFingerprintUserAgentLength 限制写入缓存的 User-Agent 长度。
 	maxFingerprintUserAgentLength = 256
 	// maxClaudeCLIMajorVersionSkew 是 claude-cli 主版本号相对 sub2api 自身伪装
-	// 版本（claude.CLICurrentVersion）允许的最大超前量。给足两个大版本的升级
+	// 版本（claude.CLIVersion()）允许的最大超前量。给足两个大版本的升级
 	// 窗口，同时挡掉 999 这类哨兵版本号。
 	maxClaudeCLIMajorVersionSkew = 2
 )
@@ -68,7 +68,7 @@ func isAcceptableFingerprintUserAgent(ua string) bool {
 	if !ok {
 		return false
 	}
-	currentMajor, _, _, currentOK := parseUserAgentVersion(claudeCLIUserAgentProduct + "/" + claude.CLICurrentVersion)
+	currentMajor, _, _, currentOK := parseUserAgentVersion(claudeCLIUserAgentProduct + "/" + claude.CLIVersion())
 	if !currentOK {
 		return true
 	}
@@ -77,7 +77,7 @@ func isAcceptableFingerprintUserAgent(ua string) bool {
 
 // 默认指纹值（当客户端未提供时使用）
 var defaultFingerprint = Fingerprint{
-	UserAgent:               "claude-cli/" + claude.CLICurrentVersion + " (external, cli)",
+	UserAgent:               "claude-cli/" + claude.CLIVersion() + " (external, cli)",
 	StainlessLang:           "js",
 	StainlessPackageVersion: "0.94.0",
 	StainlessOS:             "Linux",
@@ -545,10 +545,11 @@ func isNewerVersion(newUA, cachedUA string) bool {
 	return newPatch > cachedPatch
 }
 
-// isBelowPinnedCLIVersion 判断一个 claude-cli User-Agent 的版本是否低于内置基线
-// claude.CLICurrentVersion。只对 claude-cli 生效——其它客户端不做版本下限约束，
-// 理由同 isAcceptableFingerprintUserAgent 的产品名判断。UA 形态非法时返回 false，
-// 交给既有的畸形自愈分支处理，不在这里兜。
+// isBelowPinnedCLIVersion 判断一个 claude-cli User-Agent 的版本是否低于当前伪装版本
+// claude.CLIVersion()（= 内置基线，叠加 SUB2API_CLAUDE_CLI_VERSION 覆盖；与 DefaultHeaders
+// 发出的 UA 同源）。只对 claude-cli 生效——其它客户端不做版本下限约束，理由同
+// isAcceptableFingerprintUserAgent 的产品名判断。UA 形态非法时返回 false，交给既有的
+// 畸形自愈分支处理，不在这里兜。
 //
 // 存在的理由：Anthropic 会对新模型设客户端版本下限（如 claude-fable-5-1 需
 // claude-cli >= 2.1.251），而缓存指纹只被"更新的入站客户端 UA"升级；一个长期没有
@@ -557,8 +558,8 @@ func isBelowPinnedCLIVersion(ua string) bool {
 	if extractProduct(ua) != claudeCLIUserAgentProduct {
 		return false
 	}
-	// pin 比 cached 新 ⟺ cached 低于基线。复用 isNewerVersion 的产品名 + 三段比较。
-	return isNewerVersion(claudeCLIUserAgentProduct+"/"+claude.CLICurrentVersion, ua)
+	// pin 比 cached 新 ⟺ cached 低于伪装版本。复用 isNewerVersion 的产品名 + 三段比较。
+	return isNewerVersion(claudeCLIUserAgentProduct+"/"+claude.CLIVersion(), ua)
 }
 
 // bumpClaudeCLIVersionToPin 把 UA 里的第一处 x.y.z 版本号替换成内置基线，保留产品名
@@ -572,5 +573,5 @@ func bumpClaudeCLIVersionToPin(ua string) string {
 		// 解析不出版本号：回落到默认指纹 UA（已是基线版本），不硬拼。
 		return defaultFingerprint.UserAgent
 	}
-	return ua[:loc[0]] + "/" + claude.CLICurrentVersion + ua[loc[1]:]
+	return ua[:loc[0]] + "/" + claude.CLIVersion() + ua[loc[1]:]
 }

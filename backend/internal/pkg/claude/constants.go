@@ -74,14 +74,17 @@ const APIKeyHaikuBetaHeader = BetaInterleavedThinking
 // 客户端缺省时统一使用 5m"，这样既不浪费 1h 缓存额度，也保留客户端自定义能力。
 const DefaultCacheControlTTL = "5m"
 
-// CLICurrentVersion 是 sub2api 当前对外伪装的 Claude Code CLI 版本号（三段 semver）。
+// CLICurrentVersion 是内置的 Claude Code CLI 伪装版本号基线（三段 semver）。
 // 用于 billing attribution block 中的 cc_version=X.Y.Z.{fp} 前缀以及 fingerprint 计算。
 // 必须与 DefaultHeaders["User-Agent"] 中的版本号严格一致；不一致会被 Anthropic 判第三方。
 //
-// 2026-09-06 由 2.1.220 抬到 2.1.251：Anthropic 对 claude-fable-5-1 设了客户端版本
-// 下限（`does not support this model; version 2.1.251 or newer is required`），伪装成
-// 更旧版本的请求（含接入探测与真实 OAuth 转发）会被上游 400 顶回。2.1.251 是上游
-// 报文点名的下限、确为真实存在的版本。所有引用点都走这个常量，一处改动全线跟上。
+// ⚠️ 读取实际生效的版本号请用 CLIVersion()，它会叠加 SUB2API_CLAUDE_CLI_VERSION 覆盖。
+// 直接引用本常量只在"表达内置基线"时才正确（例如覆盖值的下限校验、指纹版本地板）。
+//
+// 基线由上游的 2.1.220 抬到 2.1.251：Anthropic 对 claude-fable-5-1 设了客户端版本下限
+// （`does not support this model; version 2.1.251 or newer is required`），低于此的伪装
+// （含接入探测与真实 OAuth 转发）会被上游 400 顶回。抬高基线使 CLIVersion() 默认即达标，
+// identity_service 的指纹版本地板也以此为下限（存量卡在旧版本的账号读取时被抬上来）。
 const CLICurrentVersion = "2.1.251"
 
 // FullClaudeCodeMimicryBetas 返回最"像"真实 Claude Code CLI 的完整 beta 列表，
@@ -110,7 +113,7 @@ var DefaultHeaders = map[string]string{
 	// Keep these in sync with recent Claude CLI traffic to reduce the chance
 	// that Claude Code-scoped OAuth credentials are rejected as "non-CLI" usage.
 	// 版本参考：对齐 Parrot (src/transform/cc_mimicry.py:49) 的 CLI_USER_AGENT。
-	"User-Agent":                                "claude-cli/" + CLICurrentVersion + " (external, cli)",
+	"User-Agent":                                "claude-cli/" + CLIVersion() + " (external, cli)",
 	"X-Stainless-Lang":                          "js",
 	"X-Stainless-Package-Version":               "0.94.0",
 	"X-Stainless-OS":                            "Linux",
