@@ -137,7 +137,7 @@ export default {
             owned:
               'Platform-owned accounts: requests are routed inside an Intel TDX confidential VM, where neither operators nor logs can read plaintext',
             shared:
-              'Shared subscription route: providers contribute quota only — requests travel from the TEE straight to Anthropic, never through any provider device',
+              'Shared subscription route: providers contribute quota only — requests travel from the TEE straight to the model vendor (Anthropic / OpenAI), never through any provider device',
             relay:
               'API relay route: requests are forwarded to the endpoint the provider supplied, which is outside the TEE seal'
           }
@@ -169,7 +169,7 @@ export default {
         eyebrow: '// Shared Subscriptions',
         title: 'Turn idle subscription quota into income.',
         subtitle:
-          "You're already paying for a Claude subscription. When someone uses the part you didn't, you take a share.",
+          "You're already paying for a Claude or ChatGPT subscription. When someone uses the part you didn't, you take a share.",
         // The provider film. This one ships in Chinese and English and follows
         // the interface language (see contributorVideoUrl in HomeView).
         //
@@ -223,7 +223,7 @@ export default {
         },
         privacy: {
           title: 'You never handle user data',
-          desc: "On the shared subscription route, user requests travel from the platform's TEE gateway straight to Anthropic — they never pass through any device of yours. What you provide is quota, not servers.",
+          desc: "On the shared subscription route, user requests travel from the platform's TEE gateway straight to the model vendor (Anthropic / OpenAI) — they never pass through any device of yours. What you provide is quota, not servers.",
         },
         cta: 'See how sharing works'
       },
@@ -256,7 +256,7 @@ export default {
       stayConnected: 'Stay Connected',
       allRightsReserved: 'All rights reserved.',
       trademarkNotice:
-        '*Claude is a trademark of Anthropic, PBC. ApexOne is an independent service and is not affiliated with Anthropic.'
+        '*Claude is a trademark of Anthropic, PBC; ChatGPT is a trademark of OpenAI, L.L.C. ApexOne is an independent service and is not affiliated with Anthropic or OpenAI.'
     }
   },
 }

@@ -136,7 +136,7 @@ export default {
           points: {
             owned: '平台自营账号：请求在 Intel TDX 机密虚拟机内路由，运营方与日志都读不到明文',
             shared:
-              '共享订阅通道：供给者只提供订阅额度，请求内容经 TEE 直达 Anthropic，不经过供给者的任何设备',
+              '共享订阅通道：供给者只提供订阅额度，请求内容经 TEE 直达模型厂商（Anthropic / OpenAI），不经过供给者的任何设备',
             relay: 'API 中转通道：请求会转发到供给者提供的服务端点，这一通道不在 TEE 密封范围内'
           }
         }
@@ -166,7 +166,7 @@ export default {
       supply: {
         eyebrow: '// 共享订阅',
         title: '把闲置的订阅额度，变成收入。',
-        subtitle: '你已经在为 Claude 订阅付费。别人用掉你没用完的那部分时，你按比例分成。',
+        subtitle: '你已经在为 Claude 或 ChatGPT 订阅付费。别人用掉你没用完的那部分时，你按比例分成。',
         // 共享者视频。这一支有中英两版,按界面语言取(见 HomeView 的
         // contributorVideoUrl)。
         //
@@ -217,7 +217,7 @@ export default {
         },
         privacy: {
           title: '你不经手任何用户数据',
-          desc: '共享订阅通道下，用户的请求内容经平台的 TEE 网关直达 Anthropic，不会流经你的任何设备。你提供的是额度，不是服务器。'
+          desc: '共享订阅通道下，用户的请求内容经平台的 TEE 网关直达模型厂商（Anthropic / OpenAI），不会流经你的任何设备。你提供的是额度，不是服务器。'
         },
         cta: '了解如何共享订阅'
       },
@@ -249,7 +249,7 @@ export default {
       contactUs: '联系我们',
       stayConnected: '保持联系',
       allRightsReserved: '保留所有权利。',
-      trademarkNotice: '*Claude 是 Anthropic, PBC 的商标。ApexOne 是独立服务，与 Anthropic 无关联。'
+      trademarkNotice: '*Claude 是 Anthropic, PBC 的商标；ChatGPT 是 OpenAI, L.L.C. 的商标。ApexOne 是独立服务，与 Anthropic、OpenAI 均无关联。'
     }
   },
 }
