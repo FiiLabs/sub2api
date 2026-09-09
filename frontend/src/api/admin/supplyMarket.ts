@@ -655,6 +655,66 @@ async function updateProbationSettings(
   return data
 }
 
+/** 供需动态平衡门阈值（头数比）。默认关。 */
+export interface SupplyDemandGateSettings {
+  /** 总开关。默认 false。 */
+  enabled: boolean
+  /** 活跃用户样本下限，低于此门不生效（冷启动 fail-open）。 */
+  sample_floor: number
+  /** 供给门：某平台 供给号数/活跃用户数 > 此值 → 拒绝新共享者。0=关。 */
+  max_suppliers_per_user: number
+  /** 消费门：全局 供给号数/活跃用户数 < 此值 → 拒绝新用户注册。0=关。 */
+  min_suppliers_per_user: number
+  /** 只读：供给门当前是否生效。 */
+  supplier_gate_active?: boolean
+  /** 只读：消费门当前是否生效。 */
+  consumer_gate_active?: boolean
+}
+
+export type SupplyDemandGatePayload = Omit<
+  SupplyDemandGateSettings,
+  'supplier_gate_active' | 'consumer_gate_active'
+>
+
+async function getSupplyDemandGateSettings(): Promise<SupplyDemandGateSettings> {
+  const { data } = await apiClient.get<SupplyDemandGateSettings>('/admin/settings/supply-demand-gate')
+  return data
+}
+
+async function updateSupplyDemandGateSettings(
+  payload: SupplyDemandGatePayload
+): Promise<SupplyDemandGateSettings> {
+  const { data } = await apiClient.put<SupplyDemandGateSettings>(
+    '/admin/settings/supply-demand-gate',
+    payload
+  )
+  return data
+}
+
+/** 首页公开数据展示配置（真实数 + 可配基数偏移）。默认关、零偏移。 */
+export interface HomepageStatsSettings {
+  enabled: boolean
+  shared_accounts_offset: number
+  active_users_offset: number
+  total_requests_offset: number
+  contributor_earnings_offset: number
+}
+
+async function getHomepageStatsSettings(): Promise<HomepageStatsSettings> {
+  const { data } = await apiClient.get<HomepageStatsSettings>('/admin/settings/homepage-stats')
+  return data
+}
+
+async function updateHomepageStatsSettings(
+  payload: HomepageStatsSettings
+): Promise<HomepageStatsSettings> {
+  const { data } = await apiClient.put<HomepageStatsSettings>(
+    '/admin/settings/homepage-stats',
+    payload
+  )
+  return data
+}
+
 async function getOnboardingSettings(): Promise<SupplyOnboardingSettings> {
   const { data } = await apiClient.get<SupplyOnboardingSettings>('/admin/settings/supply-onboarding')
   return data
@@ -933,6 +993,10 @@ export const adminSupplyMarketAPI = {
   updateProbationSettings,
   getOnboardingSettings,
   updateOnboardingSettings,
+  getSupplyDemandGateSettings,
+  updateSupplyDemandGateSettings,
+  getHomepageStatsSettings,
+  updateHomepageStatsSettings,
   getAgreementSettings,
   updateAgreementSettings,
   getWithdrawalSettings,

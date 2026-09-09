@@ -571,6 +571,84 @@
           </div>
         </div>
 
+        <!-- ===================== 供需动态平衡门 ===================== -->
+        <div class="card space-y-4 p-6">
+          <div>
+            <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('supplyAdmin.demandGate.title') }}</h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.demandGate.description') }}</p>
+          </div>
+          <div class="space-y-4">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.demandGate.enabled') }}</p>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.demandGate.enabledHint') }}</p>
+              </div>
+              <Toggle v-model="demandGateForm.enabled" data-testid="demand-gate-enabled" />
+            </div>
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.demandGate.sampleFloor') }}</label>
+              <input v-model.number="demandGateForm.sample_floor" type="number" step="1" min="0" class="input" data-testid="demand-gate-sample-floor" />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.demandGate.sampleFloorHint') }}</p>
+            </div>
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.demandGate.maxSuppliersPerUser') }}</label>
+              <input v-model.number="demandGateForm.max_suppliers_per_user" type="number" step="0.01" min="0" class="input" data-testid="demand-gate-max" />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.demandGate.maxSuppliersPerUserHint') }}</p>
+            </div>
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.demandGate.minSuppliersPerUser') }}</label>
+              <input v-model.number="demandGateForm.min_suppliers_per_user" type="number" step="0.01" min="0" class="input" data-testid="demand-gate-min" />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.demandGate.minSuppliersPerUserHint') }}</p>
+            </div>
+          </div>
+          <div class="flex justify-end">
+            <button class="btn btn-primary" :disabled="savingDemandGate" @click="saveDemandGate">
+              {{ t('supplyAdmin.demandGate.save') }}
+            </button>
+          </div>
+        </div>
+
+        <!-- ===================== 首页公开数据 ===================== -->
+        <div class="card space-y-4 p-6">
+          <div>
+            <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('supplyAdmin.homepageStats.title') }}</h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.homepageStats.description') }}</p>
+          </div>
+          <div class="space-y-4">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.homepageStats.enabled') }}</p>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.homepageStats.enabledHint') }}</p>
+              </div>
+              <Toggle v-model="homepageStatsForm.enabled" data-testid="homepage-stats-enabled" />
+            </div>
+            <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/40 dark:bg-amber-900/20">
+              <p class="text-xs text-amber-700 dark:text-amber-300">{{ t('supplyAdmin.homepageStats.offsetWarning') }}</p>
+            </div>
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.homepageStats.sharedAccountsOffset') }}</label>
+              <input v-model.number="homepageStatsForm.shared_accounts_offset" type="number" step="1" min="0" class="input" data-testid="homepage-stats-shared-accounts" />
+            </div>
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.homepageStats.activeUsersOffset') }}</label>
+              <input v-model.number="homepageStatsForm.active_users_offset" type="number" step="1" min="0" class="input" data-testid="homepage-stats-active-users" />
+            </div>
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.homepageStats.totalRequestsOffset') }}</label>
+              <input v-model.number="homepageStatsForm.total_requests_offset" type="number" step="1" min="0" class="input" data-testid="homepage-stats-total-requests" />
+            </div>
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.homepageStats.contributorEarningsOffset') }}</label>
+              <input v-model.number="homepageStatsForm.contributor_earnings_offset" type="number" step="0.01" min="0" class="input" data-testid="homepage-stats-earnings" />
+            </div>
+          </div>
+          <div class="flex justify-end">
+            <button class="btn btn-primary" :disabled="savingHomepageStats" @click="saveHomepageStats">
+              {{ t('supplyAdmin.homepageStats.save') }}
+            </button>
+          </div>
+        </div>
+
         <!-- ===================== 供给者协议 ===================== -->
         <div class="card space-y-4 p-6">
           <div>
@@ -906,6 +984,8 @@ import {
   type SupplyAgreementSettings,
   type SupplyWithdrawalPayload,
   type SupplyWithdrawalSettings,
+  type SupplyDemandGatePayload,
+  type HomepageStatsSettings,
 } from '@/api/admin/supplyMarket'
 import { useAppStore } from '@/stores/app'
 import { formatCurrency } from '@/utils/format'
@@ -921,6 +1001,8 @@ const savingProbation = ref(false)
 const savingOnboarding = ref(false)
 const savingAgreement = ref(false)
 const savingWithdrawal = ref(false)
+const savingDemandGate = ref(false)
+const savingHomepageStats = ref(false)
 
 const settlementForm = reactive({
   enabled: false,
@@ -987,6 +1069,23 @@ const onboardingForm = reactive<SupplyOnboardingPayload>({
 const onboardingBounds = reactive({
   max_accounts_per_user_cap: 100,
   max_accounts_per_ip_cap: 10000,
+})
+
+// 供需动态平衡门。默认关，初值与后端 DefaultSupplyDemandGateSettings 对齐。
+const demandGateForm = reactive<SupplyDemandGatePayload>({
+  enabled: false,
+  sample_floor: 20,
+  max_suppliers_per_user: 1,
+  min_suppliers_per_user: 0.05,
+})
+
+// 首页公开数据展示配置。默认关、零偏移。
+const homepageStatsForm = reactive<HomepageStatsSettings>({
+  enabled: false,
+  shared_accounts_offset: 0,
+  active_users_offset: 0,
+  total_requests_offset: 0,
+  contributor_earnings_offset: 0,
 })
 
 // 协议默认是空的 = 尚未发布 = 自助接入被拒。这个默认值是刻意的：开源部署第一次
@@ -1174,6 +1273,59 @@ async function saveOnboarding(): Promise<void> {
     appStore.showError(extractApiErrorMessage(error, t('supplyAdmin.error.saveFailed')))
   } finally {
     savingOnboarding.value = false
+  }
+}
+
+async function loadDemandGate(): Promise<void> {
+  const settings = await adminSupplyMarketAPI.getSupplyDemandGateSettings()
+  demandGateForm.enabled = settings.enabled
+  demandGateForm.sample_floor = settings.sample_floor
+  demandGateForm.max_suppliers_per_user = settings.max_suppliers_per_user
+  demandGateForm.min_suppliers_per_user = settings.min_suppliers_per_user
+}
+
+async function saveDemandGate(): Promise<void> {
+  savingDemandGate.value = true
+  try {
+    const saved = await adminSupplyMarketAPI.updateSupplyDemandGateSettings({
+      enabled: demandGateForm.enabled,
+      sample_floor: demandGateForm.sample_floor,
+      max_suppliers_per_user: demandGateForm.max_suppliers_per_user,
+      min_suppliers_per_user: demandGateForm.min_suppliers_per_user,
+    })
+    demandGateForm.sample_floor = saved.sample_floor
+    demandGateForm.max_suppliers_per_user = saved.max_suppliers_per_user
+    demandGateForm.min_suppliers_per_user = saved.min_suppliers_per_user
+    appStore.showSuccess(t('supplyAdmin.demandGate.saved'))
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('supplyAdmin.error.saveFailed')))
+  } finally {
+    savingDemandGate.value = false
+  }
+}
+
+async function loadHomepageStats(): Promise<void> {
+  const settings = await adminSupplyMarketAPI.getHomepageStatsSettings()
+  homepageStatsForm.enabled = settings.enabled
+  homepageStatsForm.shared_accounts_offset = settings.shared_accounts_offset
+  homepageStatsForm.active_users_offset = settings.active_users_offset
+  homepageStatsForm.total_requests_offset = settings.total_requests_offset
+  homepageStatsForm.contributor_earnings_offset = settings.contributor_earnings_offset
+}
+
+async function saveHomepageStats(): Promise<void> {
+  savingHomepageStats.value = true
+  try {
+    const saved = await adminSupplyMarketAPI.updateHomepageStatsSettings({ ...homepageStatsForm })
+    homepageStatsForm.shared_accounts_offset = saved.shared_accounts_offset
+    homepageStatsForm.active_users_offset = saved.active_users_offset
+    homepageStatsForm.total_requests_offset = saved.total_requests_offset
+    homepageStatsForm.contributor_earnings_offset = saved.contributor_earnings_offset
+    appStore.showSuccess(t('supplyAdmin.homepageStats.saved'))
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('supplyAdmin.error.saveFailed')))
+  } finally {
+    savingHomepageStats.value = false
   }
 }
 
@@ -1559,6 +1711,8 @@ onMounted(async () => {
       loadPayoutChain(),
       loadAgreement(),
       loadWithdrawal(),
+      loadDemandGate(),
+      loadHomepageStats(),
     ])
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, t('supplyAdmin.error.loadFailed')))

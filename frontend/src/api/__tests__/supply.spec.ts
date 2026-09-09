@@ -412,6 +412,8 @@ describe('admin supply ops api (read-only)', () => {
       'markWithdrawalPaid',
       'rejectWithdrawal',
       'updateAgreementSettings',
+      // 首页公开数据展示配置。改的是配置不是业务数据，与其余 update*Settings 同类。
+      'updateHomepageStatsSettings',
       'updateOnboardingSettings',
       // M6：链上金库配置。改的是配置不是业务数据，与其余 update* 同类；
       // 私钥在请求里只进不出（响应连密文都没有），见 supplyMarket.ts。
@@ -419,6 +421,8 @@ describe('admin supply ops api (read-only)', () => {
       'updatePoolSettings',
       'updateProbationSettings',
       'updateSettlementSettings',
+      // 供需平衡门阈值配置。同上，配置类写入。
+      'updateSupplyDemandGateSettings',
       'updateWithdrawalSettings',
     ])
   })

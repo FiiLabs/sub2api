@@ -550,6 +550,37 @@ export default {
       saved: '接入上限已保存'
     },
 
+    // APEXONE-EXT: 供需动态平衡门。
+    demandGate: {
+      title: '供需动态平衡门',
+      description: '按「活跃共享号数 vs 活跃用户数」的头数比，在供需明显失衡时拒绝一侧新增。默认关。',
+      enabled: '启用平衡门',
+      enabledHint: '关闭时不做任何供需判断（默认）。打开后按下面的阈值拒绝新共享者 / 新用户。',
+      sampleFloor: '活跃用户样本下限',
+      sampleFloorHint: '活跃用户少于此值时门不生效（冷启动放行，避免早期噪声把所有人挡了）。',
+      maxSuppliersPerUser: '供给门阈值（每用户供给号上限）',
+      maxSuppliersPerUserHint: '某平台 供给号数/活跃用户数 超过此值 → 判供给过剩，拒绝新共享者接入该平台。0 = 关闭供给门。',
+      minSuppliersPerUser: '消费门阈值（每用户供给号下限）',
+      minSuppliersPerUserHint: '全局 供给号数/活跃用户数 低于此值 → 判供给不足，拒绝新用户注册。0 = 关闭消费门。',
+      save: '保存平衡门',
+      saved: '平衡门已保存'
+    },
+
+    // APEXONE-EXT: 首页公开数据展示配置。
+    homepageStats: {
+      title: '首页公开数据',
+      description: '首页展示的平台数据 = 真实聚合数 + 下面配的基数偏移。默认关、零偏移。',
+      enabled: '在首页展示平台数据',
+      enabledHint: '关闭时首页不展示这一段（默认）。',
+      offsetWarning: '偏移会叠加到公开展示的数字上，属营销包装。已约定走「真实数 + 偏移」而非纯造假，偏移由你掌握、可随时归零。',
+      sharedAccountsOffset: '共享号数 偏移',
+      activeUsersOffset: '活跃用户数 偏移',
+      totalRequestsOffset: '累计请求数 偏移',
+      contributorEarningsOffset: '已付贡献者 USDT 偏移',
+      save: '保存首页数据配置',
+      saved: '首页数据配置已保存'
+    },
+
     // APEXONE-EXT: 供给者协议。这一组文案的分寸要拿准：协议是法律文本，
     // 后台这一页只负责"发布哪一版"，不负责替运营解释协议写了什么。
     agreement: {

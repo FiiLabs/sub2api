@@ -590,6 +590,37 @@ export default {
       saved: 'Onboarding limits saved'
     },
 
+    // APEXONE-EXT: dynamic supply/demand balance gate.
+    demandGate: {
+      title: 'Supply/demand balance gate',
+      description: 'By headcount ratio (active shared accounts vs active users), reject new entries on one side when supply and demand are clearly out of balance. Off by default.',
+      enabled: 'Enable balance gate',
+      enabledHint: 'When off, no supply/demand check runs (default). When on, rejects new suppliers / new users per the thresholds below.',
+      sampleFloor: 'Active-user sample floor',
+      sampleFloorHint: 'Below this many active users the gate is inactive (fail-open at cold start, so early noise does not block everyone).',
+      maxSuppliersPerUser: 'Supplier gate (max shared accounts per user)',
+      maxSuppliersPerUserHint: 'When a platform’s shared-accounts/active-users exceeds this → oversupplied, reject new sharing on that platform. 0 disables the supplier gate.',
+      minSuppliersPerUser: 'Consumer gate (min shared accounts per user)',
+      minSuppliersPerUserHint: 'When global shared-accounts/active-users falls below this → undersupplied, reject new signups. 0 disables the consumer gate.',
+      save: 'Save balance gate',
+      saved: 'Balance gate saved'
+    },
+
+    // APEXONE-EXT: public homepage stats display.
+    homepageStats: {
+      title: 'Homepage public stats',
+      description: 'The platform numbers shown on the homepage = real aggregates + the baseline offsets below. Off by default, zero offsets.',
+      enabled: 'Show platform stats on the homepage',
+      enabledHint: 'When off, the homepage hides this band (default).',
+      offsetWarning: 'Offsets are added to publicly displayed numbers — this is marketing packaging. The agreed approach is "real + offset", not pure fabrication; the offsets are yours to control and can be zeroed any time.',
+      sharedAccountsOffset: 'Shared accounts offset',
+      activeUsersOffset: 'Active users offset',
+      totalRequestsOffset: 'Requests served offset',
+      contributorEarningsOffset: 'Paid to contributors (USDT) offset',
+      save: 'Save homepage stats',
+      saved: 'Homepage stats saved'
+    },
+
     // APEXONE-EXT: supplier agreement. Keep the tone narrow: this page decides
     // which version is published, not what the agreement says.
     agreement: {
