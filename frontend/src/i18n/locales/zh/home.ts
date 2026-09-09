@@ -62,17 +62,6 @@ export default {
           hermes: '客户端支持'
         }
       },
-      // 平台公开数据带（真实数 + 运营配的基数偏移，见后端 homepage_stats）。
-      // 后端 enabled=false 或拉取失败时整段隐藏。
-      stats: {
-        eyebrow: '// 平台数据',
-        title: '正在增长的可验证 AI 网络',
-        sharedAccounts: '共享账号',
-        activeUsers: '活跃用户',
-        totalRequests: '累计请求',
-        contributorEarnings: '已付贡献者 (USDT)',
-        viewAll: '查看平台数据 →'
-      },
       routing: {
         eyebrow: '// 机密路由架构',
         title: '我们不卖你的数据——因为我们根本拿不到。',

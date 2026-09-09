@@ -5,6 +5,21 @@ export default {
     eyebrow: '// Platform metrics',
     title: 'ApexOne by the numbers',
     subtitle: 'A verifiable AI network, and it is growing.',
+    hero: {
+      live: 'Live'
+    },
+    models: {
+      title: 'Supported models',
+      subtitle: 'One API, multiple frontier models',
+      live: 'Live',
+      soon: 'Soon'
+    },
+    verify: {
+      eyebrow: '// Verifiable',
+      title: 'Every call is verifiable',
+      desc: 'Unlike ordinary gateways, every inference on ApexOne is routed inside a TEE and can be verified from your browser — proof that the exact model you paid for served your request.',
+      cta: 'See the privacy proof →'
+    },
     kpi: {
       sharedAccounts: 'Shared accounts',
       activeUsers: 'Active users',

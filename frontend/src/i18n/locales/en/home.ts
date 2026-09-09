@@ -62,17 +62,6 @@ export default {
           hermes: 'Client Support'
         }
       },
-      // Public platform stats band (real numbers + operator-configured baseline offset).
-      // Hidden entirely when backend enabled=false or the fetch fails.
-      stats: {
-        eyebrow: '// Platform stats',
-        title: 'A growing network of verifiable AI',
-        sharedAccounts: 'Shared accounts',
-        activeUsers: 'Active users',
-        totalRequests: 'Requests served',
-        contributorEarnings: 'Paid to contributors (USDT)',
-        viewAll: 'View platform metrics →'
-      },
       routing: {
         eyebrow: '// Confidential Routing Architecture',
         title: "We can't sell your data. We can't even read it.",

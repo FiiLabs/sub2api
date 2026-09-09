@@ -4,6 +4,21 @@ export default {
     eyebrow: '// 平台数据',
     title: 'ApexOne 用数据说话',
     subtitle: '可验证的 AI 网络，正在增长。',
+    hero: {
+      live: '实时'
+    },
+    models: {
+      title: '支持的模型',
+      subtitle: '一个 API，多家前沿模型',
+      live: '已上线',
+      soon: '即将上线'
+    },
+    verify: {
+      eyebrow: '// 可验证',
+      title: '每一次调用都可验证',
+      desc: '不同于普通网关，ApexOne 的每次推理都在 TEE 内路由，并可在浏览器中远程验证——服务你的是不是你付费的那个模型，自证。',
+      cta: '查看隐私证明 →'
+    },
     kpi: {
       sharedAccounts: '共享账号',
       activeUsers: '活跃用户',

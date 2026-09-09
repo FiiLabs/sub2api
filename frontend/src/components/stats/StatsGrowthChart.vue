@@ -21,9 +21,12 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 const props = defineProps<{
   labels: string[]
   series: { label: string; data: number[]; color: string }[]
+  // 强制深色调色板（/stats 页恒为深色，与站点主题无关）；不传则跟随站点 dark class。
+  dark?: boolean
 }>()
 
 function isDark(): boolean {
+  if (props.dark !== undefined) return props.dark
   return typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
 }
 

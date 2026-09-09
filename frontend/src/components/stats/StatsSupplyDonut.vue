@@ -16,9 +16,12 @@ ChartJS.register(ArcElement, Tooltip, Legend)
 const props = defineProps<{
   // 平台 → 号数（真实）。占比由此算。
   items: { label: string; value: number; color: string }[]
+  // 强制深色调色板（/stats 页恒为深色）；不传则跟随站点 dark class。
+  dark?: boolean
 }>()
 
 function isDark(): boolean {
+  if (props.dark !== undefined) return props.dark
   return typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
 }
 
