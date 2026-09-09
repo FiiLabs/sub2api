@@ -58,7 +58,8 @@ export default {
           // 那会让同一张卡上出现两种单位，读者得先换算才知道说的是一件事。
           discount: '官方 API 价格',
           attested: 'TEE 隐私保护',
-          claude: '已上线',
+          failover: '自动故障切换',
+          failoverValue: '多路由',
           hermes: '客户端支持'
         }
       },

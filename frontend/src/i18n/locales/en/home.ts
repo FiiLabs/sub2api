@@ -58,7 +58,8 @@ export default {
         stats: {
           discount: 'Of Official API Price',
           attested: 'TEE Privacy Protection',
-          claude: 'Live Now',
+          failover: 'Auto failover',
+          failoverValue: 'Multi-route',
           hermes: 'Client Support'
         }
       },

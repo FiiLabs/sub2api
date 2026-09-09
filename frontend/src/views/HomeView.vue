@@ -587,7 +587,7 @@ const heroStats = computed(() => [
   // 把「1.8折」写进 value 会让英文页面显示中文。
   { value: '14%', label: t('home.landing.hero.stats.discount') },
   { value: '100%', label: t('home.landing.hero.stats.attested') },
-  { value: 'Fable 5.1', label: t('home.landing.hero.stats.claude') },
+  { value: t('home.landing.hero.stats.failoverValue'), label: t('home.landing.hero.stats.failover') },
   { value: 'Hermes', label: t('home.landing.hero.stats.hermes') }
 ])
 
