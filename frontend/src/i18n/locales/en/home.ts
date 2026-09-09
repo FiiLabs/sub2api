@@ -34,7 +34,7 @@ export default {
       hero: {
         // 不写"今日/本周"这类带时效的词:首页文案改一次要走一次发版,
         // 而"今日上线"过了当天就是假的。
-        badge: 'Claude Fable 5.1 Is Live',
+        badge: 'Claude Fable 5.1 and GPT-6 Are Live',
         title: 'Data privacy you can verify. Powered by TEE',
         subtitle:
           'Access frontier models like Claude through a TEE-protected gateway — your data stays private, every call is verifiable, all at 14% of official API pricing.',
@@ -60,6 +60,16 @@ export default {
           claude: 'Live Now',
           hermes: 'Client Support'
         }
+      },
+      // Public platform stats band (real numbers + operator-configured baseline offset).
+      // Hidden entirely when backend enabled=false or the fetch fails.
+      stats: {
+        eyebrow: '// Platform stats',
+        title: 'A growing network of verifiable AI',
+        sharedAccounts: 'Shared accounts',
+        activeUsers: 'Active users',
+        totalRequests: 'Requests served',
+        contributorEarnings: 'Paid to contributors (USDT)'
       },
       routing: {
         eyebrow: '// Confidential Routing Architecture',
@@ -151,10 +161,10 @@ export default {
           name: 'ApexOne',
           tagline: 'Pay As You Go',
           priceLine: '14% of official API billing price, per token.',
-          desc: 'For developers who want Claude access with verifiable private routing and transparent billing.',
+          desc: 'For developers who want Claude and GPT access with verifiable private routing and transparent billing.',
           cta: 'Get Started →',
           features: {
-            f1: 'Claude Fable 5.1 Available Now; GPT and Gemini Coming Soon',
+            f1: 'Claude Fable 5.1 and GPT-6 Available Now; Gemini Coming Soon',
             f2: '14% of Official API Billing Price',
             f3: 'TEE-Attested Gateway + Remote Attestation',
             f4: 'Metadata-Only Control Plane — Prompts Never Logged',
@@ -240,7 +250,7 @@ export default {
       },
       cta: {
         title: 'Build on AI You Can Verify.',
-        description: 'Claude Fable 5.1, at 14% of official pricing, sealed inside a TEE.',
+        description: 'Claude Fable 5.1 and GPT-6, at 14% of official pricing, sealed inside a TEE.',
         primary: 'Get Started →',
         secondary: 'Verify Privacy →',
         supply: 'Earn by Sharing →',

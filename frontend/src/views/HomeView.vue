@@ -102,6 +102,27 @@
         </div>
       </section>
 
+      <!-- PLATFORM STATS band：后端 enabled=false 或拉取失败时整段隐藏（fail-soft） -->
+      <section v-if="showPlatformStats" class="mx-auto mt-14 max-w-4xl">
+        <div class="mb-6 text-center">
+          <span :class="eyebrowClass">{{ t('home.landing.stats.eyebrow') }}</span>
+          <h2 :class="headingClass" class="mt-2">{{ t('home.landing.stats.title') }}</h2>
+        </div>
+        <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div
+            v-for="item in platformStatItems"
+            :key="item.label"
+            :class="cardClass"
+            class="p-5 text-center"
+          >
+            <div class="text-fluid-lg font-bold text-primary-600 dark:text-primary-400">
+              {{ formatStat(item.value) }}
+            </div>
+            <div class="mt-1 text-fluid-2xs text-gray-400 dark:text-dark-500">{{ item.label }}</div>
+          </div>
+        </div>
+      </section>
+
       <!-- ROUTING: TEE architecture -->
       <div id="architecture" class="mx-auto mt-14 max-w-5xl">
         <div v-reveal :class="cardClass" class="reveal-item overflow-hidden p-6 md:p-8">
@@ -200,7 +221,7 @@
             <rect x="596" y="130" width="116" height="40" rx="8" class="surf" stroke-width="1" />
             <circle cx="612" cy="150" r="6.5" fill="#10a37f" />
             <text x="623" y="147" font-size="10.5" font-weight="600" class="strong" font-family="system-ui">GPT</text>
-            <text x="623" y="158" font-size="9" class="label2" font-family="system-ui">coming soon</text>
+            <text x="623" y="158" font-size="9" class="label2" font-family="system-ui">GPT-6 live</text>
 
             <rect x="596" y="208" width="116" height="40" rx="8" class="surf" stroke-width="1" />
             <circle cx="612" cy="228" r="6.5" fill="#4285F4" />
@@ -548,10 +569,11 @@
 
 <script setup lang="ts">
 import type { Directive } from 'vue'
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore, useAuthStore } from '@/stores'
 import { useSupplyStore } from '@/stores/supply'
+import { getPublicStats, type PublicHomepageStats } from '@/api/stats'
 import AppFooter from '@/components/layout/AppFooter.vue'
 import Header from '@/components/layout/Header.vue'
 import StatusIcon from '@/components/icons/StatusIcon.vue'
@@ -590,6 +612,24 @@ const heroStats = computed(() => [
   { value: 'Fable 5.1', label: t('home.landing.hero.stats.claude') },
   { value: 'Hermes', label: t('home.landing.hero.stats.hermes') }
 ])
+
+// 平台公开数据带。后端 enabled=false 或拉取失败 → showPlatformStats=false，整段隐藏。
+// 这是招徕用途的展示数据（真实数 + 运营配的偏移，见后端 homepage_stats）。
+const platformStats = ref<PublicHomepageStats | null>(null)
+const showPlatformStats = computed(() => platformStats.value?.enabled === true)
+const platformStatItems = computed(() => {
+  const s = platformStats.value
+  if (!s) return []
+  return [
+    { value: s.shared_accounts, label: t('home.landing.stats.sharedAccounts') },
+    { value: s.active_users, label: t('home.landing.stats.activeUsers') },
+    { value: s.total_requests, label: t('home.landing.stats.totalRequests') },
+    { value: s.contributor_earnings_usdt, label: t('home.landing.stats.contributorEarnings') }
+  ]
+})
+function formatStat(n: number): string {
+  return Number(n || 0).toLocaleString()
+}
 
 // APEXONE comparison table
 const compareRowKeys = ['attestation', 'dataAccess', 'fable', 'failover', 'price'] as const
@@ -781,6 +821,15 @@ onMounted(() => {
   if (!appStore.publicSettingsLoaded) {
     appStore.fetchPublicSettings()
   }
+
+  // 平台公开数据（无鉴权）。fail-soft：失败或后端未开启就不显示这一段，绝不阻塞首页。
+  getPublicStats()
+    .then((s) => {
+      platformStats.value = s
+    })
+    .catch(() => {
+      platformStats.value = null
+    })
 })
 </script>
 

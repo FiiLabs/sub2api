@@ -290,6 +290,14 @@ type SupplierOnboardingRepository interface {
 	// 「某人挂了异常多的号」时被触发——把最坏情况下最长的那个列表整个拉回内存，
 	// 只为了数一个数。COUNT 在数据库里做，这是它擅长的事。
 	CountAccountsByOwner(ctx context.Context, userID int64) (int, error)
+	// CountActiveSupplyAccounts 数当前可调度的共享账号数，按平台分组（供需平衡门用）。
+	//
+	// 只数 owner_user_id IS NOT NULL（共享账号，非自营）、未删除、且 schedulable=TRUE
+	// 的行——观察期里 schedulable=false 的号还没在供货，不计入「当前活跃供给」。
+	// 返回 platform → count，供 supply_demand_balance.go 与供需比。
+	CountActiveSupplyAccounts(ctx context.Context) (map[string]int, error)
+	// SumContributorEarnings 累计贡献者入账（SUM(history_credit)，只增不减；首页美化数据用）。
+	SumContributorEarnings(ctx context.Context) (float64, error)
 	// ListAccountIDsBySupplyState 列出处于某个接入状态的供给账号 id（观察期任务用）。
 	//
 	// 只扫 owner_user_id IS NOT NULL 的行：自营账号没有接入状态，也永远不该被

@@ -116,6 +116,12 @@ func (s *AuthService) RegisterOAuthEmailAccount(
 	if s.settingService == nil || (!s.settingService.IsRegistrationEnabled(ctx) && !s.canBypassRegistrationDisabledForOAuth(ctx, signupSource)) {
 		return nil, nil, ErrRegDisabled
 	}
+	// 供需平衡门（消费侧）：与本地注册同一道软刹车，OAuth 注册这条新建账号路径也要挡。
+	if s.balanceGate != nil {
+		if err := s.balanceGate.AllowNewConsumer(ctx); err != nil {
+			return nil, nil, err
+		}
+	}
 
 	email = strings.TrimSpace(strings.ToLower(email))
 	if isReservedEmail(email) {
@@ -197,6 +203,12 @@ func (s *AuthService) RegisterVerifiedOAuthEmailAccount(
 	}
 	if s.settingService == nil || (!s.settingService.IsRegistrationEnabled(ctx) && !s.canBypassRegistrationDisabledForOAuth(ctx, signupSource)) {
 		return nil, nil, ErrRegDisabled
+	}
+	// 供需平衡门（消费侧）：与本地注册同一道软刹车，OAuth 注册这条新建账号路径也要挡。
+	if s.balanceGate != nil {
+		if err := s.balanceGate.AllowNewConsumer(ctx); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	email = strings.TrimSpace(strings.ToLower(email))

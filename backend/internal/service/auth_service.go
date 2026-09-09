@@ -86,6 +86,17 @@ type AuthService struct {
 	affiliateService      *AffiliateService
 	defaultSubAssigner    DefaultSubscriptionAssigner
 	userPlatformQuotaRepo UserPlatformQuotaRepository
+	// balanceGate 供需平衡门的消费侧判定。可选，见 SetBalanceGate。
+	// nil = 不判平衡，照常注册（这道门默认关，见 setting_supply_demand_gate.go）。
+	balanceGate consumerBalanceGate
+}
+
+// consumerBalanceGate 供需平衡门的消费侧判定。见 supply_demand_balance.go。
+//
+// 窄接口而不是直接吃 *SupplyDemandBalanceService：这里只需要「此刻还收不收新用户」
+// 一件事，声明成一个方法能让 auth 测试不必造平衡门的全部依赖。
+type consumerBalanceGate interface {
+	AllowNewConsumer(ctx context.Context) error
 }
 
 type CaptchaProof struct {
@@ -154,6 +165,14 @@ func (s *AuthService) SetAliyunCaptchaService(aliyunCaptchaService *AliyunCaptch
 	s.aliyunCaptchaService = aliyunCaptchaService
 }
 
+// SetBalanceGate 注入供需平衡门。为 nil 时这道门整个不存在（照常注册）。
+func (s *AuthService) SetBalanceGate(gate *SupplyDemandBalanceService) {
+	if s == nil || gate == nil {
+		return
+	}
+	s.balanceGate = gate
+}
+
 // Register 用户注册，返回token和用户
 func (s *AuthService) Register(ctx context.Context, email, password string) (string, *User, error) {
 	return s.RegisterWithVerification(ctx, email, password, "", "", "", "")
@@ -164,6 +183,14 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 	// 检查是否开放注册（默认关闭：settingService 未配置时不允许注册）
 	if s.settingService == nil || !s.settingService.IsRegistrationEnabled(ctx) {
 		return "", nil, ErrRegDisabled
+	}
+
+	// 供需平衡门（消费侧）：供给远少于需求时暂停新用户注册。默认关，见 SetBalanceGate。
+	// 排在注册总开关之后：总开关是硬策略，平衡门是随供需变动的软刹车。
+	if s.balanceGate != nil {
+		if err := s.balanceGate.AllowNewConsumer(ctx); err != nil {
+			return "", nil, err
+		}
 	}
 
 	// 防止用户注册 LinuxDo OAuth 合成邮箱，避免第三方登录与本地账号发生碰撞。
@@ -310,6 +337,12 @@ func (s *AuthService) SendVerifyCode(ctx context.Context, email string, locale .
 	if s.settingService == nil || !s.settingService.IsRegistrationEnabled(ctx) {
 		return ErrRegDisabled
 	}
+	// 供需平衡门：在发码这一步就早挡，供给不足时不必让用户填完表单才被拒。
+	if s.balanceGate != nil {
+		if err := s.balanceGate.AllowNewConsumer(ctx); err != nil {
+			return err
+		}
+	}
 
 	if isReservedEmail(email) {
 		return ErrEmailReserved
@@ -349,6 +382,12 @@ func (s *AuthService) SendVerifyCodeAsync(ctx context.Context, email string, loc
 	if s.settingService == nil || !s.settingService.IsRegistrationEnabled(ctx) {
 		logger.LegacyPrintf("service.auth", "%s", "[Auth] Registration is disabled")
 		return nil, ErrRegDisabled
+	}
+	// 供需平衡门：在发码这一步就早挡（同步版同）。
+	if s.balanceGate != nil {
+		if err := s.balanceGate.AllowNewConsumer(ctx); err != nil {
+			return nil, err
+		}
 	}
 
 	if isReservedEmail(email) {

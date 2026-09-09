@@ -574,6 +574,178 @@ func (h *SettingHandler) UpdateSupplyOnboardingSettings(c *gin.Context) {
 		h.settingService.GetSupplyOnboardingSettings(ctx)))
 }
 
+// SupplyDemandGateSettingsResponse 是供需动态平衡门配置的对外形态。
+type SupplyDemandGateSettingsResponse struct {
+	Enabled             bool    `json:"enabled"`
+	SampleFloor         int     `json:"sample_floor"`
+	MaxSuppliersPerUser float64 `json:"max_suppliers_per_user"`
+	MinSuppliersPerUser float64 `json:"min_suppliers_per_user"`
+	// 两个「这一侧门现在有没有在起作用」的布尔，理由同接入上限的 *_enabled。
+	SupplierGateActive bool `json:"supplier_gate_active"`
+	ConsumerGateActive bool `json:"consumer_gate_active"`
+}
+
+func newSupplyDemandGateSettingsResponse(s *service.SupplyDemandGateSettings) SupplyDemandGateSettingsResponse {
+	if s == nil {
+		return SupplyDemandGateSettingsResponse{}
+	}
+	return SupplyDemandGateSettingsResponse{
+		Enabled:             s.Enabled,
+		SampleFloor:         s.SampleFloor,
+		MaxSuppliersPerUser: s.MaxSuppliersPerUser,
+		MinSuppliersPerUser: s.MinSuppliersPerUser,
+		SupplierGateActive:  s.Enabled && s.MaxSuppliersPerUser > 0,
+		ConsumerGateActive:  s.Enabled && s.MinSuppliersPerUser > 0,
+	}
+}
+
+// GetSupplyDemandGateSettings 读供需平衡门阈值
+// GET /api/v1/admin/settings/supply-demand-gate
+func (h *SettingHandler) GetSupplyDemandGateSettings(c *gin.Context) {
+	settings := h.settingService.GetSupplyDemandGateSettings(c.Request.Context())
+	response.Success(c, newSupplyDemandGateSettingsResponse(settings))
+}
+
+// UpdateSupplyDemandGateSettingsRequest 更新供需平衡门请求。
+//
+// 全部指针：漏传的字段沿用库里当前值，不清零——尤其 Enabled，漏传不该把一道
+// 已经开着的门静默关掉（或反之）。
+type UpdateSupplyDemandGateSettingsRequest struct {
+	Enabled             *bool    `json:"enabled"`
+	SampleFloor         *int     `json:"sample_floor"`
+	MaxSuppliersPerUser *float64 `json:"max_suppliers_per_user"`
+	MinSuppliersPerUser *float64 `json:"min_suppliers_per_user"`
+}
+
+// UpdateSupplyDemandGateSettings 写供需平衡门阈值
+// PUT /api/v1/admin/settings/supply-demand-gate
+//
+// 越界值在 service 侧夹回区间后回读。漏传字段沿用当前值（整体拷贝，见接入上限那处的教训）。
+func (h *SettingHandler) UpdateSupplyDemandGateSettings(c *gin.Context) {
+	var req UpdateSupplyDemandGateSettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	ctx := c.Request.Context()
+	current := h.settingService.GetSupplyDemandGateSettings(ctx)
+	settings := &service.SupplyDemandGateSettings{}
+	if current != nil {
+		*settings = *current
+	}
+	if req.Enabled != nil {
+		settings.Enabled = *req.Enabled
+	}
+	if req.SampleFloor != nil {
+		if *req.SampleFloor < 0 {
+			response.BadRequest(c, "sample_floor cannot be negative")
+			return
+		}
+		settings.SampleFloor = *req.SampleFloor
+	}
+	if req.MaxSuppliersPerUser != nil {
+		if *req.MaxSuppliersPerUser < 0 {
+			response.BadRequest(c, "max_suppliers_per_user cannot be negative")
+			return
+		}
+		settings.MaxSuppliersPerUser = *req.MaxSuppliersPerUser
+	}
+	if req.MinSuppliersPerUser != nil {
+		if *req.MinSuppliersPerUser < 0 {
+			response.BadRequest(c, "min_suppliers_per_user cannot be negative")
+			return
+		}
+		settings.MinSuppliersPerUser = *req.MinSuppliersPerUser
+	}
+	if err := h.settingService.SetSupplyDemandGateSettings(ctx, settings); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.Success(c, newSupplyDemandGateSettingsResponse(
+		h.settingService.GetSupplyDemandGateSettings(ctx)))
+}
+
+// HomepageStatsSettingsResponse 是首页公开数据展示配置的对外形态。
+type HomepageStatsSettingsResponse struct {
+	Enabled                   bool    `json:"enabled"`
+	SharedAccountsOffset      int64   `json:"shared_accounts_offset"`
+	ActiveUsersOffset         int64   `json:"active_users_offset"`
+	TotalRequestsOffset       int64   `json:"total_requests_offset"`
+	ContributorEarningsOffset float64 `json:"contributor_earnings_offset"`
+}
+
+func newHomepageStatsSettingsResponse(s *service.HomepageStatsSettings) HomepageStatsSettingsResponse {
+	if s == nil {
+		return HomepageStatsSettingsResponse{}
+	}
+	return HomepageStatsSettingsResponse{
+		Enabled:                   s.Enabled,
+		SharedAccountsOffset:      s.SharedAccountsOffset,
+		ActiveUsersOffset:         s.ActiveUsersOffset,
+		TotalRequestsOffset:       s.TotalRequestsOffset,
+		ContributorEarningsOffset: s.ContributorEarningsOffset,
+	}
+}
+
+// GetHomepageStatsSettings 读首页公开数据展示配置
+// GET /api/v1/admin/settings/homepage-stats
+func (h *SettingHandler) GetHomepageStatsSettings(c *gin.Context) {
+	settings := h.settingService.GetHomepageStatsSettings(c.Request.Context())
+	response.Success(c, newHomepageStatsSettingsResponse(settings))
+}
+
+// UpdateHomepageStatsSettingsRequest 更新首页公开数据展示配置请求。全部指针，漏传沿用当前值。
+type UpdateHomepageStatsSettingsRequest struct {
+	Enabled                   *bool    `json:"enabled"`
+	SharedAccountsOffset      *int64   `json:"shared_accounts_offset"`
+	ActiveUsersOffset         *int64   `json:"active_users_offset"`
+	TotalRequestsOffset       *int64   `json:"total_requests_offset"`
+	ContributorEarningsOffset *float64 `json:"contributor_earnings_offset"`
+}
+
+// UpdateHomepageStatsSettings 写首页公开数据展示配置
+// PUT /api/v1/admin/settings/homepage-stats
+//
+// 负偏移在 service 侧夹成 0 后回读。漏传字段沿用当前值（整体拷贝）。
+func (h *SettingHandler) UpdateHomepageStatsSettings(c *gin.Context) {
+	var req UpdateHomepageStatsSettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	ctx := c.Request.Context()
+	current := h.settingService.GetHomepageStatsSettings(ctx)
+	settings := &service.HomepageStatsSettings{}
+	if current != nil {
+		*settings = *current
+	}
+	if req.Enabled != nil {
+		settings.Enabled = *req.Enabled
+	}
+	if req.SharedAccountsOffset != nil {
+		settings.SharedAccountsOffset = *req.SharedAccountsOffset
+	}
+	if req.ActiveUsersOffset != nil {
+		settings.ActiveUsersOffset = *req.ActiveUsersOffset
+	}
+	if req.TotalRequestsOffset != nil {
+		settings.TotalRequestsOffset = *req.TotalRequestsOffset
+	}
+	if req.ContributorEarningsOffset != nil {
+		settings.ContributorEarningsOffset = *req.ContributorEarningsOffset
+	}
+	if err := h.settingService.SetHomepageStatsSettings(ctx, settings); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.Success(c, newHomepageStatsSettingsResponse(
+		h.settingService.GetHomepageStatsSettings(ctx)))
+}
+
 // AbuseDetectionSettingsResponse 是异常使用检测配置的对外形态。
 type AbuseDetectionSettingsResponse struct {
 	Enabled           bool    `json:"enabled"`

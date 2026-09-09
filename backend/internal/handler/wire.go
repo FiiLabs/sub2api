@@ -200,6 +200,8 @@ func ProvideHandlers(
 	batchImageHandler *BatchImageHandler,
 	// APEXONE-EXT: 双边市场——供给者自助接入
 	supplierHandler *SupplierHandler,
+	// APEXONE-EXT: 首页公开数据（无鉴权）
+	publicStatsHandler *PublicStatsHandler,
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
 	_ *service.OpenAIQuotaAutoResetService,
@@ -227,6 +229,7 @@ func ProvideHandlers(
 		AsyncImage:       asyncImageHandler,
 		BatchImage:       batchImageHandler,
 		Supplier:         supplierHandler,
+		PublicStats:      publicStatsHandler,
 	}
 }
 
@@ -255,6 +258,8 @@ var ProviderSet = wire.NewSet(
 	ProvideBatchImageHandler,
 	// APEXONE-EXT: 双边市场——供给者自助接入
 	NewSupplierHandler,
+	// APEXONE-EXT: 首页公开数据（无鉴权）
+	NewPublicStatsHandler,
 
 	// Admin handlers
 	admin.NewDashboardHandler,

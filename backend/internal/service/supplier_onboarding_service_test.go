@@ -50,6 +50,12 @@ type supplierOnboardingRepoStub struct {
 	// 一个数，就测不出「闸读错了来源」这类错误。默认 0 = 一个号都没挂。
 	ownedCount    int
 	ownedCountErr error
+	// activeSupplyCounts / activeSupplyErr 是供需平衡门读的按平台供给号数。
+	activeSupplyCounts map[string]int
+	activeSupplyErr    error
+	// contributorEarnings / ...Err 是首页美化数据读的累计入账。
+	contributorEarnings    float64
+	contributorEarningsErr error
 
 	// countByIP 按 IP 索引已挂的号数，缺省的键返回 0。
 	countByIP       map[string]int
@@ -244,6 +250,16 @@ type supplierOriginRecord struct {
 func (r *supplierOnboardingRepoStub) CountAccountsByOwner(_ context.Context, _ int64) (int, error) {
 	r.calls = append(r.calls, "CountAccountsByOwner")
 	return r.ownedCount, r.ownedCountErr
+}
+
+func (r *supplierOnboardingRepoStub) CountActiveSupplyAccounts(_ context.Context) (map[string]int, error) {
+	r.calls = append(r.calls, "CountActiveSupplyAccounts")
+	return r.activeSupplyCounts, r.activeSupplyErr
+}
+
+func (r *supplierOnboardingRepoStub) SumContributorEarnings(_ context.Context) (float64, error) {
+	r.calls = append(r.calls, "SumContributorEarnings")
+	return r.contributorEarnings, r.contributorEarningsErr
 }
 
 func (r *supplierOnboardingRepoStub) CountAccountsByOriginIP(_ context.Context, clientIP string) (int, error) {

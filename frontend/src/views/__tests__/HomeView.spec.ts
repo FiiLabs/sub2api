@@ -99,7 +99,7 @@ describe('HomeView ApexOne landing content', () => {
 
     // Hero
     expect(text).toContain('Data privacy you can verify. Powered by TEE')
-    expect(text).toContain('Claude Fable 5.1 Is Live')
+    expect(text).toContain('Claude Fable 5.1 and GPT-6 Are Live')
     expect(text).toContain('14% of official API pricing')
     expect(text).toContain('TEE Privacy Protection')
     expect(text).toContain('Hermes')
@@ -139,11 +139,12 @@ describe('HomeView ApexOne landing content', () => {
 
     // Pricing & CTA
     expect(text).toContain('ApexOne — Pay As You Go')
-    expect(text).toContain('GPT and Gemini Coming Soon')
+    expect(text).toContain('Claude Fable 5.1 and GPT-6 Available Now; Gemini Coming Soon')
     expect(text).toContain('Build on AI You Can Verify.')
     expect(text).toContain('No Training on Your Data')
     expect(text).toContain('Metadata-Only Audit Logs')
-    expect(text).toContain('Claude is a trademark of Anthropic, PBC.')
+    expect(text).toContain('Claude is a trademark of Anthropic, PBC')
+    expect(text).toContain('ChatGPT is a trademark of OpenAI')
 
     // Overclaim guards
     expect(text).not.toContain('Verified-real models')

@@ -188,6 +188,16 @@ SELECT COUNT(*)
 FROM accounts
 WHERE owner_user_id = $1 AND deleted_at IS NULL`
 
+// supplierActiveSupplyCountByPlatformSQL 数当前可调度的共享账号，按平台分组。
+//
+// schedulable = TRUE 是刻意的：观察期里 pending_review 的号 schedulable=false，
+// 它还没在供货，不该被算进「当前活跃供给」——供需平衡门比的是真正在扛流量的容量。
+const supplierActiveSupplyCountByPlatformSQL = `
+SELECT platform, COUNT(*)
+FROM accounts
+WHERE owner_user_id IS NOT NULL AND deleted_at IS NULL AND schedulable = TRUE
+GROUP BY platform`
+
 // supplierAccountListByStateSQL 按接入状态列出供给账号。
 //
 // extra 的键名与「状态缺失时算 pending_review」这条兜底规则都从 service 侧的常量
@@ -491,6 +501,58 @@ func (r *supplierOnboardingRepository) CountAccountsByOwner(ctx context.Context,
 		return 0, fmt.Errorf("count accounts by owner requires a user id")
 	}
 	return r.countOne(ctx, supplierAccountCountByOwnerSQL, "count accounts by owner", userID)
+}
+
+// CountActiveSupplyAccounts 数当前可调度的共享账号数，按平台分组（供需平衡门用）。
+//
+// 读失败返回错误，让 supply_demand_balance.go 按 fail-open 放行——这道门读不到
+// 供给数时正确的动作是放行，而不是拿一个空 map（会被当成「供给为 0」）去比。
+func (r *supplierOnboardingRepository) CountActiveSupplyAccounts(ctx context.Context) (map[string]int, error) {
+	rows, err := r.client.QueryContext(ctx, supplierActiveSupplyCountByPlatformSQL)
+	if err != nil {
+		return nil, fmt.Errorf("count active supply accounts: %w", err)
+	}
+	defer rows.Close()
+
+	counts := make(map[string]int)
+	for rows.Next() {
+		var platform string
+		var n int
+		if err := rows.Scan(&platform, &n); err != nil {
+			return nil, fmt.Errorf("scan active supply count: %w", err)
+		}
+		counts[platform] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate active supply counts: %w", err)
+	}
+	return counts, nil
+}
+
+// supplierContributorEarningsSumSQL 累计贡献者入账。history_credit 只增不减，
+// 是「平台累计给贡献者记了多少收益」最直接的口径。
+const supplierContributorEarningsSumSQL = `
+SELECT COALESCE(SUM(history_credit), 0)::double precision
+FROM supplier_credits`
+
+// SumContributorEarnings 累计贡献者入账（首页美化数据用）。
+func (r *supplierOnboardingRepository) SumContributorEarnings(ctx context.Context) (float64, error) {
+	rows, err := r.client.QueryContext(ctx, supplierContributorEarningsSumSQL)
+	if err != nil {
+		return 0, fmt.Errorf("sum contributor earnings: %w", err)
+	}
+	defer rows.Close()
+
+	var total float64
+	if rows.Next() {
+		if err := rows.Scan(&total); err != nil {
+			return 0, fmt.Errorf("scan contributor earnings: %w", err)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("iterate contributor earnings: %w", err)
+	}
+	return total, nil
 }
 
 // countOne 跑一条只回一个整数的查询。

@@ -247,6 +247,13 @@ func RegisterAuthRoutes(
 		settings.GET("/email-unsubscribe", h.Setting.UnsubscribeNotificationEmail)
 	}
 
+	// APEXONE-EXT: 首页公开数据（无鉴权，按 IP 兜底限流）。总开关关时返回 Enabled=false。
+	stats := v1.Group("/stats")
+	stats.Use(panelRateLimiter.PublicIP())
+	{
+		stats.GET("/public", h.PublicStats.GetPublicStats)
+	}
+
 	// 需要认证的当前用户信息
 	authenticated := v1.Group("")
 	authenticated.Use(gin.HandlerFunc(jwtAuth))

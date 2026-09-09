@@ -70,6 +70,7 @@ func ProvideAuthService(
 	defaultSubAssigner DefaultSubscriptionAssigner,
 	affiliateService *AffiliateService,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
+	balanceGate *SupplyDemandBalanceService,
 ) *AuthService {
 	svc := NewAuthService(
 		entClient,
@@ -88,6 +89,8 @@ func ProvideAuthService(
 	)
 	svc.SetTencentCaptchaService(tencentCaptchaService)
 	svc.SetAliyunCaptchaService(aliyunCaptchaService)
+	// 供需平衡门（消费侧）：供给不足时拒绝新用户注册。默认关。
+	svc.SetBalanceGate(balanceGate)
 	return svc
 }
 
@@ -951,6 +954,10 @@ var ProviderSet = wire.NewSet(
 	// APEXONE-EXT: 双边市场——供给者自助接入 + 观察期/排空推进任务。
 	ProvideSupplierOnboardingService,
 	ProvideSupplierLifecycleService,
+	// APEXONE-EXT: 双边市场——供需动态平衡门（拒新共享者/拒新用户，默认关）。
+	ProvideSupplyDemandBalanceService,
+	// APEXONE-EXT: 首页公开数据装配（真实数 + 可配偏移，默认关）。
+	ProvideHomepageStatsService,
 	// APEXONE-EXT: 双边市场——管理端运营视图服务（只读聚合）。
 	NewSupplierAdminService,
 	NewSupplierExportService,
@@ -1128,6 +1135,31 @@ func ProvideSupplierLifecycleService(
 	return svc
 }
 
+// APEXONE-EXT: ProvideSupplyDemandBalanceService 构造供需平衡门的判定枢纽。
+//
+// 供给读数来自接入仓储的 CountActiveSupplyAccounts（该接口已含此方法），需求读数
+// 来自 DashboardService，阈值来自 SettingService。三者都无环——枢纽只读，不被
+// 接入/注册服务反向依赖（那两个服务通过 setter 单向持有它）。
+func ProvideSupplyDemandBalanceService(
+	settingService *SettingService,
+	dashboardService *DashboardService,
+	onboardingRepo SupplierOnboardingRepository,
+) *SupplyDemandBalanceService {
+	return NewSupplyDemandBalanceService(settingService, dashboardService, onboardingRepo)
+}
+
+// APEXONE-EXT: ProvideHomepageStatsService 构造首页公开数据装配服务。
+//
+// 供给号数与累计入账都来自接入仓储（CountActiveSupplyAccounts / SumContributorEarnings），
+// 需求读数来自 DashboardService，偏移配置来自 SettingService。
+func ProvideHomepageStatsService(
+	settingService *SettingService,
+	dashboardService *DashboardService,
+	onboardingRepo SupplierOnboardingRepository,
+) *HomepageStatsService {
+	return NewHomepageStatsService(settingService, dashboardService, onboardingRepo, onboardingRepo)
+}
+
 // APEXONE-EXT: ProvideSupplierOnboardingService 构造接入服务并挂上三个可选依赖。
 //
 // 存在的理由是那几行 setter——为什么是 setter 而不是构造参数，分别写在
@@ -1143,9 +1175,12 @@ func ProvideSupplierOnboardingService(
 	incidents *SupplierIncidentService,
 	usageLogRepo UsageLogRepository,
 	testService *AccountTestService,
+	balanceGate *SupplyDemandBalanceService,
 ) *SupplierOnboardingService {
 	svc := NewSupplierOnboardingService(repo, accountRepo, oauthService, openaiOAuthService, settingService)
 	svc.SetIncidentGuard(incidents)
+	// 供需平衡门（供给侧）：供给过剩时拒绝新共享者接入。默认关，见 setting_supply_demand_gate.go。
+	svc.SetBalanceGate(balanceGate)
 	// 接入完成时当场探一次（见 probeOnAttach）。与观察期任务用的是同一个实现，
 	// 所以「探测」这件事在两条路径上是同一种行为。
 	svc.SetProber(testService)

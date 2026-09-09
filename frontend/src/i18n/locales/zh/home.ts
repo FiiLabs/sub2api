@@ -34,7 +34,7 @@ export default {
       hero: {
         // 不写"今日/本周"这类带时效的词:首页文案改一次要走一次发版,
         // 而"今日上线"过了当天就是假的。
-        badge: 'Claude Fable 5.1 已上线',
+        badge: 'Claude Fable 5.1 与 GPT-6 已上线',
         title: '隐私不靠承诺，靠验证。TEE 加密路由',
         subtitle:
           '通过 TEE 加密网关调用 Claude 等前沿模型——数据全程私密，每次调用可验证，价格低至官方 API 的 1.4 折。',
@@ -60,6 +60,16 @@ export default {
           claude: '已上线',
           hermes: '客户端支持'
         }
+      },
+      // 平台公开数据带（真实数 + 运营配的基数偏移，见后端 homepage_stats）。
+      // 后端 enabled=false 或拉取失败时整段隐藏。
+      stats: {
+        eyebrow: '// 平台数据',
+        title: '正在增长的可验证 AI 网络',
+        sharedAccounts: '共享账号',
+        activeUsers: '活跃用户',
+        totalRequests: '累计请求',
+        contributorEarnings: '已付贡献者 (USDT)'
       },
       routing: {
         eyebrow: '// 机密路由架构',
@@ -149,10 +159,10 @@ export default {
           name: 'ApexOne',
           tagline: '按量付费',
           priceLine: '按官方 API 计费价格的 14% 逐 token 计费。',
-          desc: '面向需要 Claude 接入、可验证私密路由和透明账单的开发者。',
+          desc: '面向需要 Claude 与 GPT 接入、可验证私密路由和透明账单的开发者。',
           cta: '立即开始 →',
           features: {
-            f1: 'Claude Fable 5.1 现已可用；GPT 和 Gemini 即将上线',
+            f1: 'Claude Fable 5.1 与 GPT-6 现已可用；Gemini 即将上线',
             f2: '官方 API 计费价格 1.4 折',
             f3: 'TEE 认证网关 + 远程认证',
             f4: '控制面只接触元数据——提示词从不落日志',
@@ -234,7 +244,7 @@ export default {
       },
       cta: {
         title: '用得起，也信得过的 AI。',
-        description: 'Claude Fable 5.1，官方 1.4 折，TEE 全程密封。',
+        description: 'Claude Fable 5.1 与 GPT-6，官方 1.4 折，TEE 全程密封。',
         primary: '立即开始 →',
         secondary: '验证隐私 →',
         supply: '共享订阅赚钱 →',

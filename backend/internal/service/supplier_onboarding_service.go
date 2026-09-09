@@ -129,6 +129,8 @@ type SupplierOnboardingService struct {
 	dailyUsageReader supplierDailyUsageReader
 	// prober 接入完成时的同步探测。可选，见 SetProber。
 	prober supplierOnboardingProber
+	// balanceGate 供需平衡门。可选，见 SetBalanceGate。nil = 不判平衡，照常接入。
+	balanceGate supplyBalanceGate
 
 	// relayProbeClient 中转提交时探测用的 HTTP 客户端。nil = 默认（15s 超时）。
 	// 单独一个字段是给测试注桩用的——探测是真实网络调用，单测不该出网。
@@ -142,6 +144,14 @@ type SupplierOnboardingService struct {
 // 本服务自己声明；共用会让删掉一边的依赖时，另一边静默地跟着变。
 type supplierOnboardingProber interface {
 	RunTestBackground(ctx context.Context, accountID int64, modelID string) (*ScheduledTestResult, error)
+}
+
+// supplyBalanceGate 供需平衡门的供给侧判定。见 supply_demand_balance.go。
+//
+// 窄接口而不是直接吃 *SupplyDemandBalanceService：这里只需要「这个平台此刻还收不收
+// 新共享者」一件事，声明成一个方法能让测试不必造一个带 dashboard 和 repo 的真服务。
+type supplyBalanceGate interface {
+	AllowNewSupplier(ctx context.Context, platform string) error
 }
 
 // supplierIncidentGuard 是「这个人最近坏掉的号是不是太多了」这一个判断。
@@ -228,6 +238,17 @@ func (s *SupplierOnboardingService) SetIncidentGuard(guard *SupplierIncidentServ
 		return
 	}
 	s.incidents = guard
+}
+
+// SetBalanceGate 注入供需平衡门。为 nil 时这道门整个不存在（照常接入）。
+//
+// setter 而不是构造参数：接入服务在没有平衡门的部署里必须照常工作，且平衡门本身
+// 是一个默认关的可选功能——见 setting_supply_demand_gate.go 文件头。
+func (s *SupplierOnboardingService) SetBalanceGate(gate *SupplyDemandBalanceService) {
+	if s == nil || gate == nil {
+		return
+	}
+	s.balanceGate = gate
 }
 
 // supplyGroupID 返回新账号该挂的供给池分组，同时充当「自助接入是否开放」的判据。
@@ -318,6 +339,13 @@ func (s *SupplierOnboardingService) StartOAuth(ctx context.Context, userID int64
 	// 他并不需要、也无从撤销的上游 token。
 	if err := s.requireCapacity(ctx, userID, clientIP); err != nil {
 		return nil, err
+	}
+	// 供需平衡门同样在这里做前置体验检查（真正不可绕过的那道也在 CompleteOAuth）：
+	// 供给已过剩时，不让供给者白跑一整遍上游授权、末了才被拒。门默认关，见 SetBalanceGate。
+	if s.balanceGate != nil {
+		if err := s.balanceGate.AllowNewSupplier(ctx, platform); err != nil {
+			return nil, err
+		}
 	}
 
 	pending, err := s.repo.CountPendingSessions(ctx, userID)
@@ -444,6 +472,16 @@ func (s *SupplierOnboardingService) CompleteOAuth(ctx context.Context, input *Co
 	groupID, ok := s.supplyGroupID(ctx, session.Platform)
 	if !ok {
 		return nil, ErrSupplierOnboardingDisabled
+	}
+	// 供需平衡门的 enforcement：用会话里的权威平台判。放在换码之前——供给已过剩时
+	// 连上游 token 交换都不做。它需要 session.Platform，所以只能排在领会话之后（与
+	// 协议/数量上限那两道不同，那两道不需要平台、排在领会话之前以免烧掉授权码）；
+	// 因此极少数「授权期间供给刚好翻过剩」的竞态里，这道门会让人重走一遍授权——
+	// 对一道随供需实时变动的软门来说可以接受，且 StartOAuth 已前置挡过绝大多数。
+	if s.balanceGate != nil {
+		if err := s.balanceGate.AllowNewSupplier(ctx, session.Platform); err != nil {
+			return nil, err
+		}
 	}
 
 	result, err := provider.ExchangeSupplierCode(ctx, strings.TrimSpace(input.Code), &SupplierAuthorization{

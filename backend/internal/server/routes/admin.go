@@ -626,6 +626,12 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		adminSettings.PUT("/supply-withdrawal", h.Admin.Setting.UpdateSupplyWithdrawalSettings)
 		adminSettings.GET("/supply-onboarding", h.Admin.Setting.GetSupplyOnboardingSettings)
 		adminSettings.PUT("/supply-onboarding", h.Admin.Setting.UpdateSupplyOnboardingSettings)
+		// APEXONE-EXT: 供需动态平衡门（拒新共享者/拒新用户，默认关）。
+		adminSettings.GET("/supply-demand-gate", h.Admin.Setting.GetSupplyDemandGateSettings)
+		adminSettings.PUT("/supply-demand-gate", h.Admin.Setting.UpdateSupplyDemandGateSettings)
+		// APEXONE-EXT: 首页公开数据展示配置（真实数 + 可配偏移，默认关）。
+		adminSettings.GET("/homepage-stats", h.Admin.Setting.GetHomepageStatsSettings)
+		adminSettings.PUT("/homepage-stats", h.Admin.Setting.UpdateHomepageStatsSettings)
 	}
 }
 
