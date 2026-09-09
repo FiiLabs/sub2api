@@ -34,6 +34,9 @@ type PublicHomepageStats struct {
 	TotalRequests int64 `json:"total_requests"`
 	// ContributorEarningsUSDT 展示用已付贡献者收益（USDT）。
 	ContributorEarningsUSDT float64 `json:"contributor_earnings_usdt"`
+	// SupplyByPlatform 按平台的**真实**可调度供给号数（环形图占比用）。
+	// 不叠偏移——环形图展示的是占比，真实即可；首页数据带忽略此字段。
+	SupplyByPlatform map[string]int64 `json:"supply_by_platform,omitempty"`
 }
 
 // homepageStatsSettingsReader 读展示配置（偏移 + 开关）。由 *SettingService 实现。
@@ -95,12 +98,18 @@ func (h *HomepageStatsService) GetPublicStats(ctx context.Context) *PublicHomepa
 		return stats
 	}
 
+	supplyByPlatform := h.realSupplyByPlatform(ctx)
+	var supplyTotal int64
+	for _, c := range supplyByPlatform {
+		supplyTotal += c
+	}
 	stats := &PublicHomepageStats{
 		Enabled:                 true,
-		SharedAccounts:          h.realSharedAccounts(ctx) + cfg.SharedAccountsOffset,
+		SharedAccounts:          supplyTotal + cfg.SharedAccountsOffset,
 		ActiveUsers:             cfg.ActiveUsersOffset,
 		TotalRequests:           cfg.TotalRequestsOffset,
 		ContributorEarningsUSDT: h.realEarnings(ctx) + cfg.ContributorEarningsOffset,
+		SupplyByPlatform:        supplyByPlatform,
 	}
 	if au, tr, ok := h.realDemand(ctx); ok {
 		stats.ActiveUsers += au
@@ -115,21 +124,24 @@ func (h *HomepageStatsService) store(stats *PublicHomepageStats) {
 	h.cache.Store(&cachedPublicHomepageStats{stats: &clone, expiresAt: time.Now().Add(homepageStatsResultTTL).UnixNano()})
 }
 
-// realSharedAccounts 真实活跃共享号数（跨平台求和）；读不到按 0。
-func (h *HomepageStatsService) realSharedAccounts(ctx context.Context) int64 {
+// realSupplyByPlatform 真实按平台可调度供给号数；读不到返回 nil（环形图隐藏 + 标量只剩偏移）。
+func (h *HomepageStatsService) realSupplyByPlatform(ctx context.Context) map[string]int64 {
 	if h.supply == nil {
-		return 0
+		return nil
 	}
 	counts, err := h.supply.CountActiveSupplyAccounts(ctx)
 	if err != nil {
 		slog.Warn("[HomepageStats] failed to count supply accounts, showing offset only", "error", err)
-		return 0
+		return nil
 	}
-	var total int64
-	for _, c := range counts {
-		total += int64(c)
+	if len(counts) == 0 {
+		return nil
 	}
-	return total
+	out := make(map[string]int64, len(counts))
+	for platform, c := range counts {
+		out[platform] = int64(c)
+	}
+	return out
 }
 
 // realDemand 真实活跃用户数与累计请求数；读不到返回 ok=false。

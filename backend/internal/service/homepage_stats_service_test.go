@@ -72,6 +72,10 @@ func TestHomepageStatsRealPlusOffset(t *testing.T) {
 	if got.ContributorEarningsUSDT != 263.0 { // 12.5 + 250.5
 		t.Fatalf("ContributorEarningsUSDT = %v want 263.0", got.ContributorEarningsUSDT)
 	}
+	// 供给分解是真实 map（不叠偏移），环形图占比用。
+	if got.SupplyByPlatform["anthropic"] != 3 || got.SupplyByPlatform["openai"] != 2 {
+		t.Fatalf("SupplyByPlatform = %+v want {anthropic:3, openai:2}", got.SupplyByPlatform)
+	}
 }
 
 func TestHomepageStatsFailSoft(t *testing.T) {

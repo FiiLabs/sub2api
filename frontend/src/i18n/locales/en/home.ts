@@ -69,7 +69,8 @@ export default {
         sharedAccounts: 'Shared accounts',
         activeUsers: 'Active users',
         totalRequests: 'Requests served',
-        contributorEarnings: 'Paid to contributors (USDT)'
+        contributorEarnings: 'Paid to contributors (USDT)',
+        viewAll: 'View platform metrics →'
       },
       routing: {
         eyebrow: '// Confidential Routing Architecture',

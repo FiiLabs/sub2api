@@ -18,6 +18,8 @@ export interface PublicHomepageStats {
   total_requests: number
   /** 展示用已付贡献者收益（USDT）。 */
   contributor_earnings_usdt: number
+  /** 按平台的真实可调度供给号数（环形图占比用；首页数据带忽略）。enabled=false 或读不到时缺省。 */
+  supply_by_platform?: Record<string, number>
 }
 
 /** 拉取首页公开数据。失败时调用方应 fail-soft（隐藏整段），不阻塞首页。 */

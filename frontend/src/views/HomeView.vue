@@ -121,6 +121,14 @@
             <div class="mt-1 text-fluid-2xs text-gray-400 dark:text-dark-500">{{ item.label }}</div>
           </div>
         </div>
+        <div class="mt-4 text-center">
+          <router-link
+            to="/stats"
+            class="text-fluid-xs font-semibold text-primary-600 hover:underline dark:text-primary-400"
+          >
+            {{ t('home.landing.stats.viewAll') }}
+          </router-link>
+        </div>
       </section>
 
       <!-- ROUTING: TEE architecture -->

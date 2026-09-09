@@ -69,7 +69,8 @@ export default {
         sharedAccounts: '共享账号',
         activeUsers: '活跃用户',
         totalRequests: '累计请求',
-        contributorEarnings: '已付贡献者 (USDT)'
+        contributorEarnings: '已付贡献者 (USDT)',
+        viewAll: '查看平台数据 →'
       },
       routing: {
         eyebrow: '// 机密路由架构',
