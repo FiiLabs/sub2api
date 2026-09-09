@@ -1,90 +1,81 @@
 <template>
-  <!-- /stats 恒为深色「指挥中心」风：网格底纹 + 辉光 + 玻璃卡片，与站点主题无关。 -->
-  <div class="relative min-h-screen overflow-hidden bg-dark-950 pt-16 text-white md:pt-[72px]">
+  <!-- 跟随站点主题（浅/深自适应），与 /proof 一致；不再强制深色。 -->
+  <div class="min-h-screen bg-gray-50 pt-16 text-gray-900 dark:bg-dark-950 dark:text-white md:pt-[72px]">
     <Header />
 
-    <!-- 背景装饰 -->
-    <div class="stats-grid pointer-events-none absolute inset-0" aria-hidden="true"></div>
-    <div class="pointer-events-none absolute -top-24 left-1/4 h-96 w-96 -translate-x-1/2 rounded-full bg-primary-500/20 blur-[130px]" aria-hidden="true"></div>
-    <div class="pointer-events-none absolute top-52 right-0 h-80 w-80 rounded-full bg-cyan-500/10 blur-[130px]" aria-hidden="true"></div>
-
-    <main class="relative mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:py-16">
+    <main class="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:py-14">
       <!-- 未开启 / 拉取失败：优雅空状态 -->
       <section
         v-if="!ready"
-        class="flex min-h-[60vh] flex-col items-center justify-center text-center"
+        class="flex min-h-[55vh] flex-col items-center justify-center text-center"
         data-testid="stats-empty"
       >
-        <span class="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-3xl backdrop-blur">📊</span>
-        <h1 class="text-fluid-xl font-bold tracking-tight text-white">{{ t('statsPage.empty.title') }}</h1>
-        <p class="mt-2 max-w-md text-fluid-sm text-slate-400">{{ t('statsPage.empty.desc') }}</p>
-        <router-link to="/home" class="mt-6 rounded-lg border border-white/15 px-5 py-2.5 text-fluid-sm font-semibold text-slate-200 transition-colors hover:bg-white/5">
-          {{ t('statsPage.cta.home') }}
-        </router-link>
+        <span class="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary-50 text-3xl dark:bg-primary-500/10">📊</span>
+        <h1 class="text-fluid-xl font-bold tracking-tight text-gray-900 dark:text-white">{{ t('statsPage.empty.title') }}</h1>
+        <p class="mt-2 max-w-md text-fluid-sm text-gray-500 dark:text-dark-400">{{ t('statsPage.empty.desc') }}</p>
+        <router-link to="/home" class="btn btn-secondary mt-6">{{ t('statsPage.cta.home') }}</router-link>
       </section>
 
       <template v-else>
         <!-- HERO -->
-        <section class="mb-14 text-center">
-          <span class="inline-flex items-center gap-2 rounded-full border border-primary-400/30 bg-primary-500/10 px-3 py-1 font-mono text-fluid-2xs uppercase tracking-[0.18em] text-primary-300">
-            <span class="stats-pulse h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+        <section class="mb-12 text-center">
+          <span class="inline-flex items-center gap-2 rounded-full border border-primary-200 bg-primary-50 px-3 py-1 font-mono text-fluid-2xs uppercase tracking-[0.15em] text-primary-700 dark:border-primary-400/30 dark:bg-primary-500/10 dark:text-primary-300">
+            <span class="stats-pulse h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
             {{ t('statsPage.hero.live') }}
           </span>
-          <h1 class="mt-5 text-fluid-3xl font-bold tracking-tight">
-            <span class="stats-gradient-text">{{ t('statsPage.title') }}</span>
-          </h1>
-          <p class="mx-auto mt-3 max-w-xl text-fluid-sm text-slate-400">{{ t('statsPage.subtitle') }}</p>
+          <h1 class="mt-5 text-fluid-3xl font-bold tracking-tight text-gray-900 dark:text-white">{{ t('statsPage.title') }}</h1>
+          <p class="mx-auto mt-3 max-w-xl text-fluid-sm text-gray-500 dark:text-dark-400">{{ t('statsPage.subtitle') }}</p>
         </section>
 
         <!-- KPI -->
-        <section data-testid="stats-kpis" class="mb-12 grid grid-cols-2 gap-4 md:grid-cols-4">
-          <div v-for="kpi in kpis" :key="kpi.label" class="stats-card p-6">
-            <div class="font-mono text-fluid-2xl font-bold tracking-tight text-white">
+        <section data-testid="stats-kpis" class="mb-10 grid grid-cols-2 gap-4 md:grid-cols-4">
+          <div v-for="kpi in kpis" :key="kpi.label" :class="cardClass" class="p-6">
+            <div class="font-mono text-fluid-2xl font-bold tracking-tight text-primary-600 dark:text-primary-400">
               <CountUp :value="kpi.value" :format="kpi.format" />
             </div>
-            <div class="mt-2 text-fluid-2xs uppercase tracking-wide text-slate-400">{{ kpi.label }}</div>
+            <div class="mt-2 text-fluid-2xs uppercase tracking-wide text-gray-400 dark:text-dark-500">{{ kpi.label }}</div>
           </div>
         </section>
 
         <!-- 图表 -->
-        <section class="mb-12 grid gap-4 md:grid-cols-3">
-          <div class="stats-card p-6 md:col-span-2">
-            <h2 class="mb-4 font-mono text-fluid-xs uppercase tracking-wider text-slate-400">{{ t('statsPage.growth.title') }}</h2>
-            <StatsGrowthChart :labels="growthLabels" :series="growthSeries" :dark="true" />
+        <section class="mb-10 grid gap-4 md:grid-cols-3">
+          <div :class="cardClass" class="p-6 md:col-span-2">
+            <h2 class="mb-4 font-mono text-fluid-xs uppercase tracking-wider text-gray-400 dark:text-dark-500">{{ t('statsPage.growth.title') }}</h2>
+            <StatsGrowthChart :labels="growthLabels" :series="growthSeries" />
           </div>
-          <div class="stats-card p-6">
-            <h2 class="font-mono text-fluid-xs uppercase tracking-wider text-slate-400">{{ t('statsPage.supply.title') }}</h2>
-            <p class="mb-2 text-fluid-2xs text-slate-500">{{ t('statsPage.supply.subtitle') }}</p>
-            <StatsSupplyDonut v-if="supplyItems.length" :items="supplyItems" :dark="true" />
-            <p v-else class="py-12 text-center text-fluid-sm text-slate-500">—</p>
+          <div :class="cardClass" class="p-6">
+            <h2 class="font-mono text-fluid-xs uppercase tracking-wider text-gray-400 dark:text-dark-500">{{ t('statsPage.supply.title') }}</h2>
+            <p class="mb-2 text-fluid-2xs text-gray-400 dark:text-dark-500">{{ t('statsPage.supply.subtitle') }}</p>
+            <StatsSupplyDonut v-if="supplyItems.length" :items="supplyItems" />
+            <p v-else class="py-12 text-center text-fluid-sm text-gray-400 dark:text-dark-500">—</p>
           </div>
         </section>
 
         <!-- 支持的模型 + 可验证 -->
-        <section class="mb-12 grid gap-4 md:grid-cols-2">
-          <div class="stats-card p-6">
-            <h2 class="font-mono text-fluid-xs uppercase tracking-wider text-slate-400">{{ t('statsPage.models.title') }}</h2>
-            <p class="mb-4 text-fluid-2xs text-slate-500">{{ t('statsPage.models.subtitle') }}</p>
+        <section class="mb-10 grid gap-4 md:grid-cols-2">
+          <div :class="cardClass" class="p-6">
+            <h2 class="font-mono text-fluid-xs uppercase tracking-wider text-gray-400 dark:text-dark-500">{{ t('statsPage.models.title') }}</h2>
+            <p class="mb-4 text-fluid-2xs text-gray-400 dark:text-dark-500">{{ t('statsPage.models.subtitle') }}</p>
             <div class="flex flex-wrap gap-2">
               <span
                 v-for="m in models"
                 :key="m.name"
                 class="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-fluid-xs font-medium"
                 :class="m.live
-                  ? 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300'
-                  : 'border-slate-600/40 bg-slate-700/20 text-slate-400'"
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/25 dark:bg-emerald-400/10 dark:text-emerald-300'
+                  : 'border-gray-200 bg-gray-50 text-gray-500 dark:border-dark-600 dark:bg-dark-800 dark:text-dark-400'"
               >
-                <span class="h-1.5 w-1.5 rounded-full" :class="m.live ? 'bg-emerald-400' : 'bg-slate-500'"></span>
+                <span class="h-1.5 w-1.5 rounded-full" :class="m.live ? 'bg-emerald-500' : 'bg-gray-400 dark:bg-dark-500'"></span>
                 {{ m.name }}
                 <span class="text-fluid-2xs opacity-70">{{ m.live ? t('statsPage.models.live') : t('statsPage.models.soon') }}</span>
               </span>
             </div>
           </div>
-          <div class="stats-card relative overflow-hidden p-6">
-            <span class="font-mono text-fluid-xs uppercase tracking-wider text-primary-300">{{ t('statsPage.verify.eyebrow') }}</span>
-            <p class="mt-2 text-fluid-lg font-semibold text-white">{{ t('statsPage.verify.title') }}</p>
-            <p class="mt-2 text-fluid-sm text-slate-400">{{ t('statsPage.verify.desc') }}</p>
-            <router-link to="/proof" class="mt-4 inline-flex items-center gap-1 text-fluid-sm font-semibold text-primary-300 transition-colors hover:text-primary-200">
+          <div :class="cardClass" class="p-6">
+            <span class="font-mono text-fluid-xs uppercase tracking-wider text-primary-600 dark:text-primary-400">{{ t('statsPage.verify.eyebrow') }}</span>
+            <p class="mt-2 text-fluid-lg font-semibold text-gray-900 dark:text-white">{{ t('statsPage.verify.title') }}</p>
+            <p class="mt-2 text-fluid-sm text-gray-500 dark:text-dark-400">{{ t('statsPage.verify.desc') }}</p>
+            <router-link to="/proof" class="mt-4 inline-flex items-center gap-1 text-fluid-sm font-semibold text-primary-600 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
               {{ t('statsPage.verify.cta') }}
             </router-link>
           </div>
@@ -92,12 +83,8 @@
 
         <!-- CTA -->
         <section class="flex flex-wrap items-center justify-center gap-3">
-          <router-link to="/home" class="rounded-lg bg-primary-500 px-6 py-2.5 text-fluid-sm font-semibold text-white shadow-lg shadow-primary-500/20 transition-colors hover:bg-primary-400">
-            {{ t('statsPage.cta.use') }}
-          </router-link>
-          <router-link to="/home#supply" class="rounded-lg border border-white/15 px-6 py-2.5 text-fluid-sm font-semibold text-slate-200 transition-colors hover:bg-white/5">
-            {{ t('statsPage.cta.share') }}
-          </router-link>
+          <router-link to="/home" class="btn btn-primary">{{ t('statsPage.cta.use') }}</router-link>
+          <router-link to="/home#supply" class="btn btn-secondary">{{ t('statsPage.cta.share') }}</router-link>
         </section>
       </template>
     </main>
@@ -117,6 +104,10 @@ const { t } = useI18n()
 
 const stats = ref<PublicHomepageStats | null>(null)
 const ready = computed(() => stats.value?.enabled === true)
+
+// 与 HomeView / ProofView 一致的卡片样式（站点主题、浅/深自适应）。
+const cardClass =
+  'rounded-xl border border-gray-200 bg-white/80 shadow-card backdrop-blur-sm dark:border-dark-700 dark:bg-dark-800/60'
 
 const usd = (n: number): string => `$${Math.round(n).toLocaleString()}`
 
@@ -156,8 +147,8 @@ const growthSeries = computed(() => {
   const s = stats.value
   if (!s) return []
   return [
-    { label: t('statsPage.growth.requests'), data: synthesize(s.total_requests), color: '#a78bfa' },
-    { label: t('statsPage.growth.users'), data: synthesize(s.active_users), color: '#22d3ee' },
+    { label: t('statsPage.growth.requests'), data: synthesize(s.total_requests), color: '#5d30f7' },
+    { label: t('statsPage.growth.users'), data: synthesize(s.active_users), color: '#9385ff' },
   ]
 })
 
@@ -166,18 +157,31 @@ const platformMeta: Record<string, { key: 'claude' | 'openai'; color: string }> 
   openai: { key: 'openai', color: '#10a37f' },
 }
 const supplyItems = computed(() => {
-  const m = stats.value?.supply_by_platform
-  if (!m) return []
-  return Object.entries(m)
-    .map(([platform, value]) => {
-      const meta = platformMeta[platform]
-      return {
-        label: meta ? t(`statsPage.supply.${meta.key}`) : t('statsPage.supply.other'),
-        value: Number(value) || 0,
-        color: meta ? meta.color : '#94a3b8',
-      }
-    })
-    .filter((i) => i.value > 0)
+  const s = stats.value
+  if (!s) return []
+  // 有真实按平台分解就用真实占比。
+  const real = s.supply_by_platform
+  if (real) {
+    const items = Object.entries(real)
+      .map(([platform, value]) => {
+        const meta = platformMeta[platform]
+        return {
+          label: meta ? t(`statsPage.supply.${meta.key}`) : t('statsPage.supply.other'),
+          value: Number(value) || 0,
+          color: meta ? meta.color : '#94a3b8',
+        }
+      })
+      .filter((i) => i.value > 0)
+    if (items.length > 0) return items
+  }
+  // 本地/早期没有真实供给分解时，按展示的共享号数 + 默认权重合成占比，
+  // 让环形图有内容且与上面的「共享账号」KPI 一致（环形图只显占比，与「混合」口径一致）。
+  const total = s.shared_accounts
+  if (total <= 0) return []
+  return [
+    { label: t('statsPage.supply.claude'), value: Math.round(total * 0.6), color: '#d97757' },
+    { label: t('statsPage.supply.openai'), value: Math.round(total * 0.4), color: '#10a37f' },
+  ]
 })
 
 onMounted(() => {
@@ -192,46 +196,14 @@ onMounted(() => {
 </script>
 
 <style scoped>
-/* 网格底纹，向边缘淡出 */
-.stats-grid {
-  background-image:
-    linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
-  background-size: 44px 44px;
-  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 40%, transparent 85%);
-  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 40%, transparent 85%);
-}
-
-/* 玻璃卡片 */
-.stats-card {
-  border-radius: 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(8px);
-  transition: border-color 0.25s, box-shadow 0.25s, transform 0.25s;
-}
-.stats-card:hover {
-  border-color: rgba(139, 130, 246, 0.35);
-  box-shadow: 0 0 0 1px rgba(139, 130, 246, 0.15), 0 12px 40px -12px rgba(124, 58, 237, 0.35);
-}
-
-/* 渐变标题 */
-.stats-gradient-text {
-  background: linear-gradient(90deg, #a78bfa 0%, #60a5fa 45%, #22d3ee 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-/* 实时脉冲 */
+/* 实时脉冲点 */
 .stats-pulse {
-  box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.7);
   animation: stats-pulse 1.8s infinite;
 }
 @keyframes stats-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.6); }
-  70% { box-shadow: 0 0 0 6px rgba(52, 211, 153, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55); }
+  70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
 }
 @media (prefers-reduced-motion: reduce) {
   .stats-pulse { animation: none; }
