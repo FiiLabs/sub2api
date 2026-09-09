@@ -59,9 +59,16 @@ type HomepageStatsService struct {
 	cache atomic.Value // *cachedPublicHomepageStats
 }
 
-type cachedPublicHomepageStats struct {
-	stats     *PublicHomepageStats
-	expiresAt int64
+// cachedRealStats 只缓存**昂贵的真实聚合**（供给计数 + 累计入账 + dashboard 读数），
+// 不缓存 enabled/offset——那两者来自 SettingService（写入即失效），必须每次新读，
+// 否则 admin 一改开关/偏移最多 60 秒看不到（曾经的 bug：整份结果缓存把开关也缓存了）。
+type cachedRealStats struct {
+	supplyByPlatform map[string]int64
+	supplyTotal      int64
+	activeUsers      int64
+	totalRequests    int64
+	earnings         float64
+	expiresAt        int64
 }
 
 const homepageStatsResultTTL = 60 * time.Second
@@ -76,52 +83,69 @@ func NewHomepageStatsService(
 	return &HomepageStatsService{settings: settings, demand: demand, supply: supply, earnings: earnings}
 }
 
-// GetPublicStats 返回首页公开数据（含缓存）。总开关关时返回 Enabled=false。
+// GetPublicStats 返回首页公开数据。总开关关时返回 Enabled=false。
+//
+// 开关与偏移每次都从 SettingService 新读（其自身缓存写入即失效），所以 admin 的改动
+// 即时反映；只有昂贵的真实聚合走 60s 缓存（realData）。
 func (h *HomepageStatsService) GetPublicStats(ctx context.Context) *PublicHomepageStats {
 	if h == nil {
 		return &PublicHomepageStats{Enabled: false}
 	}
-	if cached, ok := h.cache.Load().(*cachedPublicHomepageStats); ok {
-		if cached != nil && cached.stats != nil && time.Now().UnixNano() < cached.expiresAt {
-			clone := *cached.stats
-			return &clone
-		}
-	}
-
 	cfg := DefaultHomepageStatsSettings()
 	if h.settings != nil {
 		cfg = h.settings.GetHomepageStatsSettings(ctx)
 	}
 	if cfg == nil || !cfg.Enabled {
-		stats := &PublicHomepageStats{Enabled: false}
-		h.store(stats)
-		return stats
+		return &PublicHomepageStats{Enabled: false}
 	}
 
+	real := h.realData(ctx)
+	return &PublicHomepageStats{
+		Enabled:                 true,
+		SharedAccounts:          real.supplyTotal + cfg.SharedAccountsOffset,
+		ActiveUsers:             real.activeUsers + cfg.ActiveUsersOffset,
+		TotalRequests:           real.totalRequests + cfg.TotalRequestsOffset,
+		ContributorEarningsUSDT: real.earnings + cfg.ContributorEarningsOffset,
+		SupplyByPlatform:        cloneInt64Map(real.supplyByPlatform),
+	}
+}
+
+// realData 读并缓存 60s 的真实聚合（供给分解 + 累计入账 + dashboard 读数）。
+func (h *HomepageStatsService) realData(ctx context.Context) *cachedRealStats {
+	if cached, ok := h.cache.Load().(*cachedRealStats); ok {
+		if cached != nil && time.Now().UnixNano() < cached.expiresAt {
+			return cached
+		}
+	}
 	supplyByPlatform := h.realSupplyByPlatform(ctx)
 	var supplyTotal int64
 	for _, c := range supplyByPlatform {
 		supplyTotal += c
 	}
-	stats := &PublicHomepageStats{
-		Enabled:                 true,
-		SharedAccounts:          supplyTotal + cfg.SharedAccountsOffset,
-		ActiveUsers:             cfg.ActiveUsersOffset,
-		TotalRequests:           cfg.TotalRequestsOffset,
-		ContributorEarningsUSDT: h.realEarnings(ctx) + cfg.ContributorEarningsOffset,
-		SupplyByPlatform:        supplyByPlatform,
+	rd := &cachedRealStats{
+		supplyByPlatform: supplyByPlatform,
+		supplyTotal:      supplyTotal,
+		earnings:         h.realEarnings(ctx),
+		expiresAt:        time.Now().Add(homepageStatsResultTTL).UnixNano(),
 	}
 	if au, tr, ok := h.realDemand(ctx); ok {
-		stats.ActiveUsers += au
-		stats.TotalRequests += tr
+		rd.activeUsers = au
+		rd.totalRequests = tr
 	}
-	h.store(stats)
-	return stats
+	h.cache.Store(rd)
+	return rd
 }
 
-func (h *HomepageStatsService) store(stats *PublicHomepageStats) {
-	clone := *stats
-	h.cache.Store(&cachedPublicHomepageStats{stats: &clone, expiresAt: time.Now().Add(homepageStatsResultTTL).UnixNano()})
+// cloneInt64Map 复制 map，避免调用方拿到缓存里的同一份被外部改动。
+func cloneInt64Map(m map[string]int64) map[string]int64 {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make(map[string]int64, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
 }
 
 // realSupplyByPlatform 真实按平台可调度供给号数；读不到返回 nil（环形图隐藏 + 标量只剩偏移）。
