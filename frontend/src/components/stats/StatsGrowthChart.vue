@@ -15,6 +15,7 @@ import {
   type ChartData,
   type ChartOptions,
 } from 'chart.js'
+import { formatCompactNumber } from '@/utils/format'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
 
@@ -56,7 +57,15 @@ const options = computed<ChartOptions<'line'>>(() => {
     },
     scales: {
       x: { grid: { display: false }, ticks: { color: tick, maxTicksLimit: 6 } },
-      y: { grid: { color: grid }, ticks: { color: tick, maxTicksLimit: 5 }, beginAtZero: true },
+      y: {
+        grid: { color: grid },
+        ticks: {
+          color: tick,
+          maxTicksLimit: 5,
+          callback: (value) => formatCompactNumber(Number(value)),
+        },
+        beginAtZero: true,
+      },
     },
   }
 })

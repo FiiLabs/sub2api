@@ -131,6 +131,7 @@ import StatsGrowthChart from '@/components/stats/StatsGrowthChart.vue'
 import StatsSupplyDonut from '@/components/stats/StatsSupplyDonut.vue'
 import Sparkline from '@/components/stats/Sparkline.vue'
 import { getPublicStats, type PublicHomepageStats } from '@/api/stats'
+import { formatCompactNumber } from '@/utils/format'
 
 const { t } = useI18n()
 
@@ -141,9 +142,11 @@ const ready = computed(() => stats.value?.enabled === true)
 const cardClass =
   'rounded-xl border border-gray-200 bg-white/80 shadow-card backdrop-blur-sm dark:border-dark-700 dark:bg-dark-800/60'
 
-const usd = (n: number): string => `$${Math.round(n).toLocaleString()}`
+// 近似缩写显示：1500 → 1.5K、1.2M、1.0B（站点统一的 formatCompactNumber）。
+const compact = (n: number): string => formatCompactNumber(n)
+const usd = (n: number): string => `$${formatCompactNumber(n)}`
 
-type Fmt = ((n: number) => string) | undefined
+type Fmt = (n: number) => string
 const kpis = computed(() => {
   const s = stats.value
   if (!s) return []
@@ -155,9 +158,9 @@ const kpis = computed(() => {
     spark: synthesize(value, 16),
   })
   return [
-    mk(t('statsPage.kpi.sharedAccounts'), s.shared_accounts, '#5d30f7', undefined),
-    mk(t('statsPage.kpi.activeUsers'), s.active_users, '#9385ff', undefined),
-    mk(t('statsPage.kpi.totalRequests'), s.total_requests, '#7b61ff', undefined),
+    mk(t('statsPage.kpi.sharedAccounts'), s.shared_accounts, '#5d30f7', compact),
+    mk(t('statsPage.kpi.activeUsers'), s.active_users, '#9385ff', compact),
+    mk(t('statsPage.kpi.totalRequests'), s.total_requests, '#7b61ff', compact),
     mk(t('statsPage.kpi.contributorEarnings'), s.contributor_earnings_usdt, '#10a37f', usd),
   ]
 })
