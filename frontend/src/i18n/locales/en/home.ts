@@ -28,6 +28,7 @@ export default {
       features: 'Features',
       price: 'Price',
       proof: 'Proof',
+      stats: 'Metrics',
       document: 'Docs'
     },
     landing: {

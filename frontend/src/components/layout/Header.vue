@@ -11,7 +11,7 @@
 
       <!-- Desktop Navigation -->
       <div class="hidden items-center gap-8 md:flex">
-        <template v-for="item in navItems" :key="item.key">
+        <template v-for="item in visibleNavItems" :key="item.key">
           <a
             v-if="item.type === 'anchor'"
             :href="`#${item.target}`"
@@ -177,7 +177,7 @@
         <!-- Navigation Links -->
         <nav class="flex-1 overflow-y-auto px-4 py-6">
           <div class="space-y-2">
-            <template v-for="item in navItems" :key="item.key">
+            <template v-for="item in visibleNavItems" :key="item.key">
               <a
                 v-if="item.type === 'anchor'"
                 :href="`#${item.target}`"
@@ -298,6 +298,7 @@ import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { useAppStore, useAuthStore } from '@/stores'
 import { useSupplyStore } from '@/stores/supply'
+import { getPublicStats } from '@/api/stats'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -378,6 +379,14 @@ const navItems = computed(() => [
     icon: 'M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z'
   },
   {
+    // APEXONE-EXT: 公开数据看板 /stats。仅当运营开启了公开数据展示时才出现（见 visibleNavItems）。
+    key: 'stats',
+    label: 'home.nav.stats',
+    type: 'route',
+    to: '/stats',
+    icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z'
+  },
+  {
     key: 'document',
     label: 'home.nav.document',
     type: 'external',
@@ -385,6 +394,13 @@ const navItems = computed(() => [
     icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z'
   }
 ] as const)
+
+// 公开数据看板是否开放（运营开关，来自 /stats/public）。默认隐藏，避免生产上出现指向
+// 「尚未公开」空页的死链；开关一开，导航项就出现。
+const statsEnabled = ref(false)
+const visibleNavItems = computed(() =>
+  navItems.value.filter((item) => item.key !== 'stats' || statsEnabled.value)
+)
 
 const isDark = ref(document.documentElement.classList.contains('dark'))
 const mobileMenuOpen = ref(false)
@@ -433,6 +449,14 @@ function scrollToSection(sectionId: string) {
 onMounted(() => {
   initTheme()
   authStore.checkAuth()
+  // 公开数据看板开关：开了才在导航露出「数据」入口。fail-soft，读不到就不露出。
+  getPublicStats()
+    .then((s) => {
+      statsEnabled.value = s.enabled === true
+    })
+    .catch(() => {
+      statsEnabled.value = false
+    })
 })
 </script>
 

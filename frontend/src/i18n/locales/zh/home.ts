@@ -28,6 +28,7 @@ export default {
       features: '特性',
       price: '价格',
       proof: '证明',
+      stats: '数据',
       document: '文档'
     },
     landing: {
