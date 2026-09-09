@@ -28,12 +28,26 @@
         </section>
 
         <!-- KPI -->
-        <section data-testid="stats-kpis" class="mb-10 grid grid-cols-2 gap-4 md:grid-cols-4">
-          <div v-for="kpi in kpis" :key="kpi.label" :class="cardClass" class="p-6">
-            <div class="font-mono text-fluid-2xl font-bold tracking-tight text-primary-600 dark:text-primary-400">
-              <CountUp :value="kpi.value" :format="kpi.format" />
+        <section data-testid="stats-kpis" class="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
+          <div v-for="kpi in kpis" :key="kpi.label" :class="cardClass" class="relative overflow-hidden p-6">
+            <div class="flex items-baseline justify-between gap-2">
+              <div class="font-mono text-fluid-2xl font-bold tracking-tight text-primary-600 dark:text-primary-400">
+                <CountUp :value="kpi.value" :format="kpi.format" />
+              </div>
+              <svg class="h-3.5 w-3.5 shrink-0 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7" />
+              </svg>
             </div>
-            <div class="mt-2 text-fluid-2xs uppercase tracking-wide text-gray-400 dark:text-dark-500">{{ kpi.label }}</div>
+            <div class="mt-1 text-fluid-2xs uppercase tracking-wide text-gray-400 dark:text-dark-500">{{ kpi.label }}</div>
+            <div class="mt-3 -mb-1"><Sparkline :data="kpi.spark" :color="kpi.color" :height="30" /></div>
+          </div>
+        </section>
+
+        <!-- 产品亮点数（真实产品事实） -->
+        <section class="mb-10 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div v-for="h in highlights" :key="h.label" :class="cardClass" class="flex items-center gap-3 p-4">
+            <span class="font-mono text-fluid-lg font-bold text-gray-900 dark:text-white">{{ h.value }}</span>
+            <span class="text-fluid-2xs leading-tight text-gray-500 dark:text-dark-400">{{ h.label }}</span>
           </div>
         </section>
 
@@ -51,8 +65,8 @@
           </div>
         </section>
 
-        <!-- 支持的模型 + 可验证 -->
-        <section class="mb-10 grid gap-4 md:grid-cols-2">
+        <!-- 支持的模型 -->
+        <section class="mb-10">
           <div :class="cardClass" class="p-6">
             <h2 class="font-mono text-fluid-xs uppercase tracking-wider text-gray-400 dark:text-dark-500">{{ t('statsPage.models.title') }}</h2>
             <p class="mb-4 text-fluid-2xs text-gray-400 dark:text-dark-500">{{ t('statsPage.models.subtitle') }}</p>
@@ -71,12 +85,29 @@
               </span>
             </div>
           </div>
-          <div :class="cardClass" class="p-6">
-            <span class="font-mono text-fluid-xs uppercase tracking-wider text-primary-600 dark:text-primary-400">{{ t('statsPage.verify.eyebrow') }}</span>
-            <p class="mt-2 text-fluid-lg font-semibold text-gray-900 dark:text-white">{{ t('statsPage.verify.title') }}</p>
-            <p class="mt-2 text-fluid-sm text-gray-500 dark:text-dark-400">{{ t('statsPage.verify.desc') }}</p>
-            <router-link to="/proof" class="mt-4 inline-flex items-center gap-1 text-fluid-sm font-semibold text-primary-600 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
-              {{ t('statsPage.verify.cta') }}
+        </section>
+
+        <!-- 信任徽章带（可验证，链到 /proof） -->
+        <section :class="cardClass" class="mb-10 p-6">
+          <div class="flex flex-col items-center gap-5 text-center md:flex-row md:justify-between md:text-left">
+            <div>
+              <span class="font-mono text-fluid-xs uppercase tracking-wider text-primary-600 dark:text-primary-400">{{ t('statsPage.trust.eyebrow') }}</span>
+              <p class="mt-1 text-fluid-lg font-semibold text-gray-900 dark:text-white">{{ t('statsPage.trust.title') }}</p>
+            </div>
+            <div class="flex flex-wrap justify-center gap-2">
+              <span
+                v-for="item in trustItems"
+                :key="item"
+                class="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-fluid-xs text-gray-600 dark:border-dark-700 dark:bg-dark-900 dark:text-dark-300"
+              >
+                <svg class="h-3.5 w-3.5 shrink-0 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+                {{ item }}
+              </span>
+            </div>
+            <router-link to="/proof" class="whitespace-nowrap text-fluid-sm font-semibold text-primary-600 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
+              {{ t('statsPage.trust.cta') }}
             </router-link>
           </div>
         </section>
@@ -98,6 +129,7 @@ import Header from '@/components/layout/Header.vue'
 import CountUp from '@/components/common/CountUp.vue'
 import StatsGrowthChart from '@/components/stats/StatsGrowthChart.vue'
 import StatsSupplyDonut from '@/components/stats/StatsSupplyDonut.vue'
+import Sparkline from '@/components/stats/Sparkline.vue'
 import { getPublicStats, type PublicHomepageStats } from '@/api/stats'
 
 const { t } = useI18n()
@@ -111,16 +143,39 @@ const cardClass =
 
 const usd = (n: number): string => `$${Math.round(n).toLocaleString()}`
 
+type Fmt = ((n: number) => string) | undefined
 const kpis = computed(() => {
   const s = stats.value
   if (!s) return []
+  const mk = (label: string, value: number, color: string, format: Fmt) => ({
+    label,
+    value,
+    format,
+    color,
+    spark: synthesize(value, 16),
+  })
   return [
-    { label: t('statsPage.kpi.sharedAccounts'), value: s.shared_accounts, format: undefined as ((n: number) => string) | undefined },
-    { label: t('statsPage.kpi.activeUsers'), value: s.active_users, format: undefined },
-    { label: t('statsPage.kpi.totalRequests'), value: s.total_requests, format: undefined },
-    { label: t('statsPage.kpi.contributorEarnings'), value: s.contributor_earnings_usdt, format: usd },
+    mk(t('statsPage.kpi.sharedAccounts'), s.shared_accounts, '#5d30f7', undefined),
+    mk(t('statsPage.kpi.activeUsers'), s.active_users, '#9385ff', undefined),
+    mk(t('statsPage.kpi.totalRequests'), s.total_requests, '#7b61ff', undefined),
+    mk(t('statsPage.kpi.contributorEarnings'), s.contributor_earnings_usdt, '#10a37f', usd),
   ]
 })
+
+// 产品亮点数（产品事实，非统计数字）。
+const highlights = computed(() => [
+  { value: t('statsPage.highlights.discount.value'), label: t('statsPage.highlights.discount.label') },
+  { value: t('statsPage.highlights.verifiable.value'), label: t('statsPage.highlights.verifiable.label') },
+  { value: t('statsPage.highlights.models.value'), label: t('statsPage.highlights.models.label') },
+  { value: t('statsPage.highlights.failover.value'), label: t('statsPage.highlights.failover.label') },
+])
+
+// 信任徽章（产品事实，与首页/proof 同源口径）。
+const trustItems = computed(() => [
+  t('statsPage.trust.tee'),
+  t('statsPage.trust.attestation'),
+  t('statsPage.trust.noTraining'),
+])
 
 // 支持的模型（产品事实，非统计数字）。品牌名字面量。
 const models = [

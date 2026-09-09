@@ -20,6 +20,20 @@ export default {
       desc: 'Unlike ordinary gateways, every inference on ApexOne is routed inside a TEE and can be verified from your browser — proof that the exact model you paid for served your request.',
       cta: 'See the privacy proof →'
     },
+    highlights: {
+      discount: { value: '14%', label: 'of official API price' },
+      verifiable: { value: 'TEE', label: 'confidential routing' },
+      models: { value: '2+', label: 'frontier model families' },
+      failover: { value: 'Multi', label: 'automatic failover' }
+    },
+    trust: {
+      eyebrow: '// Verifiable',
+      title: 'Not a promise — verifiable',
+      tee: 'Intel TDX confidential VM',
+      attestation: 'Remote attestation, in your browser',
+      noTraining: 'Never used for model training',
+      cta: 'Verify it yourself →'
+    },
     kpi: {
       sharedAccounts: 'Shared accounts',
       activeUsers: 'Active users',

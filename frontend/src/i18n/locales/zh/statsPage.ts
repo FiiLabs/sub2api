@@ -19,6 +19,20 @@ export default {
       desc: '不同于普通网关，ApexOne 的每次推理都在 TEE 内路由，并可在浏览器中远程验证——服务你的是不是你付费的那个模型，自证。',
       cta: '查看隐私证明 →'
     },
+    highlights: {
+      discount: { value: '1.4 折', label: '官方 API 价格' },
+      verifiable: { value: 'TEE', label: '机密计算路由' },
+      models: { value: '2+', label: '前沿模型系列' },
+      failover: { value: '多路由', label: '自动故障切换' }
+    },
+    trust: {
+      eyebrow: '// 可验证',
+      title: '不是承诺，是可验证',
+      tee: 'Intel TDX 机密虚拟机',
+      attestation: '远程认证，浏览器自证',
+      noTraining: '绝不用于模型训练',
+      cta: '亲自验证 →'
+    },
     kpi: {
       sharedAccounts: '共享账号',
       activeUsers: '活跃用户',
