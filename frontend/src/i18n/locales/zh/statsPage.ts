@@ -37,6 +37,7 @@ export default {
       sharedAccounts: '共享账号',
       activeUsers: '活跃用户',
       totalRequests: '累计请求',
+      totalTokens: '累计 Tokens',
       contributorEarnings: '已付贡献者 (USDT)'
     },
     growth: {

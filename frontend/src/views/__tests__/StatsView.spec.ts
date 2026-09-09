@@ -51,6 +51,7 @@ const enabledStats: PublicHomepageStats = {
   shared_accounts: 1200,
   active_users: 3400,
   total_requests: 1_200_000,
+  total_tokens: 89_000_000,
   contributor_earnings_usdt: 48000,
   supply_by_platform: { anthropic: 8, openai: 4 }
 }
@@ -67,8 +68,8 @@ describe('StatsView public metrics dashboard', () => {
 
     expect(wrapper.find('[data-testid="stats-empty"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="stats-kpis"]').exists()).toBe(true)
-    // 4 个 KPI 卡
-    expect(wrapper.findAll('[data-testid="stats-kpis"] > div')).toHaveLength(4)
+    // 5 个 KPI 卡
+    expect(wrapper.findAll('[data-testid="stats-kpis"] > div')).toHaveLength(5)
     expect(wrapper.findComponent({ name: 'StatsGrowthChart' }).exists()).toBe(true)
     expect(wrapper.findComponent({ name: 'StatsSupplyDonut' }).exists()).toBe(true)
   })
@@ -79,6 +80,7 @@ describe('StatsView public metrics dashboard', () => {
       shared_accounts: 0,
       active_users: 0,
       total_requests: 0,
+      total_tokens: 0,
       contributor_earnings_usdt: 0
     })
     const wrapper = mountStats()

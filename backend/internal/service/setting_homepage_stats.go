@@ -43,6 +43,8 @@ type HomepageStatsSettings struct {
 	ActiveUsersOffset int64 `json:"active_users_offset"`
 	// TotalRequestsOffset 累计请求数的基数偏移。
 	TotalRequestsOffset int64 `json:"total_requests_offset"`
+	// TotalTokensOffset 累计处理 tokens 数的基数偏移。
+	TotalTokensOffset int64 `json:"total_tokens_offset"`
 	// ContributorEarningsOffset 已付贡献者收益（USDT）的基数偏移。float 以承载金额小数。
 	ContributorEarningsOffset float64 `json:"contributor_earnings_offset"`
 }
@@ -66,6 +68,9 @@ func (s *HomepageStatsSettings) normalize() {
 	}
 	if s.TotalRequestsOffset < 0 {
 		s.TotalRequestsOffset = 0
+	}
+	if s.TotalTokensOffset < 0 {
+		s.TotalTokensOffset = 0
 	}
 	if s.ContributorEarningsOffset < 0 {
 		s.ContributorEarningsOffset = 0

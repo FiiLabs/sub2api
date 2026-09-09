@@ -576,6 +576,7 @@ export default {
       sharedAccountsOffset: '共享号数 偏移',
       activeUsersOffset: '活跃用户数 偏移',
       totalRequestsOffset: '累计请求数 偏移',
+      totalTokensOffset: '累计 Tokens 偏移',
       contributorEarningsOffset: '已付贡献者 USDT 偏移',
       save: '保存首页数据配置',
       saved: '首页数据配置已保存'

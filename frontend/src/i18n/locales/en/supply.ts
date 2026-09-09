@@ -616,6 +616,7 @@ export default {
       sharedAccountsOffset: 'Shared accounts offset',
       activeUsersOffset: 'Active users offset',
       totalRequestsOffset: 'Requests served offset',
+      totalTokensOffset: 'Tokens processed offset',
       contributorEarningsOffset: 'Paid to contributors (USDT) offset',
       save: 'Save homepage stats',
       saved: 'Homepage stats saved'

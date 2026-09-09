@@ -32,6 +32,8 @@ type PublicHomepageStats struct {
 	ActiveUsers int64 `json:"active_users"`
 	// TotalRequests 展示用累计请求数。
 	TotalRequests int64 `json:"total_requests"`
+	// TotalTokens 展示用累计处理 tokens 数。
+	TotalTokens int64 `json:"total_tokens"`
 	// ContributorEarningsUSDT 展示用已付贡献者收益（USDT）。
 	ContributorEarningsUSDT float64 `json:"contributor_earnings_usdt"`
 	// SupplyByPlatform 按平台的**真实**可调度供给号数（环形图占比用）。
@@ -67,6 +69,7 @@ type cachedRealStats struct {
 	supplyTotal      int64
 	activeUsers      int64
 	totalRequests    int64
+	totalTokens      int64
 	earnings         float64
 	expiresAt        int64
 }
@@ -105,6 +108,7 @@ func (h *HomepageStatsService) GetPublicStats(ctx context.Context) *PublicHomepa
 		SharedAccounts:          real.supplyTotal + cfg.SharedAccountsOffset,
 		ActiveUsers:             real.activeUsers + cfg.ActiveUsersOffset,
 		TotalRequests:           real.totalRequests + cfg.TotalRequestsOffset,
+		TotalTokens:             real.totalTokens + cfg.TotalTokensOffset,
 		ContributorEarningsUSDT: real.earnings + cfg.ContributorEarningsOffset,
 		SupplyByPlatform:        cloneInt64Map(real.supplyByPlatform),
 	}
@@ -128,9 +132,10 @@ func (h *HomepageStatsService) realData(ctx context.Context) *cachedRealStats {
 		earnings:         h.realEarnings(ctx),
 		expiresAt:        time.Now().Add(homepageStatsResultTTL).UnixNano(),
 	}
-	if au, tr, ok := h.realDemand(ctx); ok {
+	if au, tr, tk, ok := h.realDemand(ctx); ok {
 		rd.activeUsers = au
 		rd.totalRequests = tr
+		rd.totalTokens = tk
 	}
 	h.cache.Store(rd)
 	return rd
@@ -168,19 +173,19 @@ func (h *HomepageStatsService) realSupplyByPlatform(ctx context.Context) map[str
 	return out
 }
 
-// realDemand 真实活跃用户数与累计请求数；读不到返回 ok=false。
-func (h *HomepageStatsService) realDemand(ctx context.Context) (activeUsers, totalRequests int64, ok bool) {
+// realDemand 真实活跃用户数、累计请求数与累计 tokens；读不到返回 ok=false。
+func (h *HomepageStatsService) realDemand(ctx context.Context) (activeUsers, totalRequests, totalTokens int64, ok bool) {
 	if h.demand == nil {
-		return 0, 0, false
+		return 0, 0, 0, false
 	}
 	stats, err := h.demand.GetDashboardStats(ctx)
 	if err != nil || stats == nil {
 		if err != nil {
 			slog.Warn("[HomepageStats] failed to read dashboard stats, showing offset only", "error", err)
 		}
-		return 0, 0, false
+		return 0, 0, 0, false
 	}
-	return stats.ActiveUsers, stats.TotalRequests, true
+	return stats.ActiveUsers, stats.TotalRequests, stats.TotalTokens, true
 }
 
 // realEarnings 真实累计贡献者入账；读不到按 0。

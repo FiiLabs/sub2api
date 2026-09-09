@@ -697,6 +697,7 @@ export interface HomepageStatsSettings {
   shared_accounts_offset: number
   active_users_offset: number
   total_requests_offset: number
+  total_tokens_offset: number
   contributor_earnings_offset: number
 }
 

@@ -16,6 +16,8 @@ export interface PublicHomepageStats {
   active_users: number
   /** 展示用累计请求数。 */
   total_requests: number
+  /** 展示用累计处理 tokens 数。 */
+  total_tokens: number
   /** 展示用已付贡献者收益（USDT）。 */
   contributor_earnings_usdt: number
   /** 按平台的真实可调度供给号数（环形图占比用；首页数据带忽略）。enabled=false 或读不到时缺省。 */

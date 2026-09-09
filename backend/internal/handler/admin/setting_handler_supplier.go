@@ -673,6 +673,7 @@ type HomepageStatsSettingsResponse struct {
 	SharedAccountsOffset      int64   `json:"shared_accounts_offset"`
 	ActiveUsersOffset         int64   `json:"active_users_offset"`
 	TotalRequestsOffset       int64   `json:"total_requests_offset"`
+	TotalTokensOffset         int64   `json:"total_tokens_offset"`
 	ContributorEarningsOffset float64 `json:"contributor_earnings_offset"`
 }
 
@@ -685,6 +686,7 @@ func newHomepageStatsSettingsResponse(s *service.HomepageStatsSettings) Homepage
 		SharedAccountsOffset:      s.SharedAccountsOffset,
 		ActiveUsersOffset:         s.ActiveUsersOffset,
 		TotalRequestsOffset:       s.TotalRequestsOffset,
+		TotalTokensOffset:         s.TotalTokensOffset,
 		ContributorEarningsOffset: s.ContributorEarningsOffset,
 	}
 }
@@ -702,6 +704,7 @@ type UpdateHomepageStatsSettingsRequest struct {
 	SharedAccountsOffset      *int64   `json:"shared_accounts_offset"`
 	ActiveUsersOffset         *int64   `json:"active_users_offset"`
 	TotalRequestsOffset       *int64   `json:"total_requests_offset"`
+	TotalTokensOffset         *int64   `json:"total_tokens_offset"`
 	ContributorEarningsOffset *float64 `json:"contributor_earnings_offset"`
 }
 
@@ -733,6 +736,9 @@ func (h *SettingHandler) UpdateHomepageStatsSettings(c *gin.Context) {
 	}
 	if req.TotalRequestsOffset != nil {
 		settings.TotalRequestsOffset = *req.TotalRequestsOffset
+	}
+	if req.TotalTokensOffset != nil {
+		settings.TotalTokensOffset = *req.TotalTokensOffset
 	}
 	if req.ContributorEarningsOffset != nil {
 		settings.ContributorEarningsOffset = *req.ContributorEarningsOffset

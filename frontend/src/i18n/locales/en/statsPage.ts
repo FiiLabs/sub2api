@@ -38,6 +38,7 @@ export default {
       sharedAccounts: 'Shared accounts',
       activeUsers: 'Active users',
       totalRequests: 'Requests served',
+      totalTokens: 'Tokens processed',
       contributorEarnings: 'Paid to contributors (USDT)'
     },
     growth: {

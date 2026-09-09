@@ -28,7 +28,7 @@
         </section>
 
         <!-- KPI -->
-        <section data-testid="stats-kpis" class="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
+        <section data-testid="stats-kpis" class="mb-6 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
           <div v-for="kpi in kpis" :key="kpi.label" :class="cardClass" class="relative overflow-hidden p-6">
             <div class="flex items-baseline justify-between gap-2">
               <div class="font-mono text-fluid-2xl font-bold tracking-tight text-primary-600 dark:text-primary-400">
@@ -159,8 +159,9 @@ const kpis = computed(() => {
   })
   return [
     mk(t('statsPage.kpi.sharedAccounts'), s.shared_accounts, '#5d30f7', compact),
-    mk(t('statsPage.kpi.activeUsers'), s.active_users, '#9385ff', compact),
-    mk(t('statsPage.kpi.totalRequests'), s.total_requests, '#7b61ff', compact),
+    mk(t('statsPage.kpi.activeUsers'), s.active_users, '#7b61ff', compact),
+    mk(t('statsPage.kpi.totalRequests'), s.total_requests, '#9385ff', compact),
+    mk(t('statsPage.kpi.totalTokens'), s.total_tokens, '#b6b1ff', compact),
     mk(t('statsPage.kpi.contributorEarnings'), s.contributor_earnings_usdt, '#10a37f', usd),
   ]
 })

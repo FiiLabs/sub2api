@@ -23,6 +23,7 @@ func (f fakeGateReader) GetSupplyDemandGateSettings(_ context.Context) *SupplyDe
 type fakeDemandReader struct {
 	active int64
 	tr     int64
+	tk     int64
 	err    error
 }
 
@@ -30,7 +31,7 @@ func (f fakeDemandReader) GetDashboardStats(_ context.Context) (*usagestats.Dash
 	if f.err != nil {
 		return nil, f.err
 	}
-	return &usagestats.DashboardStats{ActiveUsers: f.active, TotalRequests: f.tr}, nil
+	return &usagestats.DashboardStats{ActiveUsers: f.active, TotalRequests: f.tr, TotalTokens: f.tk}, nil
 }
 
 type fakeSupplyCounter struct {

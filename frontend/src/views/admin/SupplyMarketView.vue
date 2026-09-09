@@ -638,6 +638,10 @@
               <input v-model.number="homepageStatsForm.total_requests_offset" type="number" step="1" min="0" class="input" data-testid="homepage-stats-total-requests" />
             </div>
             <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.homepageStats.totalTokensOffset') }}</label>
+              <input v-model.number="homepageStatsForm.total_tokens_offset" type="number" step="1" min="0" class="input" data-testid="homepage-stats-total-tokens" />
+            </div>
+            <div>
               <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.homepageStats.contributorEarningsOffset') }}</label>
               <input v-model.number="homepageStatsForm.contributor_earnings_offset" type="number" step="0.01" min="0" class="input" data-testid="homepage-stats-earnings" />
             </div>
@@ -1085,6 +1089,7 @@ const homepageStatsForm = reactive<HomepageStatsSettings>({
   shared_accounts_offset: 0,
   active_users_offset: 0,
   total_requests_offset: 0,
+  total_tokens_offset: 0,
   contributor_earnings_offset: 0,
 })
 
@@ -1310,6 +1315,7 @@ async function loadHomepageStats(): Promise<void> {
   homepageStatsForm.shared_accounts_offset = settings.shared_accounts_offset
   homepageStatsForm.active_users_offset = settings.active_users_offset
   homepageStatsForm.total_requests_offset = settings.total_requests_offset
+  homepageStatsForm.total_tokens_offset = settings.total_tokens_offset
   homepageStatsForm.contributor_earnings_offset = settings.contributor_earnings_offset
 }
 
@@ -1320,6 +1326,7 @@ async function saveHomepageStats(): Promise<void> {
     homepageStatsForm.shared_accounts_offset = saved.shared_accounts_offset
     homepageStatsForm.active_users_offset = saved.active_users_offset
     homepageStatsForm.total_requests_offset = saved.total_requests_offset
+    homepageStatsForm.total_tokens_offset = saved.total_tokens_offset
     homepageStatsForm.contributor_earnings_offset = saved.contributor_earnings_offset
     appStore.showSuccess(t('supplyAdmin.homepageStats.saved'))
   } catch (error) {

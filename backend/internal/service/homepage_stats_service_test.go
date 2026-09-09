@@ -50,9 +50,10 @@ func TestHomepageStatsRealPlusOffset(t *testing.T) {
 			SharedAccountsOffset:      100,
 			ActiveUsersOffset:         500,
 			TotalRequestsOffset:       9000,
+			TotalTokensOffset:         1_000_000,
 			ContributorEarningsOffset: 250.5,
 		}},
-		fakeDemandReader{active: 7, tr: 42},
+		fakeDemandReader{active: 7, tr: 42, tk: 2345},
 		fakeSupplyCounter{counts: map[string]int{"anthropic": 3, "openai": 2}},
 		fakeEarnings{total: 12.5},
 	)
@@ -68,6 +69,9 @@ func TestHomepageStatsRealPlusOffset(t *testing.T) {
 	}
 	if got.TotalRequests != 9042 { // 42 + 9000
 		t.Fatalf("TotalRequests = %d want 9042", got.TotalRequests)
+	}
+	if got.TotalTokens != 1_002_345 { // 2345 + 1_000_000
+		t.Fatalf("TotalTokens = %d want 1002345", got.TotalTokens)
 	}
 	if got.ContributorEarningsUSDT != 263.0 { // 12.5 + 250.5
 		t.Fatalf("ContributorEarningsUSDT = %v want 263.0", got.ContributorEarningsUSDT)
