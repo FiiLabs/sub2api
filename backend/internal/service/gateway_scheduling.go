@@ -233,6 +233,12 @@ func (s *GatewayService) selectAccountInPoolWithLoadAwareness(ctx context.Contex
 		return nil, ErrNoAvailableAccounts
 	}
 	ctx = s.withSchedulingPrefetch(ctx, accounts)
+	// 产出均衡的预取单独放这里，**不进 withSchedulingPrefetch**：那个函数的契约是
+	// 「与 dynamicLimitGate 一一对应」，而均衡不是一道闸；更实际的原因是它只被
+	// 本函数的 Layer 2 消费，而 withSchedulingPrefetch 还被另外两条老选择路径
+	// （selectAccountForModelWithPlatform / selectAccountWithMixedScheduling）调用——
+	// 挂在那里等于在用不到它的路径上白发一次聚合查询。
+	ctx = s.withSchedulingBalancePrefetch(ctx, accounts)
 
 	// 提前构建 accountByID（供 Layer 1 和 Layer 1.5 使用）
 	accountByID := make(map[int64]*Account, len(accounts))

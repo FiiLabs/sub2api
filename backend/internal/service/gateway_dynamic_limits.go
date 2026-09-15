@@ -68,8 +68,5 @@ func (s *GatewayService) withSchedulingPrefetch(ctx context.Context, accounts []
 	ctx = s.prefetchWindowCost(ctx, accounts)
 	ctx = s.prefetchRPM(ctx, accounts)
 	ctx = s.withSupplyDailyCapPrefetch(ctx, accounts)
-	// 新会话的产出均衡。它不是一道闸（不拦任何账号），只是给 Layer 2 的排序
-	// 多一个判据，所以放在最后；关闭时零查询。见 gateway_scheduling_balance.go。
-	ctx = s.withSchedulingBalancePrefetch(ctx, accounts)
 	return ctx
 }
