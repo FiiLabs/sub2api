@@ -371,6 +371,8 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	paymentOrderExpiryService := service.ProvidePaymentOrderExpiryService(paymentService, leaderLockCache, db)
 	supplierThawService := service.ProvideSupplierThawService(supplierCreditRepository, leaderLockCache, db)
 	supplierLifecycleService := service.ProvideSupplierLifecycleService(supplierOnboardingRepository, accountRepository, settingService, accountTestService, supplierIncidentService, leaderLockCache, db)
+	supplierIncentiveRepository := repository.NewSupplierIncentiveRepository(client)
+	supplierIncentiveWorker := service.ProvideSupplierIncentiveWorker(supplierIncentiveRepository, supplierCreditRepository, settingService, leaderLockCache, db)
 	abuseDetectorService := service.ProvideAbuseDetectorService(usageLogRepository, userRepository, adminService, settingService, leaderLockCache, db, opsService)
 	supplierPayoutQueueRepository := repository.NewSupplierPayoutQueueRepository(client, secretEncryptor)
 	supplierPayoutWorker := service.ProvideSupplierPayoutWorker(supplierPayoutQueueRepository, supplierChainClient, supplierWithdrawalNotifier, leaderLockCache, db)
@@ -378,7 +380,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	channelMonitorRunner := service.ProvideChannelMonitorRunner(channelMonitorService, settingService, channelMonitorQuotaFetcher)
 	channelMonitorV2Aggregator := service.ProvideChannelMonitorV2Aggregator(channelMonitorV2Repository, db, settingService)
 	userPlatformQuotaUsageFlusher := service.ProvideUserPlatformQuotaUsageFlusher(configConfig, billingCache, serviceUserPlatformQuotaRepository, timingWheelService)
-	v := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, cnProviderBalanceCheckService, openAICodexVersionSyncService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, batchImageCleanupService, batchImageWorkerRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, supplierThawService, supplierLifecycleService, abuseDetectorService, supplierPayoutWorker, channelMonitorRunner, channelMonitorV2Aggregator, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, auditLogService, openAIQuotaAutoResetService, promptService, pluginManager)
+	v := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, cnProviderBalanceCheckService, openAICodexVersionSyncService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, batchImageCleanupService, batchImageWorkerRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, supplierThawService, supplierLifecycleService, supplierIncentiveWorker, abuseDetectorService, supplierPayoutWorker, channelMonitorRunner, channelMonitorV2Aggregator, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, auditLogService, openAIQuotaAutoResetService, promptService, pluginManager)
 	application := &Application{
 		Server:        httpServer,
 		PromptAudit:   promptService,
@@ -456,6 +458,8 @@ func provideCleanup(
 
 	supplierThaw *service.SupplierThawService,
 	supplierLifecycle *service.SupplierLifecycleService,
+
+	supplierIncentive *service.SupplierIncentiveWorker,
 	abuseDetector *service.AbuseDetectorService,
 
 	supplierPayout *service.SupplierPayoutWorker,
@@ -699,6 +703,12 @@ func provideCleanup(
 			{"SupplierLifecycleService", func() error {
 				if supplierLifecycle != nil {
 					supplierLifecycle.Stop()
+				}
+				return nil
+			}},
+			{"SupplierIncentiveWorker", func() error {
+				if supplierIncentive != nil {
+					supplierIncentive.Stop()
 				}
 				return nil
 			}},

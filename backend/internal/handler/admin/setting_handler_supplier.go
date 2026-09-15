@@ -814,3 +814,129 @@ func (h *SettingHandler) UpdateAbuseDetectionSettings(c *gin.Context) {
 	response.Success(c, newAbuseDetectionSettingsResponse(
 		h.settingService.GetAbuseDetectionSettings(ctx)))
 }
+
+// ============================================================================
+// APEXONE-EXT: 双边市场——挂号奖励规则。
+// ============================================================================
+
+// SupplyIncentiveTierPayload 是一个档位的对外形态。
+type SupplyIncentiveTierPayload struct {
+	MinActiveDays int     `json:"min_active_days"`
+	AmountUSD     float64 `json:"amount_usd"`
+	Slots         int     `json:"slots"`
+}
+
+// SupplyIncentiveProgramPayload 是一期活动的对外形态。
+type SupplyIncentiveProgramPayload struct {
+	Slug     string                       `json:"slug"`
+	Platform string                       `json:"platform"`
+	Tiers    []SupplyIncentiveTierPayload `json:"tiers"`
+}
+
+// SupplyIncentiveSettingsResponse 是挂号奖励规则的对外形态。
+type SupplyIncentiveSettingsResponse struct {
+	Enabled  bool                            `json:"enabled"`
+	Programs []SupplyIncentiveProgramPayload `json:"programs"`
+
+	// BudgetCapUSD 结构性预算上限 = Σ(slots × amount)，**算出来的，不是配置项**。
+	// 下发它是为了让运营在保存前看见自己配了多大的敞口——这个功能里没有单独的
+	// 预算字段，名额就是预算，而「4 档 × 各自名额」心算不出总数。
+	BudgetCapUSD float64 `json:"budget_cap_usd"`
+	// BudgetBounded 是否有上界。任何一档 slots=0（不限）都会让它变成 false，
+	// 此时 BudgetCapUSD 无意义——面板该显示「无上限」而不是一个 0。
+	BudgetBounded bool `json:"budget_bounded"`
+
+	// 边界值随配置下发，理由同其他几组：前端抄一份就等于给同一条规则立两个源头。
+	ProgramsMax      int     `json:"programs_max"`
+	TiersMax         int     `json:"tiers_max"`
+	SlugMaxLen       int     `json:"slug_max_len"`
+	AmountMaxUSD     float64 `json:"amount_max_usd"`
+	SlotsMax         int     `json:"slots_max"`
+	MinActiveDaysMax int     `json:"min_active_days_max"`
+}
+
+func newSupplyIncentiveSettingsResponse(s *service.SupplyIncentiveSettings) SupplyIncentiveSettingsResponse {
+	resp := SupplyIncentiveSettingsResponse{
+		Programs:         []SupplyIncentiveProgramPayload{},
+		ProgramsMax:      service.SupplyIncentiveProgramsMax,
+		TiersMax:         service.SupplyIncentiveTiersMax,
+		SlugMaxLen:       service.SupplyIncentiveSlugMaxLen,
+		AmountMaxUSD:     service.SupplyIncentiveAmountMaxUSD,
+		SlotsMax:         service.SupplyIncentiveSlotsMax,
+		MinActiveDaysMax: service.SupplyIncentiveMinActiveDaysMax,
+	}
+	if s == nil {
+		resp.BudgetBounded = true
+		return resp
+	}
+	resp.Enabled = s.Enabled
+	resp.BudgetCapUSD, resp.BudgetBounded = s.BudgetCapUSD()
+	for _, p := range s.Programs {
+		payload := SupplyIncentiveProgramPayload{
+			Slug:     p.Slug,
+			Platform: p.Platform,
+			Tiers:    make([]SupplyIncentiveTierPayload, 0, len(p.Tiers)),
+		}
+		for _, t := range p.Tiers {
+			payload.Tiers = append(payload.Tiers, SupplyIncentiveTierPayload{
+				MinActiveDays: t.MinActiveDays,
+				AmountUSD:     t.AmountUSD,
+				Slots:         t.Slots,
+			})
+		}
+		resp.Programs = append(resp.Programs, payload)
+	}
+	return resp
+}
+
+// GetSupplyIncentiveSettings 读挂号奖励规则
+// GET /api/v1/admin/settings/supply-incentive
+func (h *SettingHandler) GetSupplyIncentiveSettings(c *gin.Context) {
+	response.Success(c, newSupplyIncentiveSettingsResponse(
+		h.settingService.GetSupplyIncentiveSettings(c.Request.Context())))
+}
+
+// UpdateSupplyIncentiveSettingsRequest 更新挂号奖励规则请求。
+type UpdateSupplyIncentiveSettingsRequest struct {
+	Enabled  bool                            `json:"enabled"`
+	Programs []SupplyIncentiveProgramPayload `json:"programs"`
+}
+
+// UpdateSupplyIncentiveSettings 写挂号奖励规则
+// PUT /api/v1/admin/settings/supply-incentive
+//
+// 与观察期那组（越界夹回再回读）刻意不同：这里越界**直接 400**。夹回一个能用的值
+// 会让运营以为自己填的就是生效的那个，而这一组的每个数字都直接决定往外发多少钱——
+// 想填 $50 手滑填成 $500，夹回上限他不会察觉，钱已经在发了。
+func (h *SettingHandler) UpdateSupplyIncentiveSettings(c *gin.Context) {
+	var req UpdateSupplyIncentiveSettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	settings := &service.SupplyIncentiveSettings{Enabled: req.Enabled}
+	for _, p := range req.Programs {
+		program := service.SupplyIncentiveProgram{
+			Slug:     p.Slug,
+			Platform: p.Platform,
+			Tiers:    make([]service.SupplyIncentiveTier, 0, len(p.Tiers)),
+		}
+		for _, t := range p.Tiers {
+			program.Tiers = append(program.Tiers, service.SupplyIncentiveTier{
+				MinActiveDays: t.MinActiveDays,
+				AmountUSD:     t.AmountUSD,
+				Slots:         t.Slots,
+			})
+		}
+		settings.Programs = append(settings.Programs, program)
+	}
+
+	ctx := c.Request.Context()
+	if err := h.settingService.SetSupplyIncentiveSettings(ctx, settings); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, newSupplyIncentiveSettingsResponse(
+		h.settingService.GetSupplyIncentiveSettings(ctx)))
+}

@@ -140,6 +140,19 @@ const (
 	SupplyDailyCostLimitExtraKey = "apexone_supply_daily_cost_limit"
 	// SupplyDailyTokenLimitExtraKey 供给者自设的每日 token 上限。0 或缺失 = 不限。
 	SupplyDailyTokenLimitExtraKey = "apexone_supply_daily_token_limit"
+
+	// SupplyActiveDaysExtraKey 累计在线天数，形如 {"days": 12, "last_day": "2026-09-14"}。
+	//
+	// 挂号奖励（supply_incentive_settings）的唯一判据。由每日 worker 累加，语义是
+	// 「这个号在役了多少天」：断线期间不涨、接回来继续涨、**永不清零**。
+	//
+	// 为什么不用 accounts.created_at 相减：那算的是「挂了多久」，不是「在线多久」。
+	// 一个坏了 20 天、第 30 天才修好的号，两种算法差 20 天，而差额是要发出去的钱。
+	//
+	// 为什么带 last_day 而不只存 days：它是**幂等键**。worker 一小时跑一轮，
+	// 靠 `last_day <> 今天` 这个 WHERE 条件保证一天只加一次——没有它就得依赖
+	// 「worker 恰好每 24 小时跑一次且从不重启」，那个前提在生产里不成立。
+	SupplyActiveDaysExtraKey = "apexone_supply_active_days"
 )
 
 // 下线的两个通道。

@@ -128,6 +128,9 @@ func provideCleanup(
 	// 也是为了让 wire 真的把它们构造出来（Provide* 里 Start，没人引用就不会启动）。
 	supplierThaw *service.SupplierThawService,
 	supplierLifecycle *service.SupplierLifecycleService,
+	// APEXONE-EXT: 挂号奖励发放任务。同样必须被引用才会被构造——它不被引用的表现是
+	// 「在线天数永远停在 0」，一个不报错的静默失效。
+	supplierIncentive *service.SupplierIncentiveWorker,
 	abuseDetector *service.AbuseDetectorService,
 	// APEXONE-EXT: 双边市场——链上打款 worker（M4）。停机时它必须被等到：
 	// 一轮打款走到一半被 kill，nonce 已钉、哈希未记的单子要等下一次启动重播。
@@ -373,6 +376,12 @@ func provideCleanup(
 			{"SupplierLifecycleService", func() error {
 				if supplierLifecycle != nil {
 					supplierLifecycle.Stop()
+				}
+				return nil
+			}},
+			{"SupplierIncentiveWorker", func() error {
+				if supplierIncentive != nil {
+					supplierIncentive.Stop()
 				}
 				return nil
 			}},
