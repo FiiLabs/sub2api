@@ -551,6 +551,32 @@ export default {
     },
 
     // APEXONE-EXT: 供需动态平衡门。
+    incentive: {
+      title: '挂号奖励',
+      description: '共享者挂号并保持在线满 N 天即发 USDT，按档累加。常驻可配，不是一次性活动。默认关。',
+      enabled: '启用挂号奖励',
+      enabledHint: '关闭时不发任何奖励，但在线天数照常累加——天数是账号的客观属性，不该因为活动一开一关就从头再来。',
+      budgetCap: '预算上限 {amount}',
+      budgetUnbounded: '预算无上限（有档位的名额填了 0）',
+      budgetHint: '预算不是配置项，是 Σ(名额 × 金额) 算出来的。门槛按在线天数计，奖励不会被产出自付——名额就是唯一的成本闸门，任何一档填 0 都意味着那一档的敞口没有上界。',
+      empty: '还没有活动。加一个活动，再给它配几档。',
+      slug: '活动标识（slug）',
+      slugPlaceholder: 'bind26q4',
+      slugHint: '只能用小写字母和数字。它进幂等键，**建后不要改**——改了等于新活动，已经领过的账号会再领一次。',
+      platform: '限定平台',
+      platformAny: '全平台（共用一个名额池）',
+      platformHint: '留「全平台」时 Claude 与 ChatGPT 共用同一套档位与名额，先到先得。',
+      minActiveDays: '在线天数',
+      amountUsd: '奖励 (USDT)',
+      slots: '名额（0=不限）',
+      tierHint: '档位逐档累加：跨过第三档的账号拿到的是前三档之和。名额按账号计，不是按人。',
+      addTier: '加一档',
+      removeTier: '删除',
+      addProgram: '加一个活动',
+      removeProgram: '删除活动',
+      save: '保存挂号奖励',
+      saved: '挂号奖励已保存'
+    },
     demandGate: {
       title: '供需动态平衡门',
       description: '按「活跃共享号数 vs 活跃用户数」的头数比，在供需明显失衡时拒绝一侧新增。默认关。',

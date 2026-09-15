@@ -591,6 +591,32 @@ export default {
     },
 
     // APEXONE-EXT: dynamic supply/demand balance gate.
+    incentive: {
+      title: 'Uptime rewards',
+      description: 'Pay contributors in USDT once a connected account stays online for N days, cumulative across tiers. A standing, configurable rule — not a one-off campaign. Off by default.',
+      enabled: 'Enable uptime rewards',
+      enabledHint: 'When off, no rewards are granted, but online days keep accruing — the day counter is a property of the account and should not restart every time the program is toggled.',
+      budgetCap: 'Budget cap {amount}',
+      budgetUnbounded: 'Budget unbounded (a tier has slots set to 0)',
+      budgetHint: 'The budget is not a setting — it is Σ(slots × amount). Because the threshold is uptime rather than usage, rewards do not pay for themselves: slots are the only cost gate, and any tier left at 0 has no upper bound.',
+      empty: 'No programs yet. Add a program, then give it a few tiers.',
+      slug: 'Program slug',
+      slugPlaceholder: 'bind26q4',
+      slugHint: 'Lowercase letters and digits only. It forms part of the idempotency key — do not change it after creation, or already-paid accounts will be paid again.',
+      platform: 'Platform',
+      platformAny: 'All platforms (shared slot pool)',
+      platformHint: 'Leave on “all platforms” to let Claude and ChatGPT accounts share the same tiers and slots, first come first served.',
+      minActiveDays: 'Online days',
+      amountUsd: 'Reward (USDT)',
+      slots: 'Slots (0 = unlimited)',
+      tierHint: 'Tiers are cumulative: an account reaching the third tier receives the sum of the first three. Slots count accounts, not people.',
+      addTier: 'Add tier',
+      removeTier: 'Remove',
+      addProgram: 'Add program',
+      removeProgram: 'Remove program',
+      save: 'Save uptime rewards',
+      saved: 'Uptime rewards saved'
+    },
     demandGate: {
       title: 'Supply/demand balance gate',
       description: 'By headcount ratio (active shared accounts vs active users), reject new entries on one side when supply and demand are clearly out of balance. Off by default.',

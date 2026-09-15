@@ -691,6 +691,70 @@ async function updateSupplyDemandGateSettings(
   return data
 }
 
+/** 挂号奖励的一个档位：挂满 N 天，发 X 美元，限 S 个名额。 */
+export interface SupplyIncentiveTier {
+  /** 累计在线天数门槛。断线期间不涨、接回来继续涨、不清零。 */
+  min_active_days: number
+  /** 该档奖励金额（USDT）。**逐档累加**：跨过第三档拿到的是前三档之和。 */
+  amount_usd: number
+  /** 该档名额，按**账号**计（不是按人）。0 = 不限。 */
+  slots: number
+}
+
+/** 一期活动。slug 进幂等键，建后不可改。 */
+export interface SupplyIncentiveProgram {
+  slug: string
+  /** 限定平台；空串 = 全平台共用一套档位与名额池。 */
+  platform: string
+  tiers: SupplyIncentiveTier[]
+}
+
+/** 挂号奖励规则。默认关、无活动。 */
+export interface SupplyIncentiveSettings {
+  enabled: boolean
+  programs: SupplyIncentiveProgram[]
+
+  /**
+   * 只读：结构性预算上限 = Σ(slots × amount)，**后端算出来的，不是配置项**。
+   * 这个功能没有单独的预算字段——名额就是预算，而多档相乘心算不出来。
+   */
+  budget_cap_usd: number
+  /** 只读：是否有上界。任何一档 slots=0 都会让它变 false，此时 budget_cap_usd 无意义。 */
+  budget_bounded: boolean
+
+  /** 后端下发的边界值，前端不要另抄一份。 */
+  programs_max: number
+  tiers_max: number
+  slug_max_len: number
+  amount_max_usd: number
+  slots_max: number
+  min_active_days_max: number
+}
+
+export type SupplyIncentivePayload = Pick<SupplyIncentiveSettings, 'enabled' | 'programs'>
+
+async function getIncentiveSettings(): Promise<SupplyIncentiveSettings> {
+  const { data } = await apiClient.get<SupplyIncentiveSettings>('/admin/settings/supply-incentive')
+  return data
+}
+
+/**
+ * 写挂号奖励规则。
+ *
+ * 与观察期参数刻意不同：后端**越界直接 400**，不夹回。所以调用方必须把错误原文
+ * 显示出来——夹回一个能用的值会让运营以为自己填的就是生效的那个，而这一组的
+ * 每个数字都直接决定往外发多少钱。
+ */
+async function updateIncentiveSettings(
+  payload: SupplyIncentivePayload
+): Promise<SupplyIncentiveSettings> {
+  const { data } = await apiClient.put<SupplyIncentiveSettings>(
+    '/admin/settings/supply-incentive',
+    payload
+  )
+  return data
+}
+
 /** 首页公开数据展示配置（真实数 + 可配基数偏移）。默认关、零偏移。 */
 export interface HomepageStatsSettings {
   enabled: boolean
@@ -996,6 +1060,8 @@ export const adminSupplyMarketAPI = {
   updateOnboardingSettings,
   getSupplyDemandGateSettings,
   updateSupplyDemandGateSettings,
+  getIncentiveSettings,
+  updateIncentiveSettings,
   getHomepageStatsSettings,
   updateHomepageStatsSettings,
   getAgreementSettings,

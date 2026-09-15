@@ -608,6 +608,158 @@
           </div>
         </div>
 
+        <!-- ===================== 挂号奖励 ===================== -->
+        <div class="card space-y-4 p-6">
+          <div>
+            <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('supplyAdmin.incentive.title') }}</h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.incentive.description') }}</p>
+          </div>
+
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.incentive.enabled') }}</p>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.incentive.enabledHint') }}</p>
+            </div>
+            <Toggle v-model="incentiveForm.enabled" data-testid="incentive-enabled" />
+          </div>
+
+          <!-- 预算不是配置项，是名额×金额算出来的。放在最显眼处，因为它是真金。 -->
+          <div
+            class="rounded-lg border p-3"
+            :class="incentiveDraftBudget.bounded
+              ? 'border-blue-200 bg-blue-50 dark:border-blue-900/40 dark:bg-blue-900/20'
+              : 'border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-900/20'"
+            data-testid="incentive-budget"
+          >
+            <p class="text-sm font-medium text-gray-800 dark:text-gray-200">
+              <template v-if="incentiveDraftBudget.bounded">
+                {{ t('supplyAdmin.incentive.budgetCap', { amount: formatCurrency(incentiveDraftBudget.total) }) }}
+              </template>
+              <template v-else>{{ t('supplyAdmin.incentive.budgetUnbounded') }}</template>
+            </p>
+            <p class="mt-1 text-xs text-gray-600 dark:text-gray-400">{{ t('supplyAdmin.incentive.budgetHint') }}</p>
+          </div>
+
+          <div v-if="!incentiveForm.programs.length" class="text-sm text-gray-500 dark:text-gray-400">
+            {{ t('supplyAdmin.incentive.empty') }}
+          </div>
+
+          <div
+            v-for="(program, programIndex) in incentiveForm.programs"
+            :key="programIndex"
+            class="space-y-3 rounded-lg border border-gray-200 p-4 dark:border-gray-700"
+          >
+            <div class="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.incentive.slug') }}</label>
+                <input
+                  v-model="program.slug"
+                  type="text"
+                  class="input"
+                  :maxlength="incentiveMeta.slug_max_len"
+                  :placeholder="t('supplyAdmin.incentive.slugPlaceholder')"
+                  :data-testid="`incentive-slug-${programIndex}`"
+                />
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.incentive.slugHint') }}</p>
+              </div>
+              <div>
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.incentive.platform') }}</label>
+                <select v-model="program.platform" class="input" :data-testid="`incentive-platform-${programIndex}`">
+                  <option value="">{{ t('supplyAdmin.incentive.platformAny') }}</option>
+                  <option value="anthropic">anthropic</option>
+                  <option value="openai">openai</option>
+                </select>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.incentive.platformHint') }}</p>
+              </div>
+            </div>
+
+            <div class="space-y-2">
+              <div
+                v-for="(tier, tierIndex) in program.tiers"
+                :key="tierIndex"
+                class="grid items-end gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]"
+              >
+                <div>
+                  <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('supplyAdmin.incentive.minActiveDays') }}</label>
+                  <input
+                    v-model.number="tier.min_active_days"
+                    type="number"
+                    step="1"
+                    min="1"
+                    :max="incentiveMeta.min_active_days_max"
+                    class="input"
+                    :data-testid="`incentive-days-${programIndex}-${tierIndex}`"
+                  />
+                </div>
+                <div>
+                  <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('supplyAdmin.incentive.amountUsd') }}</label>
+                  <input
+                    v-model.number="tier.amount_usd"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    :max="incentiveMeta.amount_max_usd"
+                    class="input"
+                    :data-testid="`incentive-amount-${programIndex}-${tierIndex}`"
+                  />
+                </div>
+                <div>
+                  <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('supplyAdmin.incentive.slots') }}</label>
+                  <input
+                    v-model.number="tier.slots"
+                    type="number"
+                    step="1"
+                    min="0"
+                    :max="incentiveMeta.slots_max"
+                    class="input"
+                    :data-testid="`incentive-slots-${programIndex}-${tierIndex}`"
+                  />
+                </div>
+                <button
+                  class="btn btn-secondary"
+                  :data-testid="`incentive-remove-tier-${programIndex}-${tierIndex}`"
+                  @click="removeIncentiveTier(programIndex, tierIndex)"
+                >
+                  {{ t('supplyAdmin.incentive.removeTier') }}
+                </button>
+              </div>
+              <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.incentive.tierHint') }}</p>
+            </div>
+
+            <div class="flex justify-between">
+              <button
+                class="btn btn-secondary"
+                :disabled="program.tiers.length >= incentiveMeta.tiers_max"
+                :data-testid="`incentive-add-tier-${programIndex}`"
+                @click="addIncentiveTier(programIndex)"
+              >
+                {{ t('supplyAdmin.incentive.addTier') }}
+              </button>
+              <button
+                class="btn btn-secondary"
+                :data-testid="`incentive-remove-program-${programIndex}`"
+                @click="removeIncentiveProgram(programIndex)"
+              >
+                {{ t('supplyAdmin.incentive.removeProgram') }}
+              </button>
+            </div>
+          </div>
+
+          <div class="flex justify-between">
+            <button
+              class="btn btn-secondary"
+              :disabled="incentiveForm.programs.length >= incentiveMeta.programs_max"
+              data-testid="incentive-add-program"
+              @click="addIncentiveProgram"
+            >
+              {{ t('supplyAdmin.incentive.addProgram') }}
+            </button>
+            <button class="btn btn-primary" :disabled="savingIncentive" data-testid="incentive-save" @click="saveIncentive">
+              {{ t('supplyAdmin.incentive.save') }}
+            </button>
+          </div>
+        </div>
+
         <!-- ===================== 首页公开数据 ===================== -->
         <div class="card space-y-4 p-6">
           <div>
@@ -989,6 +1141,8 @@ import {
   type SupplyWithdrawalPayload,
   type SupplyWithdrawalSettings,
   type SupplyDemandGatePayload,
+  type SupplyIncentiveProgram,
+  type SupplyIncentiveSettings,
   type HomepageStatsSettings,
 } from '@/api/admin/supplyMarket'
 import { useAppStore } from '@/stores/app'
@@ -1006,6 +1160,7 @@ const savingOnboarding = ref(false)
 const savingAgreement = ref(false)
 const savingWithdrawal = ref(false)
 const savingDemandGate = ref(false)
+const savingIncentive = ref(false)
 const savingHomepageStats = ref(false)
 
 const settlementForm = reactive({
@@ -1081,6 +1236,25 @@ const demandGateForm = reactive<SupplyDemandGatePayload>({
   sample_floor: 20,
   max_suppliers_per_user: 1,
   min_suppliers_per_user: 0.05,
+})
+
+// 挂号奖励规则。默认关、无活动——部署这段代码本身不该让任何一分钱发出去。
+const incentiveForm = reactive<{ enabled: boolean; programs: SupplyIncentiveProgram[] }>({
+  enabled: false,
+  programs: [],
+})
+
+// 后端下发的边界与算出来的预算上限。预算**不是配置项**：名额就是预算，
+// 这里显示它是因为「4 档各自名额相乘再相加」心算不出来，而那个数是真金。
+const incentiveMeta = reactive({
+  budget_cap_usd: 0,
+  budget_bounded: true,
+  programs_max: 5,
+  tiers_max: 5,
+  slug_max_len: 12,
+  amount_max_usd: 500,
+  slots_max: 100,
+  min_active_days_max: 365,
 })
 
 // 首页公开数据展示配置。默认关、零偏移。
@@ -1306,6 +1480,83 @@ async function saveDemandGate(): Promise<void> {
     appStore.showError(extractApiErrorMessage(error, t('supplyAdmin.error.saveFailed')))
   } finally {
     savingDemandGate.value = false
+  }
+}
+
+function applyIncentiveSettings(settings: SupplyIncentiveSettings): void {
+  incentiveForm.enabled = settings.enabled
+  // 深拷贝：后端返回的对象会被表单就地改写，直接引用等于让「已保存的值」
+  // 跟着草稿一起变，保存失败时就没有东西可回退了。
+  incentiveForm.programs = (settings.programs ?? []).map((program) => ({
+    slug: program.slug,
+    platform: program.platform ?? '',
+    tiers: (program.tiers ?? []).map((tier) => ({ ...tier })),
+  }))
+  incentiveMeta.budget_cap_usd = settings.budget_cap_usd
+  incentiveMeta.budget_bounded = settings.budget_bounded
+  incentiveMeta.programs_max = settings.programs_max
+  incentiveMeta.tiers_max = settings.tiers_max
+  incentiveMeta.slug_max_len = settings.slug_max_len
+  incentiveMeta.amount_max_usd = settings.amount_max_usd
+  incentiveMeta.slots_max = settings.slots_max
+  incentiveMeta.min_active_days_max = settings.min_active_days_max
+}
+
+async function loadIncentive(): Promise<void> {
+  applyIncentiveSettings(await adminSupplyMarketAPI.getIncentiveSettings())
+}
+
+function addIncentiveProgram(): void {
+  if (incentiveForm.programs.length >= incentiveMeta.programs_max) return
+  incentiveForm.programs.push({ slug: '', platform: '', tiers: [] })
+}
+
+function removeIncentiveProgram(index: number): void {
+  incentiveForm.programs.splice(index, 1)
+}
+
+function addIncentiveTier(programIndex: number): void {
+  const program = incentiveForm.programs[programIndex]
+  if (!program || program.tiers.length >= incentiveMeta.tiers_max) return
+  program.tiers.push({ min_active_days: 10, amount_usd: 5, slots: 0 })
+}
+
+function removeIncentiveTier(programIndex: number, tierIndex: number): void {
+  incentiveForm.programs[programIndex]?.tiers.splice(tierIndex, 1)
+}
+
+/** 草稿态的预算估算。后端会用同一个公式算一遍并回读，这里只是让人边填边看见。 */
+const incentiveDraftBudget = computed<{ total: number; bounded: boolean }>(() => {
+  let total = 0
+  for (const program of incentiveForm.programs) {
+    for (const tier of program.tiers) {
+      if (!tier.slots || tier.slots <= 0) return { total: 0, bounded: false }
+      total += tier.slots * (tier.amount_usd || 0)
+    }
+  }
+  return { total, bounded: true }
+})
+
+/**
+ * 写挂号奖励规则。
+ *
+ * 与观察期那组刻意不同：后端**越界直接 400**，不夹回。所以这里失败时把错误原文
+ * 原样弹出来，且**不动表单**——运营需要看见自己填的那个值还在，才知道要改哪里。
+ */
+async function saveIncentive(): Promise<void> {
+  savingIncentive.value = true
+  try {
+    applyIncentiveSettings(
+      await adminSupplyMarketAPI.updateIncentiveSettings({
+        enabled: incentiveForm.enabled,
+        programs: incentiveForm.programs,
+      })
+    )
+    appStore.showSuccess(t('supplyAdmin.incentive.saved'))
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('supplyAdmin.error.saveFailed')))
+  } finally {
+    savingIncentive.value = false
   }
 }
 
@@ -1719,6 +1970,7 @@ onMounted(async () => {
       loadAgreement(),
       loadWithdrawal(),
       loadDemandGate(),
+      loadIncentive(),
       loadHomepageStats(),
     ])
   } catch (error) {

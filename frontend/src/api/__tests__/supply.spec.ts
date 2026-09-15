@@ -414,6 +414,9 @@ describe('admin supply ops api (read-only)', () => {
       'updateAgreementSettings',
       // 首页公开数据展示配置。改的是配置不是业务数据，与其余 update*Settings 同类。
       'updateHomepageStatsSettings',
+      // 挂号奖励规则。同样是配置类写入——发钱的是后台 worker，不是这个接口：
+      // 管理员只能改规则，不能指定给谁发多少。
+      'updateIncentiveSettings',
       'updateOnboardingSettings',
       // M6：链上金库配置。改的是配置不是业务数据，与其余 update* 同类；
       // 私钥在请求里只进不出（响应连密文都没有），见 supplyMarket.ts。
@@ -433,6 +436,63 @@ describe('admin supply ops api (read-only)', () => {
     expect(get).toHaveBeenCalledWith('/admin/supply/withdrawals', {
       params: { status: 'pending', page: 2 },
     })
+  })
+})
+
+// 挂号奖励是唯一一组「配置直接决定往外发多少钱」的参数，所以契约上有两件事
+// 与其他设置不同，两件都在这里钉住。
+describe('admin supply incentive settings', () => {
+  beforeEach(() => {
+    get.mockReset()
+    get.mockResolvedValue({ data: { enabled: false, programs: [] } })
+  })
+
+  it('reads and writes the incentive rules on the same settings path', async () => {
+    // put 不在默认 mock 里，照本文件的惯例单测里补一个。
+    const put = vi.fn().mockResolvedValue({ data: { enabled: true, programs: [] } })
+    const client = (await import('@/api/client')).apiClient as unknown as Record<string, unknown>
+    client.put = put
+
+    await adminSupplyMarketAPI.getIncentiveSettings()
+    expect(get).toHaveBeenCalledWith('/admin/settings/supply-incentive')
+
+    const payload = {
+      enabled: true,
+      programs: [
+        {
+          slug: 'bind26q4',
+          platform: '',
+          tiers: [
+            { min_active_days: 10, amount_usd: 5, slots: 60 },
+            { min_active_days: 30, amount_usd: 20, slots: 5 },
+          ],
+        },
+      ],
+    }
+    await adminSupplyMarketAPI.updateIncentiveSettings(payload)
+    expect(put).toHaveBeenCalledWith('/admin/settings/supply-incentive', payload)
+  })
+
+  it('lets a rejected save surface instead of silently clamping', async () => {
+    // 与观察期参数刻意不同：后端越界**直接 400**，不夹回。这条断言守的是
+    // 「错误必须冒到调用方」——把它吞掉再回读，运营会以为自己填的 $5000
+    // 生效了，而实际生效的是别的数（或者根本没保存）。
+    const put = vi.fn().mockRejectedValue(new Error('tier amount must be within (0, 500]'))
+    const client = (await import('@/api/client')).apiClient as unknown as Record<string, unknown>
+    client.put = put
+
+    await expect(
+      adminSupplyMarketAPI.updateIncentiveSettings({
+        enabled: true,
+        programs: [
+          {
+            slug: 'bind26q4',
+            platform: '',
+            tiers: [{ min_active_days: 10, amount_usd: 5000, slots: 1 }],
+          },
+        ],
+      })
+    ).rejects.toThrow('tier amount must be within (0, 500]')
   })
 })
 
