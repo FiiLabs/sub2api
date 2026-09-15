@@ -691,6 +691,42 @@ async function updateSupplyDemandGateSettings(
   return data
 }
 
+/**
+ * 新会话产出均衡。
+ *
+ * 刻意放在 settings 表而不是 config.yaml：现网跑在 TEE 里，改 config 意味着
+ * composeHash 变、要重新发 proof reference 并重新远程证明——那个代价配不上
+ * 一个「先开着看两天，不行就关掉」的调优开关。
+ */
+export interface SupplyBalanceSettings {
+  /** 总开关。默认 false，调度行为与改动前逐字一致。 */
+  enabled: boolean
+  /** 分档带宽（美元，按官方牌价）。同一档内仍按 LRU 选。 */
+  band_usd: number
+
+  /** 后端下发的默认值与上限，前端不要另抄一份。 */
+  band_usd_default: number
+  band_usd_max: number
+}
+
+export type SupplyBalancePayload = Pick<SupplyBalanceSettings, 'enabled' | 'band_usd'>
+
+async function getBalanceSettings(): Promise<SupplyBalanceSettings> {
+  const { data } = await apiClient.get<SupplyBalanceSettings>('/admin/settings/supply-balance')
+  return data
+}
+
+/** 写均衡配置。越界由后端夹回（不是报错），所以务必把返回值写回表单。 */
+async function updateBalanceSettings(
+  payload: SupplyBalancePayload
+): Promise<SupplyBalanceSettings> {
+  const { data } = await apiClient.put<SupplyBalanceSettings>(
+    '/admin/settings/supply-balance',
+    payload
+  )
+  return data
+}
+
 /** 挂号奖励的一个档位：挂满 N 天，发 X 美元，限 S 个名额。 */
 export interface SupplyIncentiveTier {
   /** 累计在线天数门槛。断线期间不涨、接回来继续涨、不清零。 */
@@ -1060,6 +1096,8 @@ export const adminSupplyMarketAPI = {
   updateOnboardingSettings,
   getSupplyDemandGateSettings,
   updateSupplyDemandGateSettings,
+  getBalanceSettings,
+  updateBalanceSettings,
   getIncentiveSettings,
   updateIncentiveSettings,
   getHomepageStatsSettings,

@@ -36,6 +36,13 @@
 // $5：比单次请求的量级大得多，又远小于一个号的日产能，所以它既不会被噪声抖动，
 // 也不会把真正的差距抹平。
 //
+// # 开关在 settings 表里，不在 config.yaml
+//
+// 现网跑在 TEE 里，改 config 意味着 composeHash 变、要重新发 proof reference 并
+// 重新远程证明。一个「先开着看两天，不行就关掉」的调优开关付不起这个代价——
+// 付得起也没人敢动。所以它和另外七个 supply key 同处 settings 表，
+// admin 界面改、60 秒生效（见 setting_supply_balance.go）。
+//
 // # 不碰粘性会话
 //
 // 这一层只在 Layer 2 生效，而粘性命中在 Layer 1.5 就返回了。中途换号会毁掉
@@ -52,8 +59,6 @@ import (
 )
 
 const (
-	// schedulingBalanceDefaultBandUSD 分档带宽默认值（美元，官方牌价）。
-	schedulingBalanceDefaultBandUSD = 5.0
 	// schedulingBalanceCacheTTL 今日产出的缓存时长。
 	//
 	// 均衡是个「大方向对就行」的判据：60 秒内的偏差最多让一个新会话落错号，
@@ -115,21 +120,17 @@ func storeSchedulingBalanceCache(costs map[int64]float64, now time.Time) {
 	schedulingBalanceCacheMu.Unlock()
 }
 
-// schedulingBalanceEnabled 均衡这一层开没开。
-func (s *GatewayService) schedulingBalanceEnabled() bool {
-	return s.schedulingConfig().BalanceNewSessions
+// balanceSettings 读均衡配置。没有 SettingService 时退回默认（不做均衡）。
+func (s *GatewayService) balanceSettings(ctx context.Context) *SupplyBalanceSettings {
+	if s == nil || s.settingService == nil {
+		return DefaultSupplyBalanceSettings()
+	}
+	return s.settingService.GetSupplyBalanceSettings(ctx)
 }
 
-// schedulingBalanceBandUSD 分档带宽，非正数取默认值。
-//
-// 读路径夹回而不是信任配置：一个被填成 0 的带宽会让分档退化成「严格选最小」，
-// 也就是这个文件开头刻意避开的那个涌向同一个号的形态。
-func (s *GatewayService) schedulingBalanceBandUSD() float64 {
-	band := s.schedulingConfig().BalanceBandUSD
-	if band <= 0 || math.IsNaN(band) || math.IsInf(band, 0) {
-		return schedulingBalanceDefaultBandUSD
-	}
-	return band
+// schedulingBalanceEnabled 均衡这一层开没开。
+func (s *GatewayService) schedulingBalanceEnabled(ctx context.Context) bool {
+	return s.balanceSettings(ctx).Enabled
 }
 
 // withSchedulingBalancePrefetch 批量预取本轮候选的今日产出。
@@ -137,7 +138,7 @@ func (s *GatewayService) schedulingBalanceBandUSD() float64 {
 // 关掉时一次查询也不发（连 context 都不动），与供给者每日上限那道闸同样的
 // 「没开启就是零成本」约定。
 func (s *GatewayService) withSchedulingBalancePrefetch(ctx context.Context, accounts []Account) context.Context {
-	if ctx == nil || len(accounts) == 0 || s.usageLogRepo == nil || !s.schedulingBalanceEnabled() {
+	if ctx == nil || len(accounts) == 0 || s.usageLogRepo == nil || !s.schedulingBalanceEnabled(ctx) {
 		return ctx
 	}
 
@@ -198,7 +199,11 @@ func schedulingBalanceCosts(ctx context.Context) map[int64]float64 {
 //   - 候选里有账号查不到产出。这一条最容易被写反：把查不到的当成 0 会让它
 //     永远排在最前面、吃下全部新会话，而那恰恰是一个**数据缺失**的号。
 func (s *GatewayService) filterByBalanceBand(ctx context.Context, accounts []accountWithLoad) []accountWithLoad {
-	if len(accounts) <= 1 || !s.schedulingBalanceEnabled() {
+	if len(accounts) <= 1 {
+		return accounts
+	}
+	settings := s.balanceSettings(ctx)
+	if !settings.Enabled {
 		return accounts
 	}
 	costs := schedulingBalanceCosts(ctx)
@@ -206,7 +211,7 @@ func (s *GatewayService) filterByBalanceBand(ctx context.Context, accounts []acc
 		return accounts
 	}
 
-	band := s.schedulingBalanceBandUSD()
+	band := settings.Band()
 	minBand := math.MaxInt64
 	bands := make([]int, len(accounts))
 	for i, acc := range accounts {

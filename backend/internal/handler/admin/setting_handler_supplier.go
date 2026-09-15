@@ -940,3 +940,68 @@ func (h *SettingHandler) UpdateSupplyIncentiveSettings(c *gin.Context) {
 	response.Success(c, newSupplyIncentiveSettingsResponse(
 		h.settingService.GetSupplyIncentiveSettings(ctx)))
 }
+
+// ============================================================================
+// APEXONE-EXT: 双边市场——新会话产出均衡。
+// ============================================================================
+
+// SupplyBalanceSettingsResponse 是产出均衡配置的对外形态。
+type SupplyBalanceSettingsResponse struct {
+	Enabled bool    `json:"enabled"`
+	BandUSD float64 `json:"band_usd"`
+
+	// 边界值随配置下发，理由同其余几组。
+	BandUSDDefault float64 `json:"band_usd_default"`
+	BandUSDMax     float64 `json:"band_usd_max"`
+}
+
+func newSupplyBalanceSettingsResponse(s *service.SupplyBalanceSettings) SupplyBalanceSettingsResponse {
+	resp := SupplyBalanceSettingsResponse{
+		BandUSDDefault: service.SupplyBalanceBandUSDDefault,
+		BandUSDMax:     service.SupplyBalanceBandUSDMax,
+	}
+	if s == nil {
+		resp.BandUSD = service.SupplyBalanceBandUSDDefault
+		return resp
+	}
+	resp.Enabled = s.Enabled
+	resp.BandUSD = s.Band()
+	return resp
+}
+
+// GetSupplyBalanceSettings 读产出均衡配置
+// GET /api/v1/admin/settings/supply-balance
+func (h *SettingHandler) GetSupplyBalanceSettings(c *gin.Context) {
+	response.Success(c, newSupplyBalanceSettingsResponse(
+		h.settingService.GetSupplyBalanceSettings(c.Request.Context())))
+}
+
+// UpdateSupplyBalanceSettingsRequest 更新产出均衡配置请求。
+type UpdateSupplyBalanceSettingsRequest struct {
+	Enabled bool    `json:"enabled"`
+	BandUSD float64 `json:"band_usd"`
+}
+
+// UpdateSupplyBalanceSettings 写产出均衡配置
+// PUT /api/v1/admin/settings/supply-balance
+//
+// 越界由 service 夹回而不是报错（与观察期那组同向）：这一组不决定发多少钱，
+// 只决定新会话落到哪个号上。所以这里回读写入后的真实配置——那是运营看到自己
+// 填的 0 变成 5 的唯一途径。
+func (h *SettingHandler) UpdateSupplyBalanceSettings(c *gin.Context) {
+	var req UpdateSupplyBalanceSettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	ctx := c.Request.Context()
+	if err := h.settingService.SetSupplyBalanceSettings(ctx, &service.SupplyBalanceSettings{
+		Enabled: req.Enabled,
+		BandUSD: req.BandUSD,
+	}); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, newSupplyBalanceSettingsResponse(
+		h.settingService.GetSupplyBalanceSettings(ctx)))
+}

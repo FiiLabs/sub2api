@@ -608,6 +608,41 @@
           </div>
         </div>
 
+        <!-- ===================== 新会话产出均衡 ===================== -->
+        <div class="card space-y-4 p-6">
+          <div>
+            <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('supplyAdmin.balance.title') }}</h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.balance.description') }}</p>
+          </div>
+          <div class="space-y-4">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.balance.enabled') }}</p>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.balance.enabledHint') }}</p>
+              </div>
+              <Toggle v-model="balanceForm.enabled" data-testid="balance-enabled" />
+            </div>
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.balance.bandUsd') }}</label>
+              <input
+                v-model.number="balanceForm.band_usd"
+                type="number"
+                step="0.5"
+                min="0"
+                :max="balanceBounds.band_usd_max"
+                class="input"
+                data-testid="balance-band-usd"
+              />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.balance.bandUsdHint', { d: balanceBounds.band_usd_default }) }}</p>
+            </div>
+          </div>
+          <div class="flex justify-end">
+            <button class="btn btn-primary" :disabled="savingBalance" data-testid="balance-save" @click="saveBalance">
+              {{ t('supplyAdmin.balance.save') }}
+            </button>
+          </div>
+        </div>
+
         <!-- ===================== 挂号奖励 ===================== -->
         <div class="card space-y-4 p-6">
           <div>
@@ -1141,6 +1176,8 @@ import {
   type SupplyWithdrawalPayload,
   type SupplyWithdrawalSettings,
   type SupplyDemandGatePayload,
+  type SupplyBalancePayload,
+  type SupplyBalanceSettings,
   type SupplyIncentiveProgram,
   type SupplyIncentiveSettings,
   type HomepageStatsSettings,
@@ -1160,6 +1197,7 @@ const savingOnboarding = ref(false)
 const savingAgreement = ref(false)
 const savingWithdrawal = ref(false)
 const savingDemandGate = ref(false)
+const savingBalance = ref(false)
 const savingIncentive = ref(false)
 const savingHomepageStats = ref(false)
 
@@ -1237,6 +1275,39 @@ const demandGateForm = reactive<SupplyDemandGatePayload>({
   max_suppliers_per_user: 1,
   min_suppliers_per_user: 0.05,
 })
+
+// 新会话产出均衡。默认关，初值与后端 DefaultSupplyBalanceSettings 对齐。
+const balanceForm = reactive<SupplyBalancePayload>({ enabled: false, band_usd: 5 })
+const balanceBounds = reactive({ band_usd_default: 5, band_usd_max: 1000 })
+
+function applyBalanceSettings(settings: SupplyBalanceSettings): void {
+  balanceForm.enabled = settings.enabled
+  balanceForm.band_usd = settings.band_usd
+  balanceBounds.band_usd_default = settings.band_usd_default
+  balanceBounds.band_usd_max = settings.band_usd_max
+}
+
+async function loadBalance(): Promise<void> {
+  applyBalanceSettings(await adminSupplyMarketAPI.getBalanceSettings())
+}
+
+/** 越界由后端夹回而不是报错，所以一定要回读——那是运营看到自己填的 0 变成 5 的唯一途径。 */
+async function saveBalance(): Promise<void> {
+  savingBalance.value = true
+  try {
+    applyBalanceSettings(
+      await adminSupplyMarketAPI.updateBalanceSettings({
+        enabled: balanceForm.enabled,
+        band_usd: balanceForm.band_usd,
+      })
+    )
+    appStore.showSuccess(t('supplyAdmin.balance.saved'))
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('supplyAdmin.error.saveFailed')))
+  } finally {
+    savingBalance.value = false
+  }
+}
 
 // 挂号奖励规则。默认关、无活动——部署这段代码本身不该让任何一分钱发出去。
 const incentiveForm = reactive<{ enabled: boolean; programs: SupplyIncentiveProgram[] }>({
@@ -1970,6 +2041,7 @@ onMounted(async () => {
       loadAgreement(),
       loadWithdrawal(),
       loadDemandGate(),
+      loadBalance(),
       loadIncentive(),
       loadHomepageStats(),
     ])

@@ -591,6 +591,16 @@ export default {
     },
 
     // APEXONE-EXT: dynamic supply/demand balance gate.
+    balance: {
+      title: 'New-session load balancing',
+      description: 'Route new sessions to the shared account with the least output today. This covers what LRU cannot: LRU balances session counts, but contributor earnings depend on usage volume. Off by default.',
+      enabled: 'Enable output balancing',
+      enabledHint: 'When off, scheduling order is byte-for-byte what it was before (priority → load → LRU) and no extra queries are issued. Sticky sessions are never affected either way.',
+      bandUsd: 'Band width (USD, list price)',
+      bandUsdHint: 'Accounts whose output today differs by less than this fall in the same band, and LRU still spreads within it. Default {d}; 0 is clamped back to the default — a strict “pick the lowest” would send concurrent new sessions to the same account.',
+      save: 'Save balancing',
+      saved: 'Balancing saved'
+    },
     incentive: {
       title: 'Uptime rewards',
       description: 'Pay contributors in USDT once a connected account stays online for N days, cumulative across tiers. A standing, configurable rule — not a one-off campaign. Off by default.',

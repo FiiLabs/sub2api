@@ -615,6 +615,10 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		adminSettings.PUT("/supply-pool", h.Admin.Setting.UpdateSupplyPoolSettings)
 		adminSettings.GET("/supply-probation", h.Admin.Setting.GetSupplyProbationSettings)
 		adminSettings.PUT("/supply-probation", h.Admin.Setting.UpdateSupplyProbationSettings)
+		// APEXONE-EXT: 新会话产出均衡（默认关）。刻意放 settings 而不是 config.yaml：
+		// 现网跑在 TEE 里，改 config 要重新发 proof reference 并重新远程证明。
+		adminSettings.GET("/supply-balance", h.Admin.Setting.GetSupplyBalanceSettings)
+		adminSettings.PUT("/supply-balance", h.Admin.Setting.UpdateSupplyBalanceSettings)
 		// APEXONE-EXT: 挂号奖励规则（默认关；名额即预算，越界一律 400 不夹回）。
 		adminSettings.GET("/supply-incentive", h.Admin.Setting.GetSupplyIncentiveSettings)
 		adminSettings.PUT("/supply-incentive", h.Admin.Setting.UpdateSupplyIncentiveSettings)

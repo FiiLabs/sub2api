@@ -12,26 +12,56 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
+	"fmt"
+
 	usagestats "github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+// balanceSettingRepoStub 只认均衡这一个 key，读到别的就 panic。
+type balanceSettingRepoStub struct{ value string }
+
+func (r *balanceSettingRepoStub) GetValue(_ context.Context, key string) (string, error) {
+	if key != SettingKeySupplyBalance {
+		panic("unexpected settings key: " + key)
+	}
+	return r.value, nil
+}
+func (r *balanceSettingRepoStub) Set(context.Context, string, string) error {
+	panic("unexpected Set call")
+}
+func (r *balanceSettingRepoStub) Get(context.Context, string) (*Setting, error) {
+	panic("unexpected Get call")
+}
+func (r *balanceSettingRepoStub) GetMultiple(context.Context, []string) (map[string]string, error) {
+	panic("unexpected GetMultiple call")
+}
+func (r *balanceSettingRepoStub) SetMultiple(context.Context, map[string]string) error {
+	panic("unexpected SetMultiple call")
+}
+func (r *balanceSettingRepoStub) GetAll(context.Context) (map[string]string, error) {
+	panic("unexpected GetAll call")
+}
+func (r *balanceSettingRepoStub) Delete(context.Context, string) error {
+	panic("unexpected Delete call")
+}
+
 // balanceTestService 攒一台只开/只关均衡的 GatewayService。
+//
+// 开关来自 settings 表而不是 config.yaml——现网跑在 TEE 里，改 config 要重新
+// 发 proof reference，那个代价配不上一个调优开关（见 setting_supply_balance.go）。
 func balanceTestService(t *testing.T, enabled bool, band float64) *GatewayService {
 	t.Helper()
 	resetSchedulingBalanceCache()
-	t.Cleanup(resetSchedulingBalanceCache)
+	invalidateSupplyBalanceCache()
+	t.Cleanup(func() {
+		resetSchedulingBalanceCache()
+		invalidateSupplyBalanceCache()
+	})
+	raw := fmt.Sprintf(`{"enabled":%t,"band_usd":%g}`, enabled, band)
 	return &GatewayService{
-		cfg: &config.Config{
-			Gateway: config.GatewayConfig{
-				Scheduling: config.GatewaySchedulingConfig{
-					BalanceNewSessions: enabled,
-					BalanceBandUSD:     band,
-				},
-			},
-		},
+		settingService: &SettingService{settingRepo: &balanceSettingRepoStub{value: raw}},
 	}
 }
 
@@ -141,12 +171,16 @@ func TestFilterByBalanceBand_BandWidthIsConfigurable(t *testing.T) {
 // 0 尤其要夹：floor(cost/0) 是 ±Inf，分档会退化成「严格选最小」——正是这层
 // 刻意避开的那个形态，而且不会有任何报错。
 func TestSchedulingBalanceBandClampsBadConfig(t *testing.T) {
+	ctx := context.Background()
 	for _, band := range []float64{0, -1} {
 		s := balanceTestService(t, true, band)
-		assert.InDelta(t, schedulingBalanceDefaultBandUSD, s.schedulingBalanceBandUSD(), 1e-9)
+		assert.InDelta(t, SupplyBalanceBandUSDDefault, s.balanceSettings(ctx).Band(), 1e-9)
 	}
 	s := balanceTestService(t, true, 12.5)
-	assert.InDelta(t, 12.5, s.schedulingBalanceBandUSD(), 1e-9)
+	assert.InDelta(t, 12.5, s.balanceSettings(ctx).Band(), 1e-9)
+	// 上限也夹：填成 5000 而不是 500 会让所有号落进同一档，均衡静默退化成纯 LRU。
+	tooWide := balanceTestService(t, true, 99999)
+	assert.InDelta(t, float64(SupplyBalanceBandUSDMax), tooWide.balanceSettings(ctx).Band(), 1e-9)
 }
 
 // 负的产出（理论上不该有，但聚合口径变过就可能）按 0 算，不该翻成负档号。

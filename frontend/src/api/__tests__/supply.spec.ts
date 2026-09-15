@@ -412,6 +412,9 @@ describe('admin supply ops api (read-only)', () => {
       'markWithdrawalPaid',
       'rejectWithdrawal',
       'updateAgreementSettings',
+      // 产出均衡开关。刻意做成 settings 而不是 config.yaml——现网在 TEE 里，
+      // 改 config 要重新发 proof reference 并重新远程证明。
+      'updateBalanceSettings',
       // 首页公开数据展示配置。改的是配置不是业务数据，与其余 update*Settings 同类。
       'updateHomepageStatsSettings',
       // 挂号奖励规则。同样是配置类写入——发钱的是后台 worker，不是这个接口：
