@@ -50,8 +50,26 @@ type SupplyIncentiveCandidateQuery struct {
 	Platform string
 	// RequestPrefix 该档的幂等键前缀，用于排除已发过的账号。
 	RequestPrefix string
+	// ExcludedUserIDs 已经拿满这一档的供给者，整个人排除掉。
+	//
+	// 这一条挡的是「解绑重挂」：上游订阅查重（rejectDuplicateSubscription）只看
+	// **未删除**的行，而解绑会软删该行并把 credentials 抹成 {}。于是同一份订阅
+	// 解绑后能再挂一次，拿到一个新的 account id，也就是一个全新的幂等键——
+	// 按账号计的名额挡不住它，只有按人计才挡得住。
+	ExcludedUserIDs []int64
 	// Limit 最多取多少个（= 该档剩余名额）。
 	Limit int
+}
+
+// SupplyIncentiveGrantStats 是某一档已经发出去的份数，以及按人拆开的明细。
+//
+// 要按人拆是因为名额按**账号**计（一个人挂两个真号就该拿两份），而防刷要按**人**计
+// （同一份订阅解绑重挂会变成一个新账号）。两个口径同时成立，所以一次查询两个都取。
+type SupplyIncentiveGrantStats struct {
+	// Total 这一档总共发了几份 = 已用名额。
+	Total int
+	// ByUser 每个供给者在这一档拿了几份。
+	ByUser map[int64]int
 }
 
 // SupplierIncentiveRepository 是挂号奖励要用到的三个查询。
@@ -63,8 +81,8 @@ type SupplierIncentiveRepository interface {
 	// day 是 UTC 日期串（YYYY-MM-DD）。返回本次真正累加的账号数。
 	TickActiveDays(ctx context.Context, day string) (int64, error)
 
-	// CountGranted 数某一档已经发出去多少份（= 已用名额）。
-	CountGranted(ctx context.Context, requestPrefix string) (int, error)
+	// GrantStats 某一档已发份数与按人明细。
+	GrantStats(ctx context.Context, requestPrefix string) (*SupplyIncentiveGrantStats, error)
 
 	// ListCandidates 列出够格且未发过的账号，按在线天数降序（等价于「接入早的先拿」）。
 	ListCandidates(ctx context.Context, query SupplyIncentiveCandidateQuery) ([]SupplyIncentiveCandidate, error)

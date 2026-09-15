@@ -26,8 +26,9 @@ type incentiveRepoStub struct {
 	tickErr   error
 	tickCount int64
 
-	granted    map[string]int
-	grantedErr error
+	granted       map[string]int
+	grantedByUser map[string]map[int64]int
+	grantedErr    error
 
 	candidates    map[string][]SupplyIncentiveCandidate
 	candidatesErr error
@@ -42,11 +43,20 @@ func (r *incentiveRepoStub) TickActiveDays(_ context.Context, day string) (int64
 	return r.tickCount, nil
 }
 
-func (r *incentiveRepoStub) CountGranted(_ context.Context, prefix string) (int, error) {
+func (r *incentiveRepoStub) GrantStats(_ context.Context, prefix string) (*SupplyIncentiveGrantStats, error) {
 	if r.grantedErr != nil {
-		return 0, r.grantedErr
+		return nil, r.grantedErr
 	}
-	return r.granted[prefix], nil
+	stats := &SupplyIncentiveGrantStats{ByUser: map[int64]int{}}
+	for userID, n := range r.grantedByUser[prefix] {
+		stats.ByUser[userID] = n
+		stats.Total += n
+	}
+	// granted 是只给总数、不关心是谁的那批用例用的简写。
+	if total, ok := r.granted[prefix]; ok && stats.Total == 0 {
+		stats.Total = total
+	}
+	return stats, nil
 }
 
 func (r *incentiveRepoStub) ListCandidates(_ context.Context, q SupplyIncentiveCandidateQuery) ([]SupplyIncentiveCandidate, error) {
@@ -101,36 +111,43 @@ func (c *incentiveCreditStub) ListLedger(context.Context, SupplierCreditLedgerFi
 
 // incentiveWorkerHarness 攒出一台可跑的 worker。
 type incentiveWorkerHarness struct {
-	worker *SupplierIncentiveWorker
-	repo   *incentiveRepoStub
-	credit *incentiveCreditStub
+	worker      *SupplierIncentiveWorker
+	repo        *incentiveRepoStub
+	credit      *incentiveCreditStub
+	settingRepo *incentiveSettingRepoStub
 }
 
 func newIncentiveWorkerHarness(t *testing.T, incentiveJSON, settlementJSON string) *incentiveWorkerHarness {
 	t.Helper()
 	invalidateSupplyIncentiveCache()
 	invalidateSupplierSettlementCache()
+	invalidateSupplyOnboardingCache()
 	t.Cleanup(func() {
 		invalidateSupplyIncentiveCache()
 		invalidateSupplierSettlementCache()
+		invalidateSupplyOnboardingCache()
 	})
 
 	settingRepo := &incentiveSettingRepoStub{
 		values: map[string]string{
 			SettingKeySupplyIncentive:    incentiveJSON,
 			SettingKeySupplierSettlement: settlementJSON,
+			// 每人每档的发放上限复用接入的每人号数上限，所以 worker 会读它。
+			SettingKeySupplyOnboarding: `{"max_accounts_per_user":2}`,
 		},
 	}
 	repo := &incentiveRepoStub{
-		granted:    map[string]int{},
-		candidates: map[string][]SupplyIncentiveCandidate{},
+		granted:       map[string]int{},
+		grantedByUser: map[string]map[int64]int{},
+		candidates:    map[string][]SupplyIncentiveCandidate{},
 	}
 	credit := &incentiveCreditStub{notApplied: map[string]bool{}}
 
 	return &incentiveWorkerHarness{
-		worker: NewSupplierIncentiveWorker(repo, credit, &SettingService{settingRepo: settingRepo}, time.Hour),
-		repo:   repo,
-		credit: credit,
+		worker:      NewSupplierIncentiveWorker(repo, credit, &SettingService{settingRepo: settingRepo}, time.Hour),
+		repo:        repo,
+		credit:      credit,
+		settingRepo: settingRepo,
 	}
 }
 
@@ -291,11 +308,10 @@ func TestIncentiveWorkerFailsClosedWhenGrantedCountUnavailable(t *testing.T) {
 
 // Slots=0（不限）时不该去数已发数——那次查询没有任何用处，
 // 而它在 ledger 长大之后是一次全表扫描。
-func TestIncentiveWorkerSkipsCountForUnlimitedTier(t *testing.T) {
+func TestIncentiveWorkerUnlimitedTierPassesNoLimit(t *testing.T) {
 	h := newIncentiveWorkerHarness(t,
 		`{"enabled":true,"programs":[{"slug":"bind26q4","tiers":[
 			{"min_active_days":10,"amount_usd":5,"slots":0}]}]}`, settlementOnJSON)
-	h.repo.grantedErr = errors.New("CountGranted 不该被调用")
 
 	h.worker.RunOnce(context.Background())
 	require.Len(t, h.repo.queries, 1)
@@ -368,4 +384,90 @@ func TestIncentiveWorkerStopsOnContextCancel(t *testing.T) {
 
 	h.worker.RunOnce(ctx)
 	assert.Empty(t, h.credit.accrued)
+}
+
+// ---------------------------------------------------------------------------
+// 每人每档上限（挡解绑重挂）
+// ---------------------------------------------------------------------------
+
+// 上游订阅查重只看未删除的行，而解绑会软删该行并抹掉 credentials——于是同一份
+// 订阅解绑后能再挂一次，拿到一个新的 account id，也就是一个全新的幂等键。
+// 按账号计的名额挡不住它，只有把拿满的人整个排除掉才挡得住。
+func TestIncentiveWorkerExcludesUsersAtPerUserCap(t *testing.T) {
+	h := newIncentiveWorkerHarness(t, incentiveTwoTierJSON, settlementOnJSON)
+	prefix := SupplyIncentiveRequestPrefix("bind26q4", 0)
+	// 上限是 2（harness 里的 max_accounts_per_user）：7 号拿满了，9 号还差一份。
+	h.repo.grantedByUser[prefix] = map[int64]int{7: 2, 9: 1}
+
+	h.worker.RunOnce(context.Background())
+
+	var q *SupplyIncentiveCandidateQuery
+	for i := range h.repo.queries {
+		if h.repo.queries[i].RequestPrefix == prefix {
+			q = &h.repo.queries[i]
+		}
+	}
+	require.NotNil(t, q)
+	assert.Equal(t, []int64{7}, q.ExcludedUserIDs, "只排除已经拿满的那个人")
+	assert.Equal(t, 57, q.Limit, "已发 3 份，60 个名额还剩 57")
+}
+
+// 同一轮之内也要数。候选查询排除的是**查询那一刻**拿满的人，而一个人名下两个
+// 够格的号会在同一批候选里一起出现——不在循环里累计的话，上限为 1 时他会一次拿两份。
+func TestIncentiveWorkerCapsWithinASingleRound(t *testing.T) {
+	h := newIncentiveWorkerHarness(t,
+		`{"enabled":true,"programs":[{"slug":"bind26q4","tiers":[
+			{"min_active_days":10,"amount_usd":5,"slots":60}]}]}`, settlementOnJSON)
+	// 上限压到 1。
+	h.settingRepo.values[SettingKeySupplyOnboarding] = `{"max_accounts_per_user":1}`
+	invalidateSupplyOnboardingCache()
+
+	prefix := SupplyIncentiveRequestPrefix("bind26q4", 0)
+	h.repo.candidates[prefix] = []SupplyIncentiveCandidate{
+		{AccountID: 1, OwnerUserID: 42, ActiveDays: 30},
+		{AccountID: 2, OwnerUserID: 42, ActiveDays: 20}, // 同一个人的第二个号
+		{AccountID: 3, OwnerUserID: 43, ActiveDays: 15},
+	}
+
+	h.worker.RunOnce(context.Background())
+
+	require.Len(t, h.credit.accrued, 2, "42 只该拿一份，43 拿一份")
+	assert.Equal(t, "cmp:bind26q4:t0:a1", h.credit.accrued[0].RequestID, "同一人里天数多的先拿")
+	assert.Equal(t, "cmp:bind26q4:t0:a3", h.credit.accrued[1].RequestID)
+}
+
+// 上限为 2 时，一个人名下两个**真号**该拿两份——防刷不能把正常的多号共享也挡掉。
+func TestIncentiveWorkerAllowsTwoAccountsUnderCapTwo(t *testing.T) {
+	h := newIncentiveWorkerHarness(t,
+		`{"enabled":true,"programs":[{"slug":"bind26q4","tiers":[
+			{"min_active_days":10,"amount_usd":5,"slots":60}]}]}`, settlementOnJSON)
+
+	prefix := SupplyIncentiveRequestPrefix("bind26q4", 0)
+	h.repo.candidates[prefix] = []SupplyIncentiveCandidate{
+		{AccountID: 1, OwnerUserID: 42, ActiveDays: 30},
+		{AccountID: 2, OwnerUserID: 42, ActiveDays: 20},
+	}
+
+	h.worker.RunOnce(context.Background())
+	assert.Len(t, h.credit.accrued, 2)
+}
+
+// 接入上限配成 0（不限）时，发放上限取 1 而不是跟着不限。
+//
+// 0 表达的是「挂号数量不设限」这条供给侧策略，不可能是一个有意为之的奖励策略——
+// 没有人会刻意配置「一个人可以无限次领同一档」。读不出明确意图时取最严的那个。
+func TestIncentiveWorkerPerUserCapDefaultsToOneWhenOnboardingUnlimited(t *testing.T) {
+	h := newIncentiveWorkerHarness(t, incentiveTwoTierJSON, settlementOnJSON)
+	h.settingRepo.values[SettingKeySupplyOnboarding] = `{"max_accounts_per_user":0}`
+	invalidateSupplyOnboardingCache()
+
+	assert.Equal(t, 1, h.worker.perUserGrantCap(context.Background()))
+}
+
+func TestIncentiveWorkerPerUserCapFollowsOnboardingLimit(t *testing.T) {
+	h := newIncentiveWorkerHarness(t, incentiveTwoTierJSON, settlementOnJSON)
+	h.settingRepo.values[SettingKeySupplyOnboarding] = `{"max_accounts_per_user":3}`
+	invalidateSupplyOnboardingCache()
+
+	assert.Equal(t, 3, h.worker.perUserGrantCap(context.Background()))
 }

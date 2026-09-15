@@ -12,6 +12,7 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/lib/pq"
 )
 
 // supplierIncentiveCandidateDefaultLimit 单轮最多取多少个候选账号。
@@ -86,35 +87,49 @@ func (r *supplierIncentiveRepository) TickActiveDays(ctx context.Context, day st
 	return affected, nil
 }
 
-// supplierIncentiveCountGrantedSQL 数某一档已经发出去多少份。
+// supplierIncentiveGrantStatsSQL 某一档已发份数，按人分组。
+//
+// 按人分组而不是只数一个总数：名额按账号计，防刷要按人计（见
+// SupplyIncentiveGrantStats 的注释）。总数由调用方把各组相加得到，
+// 省一次查询也省掉「两个数出自两条语句、中间隔着写入」的不一致。
 //
 // 走 `(action, request_id)` 那个部分唯一索引的前缀扫描。索引在默认 collation 下
 // 不保证被 LIKE 前缀用上，但 ledger 目前是万行量级，全扫也是毫秒级；真长大了
 // 给 request_id 补一个 text_pattern_ops 索引即可，不必现在为它加一张表。
-const supplierIncentiveCountGrantedSQL = `
-SELECT COUNT(*)
+const supplierIncentiveGrantStatsSQL = `
+SELECT user_id, COUNT(*)
 FROM supplier_credit_ledger
 WHERE action = 'accrue'
-  AND request_id LIKE $1 || '%'`
+  AND request_id LIKE $1 || '%'
+GROUP BY user_id`
 
-// CountGranted 数某一档已用名额。
-func (r *supplierIncentiveRepository) CountGranted(ctx context.Context, requestPrefix string) (int, error) {
+// GrantStats 某一档已用名额与按人明细。
+func (r *supplierIncentiveRepository) GrantStats(
+	ctx context.Context, requestPrefix string,
+) (*service.SupplyIncentiveGrantStats, error) {
 	if requestPrefix == "" {
-		return 0, fmt.Errorf("count granted: empty prefix")
+		return nil, fmt.Errorf("grant stats: empty prefix")
 	}
-	rows, err := r.client.QueryContext(ctx, supplierIncentiveCountGrantedSQL, requestPrefix)
+	rows, err := r.client.QueryContext(ctx, supplierIncentiveGrantStatsSQL, requestPrefix)
 	if err != nil {
-		return 0, fmt.Errorf("count incentive grants: %w", err)
+		return nil, fmt.Errorf("read incentive grant stats: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
-	var count int
-	if rows.Next() {
-		if err := rows.Scan(&count); err != nil {
-			return 0, fmt.Errorf("scan incentive grant count: %w", err)
+	stats := &service.SupplyIncentiveGrantStats{ByUser: map[int64]int{}}
+	for rows.Next() {
+		var userID int64
+		var n int
+		if err := rows.Scan(&userID, &n); err != nil {
+			return nil, fmt.Errorf("scan incentive grant stats: %w", err)
 		}
+		stats.ByUser[userID] = n
+		stats.Total += n
 	}
-	return count, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate incentive grant stats: %w", err)
+	}
+	return stats, nil
 }
 
 // supplierIncentiveListCandidatesSQL 列出够格且未发过这一档的账号。
@@ -126,6 +141,9 @@ func (r *supplierIncentiveRepository) CountGranted(ctx context.Context, requestP
 //   - `ORDER BY days DESC, a.id ASC` 就是对外宣称的「按接入先后分配」：天数多的
 //     必然接入得早。用天数而不是 created_at 排序，是因为中途断线过的号确实该排在
 //     同期未断线的号后面——它在线的时间本来就更短。
+//   - `NOT (owner_user_id = ANY(COALESCE($5, '{}')))` 挡的是解绑重挂：上游订阅查重只看未删除的行，
+//     而解绑会软删该行并抹掉 credentials，于是同一份订阅能换一个新 account id 再挂
+//     一次。按账号计的名额对此无能为力，只有把拿满的人整个排除掉才挡得住。
 //   - platform 那一条走「$2 是空串就不过滤」：program.platform 为空表示全平台共用
 //     一个名额池。写成 OR 而不是在 Go 侧拼两条 SQL，是为了让「空 = 不限」这条语义
 //     只有一个落点。
@@ -140,6 +158,7 @@ WHERE a.deleted_at IS NULL
   AND COALESCE(NULLIF(a.extra->>'%[2]s', ''), '%[3]s') = '%[4]s'
   AND COALESCE((a.extra->'%[1]s'->>'days')::int, 0) >= $1
   AND ($2 = '' OR a.platform = $2)
+  AND NOT (a.owner_user_id = ANY(COALESCE($5::bigint[], ARRAY[]::bigint[])))
   AND NOT EXISTS (
         SELECT 1
         FROM supplier_credit_ledger l
@@ -166,8 +185,13 @@ func (r *supplierIncentiveRepository) ListCandidates(
 		limit = supplierIncentiveCandidateDefaultLimit
 	}
 
+	// pq.Array 对 nil 切片产出的是 **NULL**，不是 '{}'。而 `x = ANY(NULL)` 求值为
+	// NULL、`NOT NULL` 还是 NULL——WHERE 里的 NULL 等于假，于是「没有人被排除」
+	// 这条最常见的路径会把**全部候选**一起筛掉，一个奖励也发不出去。
+	// SQL 侧用 COALESCE 兜成空数组，这里就不必为 nil 再分一条语句。
 	rows, err := r.client.QueryContext(ctx, supplierIncentiveListCandidatesSQL,
-		query.MinActiveDays, query.Platform, query.RequestPrefix, limit)
+		query.MinActiveDays, query.Platform, query.RequestPrefix, limit,
+		pq.Array(query.ExcludedUserIDs))
 	if err != nil {
 		return nil, fmt.Errorf("list incentive candidates: %w", err)
 	}

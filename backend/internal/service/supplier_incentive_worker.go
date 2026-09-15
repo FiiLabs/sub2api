@@ -188,14 +188,47 @@ func (w *SupplierIncentiveWorker) RunOnce(ctx context.Context) {
 		return
 	}
 
+	perUserCap := w.perUserGrantCap(ctx)
 	for _, program := range settings.Programs {
 		for i, tier := range program.Tiers {
 			if ctx.Err() != nil {
 				return
 			}
-			w.grantTier(ctx, program, i, tier, settlement.FreezeHours)
+			w.grantTier(ctx, program, i, tier, settlement.FreezeHours, perUserCap)
 		}
 	}
+}
+
+// perUserGrantCap 同一个人在同一档最多能拿几份。
+//
+// # 为什么需要这个上限
+//
+// 名额按**账号**计（一个人挂两个真号就该拿两份），但「一个账号」并不等于
+// 「一份订阅」：上游订阅查重（rejectDuplicateSubscription）只看 deleted_at IS NULL
+// 的行，而解绑会软删该行、并把 credentials 抹成 {}。于是同一份订阅解绑之后可以
+// 再挂一次，拿到一个**新的 account id**，也就是一个全新的幂等键。
+//
+// 单看收益，这样刷并不划算——尾重的档位设计让老实挂满 90 天拿 $100，而反复刷
+// 10 天档 90 天只能拿 $45。但它会把名额从真实用户手里挤走，所以还是要挡。
+//
+// # 为什么复用接入的每人号数上限
+//
+// 「你允许一个人挂几个号，他最多就拿几份」——这条对应关系不需要第八个配置字段，
+// 而且两个数天然同向：运营调紧接入上限时，一定也想调紧奖励份数。
+//
+// 上限配成 0（不限）时取 1，而不是跟着不限。理由是方向：0 表达的是「挂号数量
+// 不设限」这条**供给侧**策略，它不可能是一个有意为之的**奖励**策略——没有人会
+// 刻意配置「一个人可以无限次领同一档」。读不出明确意图时取最严的那个，
+// 与这个子系统其余各处的 fail-closed 同向。
+func (w *SupplierIncentiveWorker) perUserGrantCap(ctx context.Context) int {
+	if w.settingService == nil {
+		return 1
+	}
+	onboarding := w.settingService.GetSupplyOnboardingSettings(ctx)
+	if onboarding == nil || onboarding.MaxAccountsPerUser <= 0 {
+		return 1
+	}
+	return onboarding.MaxAccountsPerUser
 }
 
 // grantTier 发放一个档位。
@@ -205,31 +238,43 @@ func (w *SupplierIncentiveWorker) grantTier(
 	tierIndex int,
 	tier SupplyIncentiveTier,
 	freezeHours int,
+	perUserCap int,
 ) {
 	prefix := SupplyIncentiveRequestPrefix(program.Slug, tierIndex)
 
+	// 已发明细这一查无论名额限不限都要做：Total 用来算剩余名额（只在限量时有用），
+	// ByUser 用来挡解绑重挂（任何时候都要挡）。
+	stats, err := w.repo.GrantStats(ctx, prefix)
+	if err != nil || stats == nil {
+		// 数不出已发数就**不发**：名额是这个设计里唯一的成本闸门，
+		// 读失败时放行等于把闸门打开。下一轮会重来。
+		slog.Error("[SupplierIncentive] failed to read grant stats, skipping tier",
+			"error", err, "slug", program.Slug, "tier", tierIndex)
+		return
+	}
+
 	limit := 0 // 0 = 不限，交给 repo 用它自己的单轮上限兜住
 	if tier.Slots > 0 {
-		granted, err := w.repo.CountGranted(ctx, prefix)
-		if err != nil {
-			// 数不出已发数就**不发**：名额是这个设计里唯一的成本闸门，
-			// 读失败时放行等于把闸门打开。下一轮会重来。
-			slog.Error("[SupplierIncentive] failed to count granted rewards, skipping tier",
-				"error", err, "slug", program.Slug, "tier", tierIndex)
-			return
-		}
-		remaining := tier.Slots - granted
+		remaining := tier.Slots - stats.Total
 		if remaining <= 0 {
 			return
 		}
 		limit = remaining
 	}
 
+	var excludedUsers []int64
+	for userID, n := range stats.ByUser {
+		if n >= perUserCap {
+			excludedUsers = append(excludedUsers, userID)
+		}
+	}
+
 	candidates, err := w.repo.ListCandidates(ctx, SupplyIncentiveCandidateQuery{
-		MinActiveDays: tier.MinActiveDays,
-		Platform:      program.Platform,
-		RequestPrefix: prefix,
-		Limit:         limit,
+		MinActiveDays:   tier.MinActiveDays,
+		Platform:        program.Platform,
+		RequestPrefix:   prefix,
+		ExcludedUserIDs: excludedUsers,
+		Limit:           limit,
 	})
 	if err != nil {
 		slog.Error("[SupplierIncentive] failed to list candidates",
@@ -240,10 +285,18 @@ func (w *SupplierIncentiveWorker) grantTier(
 		return
 	}
 
+	// 同一轮之内也要数：候选查询排除的是**查询那一刻**已经拿满的人，而一个人
+	// 名下两个够格的号会在同一批候选里一起出现。不在这里累计的话，上限为 1 时
+	// 他会在一轮里拿到两份。
+	grantedThisRound := make(map[int64]int, len(candidates))
+
 	paid, total := 0, 0.0
 	for _, c := range candidates {
 		if ctx.Err() != nil {
 			break
+		}
+		if stats.ByUser[c.OwnerUserID]+grantedThisRound[c.OwnerUserID] >= perUserCap {
+			continue
 		}
 		accountID := c.AccountID
 		applied, err := w.credit.Accrue(ctx, SupplierAccrueParams{
@@ -270,6 +323,7 @@ func (w *SupplierIncentiveWorker) grantTier(
 			// 幂等命中：上一轮已经发过（候选查询与入账之间有窗口）。不是错误。
 			continue
 		}
+		grantedThisRound[c.OwnerUserID]++
 		paid++
 		total += tier.AmountUSD
 	}

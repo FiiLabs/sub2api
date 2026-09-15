@@ -342,13 +342,60 @@ func TestSupplyIncentive_CountGrantedIsScopedToTier(t *testing.T) {
 	grant(slug, 1, a3)      // 同活动，另一档
 	grant(otherSlug, 0, a3) // 另一个活动的同一档
 
-	n, err := repo.CountGranted(txCtx, service.SupplyIncentiveRequestPrefix(slug, 0))
+	stats, err := repo.GrantStats(txCtx, service.SupplyIncentiveRequestPrefix(slug, 0))
 	require.NoError(t, err)
-	assert.Equal(t, 2, n)
+	assert.Equal(t, 2, stats.Total)
+	assert.Equal(t, 2, stats.ByUser[owner], "同一个人在这一档拿了两份")
 
-	n, err = repo.CountGranted(txCtx, service.SupplyIncentiveRequestPrefix(slug, 1))
+	stats, err = repo.GrantStats(txCtx, service.SupplyIncentiveRequestPrefix(slug, 1))
 	require.NoError(t, err)
-	assert.Equal(t, 1, n)
+	assert.Equal(t, 1, stats.Total)
+}
+
+// 解绑重挂的那条路：拿满的人整个被排除。
+//
+// 只有这一层挡得住它——上游订阅查重看的是 deleted_at IS NULL，解绑会软删该行
+// 并把 credentials 抹成 {}，于是同一份订阅换一个新 account id 就能再挂一次，
+// 幂等键也跟着换成新的。按账号计的名额对此完全无感。
+func TestSupplyIncentive_ListCandidatesExcludesCappedUsers(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewSupplierIncentiveRepository(client)
+
+	slug := fmt.Sprintf("x%d", time.Now().UnixNano()%1e10)
+	prefix := service.SupplyIncentiveRequestPrefix(slug, 0)
+
+	farmer := mustCreateSupplier(t, client, "farmer")
+	honest := mustCreateSupplier(t, client, "honest")
+
+	// farmer 解绑重挂之后的那个新号：全新的 account id，没有任何发放记录。
+	rebound := mustCreateSupplyAccount(t, client, farmer, "xc-rebound", service.SupplyStateActive, service.StatusActive, true)
+	fresh := mustCreateSupplyAccount(t, client, honest, "xc-fresh", service.SupplyStateActive, service.StatusActive, true)
+	setActiveDays(t, txCtx, client, rebound, 20, "2026-09-14")
+	setActiveDays(t, txCtx, client, fresh, 20, "2026-09-14")
+
+	// 不排除任何人时，重挂的号是够格的——这正是要挡的那个形态。
+	got, err := repo.ListCandidates(txCtx, service.SupplyIncentiveCandidateQuery{
+		MinActiveDays: 10,
+		RequestPrefix: prefix,
+		Limit:         50,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, candidateIDs(got), rebound, "按账号计的名额挡不住解绑重挂")
+
+	// 把拿满的人排除掉之后，重挂的号连同他名下别的号一起消失，诚实用户不受影响。
+	got, err = repo.ListCandidates(txCtx, service.SupplyIncentiveCandidateQuery{
+		MinActiveDays:   10,
+		RequestPrefix:   prefix,
+		ExcludedUserIDs: []int64{farmer},
+		Limit:           50,
+	})
+	require.NoError(t, err)
+	ids := candidateIDs(got)
+	assert.NotContains(t, ids, rebound)
+	assert.Contains(t, ids, fresh, "排除是按人的，不该波及别人")
 }
 
 func candidateIDs(list []service.SupplyIncentiveCandidate) []int64 {
