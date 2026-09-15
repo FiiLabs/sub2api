@@ -749,7 +749,7 @@ func (s *GatewayService) selectAccountInPoolWithLoadAwareness(ctx context.Contex
 			}
 		}
 
-		// 分层过滤选择：优先级 →（可选）最早重置 → 负载率 → LRU
+		// 分层过滤选择：优先级 →（可选）最早重置 → 负载率 →（可选）今日产出 → LRU
 		for len(available) > 0 {
 			// 1. 取优先级最小的集合
 			candidates := filterByMinPriority(available)
@@ -759,6 +759,10 @@ func (s *GatewayService) selectAccountInPoolWithLoadAwareness(ctx context.Contex
 			}
 			// 3. 取负载率最低的集合
 			candidates = filterByMinLoadRate(candidates)
+			// 3.5（可选）产出均衡：在负载率相同的号里，优先给今日产出最少的那一档。
+			// 排在负载率**之后**是刻意的——均衡是收益公平，过载保护是可用性，
+			// 后者不能为前者让路。关闭时这一行是一次布尔判断。
+			candidates = s.filterByBalanceBand(ctx, candidates)
 			// 4. LRU 选择最久未用的账号
 			selected := selectByLRU(candidates, preferOAuth)
 			if selected == nil {

@@ -1465,6 +1465,26 @@ type GatewaySchedulingConfig struct {
 	// 默认 false，保持原有「优先级 → 负载率 → LRU」行为不变。
 	PreferSoonestReset bool `mapstructure:"prefer_soonest_reset"`
 
+	// BalanceNewSessions 开启后，负载感知选择在 LRU 之前多一道「今日产出最少优先」
+	// 的过滤：新会话优先落到本日**官方牌价消耗最少**的账号上。
+	//
+	// 它补的是 LRU 补不上的那一块：LRU 均衡的是**会话数**，而共享者的收益取决于
+	// **用量**。一个跑了一千多次请求的长会话会把整段流量钉在一个号上，LRU 对此
+	// 没有记忆——下一个新会话照样按「谁最久没被碰过」发，而那个刚吃下巨量流量的号
+	// 只要闲一会儿就又排到前面。结果是会话数很均匀、收益差十倍。
+	//
+	// 默认 false，保持原有「优先级 → 负载率 → LRU」行为不变。
+	BalanceNewSessions bool `mapstructure:"balance_new_sessions"`
+
+	// BalanceBandUSD 均衡分档的带宽（美元，按官方牌价）。同一档内仍按 LRU 选。
+	//
+	// 不做成「严格选最小」是因为这个判据有缓存（见 scheduling_balance_cache_ttl），
+	// 严格最小会让一批并发的新会话在缓存刷新前全部涌向同一个号。分档把「最少」
+	// 放宽成「最少的那一档」，再交给既有的 LRU 打散。
+	//
+	// <= 0 时取默认值 5。
+	BalanceBandUSD float64 `mapstructure:"balance_band_usd"`
+
 	// 负载计算
 	LoadBatchEnabled    bool `mapstructure:"load_batch_enabled"`
 	LoadBatchCacheTTLMS int  `mapstructure:"load_batch_cache_ttl_ms"`
@@ -2556,6 +2576,8 @@ func setDefaults() {
 	viper.SetDefault("gateway.scheduling.fallback_max_waiting", 100)
 	viper.SetDefault("gateway.scheduling.fallback_selection_mode", "last_used")
 	viper.SetDefault("gateway.scheduling.prefer_soonest_reset", false)
+	viper.SetDefault("gateway.scheduling.balance_new_sessions", false)
+	viper.SetDefault("gateway.scheduling.balance_band_usd", 5.0)
 	viper.SetDefault("gateway.scheduling.load_batch_enabled", true)
 	viper.SetDefault("gateway.scheduling.load_batch_cache_ttl_ms", 200)
 	viper.SetDefault("gateway.scheduling.snapshot_mget_chunk_size", 128)
@@ -3695,6 +3717,11 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.Scheduling.LoadBatchCacheTTLMS < 0 {
 		return fmt.Errorf("gateway.scheduling.load_batch_cache_ttl_ms must be non-negative")
+	}
+	// 负数带宽会让分档整个失去意义（floor(cost/band) 变成倒序）。0 是允许的：
+	// 读路径把它夹回默认值，理由见 schedulingBalanceBandUSD。
+	if c.Gateway.Scheduling.BalanceBandUSD < 0 {
+		return fmt.Errorf("gateway.scheduling.balance_band_usd must be non-negative")
 	}
 	if c.Gateway.Scheduling.SnapshotMGetChunkSize <= 0 {
 		return fmt.Errorf("gateway.scheduling.snapshot_mget_chunk_size must be positive")
