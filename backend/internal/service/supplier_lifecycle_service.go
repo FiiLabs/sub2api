@@ -494,6 +494,13 @@ func (s *SupplierLifecycleService) sweepIdleActive(ctx context.Context) {
 	if settings == nil || !settings.IdleProbeEnabled {
 		return
 	}
+	// 本轮的预算可能已经被前面几步（尤其是观察期探测，单轮上限 20 次 × 单次 90 秒）
+	// 吃光了。这时候再去查一次库只会拿到一个 context deadline exceeded，然后在日志里
+	// 留下一条**读库失败**的 error——而真相是「这一轮没轮到它」，两者的处置完全不同。
+	// 安静退出，下一轮（5 分钟后）自然会重来；闲置探测本来就以天计，晚一轮毫无影响。
+	if ctx.Err() != nil {
+		return
+	}
 
 	idleWindow := settings.IdleWindow()
 	ids, err := s.repo.ListIdleActiveSupplyAccountIDs(ctx, time.Now().Add(-idleWindow), supplierLifecycleScanLimit)

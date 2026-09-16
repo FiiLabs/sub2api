@@ -695,3 +695,61 @@ func countAccountsCreatedBefore(
 	require.NoError(t, err)
 	return n
 }
+
+// 升级安全：新版 tick 落在**现网已有的那份 extra** 上，不能弄坏任何东西。
+//
+// 这条是给上线那一刻准备的。现网账号的 extra 里除了旧形态的天数计数器
+// （只有 days/last_day、没有 programs），还并排住着观察期探测、被动用量采样等一堆
+// apexone_* 与非 apexone_* 的键。新语句用 `||` 逐层合并，理论上只覆盖它自己那三个
+// 字段——但「理论上」在 jsonb 这种地方不值钱：写成 jsonb_build_object 直接赋值的话，
+// 同一条语句会把兄弟键连同整份采样数据一起抹掉，而且不报错。
+func TestSupplyIncentive_TickPreservesExistingExtraOnUpgrade(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewSupplierIncentiveRepository(client)
+
+	owner := mustCreateSupplier(t, client, "upgrade")
+	account := mustCreateSupplyAccount(t, client, owner, "upgrade",
+		service.SupplyStateActive, service.StatusActive, true)
+
+	// 照抄一份现网形状：旧计数器（无 programs）+ 观察期字段 + 采样字段。
+	_, err := client.ExecContext(txCtx, fmt.Sprintf(`
+UPDATE accounts SET extra = extra || jsonb_build_object(
+    '%s', jsonb_build_object('days', 2, 'last_day', '2026-09-16'),
+    '%s', 'active',
+    '%s', 1,
+    'passive_usage_7d_utilization', 0.16)
+WHERE id = $1`,
+		service.SupplyActiveDaysExtraKey, service.SupplyStateExtraKey,
+		service.SupplyProbePassesExtraKey), account)
+	require.NoError(t, err)
+
+	// 升级后的第一轮：换了一天，且同时开始一期新活动。
+	_, err = repo.TickActiveDays(txCtx, "2026-09-17", []string{"bind26q4"})
+	require.NoError(t, err)
+
+	assert.Equal(t, int64(3), activeDaysOf(t, txCtx, client, account),
+		"旧计数器要接着涨，不是从 0 重来")
+	assert.Equal(t, int64(1), programActiveDaysOf(t, txCtx, client, account, "bind26q4"),
+		"新活动的桶要能在一份没有 programs 的旧 extra 上建起来")
+
+	// 兄弟键一个都不能少。
+	probePasses, err := scanInt64(txCtx, client, fmt.Sprintf(
+		"SELECT COALESCE((extra->>'%s')::int, -1) FROM accounts WHERE id = $1",
+		service.SupplyProbePassesExtraKey), account)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), probePasses, "观察期字段被新语句抹掉了")
+
+	sampled, err := scanInt64(txCtx, client,
+		"SELECT COUNT(*) FROM accounts WHERE id = $1 AND extra ? 'passive_usage_7d_utilization'", account)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), sampled, "非供给侧的采样字段被新语句抹掉了")
+
+	state, err := scanInt64(txCtx, client, fmt.Sprintf(
+		"SELECT COUNT(*) FROM accounts WHERE id = $1 AND extra->>'%s' = '%s'",
+		service.SupplyStateExtraKey, service.SupplyStateActive), account)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), state, "接入状态被新语句改掉了")
+}

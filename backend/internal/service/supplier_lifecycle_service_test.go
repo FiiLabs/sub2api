@@ -888,3 +888,21 @@ func TestSupplyIdleDemoteMessageIsBounded(t *testing.T) {
 	assert.LessOrEqual(t, len(supplyIdleDemoteMessage(3, long)), supplyProbeErrorMaxLen)
 	assert.Contains(t, supplyIdleDemoteMessage(3, "boom"), "boom")
 }
+
+// 本轮预算被前面几步吃光时安静退出，而不是去查一次必然超时的库、
+// 在日志里留下一条读库失败的 error——那会把「没轮到」误报成「库坏了」。
+func TestSweepIdleActiveExitsQuietlyWhenRunBudgetSpent(t *testing.T) {
+	store := newSupplierAccountStoreStub()
+	store.accounts[100] = idleAccount(100, PlatformAnthropic, 48*time.Hour, 0)
+	repo := &supplierOnboardingRepoStub{idleIDs: []int64{100}}
+	prober := newSupplierProberStub()
+
+	svc := newLifecycleService(repo, store, idleProbeSettings(), prober)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	svc.sweepIdleActive(ctx)
+
+	assert.NotContains(t, repo.calls, "ListIdleActiveSupplyAccountIDs")
+	assert.Empty(t, prober.probed)
+}
