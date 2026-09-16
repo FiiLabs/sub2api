@@ -227,6 +227,9 @@ describe('admin supply market api', () => {
       probe_interval_minutes: 15,
       probe_model: '',
       drain_window_minutes: 10,
+      idle_probe_enabled: true,
+      idle_after_hours: 168,
+      idle_failures_to_demote: 2,
     })
     expect(put).toHaveBeenCalledWith('/admin/settings/supply-probation', {
       enabled: true,
@@ -235,6 +238,11 @@ describe('admin supply market api', () => {
       probe_interval_minutes: 15,
       probe_model: '',
       drain_window_minutes: 10,
+      // 闲置复检这三个必须整组送出去。少送任何一个，后端 normalize 会把它
+      // 回落成默认值——手工调过的部署会在下一次保存别的字段时被静默改回去。
+      idle_probe_enabled: true,
+      idle_after_hours: 168,
+      idle_failures_to_demote: 2,
     })
   })
 
@@ -412,8 +420,14 @@ describe('admin supply ops api (read-only)', () => {
       'markWithdrawalPaid',
       'rejectWithdrawal',
       'updateAgreementSettings',
+      // 产出均衡开关。刻意做成 settings 而不是 config.yaml——现网在 TEE 里，
+      // 改 config 要重新发 proof reference 并重新远程证明。
+      'updateBalanceSettings',
       // 首页公开数据展示配置。改的是配置不是业务数据，与其余 update*Settings 同类。
       'updateHomepageStatsSettings',
+      // 挂号奖励规则。同样是配置类写入——发钱的是后台 worker，不是这个接口：
+      // 管理员只能改规则，不能指定给谁发多少。
+      'updateIncentiveSettings',
       'updateOnboardingSettings',
       // M6：链上金库配置。改的是配置不是业务数据，与其余 update* 同类；
       // 私钥在请求里只进不出（响应连密文都没有），见 supplyMarket.ts。
@@ -433,6 +447,67 @@ describe('admin supply ops api (read-only)', () => {
     expect(get).toHaveBeenCalledWith('/admin/supply/withdrawals', {
       params: { status: 'pending', page: 2 },
     })
+  })
+})
+
+// 挂号奖励是唯一一组「配置直接决定往外发多少钱」的参数，所以契约上有两件事
+// 与其他设置不同，两件都在这里钉住。
+describe('admin supply incentive settings', () => {
+  beforeEach(() => {
+    get.mockReset()
+    get.mockResolvedValue({ data: { enabled: false, programs: [] } })
+  })
+
+  it('reads and writes the incentive rules on the same settings path', async () => {
+    // put 不在默认 mock 里，照本文件的惯例单测里补一个。
+    const put = vi.fn().mockResolvedValue({ data: { enabled: true, programs: [] } })
+    const client = (await import('@/api/client')).apiClient as unknown as Record<string, unknown>
+    client.put = put
+
+    await adminSupplyMarketAPI.getIncentiveSettings()
+    expect(get).toHaveBeenCalledWith('/admin/settings/supply-incentive')
+
+    const payload = {
+      enabled: true,
+      programs: [
+        {
+          slug: 'bind26q4',
+          platform: '',
+          // 起算日与「只发新人」必须原样送到后端：前者是这期活动的时间原点
+          // （天数按活动分桶，少了它后端会整期丢掉），后者决定钱发给谁。
+          start_at: '2026-10-01',
+          new_users_only: true,
+          tiers: [
+            { min_active_days: 10, amount_usd: 5, slots: 60 },
+            { min_active_days: 30, amount_usd: 20, slots: 5 },
+          ],
+        },
+      ],
+    }
+    await adminSupplyMarketAPI.updateIncentiveSettings(payload)
+    expect(put).toHaveBeenCalledWith('/admin/settings/supply-incentive', payload)
+  })
+
+  it('lets a rejected save surface instead of silently clamping', async () => {
+    // 与观察期参数刻意不同：后端越界**直接 400**，不夹回。这条断言守的是
+    // 「错误必须冒到调用方」——把它吞掉再回读，运营会以为自己填的 $5000
+    // 生效了，而实际生效的是别的数（或者根本没保存）。
+    const put = vi.fn().mockRejectedValue(new Error('tier amount must be within (0, 500]'))
+    const client = (await import('@/api/client')).apiClient as unknown as Record<string, unknown>
+    client.put = put
+
+    await expect(
+      adminSupplyMarketAPI.updateIncentiveSettings({
+        enabled: true,
+        programs: [
+          {
+            slug: 'bind26q4',
+            platform: '',
+            tiers: [{ min_active_days: 10, amount_usd: 5000, slots: 1 }],
+          },
+        ],
+      })
+    ).rejects.toThrow('tier amount must be within (0, 500]')
   })
 })
 

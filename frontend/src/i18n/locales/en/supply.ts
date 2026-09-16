@@ -563,9 +563,15 @@ export default {
       minObservationHint:
         'Counted from the moment the account is connected. ANDed with the success count: no matter how well the probes go, this much time still has to pass. Max {max} minutes.',
       advancedTucked:
-        'Engineering knobs (probe interval, required passes, drain window, probe model) are tucked away: the defaults are the recommendation, and the settings API still accepts manual overrides.',
+        'Engineering knobs (probe interval, required passes, drain window, probe model, idle failure threshold) are tucked away: the defaults are the recommendation, and the settings API still accepts manual overrides.',
       clampNotice:
         'Out-of-range values in this group are clamped and saved (not rejected). After saving, the form shows what is actually stored.',
+      idleProbeEnabled: 'Re-check idle accounts',
+      idleProbeEnabledHint:
+        'After admission, revoked credentials and rejected live requests are already handled. The one failure that leaves no trace is a downgraded or cancelled subscription whose OAuth grant is still valid — an account that never receives traffic stays counted as live forever. When on, accounts with no traffic for a while get one probe, and only repeated credential/quota failures take them out. Rate-limited or overloaded accounts are never probed: a maxed-out quota is evidence of successful supply.',
+      idleAfterHours: 'Idle threshold (hours)',
+      idleAfterHoursHint:
+        'How long without traffic counts as idle, and also the minimum gap between two re-checks. Each probe spends the contributor\'s own subscription quota, so keep this generous. Range {min}–{max} hours.',
       save: 'Save review settings',
       saved: 'Review settings saved'
     },
@@ -591,6 +597,48 @@ export default {
     },
 
     // APEXONE-EXT: dynamic supply/demand balance gate.
+    balance: {
+      title: 'New-session load balancing',
+      description: 'Route new sessions to the shared account with the least output today. This covers what LRU cannot: LRU balances session counts, but contributor earnings depend on usage volume. Off by default.',
+      enabled: 'Enable output balancing',
+      enabledHint: 'When off, scheduling order is byte-for-byte what it was before (priority → load → LRU) and no extra queries are issued. Sticky sessions are never affected either way.',
+      bandUsd: 'Band width (USD, list price)',
+      bandUsdHint: 'Accounts whose output today differs by less than this fall in the same band, and LRU still spreads within it. Default {d}; 0 is clamped back to the default — a strict “pick the lowest” would send concurrent new sessions to the same account.',
+      save: 'Save balancing',
+      saved: 'Balancing saved'
+    },
+    incentive: {
+      title: 'Uptime rewards',
+      description: 'Pay contributors in USDT once a connected account stays online for N days, cumulative across tiers. A standing, configurable rule — not a one-off campaign. Off by default.',
+      enabled: 'Enable uptime rewards',
+      enabledHint: 'When off, no rewards are granted, but online days keep accruing — the day counter is a property of the account and should not restart every time the program is toggled.',
+      budgetCap: 'Budget cap {amount}',
+      budgetUnbounded: 'Budget unbounded (a tier has slots set to 0)',
+      budgetHint: 'The budget is not a setting — it is Σ(slots × amount). Because the threshold is uptime rather than usage, rewards do not pay for themselves: slots are the only cost gate, and any tier left at 0 has no upper bound.',
+      empty: 'No programs yet. Add a program, then give it a few tiers.',
+      slug: 'Program slug',
+      slugPlaceholder: 'bind26q4',
+      slugHint: 'Lowercase letters and digits only. It forms part of the idempotency key — do not change it after creation, or already-paid accounts will be paid again.',
+      platform: 'Platform',
+      platformAny: 'All platforms (shared slot pool)',
+      startAt: 'Start date (UTC)',
+      startAtHint:
+        "This campaign's time origin. Online-day counters are bucketed per campaign and only start accruing for this one from this date, so every campaign starts everyone at zero and a second campaign never inherits days from the first. Past dates are rejected — buckets only accrue forward and history cannot be rebuilt. When editing a campaign that has already started, leave this field as it is.",
+      newUsersOnly: 'New contributors only',
+      newUsersOnlyHint:
+        'New means the person had no supply account at all before the start date, including disconnected ones. Existing contributors get nothing even if they connect another account. Counting disconnected accounts is deliberate: otherwise disconnecting and reconnecting would launder anyone into a new user.',
+      platformHint: 'Leave on “all platforms” to let Claude and ChatGPT accounts share the same tiers and slots, first come first served.',
+      minActiveDays: 'Online days',
+      amountUsd: 'Reward (USDT)',
+      slots: 'Slots (0 = unlimited)',
+      tierHint: 'Tiers are cumulative: an account reaching the third tier receives the sum of the first three. Slots count accounts, not people.',
+      addTier: 'Add tier',
+      removeTier: 'Remove',
+      addProgram: 'Add program',
+      removeProgram: 'Remove program',
+      save: 'Save uptime rewards',
+      saved: 'Uptime rewards saved'
+    },
     demandGate: {
       title: 'Supply/demand balance gate',
       description: 'By headcount ratio (active shared accounts vs active users), reject new entries on one side when supply and demand are clearly out of balance. Off by default.',

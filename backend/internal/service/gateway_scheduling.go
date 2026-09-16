@@ -233,6 +233,12 @@ func (s *GatewayService) selectAccountInPoolWithLoadAwareness(ctx context.Contex
 		return nil, ErrNoAvailableAccounts
 	}
 	ctx = s.withSchedulingPrefetch(ctx, accounts)
+	// 产出均衡的预取单独放这里，**不进 withSchedulingPrefetch**：那个函数的契约是
+	// 「与 dynamicLimitGate 一一对应」，而均衡不是一道闸；更实际的原因是它只被
+	// 本函数的 Layer 2 消费，而 withSchedulingPrefetch 还被另外两条老选择路径
+	// （selectAccountForModelWithPlatform / selectAccountWithMixedScheduling）调用——
+	// 挂在那里等于在用不到它的路径上白发一次聚合查询。
+	ctx = s.withSchedulingBalancePrefetch(ctx, accounts)
 
 	// 提前构建 accountByID（供 Layer 1 和 Layer 1.5 使用）
 	accountByID := make(map[int64]*Account, len(accounts))
@@ -749,7 +755,7 @@ func (s *GatewayService) selectAccountInPoolWithLoadAwareness(ctx context.Contex
 			}
 		}
 
-		// 分层过滤选择：优先级 →（可选）最早重置 → 负载率 → LRU
+		// 分层过滤选择：优先级 →（可选）最早重置 → 负载率 →（可选）今日产出 → LRU
 		for len(available) > 0 {
 			// 1. 取优先级最小的集合
 			candidates := filterByMinPriority(available)
@@ -759,6 +765,10 @@ func (s *GatewayService) selectAccountInPoolWithLoadAwareness(ctx context.Contex
 			}
 			// 3. 取负载率最低的集合
 			candidates = filterByMinLoadRate(candidates)
+			// 3.5（可选）产出均衡：在负载率相同的号里，优先给今日产出最少的那一档。
+			// 排在负载率**之后**是刻意的——均衡是收益公平，过载保护是可用性，
+			// 后者不能为前者让路。关闭时这一行是一次布尔判断。
+			candidates = s.filterByBalanceBand(ctx, candidates)
 			// 4. LRU 选择最久未用的账号
 			selected := selectByLRU(candidates, preferOAuth)
 			if selected == nil {

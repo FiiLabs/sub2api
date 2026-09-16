@@ -945,6 +945,8 @@ var ProviderSet = wire.NewSet(
 	// APEXONE-EXT: 双边市场——赚取钱包读侧服务 + 冻结额释放任务。
 	ProvideSupplierCreditService,
 	ProvideSupplierThawService,
+	// APEXONE-EXT: 双边市场——挂号奖励发放任务（在线天数累加 + 按档发钱）。
+	ProvideSupplierIncentiveWorker,
 	// APEXONE-EXT: 双边市场——供给号失效事件（台账扫描 + 供给者邮件 + 接入熔断）。
 	// 它是下面接入/生命周期两个 Provide 的入参，被那两个拉起来。
 	NewSupplierIncidentNotifier,
@@ -1080,6 +1082,24 @@ func ProvideSupplierThawService(repo SupplierCreditRepository, lockCache LeaderL
 	svc.SetLeaderLock(lockCache, db)
 	svc.Start()
 	return svc
+}
+
+// APEXONE-EXT: ProvideSupplierIncentiveWorker 创建并启动挂号奖励的发放任务。
+//
+// 与 ProvideSupplierThawService 同形。**无条件启动**，不看活动开没开：worker 每轮
+// 的第一件事是累加在线天数，那件事与活动无关（见 supplier_incentive_worker.go）。
+// 活动没开时它只是每小时跑一条零行受影响的 UPDATE。
+func ProvideSupplierIncentiveWorker(
+	repo SupplierIncentiveRepository,
+	credit SupplierCreditRepository,
+	settingService *SettingService,
+	lockCache LeaderLockCache,
+	db *sql.DB,
+) *SupplierIncentiveWorker {
+	worker := NewSupplierIncentiveWorker(repo, credit, settingService, SupplierIncentiveDefaultInterval)
+	worker.SetLeaderLock(lockCache, db)
+	worker.Start()
+	return worker
 }
 
 // APEXONE-EXT: ProvideSupplierLifecycleService 创建并启动观察期/排空推进任务。

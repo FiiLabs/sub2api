@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -632,4 +633,276 @@ func TestSupplyExtraHelpers(t *testing.T) {
 	assert.Equal(t, "hi", supplyExtraString(account, "s"))
 	assert.Empty(t, supplyExtraString(account, "i"))
 	assert.Empty(t, supplyExtraString(nil, "s"))
+}
+
+// ============================================================================
+// 闲置探测
+//
+// 这一步会把一个**正在给主人赚钱**的号停掉，所以用例的重心与本文件其余部分一致：
+// 绝大多数断言问的是「它什么时候必须什么都不做」。
+// ============================================================================
+
+func idleProbeSettings() *SupplyProbationSettings {
+	s := autoPromoteSettings()
+	s.IdleProbeEnabled = true
+	s.IdleAfterHours = 24
+	s.IdleFailuresToDemote = 2
+	return s
+}
+
+// idleAccount 造一个「已入池、上次闲置探测在 since 之前」的号。
+func idleAccount(id int64, platform string, since time.Duration, fails int) *Account {
+	return &Account{
+		ID:          id,
+		Platform:    platform,
+		Status:      StatusActive,
+		Schedulable: true,
+		Extra: map[string]any{
+			SupplyStateExtraKey:       SupplyStateActive,
+			SupplyIdleProbeAtExtraKey: time.Now().Add(-since).Format(time.RFC3339),
+			SupplyIdleFailsExtraKey:   float64(fails),
+		},
+	}
+}
+
+func TestSweepIdleActiveSkipsWhenDisabled(t *testing.T) {
+	store := newSupplierAccountStoreStub()
+	store.accounts[100] = idleAccount(100, PlatformAnthropic, 48*time.Hour, 0)
+	repo := &supplierOnboardingRepoStub{idleIDs: []int64{100}}
+	prober := newSupplierProberStub()
+
+	// autoPromoteSettings 没开 IdleProbeEnabled——总开关关着就一次都不该探。
+	svc := newLifecycleService(repo, store, autoPromoteSettings(), prober)
+	svc.sweepIdleActive(context.Background())
+
+	assert.Empty(t, prober.probed, "开关关着还去探，烧的是供给者的额度")
+	assert.NotContains(t, repo.calls, "ListIdleActiveSupplyAccountIDs", "关着时连扫都不该扫")
+}
+
+func TestSweepIdleActiveSkipsWithoutProber(t *testing.T) {
+	store := newSupplierAccountStoreStub()
+	store.accounts[100] = idleAccount(100, PlatformAnthropic, 48*time.Hour, 0)
+	repo := &supplierOnboardingRepoStub{idleIDs: []int64{100}}
+
+	svc := newLifecycleService(repo, store, idleProbeSettings(), nil)
+	svc.sweepIdleActive(context.Background())
+
+	assert.NotContains(t, repo.calls, "ListIdleActiveSupplyAccountIDs")
+}
+
+// 闲置窗必须真的被换算成时间点传下去，否则 SQL 那侧筛的是一个错误的区间。
+func TestSweepIdleActivePassesIdleWindowToRepo(t *testing.T) {
+	store := newSupplierAccountStoreStub()
+	repo := &supplierOnboardingRepoStub{}
+	svc := newLifecycleService(repo, store, idleProbeSettings(), newSupplierProberStub())
+
+	before := time.Now().Add(-24 * time.Hour)
+	svc.sweepIdleActive(context.Background())
+
+	assert.WithinDuration(t, before, repo.idleBefore, time.Minute)
+}
+
+// 探测成功 = 订阅还在。连续失败计数整体作废，不是减一。
+func TestIdleProbeSuccessResetsStreak(t *testing.T) {
+	store := newSupplierAccountStoreStub()
+	store.accounts[100] = idleAccount(100, PlatformAnthropic, 48*time.Hour, 1)
+	repo := &supplierOnboardingRepoStub{idleIDs: []int64{100}}
+	prober := newSupplierProberStub()
+
+	svc := newLifecycleService(repo, store, idleProbeSettings(), prober)
+	svc.sweepIdleActive(context.Background())
+
+	require.Equal(t, []int64{100}, prober.probed)
+	updates := store.extraUpdates[100]
+	assert.Equal(t, 0, updates[SupplyIdleFailsExtraKey])
+	assert.NotEmpty(t, updates[SupplyIdleProbeAtExtraKey])
+	assert.Empty(t, store.setErrorCalls, "探测成功还摘号")
+}
+
+// 软失败（限流/过载/网络）不构成「订阅没了」的证据：计数原地不动。
+//
+// 既不清零也不累加，两个方向各有各的坏处，见 idleProbeOnce 的注释。
+func TestIdleProbeSoftFailureLeavesStreakUnchanged(t *testing.T) {
+	store := newSupplierAccountStoreStub()
+	store.accounts[100] = idleAccount(100, PlatformAnthropic, 48*time.Hour, 1)
+	repo := &supplierOnboardingRepoStub{idleIDs: []int64{100}}
+	prober := newSupplierProberStub()
+	prober.results[100] = &ScheduledTestResult{
+		Status:       "failed",
+		ErrorMessage: "API returned 429: rate limited, please retry",
+	}
+
+	svc := newLifecycleService(repo, store, idleProbeSettings(), prober)
+	svc.sweepIdleActive(context.Background())
+
+	updates := store.extraUpdates[100]
+	_, touched := updates[SupplyIdleFailsExtraKey]
+	assert.False(t, touched, "限流不该动连续失败计数")
+	assert.NotEmpty(t, updates[SupplyIdleProbeAtExtraKey], "探过了就得记下时刻，否则下一轮又探")
+	assert.Empty(t, store.setErrorCalls)
+}
+
+// 硬失败但没到阈值：只推进计数，号照常在池子里。
+func TestIdleProbeHardFailureBelowThresholdDoesNotDemote(t *testing.T) {
+	store := newSupplierAccountStoreStub()
+	store.accounts[100] = idleAccount(100, PlatformAnthropic, 48*time.Hour, 0)
+	repo := &supplierOnboardingRepoStub{idleIDs: []int64{100}}
+	prober := newSupplierProberStub()
+	prober.results[100] = &ScheduledTestResult{
+		Status:       "failed",
+		ErrorMessage: `API returned 401: {"error":{"message":"invalid token"}}`,
+	}
+
+	svc := newLifecycleService(repo, store, idleProbeSettings(), prober)
+	svc.sweepIdleActive(context.Background())
+
+	assert.Equal(t, 1, store.extraUpdates[100][SupplyIdleFailsExtraKey])
+	assert.Empty(t, store.setErrorCalls, "一次 401 就摘号——观察期可以，在役号不行")
+}
+
+func TestIdleProbeHardFailureAtThresholdDemotes(t *testing.T) {
+	store := newSupplierAccountStoreStub()
+	store.accounts[100] = idleAccount(100, PlatformAnthropic, 48*time.Hour, 1)
+	repo := &supplierOnboardingRepoStub{idleIDs: []int64{100}}
+	prober := newSupplierProberStub()
+	prober.results[100] = &ScheduledTestResult{
+		Status:       "failed",
+		ErrorMessage: "API returned 401: token revoked",
+	}
+
+	svc := newLifecycleService(repo, store, idleProbeSettings(), prober)
+	svc.sweepIdleActive(context.Background())
+
+	assert.Equal(t, 2, store.extraUpdates[100][SupplyIdleFailsExtraKey])
+	require.Len(t, store.setErrorCalls, 1)
+	assert.Equal(t, int64(100), store.setErrorCalls[0].accountID)
+	// 摘号的理由必须带着上游原话——供给者收到的那封信里就这一句有用。
+	assert.Contains(t, store.setErrorCalls[0].message, "token revoked")
+}
+
+// 订阅没额度服务我们卖的模型，与凭证失效同属硬失败。
+func TestIdleProbeNoQuotaCountsAsHardFailure(t *testing.T) {
+	store := newSupplierAccountStoreStub()
+	store.accounts[100] = idleAccount(100, PlatformAnthropic, 48*time.Hour, 1)
+	repo := &supplierOnboardingRepoStub{idleIDs: []int64{100}}
+	prober := newSupplierProberStub()
+	prober.results[100] = &ScheduledTestResult{
+		Status:       "failed",
+		ErrorMessage: `{"error_code":"credits_required"}`,
+	}
+
+	svc := newLifecycleService(repo, store, idleProbeSettings(), prober)
+	svc.sweepIdleActive(context.Background())
+
+	require.Len(t, store.setErrorCalls, 1)
+}
+
+// OpenAI 侧没有「无额度」的精确信号，同一句话在那边只能算软失败。
+// 这个平台差异与准入探测一致（supplyProbeNoQuota），宁可放过不可误杀。
+func TestIdleProbeNoQuotaIsSoftForOpenAI(t *testing.T) {
+	store := newSupplierAccountStoreStub()
+	store.accounts[100] = idleAccount(100, PlatformOpenAI, 48*time.Hour, 1)
+	repo := &supplierOnboardingRepoStub{idleIDs: []int64{100}}
+	prober := newSupplierProberStub()
+	prober.results[100] = &ScheduledTestResult{
+		Status:       "failed",
+		ErrorMessage: `{"error_code":"credits_required"}`,
+	}
+
+	svc := newLifecycleService(repo, store, idleProbeSettings(), prober)
+	svc.sweepIdleActive(context.Background())
+
+	assert.Empty(t, store.setErrorCalls)
+	_, touched := store.extraUpdates[100][SupplyIdleFailsExtraKey]
+	assert.False(t, touched)
+}
+
+// 证据写不进去就不摘号：没有计数与原因，供给者收到的是一封无法自查的信。
+func TestIdleProbeSkipsDemotionWhenExtraWriteFails(t *testing.T) {
+	store := newSupplierAccountStoreStub()
+	store.accounts[100] = idleAccount(100, PlatformAnthropic, 48*time.Hour, 1)
+	store.extraErr = errors.New("db down")
+	repo := &supplierOnboardingRepoStub{idleIDs: []int64{100}}
+	prober := newSupplierProberStub()
+	prober.results[100] = &ScheduledTestResult{
+		Status:       "failed",
+		ErrorMessage: "API returned 401: token revoked",
+	}
+
+	svc := newLifecycleService(repo, store, idleProbeSettings(), prober)
+	svc.sweepIdleActive(context.Background())
+
+	assert.Empty(t, store.setErrorCalls)
+}
+
+// 刚入池的号不该在下一轮白挨一次探测：promote 前一刻 probe_at 才写过。
+func TestShouldIdleProbeFallsBackToProbationProbeAt(t *testing.T) {
+	svc := newLifecycleService(&supplierOnboardingRepoStub{}, newSupplierAccountStoreStub(),
+		idleProbeSettings(), newSupplierProberStub())
+
+	fresh := &Account{ID: 1, Extra: map[string]any{
+		SupplyProbeAtExtraKey: time.Now().Add(-time.Minute).Format(time.RFC3339),
+	}}
+	assert.False(t, svc.shouldIdleProbe(fresh, 24*time.Hour))
+
+	stale := &Account{ID: 2, Extra: map[string]any{
+		SupplyProbeAtExtraKey: time.Now().Add(-48 * time.Hour).Format(time.RFC3339),
+	}}
+	assert.True(t, svc.shouldIdleProbe(stale, 24*time.Hour))
+}
+
+// idle_probe_at 优先于 probe_at：两者节奏差两个数量级，取错了节流就失效。
+func TestShouldIdleProbePrefersIdleTimestamp(t *testing.T) {
+	svc := newLifecycleService(&supplierOnboardingRepoStub{}, newSupplierAccountStoreStub(),
+		idleProbeSettings(), newSupplierProberStub())
+
+	account := &Account{ID: 1, Extra: map[string]any{
+		SupplyIdleProbeAtExtraKey: time.Now().Add(-time.Hour).Format(time.RFC3339),
+		SupplyProbeAtExtraKey:     time.Now().Add(-72 * time.Hour).Format(time.RFC3339),
+	}}
+	assert.False(t, svc.shouldIdleProbe(account, 24*time.Hour), "该按 idle_probe_at 节流")
+}
+
+// 本功能上线前就在池子里的号一个时间戳都没有——它们恰恰最该被查一次。
+func TestShouldIdleProbeWithoutAnyTimestamp(t *testing.T) {
+	svc := newLifecycleService(&supplierOnboardingRepoStub{}, newSupplierAccountStoreStub(),
+		idleProbeSettings(), newSupplierProberStub())
+
+	assert.True(t, svc.shouldIdleProbe(&Account{ID: 1}, 24*time.Hour))
+}
+
+func TestSupplyIdleProbeHardFailureClassification(t *testing.T) {
+	assert.True(t, supplyIdleProbeHardFailure("API returned 401: nope", PlatformAnthropic))
+	assert.True(t, supplyIdleProbeHardFailure(`{"error_code":"credits_required"}`, PlatformAnthropic))
+	assert.True(t, supplyIdleProbeHardFailure("Usage credits are required for this model", PlatformAnthropic))
+
+	// 下面这些都会自愈，或者根本不是这个号的问题。
+	assert.False(t, supplyIdleProbeHardFailure("API returned 429: rate limited", PlatformAnthropic))
+	assert.False(t, supplyIdleProbeHardFailure("API returned 529: overloaded", PlatformAnthropic))
+	assert.False(t, supplyIdleProbeHardFailure("context deadline exceeded", PlatformAnthropic))
+	assert.False(t, supplyIdleProbeHardFailure("API returned 500: upstream boom", PlatformAnthropic))
+}
+
+func TestSupplyIdleDemoteMessageIsBounded(t *testing.T) {
+	long := strings.Repeat("x", supplyProbeErrorMaxLen*2)
+	assert.LessOrEqual(t, len(supplyIdleDemoteMessage(3, long)), supplyProbeErrorMaxLen)
+	assert.Contains(t, supplyIdleDemoteMessage(3, "boom"), "boom")
+}
+
+// 本轮预算被前面几步吃光时安静退出，而不是去查一次必然超时的库、
+// 在日志里留下一条读库失败的 error——那会把「没轮到」误报成「库坏了」。
+func TestSweepIdleActiveExitsQuietlyWhenRunBudgetSpent(t *testing.T) {
+	store := newSupplierAccountStoreStub()
+	store.accounts[100] = idleAccount(100, PlatformAnthropic, 48*time.Hour, 0)
+	repo := &supplierOnboardingRepoStub{idleIDs: []int64{100}}
+	prober := newSupplierProberStub()
+
+	svc := newLifecycleService(repo, store, idleProbeSettings(), prober)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	svc.sweepIdleActive(ctx)
+
+	assert.NotContains(t, repo.calls, "ListIdleActiveSupplyAccountIDs")
+	assert.Empty(t, prober.probed)
 }

@@ -53,6 +53,20 @@ const (
 	// 排空窗的意义是「等在途请求自己结束」，那是分钟级的事。设成几天只会让
 	// 供给者的号在一个既不接单、也没真正下线的中间态里挂很久。
 	SupplyProbationDrainWindowMinutesMax = 24 * 60
+
+	// SupplyProbationIdleAfterHoursMin 闲置判定窗下限 1 小时。
+	//
+	// 下限存在的理由与 ProbeIntervalMinutesMin 一样，而且更硬：这个数同时也是
+	// 两次闲置探测的间隔（见 IdleAfterHours 的注释），填成 0 会变成「每一轮都探
+	// 每一个闲置号」——五分钟一轮，烧的是供给者自己的订阅额度。
+	SupplyProbationIdleAfterHoursMin = 1
+	// SupplyProbationIdleAfterHoursMax 闲置判定窗上限 90 天。
+	//
+	// 比这更长等于「不打算查」，那应该关掉 IdleProbeEnabled 而不是设一个天文数字
+	// ——与 MinObservationMinutesMax 同一条道理。
+	SupplyProbationIdleAfterHoursMax = 90 * 24
+	// SupplyProbationIdleFailuresMax 连续硬失败次数上限。
+	SupplyProbationIdleFailuresMax = 10
 )
 
 // 默认值。
@@ -61,6 +75,8 @@ const (
 	supplyProbationDefaultRequiredSuccesses     = 2
 	supplyProbationDefaultProbeIntervalMinutes  = 15
 	supplyProbationDefaultDrainWindowMinutes    = 10
+	supplyProbationDefaultIdleAfterHours        = 7 * 24
+	supplyProbationDefaultIdleFailures          = 2
 )
 
 // SupplyProbationSettings 是观察期与排空的全部可调参数。
@@ -84,6 +100,44 @@ type SupplyProbationSettings struct {
 	// **这不是一个硬排空**——平台没有能力打断已经在流的请求，这个窗口是一段
 	// 礼貌等待时间，也是供给者反悔（取消下线）的窗口。连接级 draining 是后续的事。
 	DrainWindowMinutes int `json:"drain_window_minutes"`
+
+	// IdleProbeEnabled 闲置探测总开关。默认 false，与 Enabled 同向 fail-closed。
+	//
+	// # 它解决的是哪一个、也只有哪一个问题
+	//
+	// 入池之后，账号的失效形态有三类，前两类已经有人管：
+	//
+	//	凭证被撤销/失效  → token 刷新那条路的 isNonRetryableRefreshError 会 SetError，
+	//	                   后台就能发现，不需要这个号有流量
+	//	真实请求 401/403 → RateLimitService.handleAuthError 会 SetError
+	//	订阅降级/退订     → **没有人管**。OAuth 授权还有效、token 照常刷新成功、
+	//	                   status 一直是 active，只有真的打一次上游才会暴露
+	//
+	// 第三类就是这个开关存在的全部理由。它不是一道通用健康检查——那会与上面两条
+	// 重复，且会把「限流」误当成「失效」。
+	//
+	// # 为什么必须是「探测」而不是读状态
+	//
+	// 平台读不到订阅档位与到期时间（accounts.subscription_type 为空、OAuth 响应
+	// 不带、限流头只有百分比）。accounts.expires_at 是 access token 的过期时刻、
+	// 由刷新任务不断推后，不是订阅到期。所以「这个订阅还在不在」只能问上游。
+	IdleProbeEnabled bool `json:"idle_probe_enabled"`
+	// IdleAfterHours 多久没接过单算闲置，**同时**也是两次闲置探测的最小间隔。
+	//
+	// 一个数兼两职是刻意的，不是省事：两者本就是同一个节奏——「闲置满这么久就去
+	// 问一次」。拆成两个字段会多出一个没人算得清的组合（间隔 > 闲置窗时探测永远
+	// 追不上，反过来则是重复探测），而这个功能的成本闸门恰恰是探测频率。
+	//
+	// 默认 7 天：一个能稳定供货的号根本不会落进闲置集合，而一个真废了的号
+	// 最迟两个窗口（14 天）被摘掉，远短于最小的奖励档（10 天之后还有 30 天档）。
+	IdleAfterHours int `json:"idle_after_hours"`
+	// IdleFailuresToDemote 连续几次**硬失败**才把号停下来。
+	//
+	// 与观察期那条路刻意不同：probeOnce 拿到 401 是**当场** SetError，这里要连着
+	// 失败 N 次。差别在代价不对称——观察期里的号还没在赚钱，误杀的成本是它多等
+	// 一个探测间隔；而这里的号正在给它的主人赚分成，误杀的成本是真金白银断掉，
+	// 且恢复要他自己重新授权一次。所以这边宁可慢两个窗口，也不赌一次瞬态。
+	IdleFailuresToDemote int `json:"idle_failures_to_demote"`
 }
 
 // DefaultSupplyProbationSettings 返回「不自动入池」的默认配置。
@@ -94,6 +148,9 @@ func DefaultSupplyProbationSettings() *SupplyProbationSettings {
 		RequiredSuccesses:     supplyProbationDefaultRequiredSuccesses,
 		ProbeIntervalMinutes:  supplyProbationDefaultProbeIntervalMinutes,
 		DrainWindowMinutes:    supplyProbationDefaultDrainWindowMinutes,
+		IdleProbeEnabled:      false,
+		IdleAfterHours:        supplyProbationDefaultIdleAfterHours,
+		IdleFailuresToDemote:  supplyProbationDefaultIdleFailures,
 	}
 }
 
@@ -129,6 +186,25 @@ func (s *SupplyProbationSettings) normalize() {
 	if s.DrainWindowMinutes > SupplyProbationDrainWindowMinutesMax {
 		s.DrainWindowMinutes = SupplyProbationDrainWindowMinutesMax
 	}
+	// 闲置那三个字段的夹回方向与上面几个一致：越界退回默认/边界，不报错。
+	// 注意 IdleAfterHours 用的是「<= 0 退默认」而不是「夹到下限」——0 在这里
+	// 最可能的来源是一份没有这个字段的旧配置（JSON 里缺字段 = 零值），
+	// 把它夹成 1 小时会让所有存量部署在升级后突然开始每小时探一次别人的号。
+	if s.IdleAfterHours <= 0 {
+		s.IdleAfterHours = supplyProbationDefaultIdleAfterHours
+	}
+	if s.IdleAfterHours < SupplyProbationIdleAfterHoursMin {
+		s.IdleAfterHours = SupplyProbationIdleAfterHoursMin
+	}
+	if s.IdleAfterHours > SupplyProbationIdleAfterHoursMax {
+		s.IdleAfterHours = SupplyProbationIdleAfterHoursMax
+	}
+	if s.IdleFailuresToDemote <= 0 {
+		s.IdleFailuresToDemote = supplyProbationDefaultIdleFailures
+	}
+	if s.IdleFailuresToDemote > SupplyProbationIdleFailuresMax {
+		s.IdleFailuresToDemote = SupplyProbationIdleFailuresMax
+	}
 }
 
 // ObservationWindow 观察窗时长。
@@ -145,6 +221,22 @@ func (s *SupplyProbationSettings) ProbeInterval() time.Duration {
 		return time.Duration(supplyProbationDefaultProbeIntervalMinutes) * time.Minute
 	}
 	return time.Duration(s.ProbeIntervalMinutes) * time.Minute
+}
+
+// IdleWindow 闲置判定窗，同时是两次闲置探测的最小间隔。
+func (s *SupplyProbationSettings) IdleWindow() time.Duration {
+	if s == nil {
+		return time.Duration(supplyProbationDefaultIdleAfterHours) * time.Hour
+	}
+	return time.Duration(s.IdleAfterHours) * time.Hour
+}
+
+// IdleFailureThreshold 连续硬失败到几次就摘掉。
+func (s *SupplyProbationSettings) IdleFailureThreshold() int {
+	if s == nil || s.IdleFailuresToDemote <= 0 {
+		return supplyProbationDefaultIdleFailures
+	}
+	return s.IdleFailuresToDemote
 }
 
 // DrainWindow 排空窗时长。

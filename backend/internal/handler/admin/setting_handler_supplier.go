@@ -209,6 +209,12 @@ type SupplyProbationSettingsResponse struct {
 	ProbeModel            string `json:"probe_model"`
 	DrainWindowMinutes    int    `json:"drain_window_minutes"`
 
+	// 闲置探测。与上面五个同一张卡，因为它们动的是同一件事的两端——
+	// 上面决定「什么时候可以站到付费消费者面前」，这三个决定「什么时候该被请下来」。
+	IdleProbeEnabled     bool `json:"idle_probe_enabled"`
+	IdleAfterHours       int  `json:"idle_after_hours"`
+	IdleFailuresToDemote int  `json:"idle_failures_to_demote"`
+
 	// 边界值随配置下发，理由同结算参数：前端抄一遍上限，后端改了就对不上。
 	// 探测间隔的**下限**尤其要下发——它不是一个防呆值，它是「不要拿供给者的额度当
 	// 探针耗材」这条规则的具体数字，运营需要在界面上看见它。
@@ -217,6 +223,9 @@ type SupplyProbationSettingsResponse struct {
 	ProbeIntervalMinutesMin  int `json:"probe_interval_minutes_min"`
 	ProbeIntervalMinutesMax  int `json:"probe_interval_minutes_max"`
 	DrainWindowMinutesMax    int `json:"drain_window_minutes_max"`
+	IdleAfterHoursMin        int `json:"idle_after_hours_min"`
+	IdleAfterHoursMax        int `json:"idle_after_hours_max"`
+	IdleFailuresMax          int `json:"idle_failures_max"`
 }
 
 func newSupplyProbationSettingsResponse(s *service.SupplyProbationSettings) SupplyProbationSettingsResponse {
@@ -226,6 +235,9 @@ func newSupplyProbationSettingsResponse(s *service.SupplyProbationSettings) Supp
 		ProbeIntervalMinutesMin:  service.SupplyProbationProbeIntervalMinutesMin,
 		ProbeIntervalMinutesMax:  service.SupplyProbationProbeIntervalMinutesMax,
 		DrainWindowMinutesMax:    service.SupplyProbationDrainWindowMinutesMax,
+		IdleAfterHoursMin:        service.SupplyProbationIdleAfterHoursMin,
+		IdleAfterHoursMax:        service.SupplyProbationIdleAfterHoursMax,
+		IdleFailuresMax:          service.SupplyProbationIdleFailuresMax,
 	}
 	if s == nil {
 		return resp
@@ -236,6 +248,9 @@ func newSupplyProbationSettingsResponse(s *service.SupplyProbationSettings) Supp
 	resp.ProbeIntervalMinutes = s.ProbeIntervalMinutes
 	resp.ProbeModel = s.ProbeModel
 	resp.DrainWindowMinutes = s.DrainWindowMinutes
+	resp.IdleProbeEnabled = s.IdleProbeEnabled
+	resp.IdleAfterHours = s.IdleAfterHours
+	resp.IdleFailuresToDemote = s.IdleFailuresToDemote
 	return resp
 }
 
@@ -254,6 +269,9 @@ type UpdateSupplyProbationSettingsRequest struct {
 	ProbeIntervalMinutes  int    `json:"probe_interval_minutes"`
 	ProbeModel            string `json:"probe_model"`
 	DrainWindowMinutes    int    `json:"drain_window_minutes"`
+	IdleProbeEnabled      bool   `json:"idle_probe_enabled"`
+	IdleAfterHours        int    `json:"idle_after_hours"`
+	IdleFailuresToDemote  int    `json:"idle_failures_to_demote"`
 }
 
 // UpdateSupplyProbationSettings 写观察期参数
@@ -276,6 +294,9 @@ func (h *SettingHandler) UpdateSupplyProbationSettings(c *gin.Context) {
 		ProbeIntervalMinutes:  req.ProbeIntervalMinutes,
 		ProbeModel:            req.ProbeModel,
 		DrainWindowMinutes:    req.DrainWindowMinutes,
+		IdleProbeEnabled:      req.IdleProbeEnabled,
+		IdleAfterHours:        req.IdleAfterHours,
+		IdleFailuresToDemote:  req.IdleFailuresToDemote,
 	}
 	if err := h.settingService.SetSupplyProbationSettings(c.Request.Context(), settings); err != nil {
 		response.BadRequest(c, err.Error())
@@ -813,4 +834,204 @@ func (h *SettingHandler) UpdateAbuseDetectionSettings(c *gin.Context) {
 	}
 	response.Success(c, newAbuseDetectionSettingsResponse(
 		h.settingService.GetAbuseDetectionSettings(ctx)))
+}
+
+// ============================================================================
+// APEXONE-EXT: 双边市场——挂号奖励规则。
+// ============================================================================
+
+// SupplyIncentiveTierPayload 是一个档位的对外形态。
+type SupplyIncentiveTierPayload struct {
+	MinActiveDays int     `json:"min_active_days"`
+	AmountUSD     float64 `json:"amount_usd"`
+	Slots         int     `json:"slots"`
+}
+
+// SupplyIncentiveProgramPayload 是一期活动的对外形态。
+type SupplyIncentiveProgramPayload struct {
+	Slug     string `json:"slug"`
+	Platform string `json:"platform"`
+	// StartAt 活动起算日（UTC，YYYY-MM-DD）。必填，且**不接受过去的日期**——
+	// 在线天数桶只能往前累加，回填出来的日期只会得到一期谁也不够格的活动。
+	StartAt string `json:"start_at"`
+	// NewUsersOnly 只发给在 StartAt 之前没挂过任何号的人（含已解绑）。
+	NewUsersOnly bool                         `json:"new_users_only"`
+	Tiers        []SupplyIncentiveTierPayload `json:"tiers"`
+}
+
+// SupplyIncentiveSettingsResponse 是挂号奖励规则的对外形态。
+type SupplyIncentiveSettingsResponse struct {
+	Enabled  bool                            `json:"enabled"`
+	Programs []SupplyIncentiveProgramPayload `json:"programs"`
+
+	// BudgetCapUSD 结构性预算上限 = Σ(slots × amount)，**算出来的，不是配置项**。
+	// 下发它是为了让运营在保存前看见自己配了多大的敞口——这个功能里没有单独的
+	// 预算字段，名额就是预算，而「4 档 × 各自名额」心算不出总数。
+	BudgetCapUSD float64 `json:"budget_cap_usd"`
+	// BudgetBounded 是否有上界。任何一档 slots=0（不限）都会让它变成 false，
+	// 此时 BudgetCapUSD 无意义——面板该显示「无上限」而不是一个 0。
+	BudgetBounded bool `json:"budget_bounded"`
+
+	// 边界值随配置下发，理由同其他几组：前端抄一份就等于给同一条规则立两个源头。
+	ProgramsMax      int     `json:"programs_max"`
+	TiersMax         int     `json:"tiers_max"`
+	SlugMaxLen       int     `json:"slug_max_len"`
+	AmountMaxUSD     float64 `json:"amount_max_usd"`
+	SlotsMax         int     `json:"slots_max"`
+	MinActiveDaysMax int     `json:"min_active_days_max"`
+}
+
+func newSupplyIncentiveSettingsResponse(s *service.SupplyIncentiveSettings) SupplyIncentiveSettingsResponse {
+	resp := SupplyIncentiveSettingsResponse{
+		Programs:         []SupplyIncentiveProgramPayload{},
+		ProgramsMax:      service.SupplyIncentiveProgramsMax,
+		TiersMax:         service.SupplyIncentiveTiersMax,
+		SlugMaxLen:       service.SupplyIncentiveSlugMaxLen,
+		AmountMaxUSD:     service.SupplyIncentiveAmountMaxUSD,
+		SlotsMax:         service.SupplyIncentiveSlotsMax,
+		MinActiveDaysMax: service.SupplyIncentiveMinActiveDaysMax,
+	}
+	if s == nil {
+		resp.BudgetBounded = true
+		return resp
+	}
+	resp.Enabled = s.Enabled
+	resp.BudgetCapUSD, resp.BudgetBounded = s.BudgetCapUSD()
+	for _, p := range s.Programs {
+		payload := SupplyIncentiveProgramPayload{
+			Slug:         p.Slug,
+			Platform:     p.Platform,
+			StartAt:      p.StartAt,
+			NewUsersOnly: p.NewUsersOnly,
+			Tiers:        make([]SupplyIncentiveTierPayload, 0, len(p.Tiers)),
+		}
+		for _, t := range p.Tiers {
+			payload.Tiers = append(payload.Tiers, SupplyIncentiveTierPayload{
+				MinActiveDays: t.MinActiveDays,
+				AmountUSD:     t.AmountUSD,
+				Slots:         t.Slots,
+			})
+		}
+		resp.Programs = append(resp.Programs, payload)
+	}
+	return resp
+}
+
+// GetSupplyIncentiveSettings 读挂号奖励规则
+// GET /api/v1/admin/settings/supply-incentive
+func (h *SettingHandler) GetSupplyIncentiveSettings(c *gin.Context) {
+	response.Success(c, newSupplyIncentiveSettingsResponse(
+		h.settingService.GetSupplyIncentiveSettings(c.Request.Context())))
+}
+
+// UpdateSupplyIncentiveSettingsRequest 更新挂号奖励规则请求。
+type UpdateSupplyIncentiveSettingsRequest struct {
+	Enabled  bool                            `json:"enabled"`
+	Programs []SupplyIncentiveProgramPayload `json:"programs"`
+}
+
+// UpdateSupplyIncentiveSettings 写挂号奖励规则
+// PUT /api/v1/admin/settings/supply-incentive
+//
+// 与观察期那组（越界夹回再回读）刻意不同：这里越界**直接 400**。夹回一个能用的值
+// 会让运营以为自己填的就是生效的那个，而这一组的每个数字都直接决定往外发多少钱——
+// 想填 $50 手滑填成 $500，夹回上限他不会察觉，钱已经在发了。
+func (h *SettingHandler) UpdateSupplyIncentiveSettings(c *gin.Context) {
+	var req UpdateSupplyIncentiveSettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	settings := &service.SupplyIncentiveSettings{Enabled: req.Enabled}
+	for _, p := range req.Programs {
+		program := service.SupplyIncentiveProgram{
+			Slug:         p.Slug,
+			Platform:     p.Platform,
+			StartAt:      p.StartAt,
+			NewUsersOnly: p.NewUsersOnly,
+			Tiers:        make([]service.SupplyIncentiveTier, 0, len(p.Tiers)),
+		}
+		for _, t := range p.Tiers {
+			program.Tiers = append(program.Tiers, service.SupplyIncentiveTier{
+				MinActiveDays: t.MinActiveDays,
+				AmountUSD:     t.AmountUSD,
+				Slots:         t.Slots,
+			})
+		}
+		settings.Programs = append(settings.Programs, program)
+	}
+
+	ctx := c.Request.Context()
+	if err := h.settingService.SetSupplyIncentiveSettings(ctx, settings); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, newSupplyIncentiveSettingsResponse(
+		h.settingService.GetSupplyIncentiveSettings(ctx)))
+}
+
+// ============================================================================
+// APEXONE-EXT: 双边市场——新会话产出均衡。
+// ============================================================================
+
+// SupplyBalanceSettingsResponse 是产出均衡配置的对外形态。
+type SupplyBalanceSettingsResponse struct {
+	Enabled bool    `json:"enabled"`
+	BandUSD float64 `json:"band_usd"`
+
+	// 边界值随配置下发，理由同其余几组。
+	BandUSDDefault float64 `json:"band_usd_default"`
+	BandUSDMax     float64 `json:"band_usd_max"`
+}
+
+func newSupplyBalanceSettingsResponse(s *service.SupplyBalanceSettings) SupplyBalanceSettingsResponse {
+	resp := SupplyBalanceSettingsResponse{
+		BandUSDDefault: service.SupplyBalanceBandUSDDefault,
+		BandUSDMax:     service.SupplyBalanceBandUSDMax,
+	}
+	if s == nil {
+		resp.BandUSD = service.SupplyBalanceBandUSDDefault
+		return resp
+	}
+	resp.Enabled = s.Enabled
+	resp.BandUSD = s.Band()
+	return resp
+}
+
+// GetSupplyBalanceSettings 读产出均衡配置
+// GET /api/v1/admin/settings/supply-balance
+func (h *SettingHandler) GetSupplyBalanceSettings(c *gin.Context) {
+	response.Success(c, newSupplyBalanceSettingsResponse(
+		h.settingService.GetSupplyBalanceSettings(c.Request.Context())))
+}
+
+// UpdateSupplyBalanceSettingsRequest 更新产出均衡配置请求。
+type UpdateSupplyBalanceSettingsRequest struct {
+	Enabled bool    `json:"enabled"`
+	BandUSD float64 `json:"band_usd"`
+}
+
+// UpdateSupplyBalanceSettings 写产出均衡配置
+// PUT /api/v1/admin/settings/supply-balance
+//
+// 越界由 service 夹回而不是报错（与观察期那组同向）：这一组不决定发多少钱，
+// 只决定新会话落到哪个号上。所以这里回读写入后的真实配置——那是运营看到自己
+// 填的 0 变成 5 的唯一途径。
+func (h *SettingHandler) UpdateSupplyBalanceSettings(c *gin.Context) {
+	var req UpdateSupplyBalanceSettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	ctx := c.Request.Context()
+	if err := h.settingService.SetSupplyBalanceSettings(ctx, &service.SupplyBalanceSettings{
+		Enabled: req.Enabled,
+		BandUSD: req.BandUSD,
+	}); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, newSupplyBalanceSettingsResponse(
+		h.settingService.GetSupplyBalanceSettings(ctx)))
 }

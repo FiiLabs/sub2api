@@ -90,6 +90,7 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		nil, // paymentOrderExpiry
 		nil, // supplierThaw (APEXONE-EXT)
 		nil, // supplierLifecycle (APEXONE-EXT)
+		nil, // supplierIncentive (APEXONE-EXT)
 		nil, // abuseDetector (APEXONE-EXT)
 		nil, // supplierPayout (APEXONE-EXT M4)
 		nil, // channelMonitorRunner

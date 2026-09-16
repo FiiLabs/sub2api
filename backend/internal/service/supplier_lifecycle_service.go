@@ -26,6 +26,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -59,6 +60,12 @@ const (
 	// 扫到的账号大多会被间隔节流掉，这个上限管的是「一批号同时到达探测时刻」的场景：
 	// 那一轮不该变成一次对上游的突发。没轮到的下一轮再来，观察期本来就以小时计。
 	supplierLifecycleMaxProbesPerRun = 20
+	// supplierLifecycleMaxIdleProbesPerRun 单轮最多发出多少次**闲置**探测。
+	//
+	// 比观察期那个上限小一半，理由是两者的紧迫性不同：观察期的号在等着入池，
+	// 晚一轮就晚五分钟开始赚钱；闲置探测查的是「这个号是不是早就废了」，
+	// 晚一轮毫无影响，而它烧的是一个**状态一切正常**的供给者的订阅额度。
+	supplierLifecycleMaxIdleProbesPerRun = 10
 )
 
 // supplierLifecycleAccountStore 是生命周期任务用到的账号读写子集。
@@ -79,6 +86,7 @@ type supplierLifecycleAccountStore interface {
 type supplierLifecycleStateLister interface {
 	ListAccountIDsBySupplyState(ctx context.Context, state string, limit int) ([]int64, error)
 	ListAccountIDsWithUnavailableOwner(ctx context.Context, limit int) ([]int64, error)
+	ListIdleActiveSupplyAccountIDs(ctx context.Context, idleBefore time.Time, limit int) ([]int64, error)
 }
 
 // supplierLifecycleProbationReader 读观察期参数。
@@ -234,6 +242,12 @@ func (s *SupplierLifecycleService) runOnce() {
 	s.sweepUnavailableOwners(runCtx)
 	s.sweepDraining(runCtx)
 	s.sweepPendingReview(runCtx)
+	// 闲置探测排在推进器之后、事件之前，理由与 sweepIncidents 排最后是同一条：
+	// 它也是一道安全闸（把已经废了的号停掉），但它读的是 sweepPendingReview 可能
+	// 刚刚改过的状态——一个这一轮才被 promote 的号，必须带着新状态进这一步，
+	// 否则它会以 pending_review 的身份被跳过，白等一轮。而它自己可能 SetError，
+	// 那个结果又要能被同一轮的 sweepIncidents 看见并发信。
+	s.sweepIdleActive(runCtx)
 	s.sweepIncidents(runCtx)
 }
 
@@ -448,6 +462,208 @@ func (s *SupplierLifecycleService) sweepPendingReview(ctx context.Context) {
 		slog.Info("[SupplierLifecycle] probe budget exhausted this run, remainder deferred",
 			"probed", probes, "deferred", skippedForBudget)
 	}
+}
+
+// sweepIdleActive 对「已入池但长期零流量」的供给号探一次，连续硬失败到阈值就摘掉。
+//
+// # 它只回答一个问题：这个订阅还在不在
+//
+// 入池之后的失效形态有三类，前两类已经有人管、而且都不需要这个号有流量：
+//
+//	凭证被撤销/失效  token 刷新那条路的 isNonRetryableRefreshError → SetError
+//	真实请求 401/403 RateLimitService.handleAuthError → SetError
+//	订阅降级/退订     **没有人管** ← 这一步存在的全部理由
+//
+// 第三类的特殊之处是它在账号行上**一点痕迹都没有**：OAuth 授权仍然有效、token 照常
+// 刷新成功、status 一直是 active。平台又读不到订阅档位与到期时间（见
+// setting_supply_probation.go 的 IdleProbeEnabled 注释），所以只能打一次上游去问。
+// 而如果这个号从不接单，那一次就永远不会发生。
+//
+// # 为什么只探闲置的
+//
+// 有流量的号靠真实流量自证，不必再花它主人的额度问一遍。更要紧的是**正在限流的号
+// 一定探不过**，而那些号恰恰是干得最多的——额度被打满是供给成功的证据，不是失效的
+// 证据。探它们等于「干得越多越先被停」，那是这个功能唯一不能犯的错。排除工作在 SQL
+// 里完成，见 repository 的 supplierAccountListIdleActiveSQL。
+func (s *SupplierLifecycleService) sweepIdleActive(ctx context.Context) {
+	// 与 shouldProbe 里那句同源：没有探测能力就整步跳过，不是降级，是部署形态。
+	if s.prober == nil {
+		return
+	}
+	settings := s.probationSettings(ctx)
+	if settings == nil || !settings.IdleProbeEnabled {
+		return
+	}
+	// 本轮的预算可能已经被前面几步（尤其是观察期探测，单轮上限 20 次 × 单次 90 秒）
+	// 吃光了。这时候再去查一次库只会拿到一个 context deadline exceeded，然后在日志里
+	// 留下一条**读库失败**的 error——而真相是「这一轮没轮到它」，两者的处置完全不同。
+	// 安静退出，下一轮（5 分钟后）自然会重来；闲置探测本来就以天计，晚一轮毫无影响。
+	if ctx.Err() != nil {
+		return
+	}
+
+	idleWindow := settings.IdleWindow()
+	ids, err := s.repo.ListIdleActiveSupplyAccountIDs(ctx, time.Now().Add(-idleWindow), supplierLifecycleScanLimit)
+	if err != nil {
+		slog.Error("[SupplierLifecycle] failed to list idle active supply accounts", "error", err)
+		return
+	}
+	if len(ids) == 0 {
+		return
+	}
+	if len(ids) == supplierLifecycleScanLimit {
+		slog.Warn("[SupplierLifecycle] idle probe scan hit the batch limit, remainder deferred to next run",
+			"limit", supplierLifecycleScanLimit)
+	}
+
+	probes := 0
+	skippedForBudget := 0
+	for _, id := range ids {
+		if ctx.Err() != nil {
+			return
+		}
+		account, err := s.accountRepo.GetByID(ctx, id)
+		if err != nil || account == nil {
+			continue
+		}
+		if !s.shouldIdleProbe(account, idleWindow) {
+			continue
+		}
+		if probes >= supplierLifecycleMaxIdleProbesPerRun {
+			skippedForBudget++
+			continue
+		}
+		probes++
+		s.idleProbeOnce(ctx, account, settings)
+	}
+
+	if skippedForBudget > 0 {
+		slog.Info("[SupplierLifecycle] idle probe budget exhausted this run, remainder deferred",
+			"probed", probes, "deferred", skippedForBudget)
+	}
+}
+
+// shouldIdleProbe 按时间戳节流。SQL 已经筛过「闲置且不忙」，这里只管「上次探过多久了」。
+//
+// 回退顺序 idle_probe_at → probe_at → 探，第二级是刻意的：promote 的前一刻
+// probeOnce 才写过 probe_at，那次探测的结论不会在几分钟内变。没有这条回退，
+// **每一个新入池的号都会在下一轮白挨一次探测**——烧的是它主人的额度，
+// 而结论与刚才那次一模一样。
+//
+// 两级都没有时返回 true（去探）。那是本功能上线前就已经在池子里的号：
+// 它们恰恰是最需要被查一次的那一批，没有时间戳不该成为豁免理由。
+func (s *SupplierLifecycleService) shouldIdleProbe(account *Account, idleWindow time.Duration) bool {
+	if last, ok := supplyExtraTime(account, SupplyIdleProbeAtExtraKey); ok {
+		return time.Since(last) >= idleWindow
+	}
+	if last, ok := supplyExtraTime(account, SupplyProbeAtExtraKey); ok {
+		return time.Since(last) >= idleWindow
+	}
+	return true
+}
+
+// idleProbeOnce 探一次闲置号，按结果推进（或清零）连续硬失败计数，到阈值就摘掉。
+func (s *SupplierLifecycleService) idleProbeOnce(
+	ctx context.Context, account *Account, settings *SupplyProbationSettings,
+) {
+	probeCtx, cancel := context.WithTimeout(ctx, supplierLifecycleProbeTimeout)
+	result, err := s.prober.RunTestBackground(probeCtx, account.ID, supplyResolveProbeModel(settings, account.Platform))
+	cancel()
+
+	now := time.Now()
+	updates := map[string]any{
+		SupplyIdleProbeAtExtraKey: now.Format(time.RFC3339),
+	}
+
+	if err == nil && result != nil && result.Status == "success" {
+		// 清零而不是减一：阈值数的是**连续**失败。一次成功证明订阅还在，
+		// 之前那几次失败的证据就整体作废了。
+		updates[SupplyIdleFailsExtraKey] = 0
+		updates[SupplyProbeErrorExtraKey] = ""
+		if updErr := s.accountRepo.UpdateExtra(ctx, account.ID, updates); updErr != nil {
+			slog.Warn("[SupplierLifecycle] failed to record idle probe success",
+				"account_id", account.ID, "error", updErr)
+		}
+		return
+	}
+
+	message := supplyProbeErrorMessage(err, result)
+	if !supplyIdleProbeHardFailure(message, account.Platform) {
+		// 软失败：限流、过载、网络抖动、上游 5xx。它们不构成「订阅没了」的证据，
+		// 所以计数**原地不动**——既不加也不清。
+		//   清零：一个真废了的号只要偶尔抖一次就永远攒不满阈值，闸门形同虚设。
+		//   累加：一次上游故障会把一批好号同时推向摘除。
+		// 不动是唯一不会把噪声变成结论的选择。
+		updates[SupplyProbeErrorExtraKey] = message
+		if updErr := s.accountRepo.UpdateExtra(ctx, account.ID, updates); updErr != nil {
+			slog.Warn("[SupplierLifecycle] failed to record idle probe soft failure",
+				"account_id", account.ID, "error", updErr)
+		}
+		slog.Info("[SupplierLifecycle] idle probe soft failure, streak unchanged",
+			"account_id", account.ID, "error", message)
+		return
+	}
+
+	fails := supplyExtraInt(account, SupplyIdleFailsExtraKey) + 1
+	updates[SupplyIdleFailsExtraKey] = fails
+	updates[SupplyProbeErrorExtraKey] = message
+	if updErr := s.accountRepo.UpdateExtra(ctx, account.ID, updates); updErr != nil {
+		// 写不进去就**不要摘**。摘号必须留得下证据：没有那条计数和错误原因，
+		// 供给者收到的是一封「你的号被停了」而仪表盘上什么也没有的信。
+		slog.Warn("[SupplierLifecycle] failed to record idle probe hard failure, skipping demotion",
+			"account_id", account.ID, "error", updErr)
+		return
+	}
+
+	threshold := settings.IdleFailureThreshold()
+	if fails < threshold {
+		slog.Info("[SupplierLifecycle] idle probe hard failure, streak advanced",
+			"account_id", account.ID, "streak", fails, "threshold", threshold, "error", message)
+		return
+	}
+
+	// SetError 一并把 schedulable 置 false，于是三件事同时发生：停止派单、
+	// 在线天数停止累加（挂号奖励的判据要求 schedulable，见 supplier_incentive_repo.go）、
+	// 同一轮的 sweepIncidents 开事件并给主人发信。
+	//
+	// 回去的路是供给者自己重新授权（supplier_reauth.go），不是这里能自作主张的——
+	// 与 probeOnce 里那次 SetError 是同一扇只出不进的门。
+	demoteMsg := supplyIdleDemoteMessage(fails, message)
+	if setErr := s.accountRepo.SetError(ctx, account.ID, demoteMsg); setErr != nil {
+		slog.Warn("[SupplierLifecycle] failed to demote idle supply account",
+			"account_id", account.ID, "error", setErr)
+		return
+	}
+	slog.Warn("[SupplierLifecycle] demoted idle supply account after repeated hard probe failures",
+		"account_id", account.ID, "streak", fails, "threshold", threshold, "error", message)
+}
+
+// supplyIdleProbeHardFailure 判定一次闲置探测的失败是不是「这个号不该再算在役」。
+//
+// 硬 = 只有账号的主人能修：上游不认这份凭证（401），或这个订阅没有额度服务我们卖的
+// 模型（credits_required）。两个判据都**复用观察期那两个函数**，不另立一套字符串——
+// 同一件事在两处各写一份，漂移的那天现象是「接入时被拒、入池后又不拒」，
+// 而两处代码单独看都对。
+//
+// 其余一律软失败。这个方向是刻意偏软的，因为代价不对称：漏掉一个废号的代价是它多
+// 拿一档奖励；误摘一个好号的代价是一个真实供给者的收入当场断掉，还要他自己重新授权。
+//
+// 注意 OpenAI 侧只有 401 会命中——supplyProbeNoQuota 对 openai 恒为 false（上游没有
+// 「无额度」的精确信号）。这与准入探测的取舍一致：宁可放过，不可误杀。
+func supplyIdleProbeHardFailure(message string, platform string) bool {
+	return supplyProbeAuthFailure(message) || supplyProbeNoQuota(message, platform)
+}
+
+// supplyIdleDemoteMessage 组装摘号时写进 error_message 的那句话。
+//
+// 前缀是给**人**看的：这句话会经 SupplierIncidentService 进到供给者收到的那封信里。
+// 只留一句原始上游错误、不留探测细节——他需要判断的是「是不是我的订阅出问题了」。
+func supplyIdleDemoteMessage(fails int, message string) string {
+	msg := fmt.Sprintf("Idle supply probe failed %d times in a row: %s", fails, message)
+	if len(msg) > supplyProbeErrorMaxLen {
+		msg = msg[:supplyProbeErrorMaxLen]
+	}
+	return msg
 }
 
 func (s *SupplierLifecycleService) probationSettings(ctx context.Context) *SupplyProbationSettings {

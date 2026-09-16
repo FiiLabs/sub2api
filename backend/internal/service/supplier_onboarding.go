@@ -140,6 +140,57 @@ const (
 	SupplyDailyCostLimitExtraKey = "apexone_supply_daily_cost_limit"
 	// SupplyDailyTokenLimitExtraKey 供给者自设的每日 token 上限。0 或缺失 = 不限。
 	SupplyDailyTokenLimitExtraKey = "apexone_supply_daily_token_limit"
+
+	// SupplyActiveDaysExtraKey 累计在线天数，形如
+	//
+	//	{
+	//	  "days": 12, "last_day": "2026-09-14",
+	//	  "programs": {"bind26q4": {"days": 5, "last_day": "2026-09-14"}}
+	//	}
+	//
+	// 顶层那一对是**账号总计**，从计数器上线那天算起、与任何活动无关；
+	// programs 下面每个 slug 一个桶，从那期活动的 start_at 那天才开始涨。
+	//
+	// # 为什么要分桶，而不是拿总计减一个基线
+	//
+	// 「活动开始时给每个号记一个基线，之后用 总计−基线」看着更省地方，但基线必须
+	// **恰好在 start_at 那一刻**被记下。worker 每小时一轮，一旦它在活动开始后停过
+	// 一段时间，补记的基线里就混进了活动开始后涨的那几天，算出来的天数偏少——
+	// 而且这个错误无声无息。分桶没有这个时刻依赖：桶从 0 开始，一天加一次，
+	// worker 停了就是那几天谁都不涨，与总计的行为完全一致。
+	//
+	// 代价是每期活动多存一个小对象。活动数上限 5，可以忽略。
+	//
+	// # 桶不会因为活动下架而删掉
+	//
+	// 从 settings 里移掉一期活动只是停止给它的桶 +1，桶本身留着。再把同一个 slug
+	// 配回来，天数接着涨而不是从头再来——与「断线不清零」是同一条规则，
+	// 也让「误删了一期活动」变成可恢复的操作。
+	//
+	// 挂号奖励（supply_incentive_settings）的唯一判据。由每日 worker 累加，语义是
+	// 「这个号在役了多少天」：断线期间不涨、接回来继续涨、**永不清零**。
+	//
+	// 为什么不用 accounts.created_at 相减：那算的是「挂了多久」，不是「在线多久」。
+	// 一个坏了 20 天、第 30 天才修好的号，两种算法差 20 天，而差额是要发出去的钱。
+	//
+	// 为什么带 last_day 而不只存 days：它是**幂等键**。worker 一小时跑一轮，
+	// 靠 `last_day <> 今天` 这个 WHERE 条件保证一天只加一次——没有它就得依赖
+	// 「worker 恰好每 24 小时跑一次且从不重启」，那个前提在生产里不成立。
+	SupplyActiveDaysExtraKey = "apexone_supply_active_days"
+
+	// SupplyIdleProbeAtExtraKey 上次**闲置探测**的时刻（RFC3339）。
+	//
+	// 与 SupplyProbeAtExtraKey 分开存，而不是共用一个时间戳：两者的节奏差两个数量级
+	// （观察期按分钟、闲置按天），共用会让其中一个的节流失效。分开之后还有一个好处——
+	// 入池那一刻 probe_at 刚被写过，闲置扫描拿它当「上次探过」的回退值，
+	// 于是一个刚 promote 的号不会在下一轮就被再探一次。
+	SupplyIdleProbeAtExtraKey = "apexone_supply_idle_probe_at"
+	// SupplyIdleFailsExtraKey 闲置探测**连续**硬失败次数。成功一次清零。
+	//
+	// 只有硬失败（凭证失效 / 订阅无额度）才累加；限流、过载、网络抖动一律不动它——
+	// 那些不构成「这个号不该再拿奖励」的证据，详见 supplier_lifecycle_service.go
+	// 的 supplyIdleProbeHardFailure。
+	SupplyIdleFailsExtraKey = "apexone_supply_idle_fails"
 )
 
 // 下线的两个通道。
@@ -304,6 +355,13 @@ type SupplierOnboardingRepository interface {
 	// 这条流水线碰到——它会改 schedulable，把管理员手工停用的自营号推回池子里
 	// 是一次静默的、谁也没同意过的变更。
 	ListAccountIDsBySupplyState(ctx context.Context, state string, limit int) ([]int64, error)
+	// ListIdleActiveSupplyAccountIDs 列出已入池（supply_state=active 且可调度）但
+	// 在 idleBefore 之后没接过单的供给账号 id（闲置探测用）。
+	//
+	// 与上一条的分工：那条按接入状态扫「还没进池的」，这条扫「进了池却没在动的」。
+	// 正在限流/过载/临时不可调度的号**不返回**——它们是忙，不是闲，详见
+	// repository/supplier_onboarding_repo.go 里 supplierAccountListIdleActiveSQL 的注释。
+	ListIdleActiveSupplyAccountIDs(ctx context.Context, idleBefore time.Time, limit int) ([]int64, error)
 	// ListAccountIDsWithUnavailableOwner 列出「归属人已经不可用、号却还在供货」的账号 id。
 	//
 	// 不可用 = 用户被注销（软删）或被停用。这两种情况下 accounts 行**一点变化都没有**：

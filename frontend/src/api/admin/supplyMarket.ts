@@ -72,12 +72,31 @@ export interface SupplyProbationSettings {
   /** 优雅下线的排空窗（分钟）。0 = 优雅下线退化为直接终态。 */
   drain_window_minutes: number
 
+  /**
+   * 闲置探测总开关。默认关。
+   *
+   * 它只解决一件事：**订阅降级/退订而 OAuth 授权仍然有效**。凭证被撤销、真实请求
+   * 401 这两类失效已经有别的路径在管，而这一类在账号行上一点痕迹都没有——只有
+   * 真的打一次上游才会暴露，而一个从不接单的号永远等不到那一次。
+   *
+   * 开它意味着平台会主动花供给者的额度去探测，所以三层节流都在后端：只探闲置的、
+   * 正在限流/过载的不探、单轮有数量上限。
+   */
+  idle_probe_enabled: boolean
+  /** 多久没接过单算闲置（小时），**同时**是两次闲置探测的最小间隔。 */
+  idle_after_hours: number
+  /** 连续几次硬失败（凭证失效/无额度）才把号停下来。限流、网络抖动不计入。 */
+  idle_failures_to_demote: number
+
   /** 后端下发的边界值，前端不要另抄一份。 */
   min_observation_minutes_max: number
   required_successes_max: number
   probe_interval_minutes_min: number
   probe_interval_minutes_max: number
   drain_window_minutes_max: number
+  idle_after_hours_min: number
+  idle_after_hours_max: number
+  idle_failures_max: number
 }
 
 export type SupplyProbationPayload = Omit<
@@ -87,6 +106,9 @@ export type SupplyProbationPayload = Omit<
   | 'probe_interval_minutes_min'
   | 'probe_interval_minutes_max'
   | 'drain_window_minutes_max'
+  | 'idle_after_hours_min'
+  | 'idle_after_hours_max'
+  | 'idle_failures_max'
 >
 
 export interface SupplyAgreementSettings {
@@ -691,6 +713,123 @@ async function updateSupplyDemandGateSettings(
   return data
 }
 
+/**
+ * 新会话产出均衡。
+ *
+ * 刻意放在 settings 表而不是 config.yaml：现网跑在 TEE 里，改 config 意味着
+ * composeHash 变、要重新发 proof reference 并重新远程证明——那个代价配不上
+ * 一个「先开着看两天，不行就关掉」的调优开关。
+ */
+export interface SupplyBalanceSettings {
+  /** 总开关。默认 false，调度行为与改动前逐字一致。 */
+  enabled: boolean
+  /** 分档带宽（美元，按官方牌价）。同一档内仍按 LRU 选。 */
+  band_usd: number
+
+  /** 后端下发的默认值与上限，前端不要另抄一份。 */
+  band_usd_default: number
+  band_usd_max: number
+}
+
+export type SupplyBalancePayload = Pick<SupplyBalanceSettings, 'enabled' | 'band_usd'>
+
+async function getBalanceSettings(): Promise<SupplyBalanceSettings> {
+  const { data } = await apiClient.get<SupplyBalanceSettings>('/admin/settings/supply-balance')
+  return data
+}
+
+/** 写均衡配置。越界由后端夹回（不是报错），所以务必把返回值写回表单。 */
+async function updateBalanceSettings(
+  payload: SupplyBalancePayload
+): Promise<SupplyBalanceSettings> {
+  const { data } = await apiClient.put<SupplyBalanceSettings>(
+    '/admin/settings/supply-balance',
+    payload
+  )
+  return data
+}
+
+/** 挂号奖励的一个档位：挂满 N 天，发 X 美元，限 S 个名额。 */
+export interface SupplyIncentiveTier {
+  /** 累计在线天数门槛。断线期间不涨、接回来继续涨、不清零。 */
+  min_active_days: number
+  /** 该档奖励金额（USDT）。**逐档累加**：跨过第三档拿到的是前三档之和。 */
+  amount_usd: number
+  /** 该档名额，按**账号**计（不是按人）。0 = 不限。 */
+  slots: number
+}
+
+/** 一期活动。slug 进幂等键，建后不可改。 */
+export interface SupplyIncentiveProgram {
+  slug: string
+  /** 限定平台；空串 = 全平台共用一套档位与名额池。 */
+  platform: string
+  /**
+   * 起算日（UTC，YYYY-MM-DD）。必填。
+   *
+   * 这期活动的时间原点：在线天数按活动分桶计数，这一天之后才开始给这期的桶 +1，
+   * 所以每期天然从 0 开始，第二期不会把第一期攒下的天数算进来。
+   *
+   * **不接受过去的日期**——桶只能往前累加，历史重建不出来。后端会直接拒绝，
+   * 不会夹到今天（夹回去的话运营以为从他填的那天算起，而差额是要发出去的钱）。
+   * 例外：已经开跑的活动回来改档位时，原样带回未改动的 start_at 是允许的。
+   */
+  start_at: string
+  /**
+   * 只发给新供给者：在 start_at 之前名下没有任何供给账号的人，**含已解绑的**。
+   *
+   * 含已解绑不是苛刻——不含的话「先解绑再挂回来」就能把自己洗成新用户。
+   */
+  new_users_only: boolean
+  tiers: SupplyIncentiveTier[]
+}
+
+/** 挂号奖励规则。默认关、无活动。 */
+export interface SupplyIncentiveSettings {
+  enabled: boolean
+  programs: SupplyIncentiveProgram[]
+
+  /**
+   * 只读：结构性预算上限 = Σ(slots × amount)，**后端算出来的，不是配置项**。
+   * 这个功能没有单独的预算字段——名额就是预算，而多档相乘心算不出来。
+   */
+  budget_cap_usd: number
+  /** 只读：是否有上界。任何一档 slots=0 都会让它变 false，此时 budget_cap_usd 无意义。 */
+  budget_bounded: boolean
+
+  /** 后端下发的边界值，前端不要另抄一份。 */
+  programs_max: number
+  tiers_max: number
+  slug_max_len: number
+  amount_max_usd: number
+  slots_max: number
+  min_active_days_max: number
+}
+
+export type SupplyIncentivePayload = Pick<SupplyIncentiveSettings, 'enabled' | 'programs'>
+
+async function getIncentiveSettings(): Promise<SupplyIncentiveSettings> {
+  const { data } = await apiClient.get<SupplyIncentiveSettings>('/admin/settings/supply-incentive')
+  return data
+}
+
+/**
+ * 写挂号奖励规则。
+ *
+ * 与观察期参数刻意不同：后端**越界直接 400**，不夹回。所以调用方必须把错误原文
+ * 显示出来——夹回一个能用的值会让运营以为自己填的就是生效的那个，而这一组的
+ * 每个数字都直接决定往外发多少钱。
+ */
+async function updateIncentiveSettings(
+  payload: SupplyIncentivePayload
+): Promise<SupplyIncentiveSettings> {
+  const { data } = await apiClient.put<SupplyIncentiveSettings>(
+    '/admin/settings/supply-incentive',
+    payload
+  )
+  return data
+}
+
 /** 首页公开数据展示配置（真实数 + 可配基数偏移）。默认关、零偏移。 */
 export interface HomepageStatsSettings {
   enabled: boolean
@@ -996,6 +1135,10 @@ export const adminSupplyMarketAPI = {
   updateOnboardingSettings,
   getSupplyDemandGateSettings,
   updateSupplyDemandGateSettings,
+  getBalanceSettings,
+  updateBalanceSettings,
+  getIncentiveSettings,
+  updateIncentiveSettings,
   getHomepageStatsSettings,
   updateHomepageStatsSettings,
   getAgreementSettings,

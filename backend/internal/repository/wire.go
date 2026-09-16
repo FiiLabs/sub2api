@@ -122,6 +122,8 @@ var ProviderSet = wire.NewSet(
 	ProvideSupplierCreditRepository,
 	// APEXONE-EXT: 双边市场——供给者自助接入仓储。
 	NewSupplierOnboardingRepository,
+	// APEXONE-EXT: 双边市场——挂号奖励（在线天数 + 名额）仓储。
+	NewSupplierIncentiveRepository,
 	// APEXONE-EXT: 双边市场——溢出日配额计数。
 	NewSupplyOverflowCounter,
 	// APEXONE-EXT: 双边市场——管理端运营视图仓储。

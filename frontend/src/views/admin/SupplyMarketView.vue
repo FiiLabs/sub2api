@@ -490,6 +490,49 @@
 
 
 
+            <!-- 闲置号复检。开关放在面板上而不是跟着工程参数一起收起，因为它不是节奏
+                 参数——它会把一个正在给主人赚分成的号停掉，那是运营该亲手按下的决定。
+                 失败阈值仍然收起：默认 2 次就是推荐值。 -->
+            <div class="space-y-4 border-t border-gray-100 pt-4 dark:border-dark-700">
+              <div class="flex items-center justify-between">
+                <div class="pr-4">
+                  <label class="font-medium text-gray-900 dark:text-white">
+                    {{ t('supplyAdmin.probation.idleProbeEnabled') }}
+                  </label>
+                  <p class="text-sm text-gray-500 dark:text-gray-400">
+                    {{ t('supplyAdmin.probation.idleProbeEnabledHint') }}
+                  </p>
+                </div>
+                <Toggle
+                  v-model="probationForm.idle_probe_enabled"
+                  data-testid="supply-probation-idle-enabled"
+                />
+              </div>
+
+              <div v-if="probationForm.idle_probe_enabled">
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('supplyAdmin.probation.idleAfterHours') }}
+                </label>
+                <input
+                  v-model.number="probationForm.idle_after_hours"
+                  type="number"
+                  step="1"
+                  :min="probationBounds.idle_after_hours_min"
+                  :max="probationBounds.idle_after_hours_max"
+                  class="input"
+                  data-testid="supply-probation-idle-after-hours"
+                />
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {{
+                    t('supplyAdmin.probation.idleAfterHoursHint', {
+                      min: probationBounds.idle_after_hours_min,
+                      max: probationBounds.idle_after_hours_max,
+                    })
+                  }}
+                </p>
+              </div>
+            </div>
+
             <!-- 探测间隔/达标次数/排空窗/探测模型是工程参数，已从面板收起：
                  默认值即推荐值，settings API 仍可手工调（字段与行为原样保留）。 -->
             <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-900">
@@ -604,6 +647,213 @@
           <div class="flex justify-end">
             <button class="btn btn-primary" :disabled="savingDemandGate" @click="saveDemandGate">
               {{ t('supplyAdmin.demandGate.save') }}
+            </button>
+          </div>
+        </div>
+
+        <!-- ===================== 新会话产出均衡 ===================== -->
+        <div class="card space-y-4 p-6">
+          <div>
+            <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('supplyAdmin.balance.title') }}</h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.balance.description') }}</p>
+          </div>
+          <div class="space-y-4">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.balance.enabled') }}</p>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.balance.enabledHint') }}</p>
+              </div>
+              <Toggle v-model="balanceForm.enabled" data-testid="balance-enabled" />
+            </div>
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.balance.bandUsd') }}</label>
+              <input
+                v-model.number="balanceForm.band_usd"
+                type="number"
+                step="0.5"
+                min="0"
+                :max="balanceBounds.band_usd_max"
+                class="input"
+                data-testid="balance-band-usd"
+              />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.balance.bandUsdHint', { d: balanceBounds.band_usd_default }) }}</p>
+            </div>
+          </div>
+          <div class="flex justify-end">
+            <button class="btn btn-primary" :disabled="savingBalance" data-testid="balance-save" @click="saveBalance">
+              {{ t('supplyAdmin.balance.save') }}
+            </button>
+          </div>
+        </div>
+
+        <!-- ===================== 挂号奖励 ===================== -->
+        <div class="card space-y-4 p-6">
+          <div>
+            <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('supplyAdmin.incentive.title') }}</h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.incentive.description') }}</p>
+          </div>
+
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.incentive.enabled') }}</p>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.incentive.enabledHint') }}</p>
+            </div>
+            <Toggle v-model="incentiveForm.enabled" data-testid="incentive-enabled" />
+          </div>
+
+          <!-- 预算不是配置项，是名额×金额算出来的。放在最显眼处，因为它是真金。 -->
+          <div
+            class="rounded-lg border p-3"
+            :class="incentiveDraftBudget.bounded
+              ? 'border-blue-200 bg-blue-50 dark:border-blue-900/40 dark:bg-blue-900/20'
+              : 'border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-900/20'"
+            data-testid="incentive-budget"
+          >
+            <p class="text-sm font-medium text-gray-800 dark:text-gray-200">
+              <template v-if="incentiveDraftBudget.bounded">
+                {{ t('supplyAdmin.incentive.budgetCap', { amount: formatCurrency(incentiveDraftBudget.total) }) }}
+              </template>
+              <template v-else>{{ t('supplyAdmin.incentive.budgetUnbounded') }}</template>
+            </p>
+            <p class="mt-1 text-xs text-gray-600 dark:text-gray-400">{{ t('supplyAdmin.incentive.budgetHint') }}</p>
+          </div>
+
+          <div v-if="!incentiveForm.programs.length" class="text-sm text-gray-500 dark:text-gray-400">
+            {{ t('supplyAdmin.incentive.empty') }}
+          </div>
+
+          <div
+            v-for="(program, programIndex) in incentiveForm.programs"
+            :key="programIndex"
+            class="space-y-3 rounded-lg border border-gray-200 p-4 dark:border-gray-700"
+          >
+            <div class="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.incentive.slug') }}</label>
+                <input
+                  v-model="program.slug"
+                  type="text"
+                  class="input"
+                  :maxlength="incentiveMeta.slug_max_len"
+                  :placeholder="t('supplyAdmin.incentive.slugPlaceholder')"
+                  :data-testid="`incentive-slug-${programIndex}`"
+                />
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.incentive.slugHint') }}</p>
+              </div>
+              <div>
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.incentive.platform') }}</label>
+                <select v-model="program.platform" class="input" :data-testid="`incentive-platform-${programIndex}`">
+                  <option value="">{{ t('supplyAdmin.incentive.platformAny') }}</option>
+                  <option value="anthropic">anthropic</option>
+                  <option value="openai">openai</option>
+                </select>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.incentive.platformHint') }}</p>
+              </div>
+              <div>
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.incentive.startAt') }}</label>
+                <input
+                  v-model="program.start_at"
+                  type="date"
+                  class="input"
+                  :data-testid="`incentive-start-at-${programIndex}`"
+                />
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.incentive.startAtHint') }}</p>
+              </div>
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <label class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.incentive.newUsersOnly') }}</label>
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.incentive.newUsersOnlyHint') }}</p>
+                </div>
+                <Toggle
+                  v-model="program.new_users_only"
+                  :data-testid="`incentive-new-users-only-${programIndex}`"
+                />
+              </div>
+            </div>
+
+            <div class="space-y-2">
+              <div
+                v-for="(tier, tierIndex) in program.tiers"
+                :key="tierIndex"
+                class="grid items-end gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]"
+              >
+                <div>
+                  <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('supplyAdmin.incentive.minActiveDays') }}</label>
+                  <input
+                    v-model.number="tier.min_active_days"
+                    type="number"
+                    step="1"
+                    min="1"
+                    :max="incentiveMeta.min_active_days_max"
+                    class="input"
+                    :data-testid="`incentive-days-${programIndex}-${tierIndex}`"
+                  />
+                </div>
+                <div>
+                  <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('supplyAdmin.incentive.amountUsd') }}</label>
+                  <input
+                    v-model.number="tier.amount_usd"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    :max="incentiveMeta.amount_max_usd"
+                    class="input"
+                    :data-testid="`incentive-amount-${programIndex}-${tierIndex}`"
+                  />
+                </div>
+                <div>
+                  <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('supplyAdmin.incentive.slots') }}</label>
+                  <input
+                    v-model.number="tier.slots"
+                    type="number"
+                    step="1"
+                    min="0"
+                    :max="incentiveMeta.slots_max"
+                    class="input"
+                    :data-testid="`incentive-slots-${programIndex}-${tierIndex}`"
+                  />
+                </div>
+                <button
+                  class="btn btn-secondary"
+                  :data-testid="`incentive-remove-tier-${programIndex}-${tierIndex}`"
+                  @click="removeIncentiveTier(programIndex, tierIndex)"
+                >
+                  {{ t('supplyAdmin.incentive.removeTier') }}
+                </button>
+              </div>
+              <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.incentive.tierHint') }}</p>
+            </div>
+
+            <div class="flex justify-between">
+              <button
+                class="btn btn-secondary"
+                :disabled="program.tiers.length >= incentiveMeta.tiers_max"
+                :data-testid="`incentive-add-tier-${programIndex}`"
+                @click="addIncentiveTier(programIndex)"
+              >
+                {{ t('supplyAdmin.incentive.addTier') }}
+              </button>
+              <button
+                class="btn btn-secondary"
+                :data-testid="`incentive-remove-program-${programIndex}`"
+                @click="removeIncentiveProgram(programIndex)"
+              >
+                {{ t('supplyAdmin.incentive.removeProgram') }}
+              </button>
+            </div>
+          </div>
+
+          <div class="flex justify-between">
+            <button
+              class="btn btn-secondary"
+              :disabled="incentiveForm.programs.length >= incentiveMeta.programs_max"
+              data-testid="incentive-add-program"
+              @click="addIncentiveProgram"
+            >
+              {{ t('supplyAdmin.incentive.addProgram') }}
+            </button>
+            <button class="btn btn-primary" :disabled="savingIncentive" data-testid="incentive-save" @click="saveIncentive">
+              {{ t('supplyAdmin.incentive.save') }}
             </button>
           </div>
         </div>
@@ -989,6 +1239,10 @@ import {
   type SupplyWithdrawalPayload,
   type SupplyWithdrawalSettings,
   type SupplyDemandGatePayload,
+  type SupplyBalancePayload,
+  type SupplyBalanceSettings,
+  type SupplyIncentiveProgram,
+  type SupplyIncentiveSettings,
   type HomepageStatsSettings,
 } from '@/api/admin/supplyMarket'
 import { useAppStore } from '@/stores/app'
@@ -1006,6 +1260,8 @@ const savingOnboarding = ref(false)
 const savingAgreement = ref(false)
 const savingWithdrawal = ref(false)
 const savingDemandGate = ref(false)
+const savingBalance = ref(false)
+const savingIncentive = ref(false)
 const savingHomepageStats = ref(false)
 
 const settlementForm = reactive({
@@ -1050,6 +1306,9 @@ const probationForm = reactive<SupplyProbationPayload>({
   probe_interval_minutes: 15,
   probe_model: '',
   drain_window_minutes: 10,
+  idle_probe_enabled: false,
+  idle_after_hours: 24 * 7,
+  idle_failures_to_demote: 2,
 })
 
 const probationBounds = reactive({
@@ -1058,6 +1317,9 @@ const probationBounds = reactive({
   probe_interval_minutes_min: 5,
   probe_interval_minutes_max: 60 * 24,
   drain_window_minutes_max: 60 * 24,
+  idle_after_hours_min: 1,
+  idle_after_hours_max: 24 * 90,
+  idle_failures_max: 10,
 })
 
 // 接入上限的兜底初值与后端 DefaultSupplyOnboardingSettings 对齐：每人 5 个、每 IP 不限。
@@ -1081,6 +1343,58 @@ const demandGateForm = reactive<SupplyDemandGatePayload>({
   sample_floor: 20,
   max_suppliers_per_user: 1,
   min_suppliers_per_user: 0.05,
+})
+
+// 新会话产出均衡。默认关，初值与后端 DefaultSupplyBalanceSettings 对齐。
+const balanceForm = reactive<SupplyBalancePayload>({ enabled: false, band_usd: 5 })
+const balanceBounds = reactive({ band_usd_default: 5, band_usd_max: 1000 })
+
+function applyBalanceSettings(settings: SupplyBalanceSettings): void {
+  balanceForm.enabled = settings.enabled
+  balanceForm.band_usd = settings.band_usd
+  balanceBounds.band_usd_default = settings.band_usd_default
+  balanceBounds.band_usd_max = settings.band_usd_max
+}
+
+async function loadBalance(): Promise<void> {
+  applyBalanceSettings(await adminSupplyMarketAPI.getBalanceSettings())
+}
+
+/** 越界由后端夹回而不是报错，所以一定要回读——那是运营看到自己填的 0 变成 5 的唯一途径。 */
+async function saveBalance(): Promise<void> {
+  savingBalance.value = true
+  try {
+    applyBalanceSettings(
+      await adminSupplyMarketAPI.updateBalanceSettings({
+        enabled: balanceForm.enabled,
+        band_usd: balanceForm.band_usd,
+      })
+    )
+    appStore.showSuccess(t('supplyAdmin.balance.saved'))
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('supplyAdmin.error.saveFailed')))
+  } finally {
+    savingBalance.value = false
+  }
+}
+
+// 挂号奖励规则。默认关、无活动——部署这段代码本身不该让任何一分钱发出去。
+const incentiveForm = reactive<{ enabled: boolean; programs: SupplyIncentiveProgram[] }>({
+  enabled: false,
+  programs: [],
+})
+
+// 后端下发的边界与算出来的预算上限。预算**不是配置项**：名额就是预算，
+// 这里显示它是因为「4 档各自名额相乘再相加」心算不出来，而那个数是真金。
+const incentiveMeta = reactive({
+  budget_cap_usd: 0,
+  budget_bounded: true,
+  programs_max: 5,
+  tiers_max: 5,
+  slug_max_len: 12,
+  amount_max_usd: 500,
+  slots_max: 100,
+  min_active_days_max: 365,
 })
 
 // 首页公开数据展示配置。默认关、零偏移。
@@ -1219,6 +1533,9 @@ async function loadProbation(): Promise<void> {
   probationForm.probe_interval_minutes = settings.probe_interval_minutes
   probationForm.probe_model = settings.probe_model
   probationForm.drain_window_minutes = settings.drain_window_minutes
+  probationForm.idle_probe_enabled = settings.idle_probe_enabled
+  probationForm.idle_after_hours = settings.idle_after_hours
+  probationForm.idle_failures_to_demote = settings.idle_failures_to_demote
   applyProbationBounds(settings)
 }
 
@@ -1238,6 +1555,15 @@ function applyProbationBounds(settings: SupplyProbationSettings): void {
   }
   if (settings.drain_window_minutes_max > 0) {
     probationBounds.drain_window_minutes_max = settings.drain_window_minutes_max
+  }
+  if (settings.idle_after_hours_min > 0) {
+    probationBounds.idle_after_hours_min = settings.idle_after_hours_min
+  }
+  if (settings.idle_after_hours_max > 0) {
+    probationBounds.idle_after_hours_max = settings.idle_after_hours_max
+  }
+  if (settings.idle_failures_max > 0) {
+    probationBounds.idle_failures_max = settings.idle_failures_max
   }
 }
 
@@ -1306,6 +1632,99 @@ async function saveDemandGate(): Promise<void> {
     appStore.showError(extractApiErrorMessage(error, t('supplyAdmin.error.saveFailed')))
   } finally {
     savingDemandGate.value = false
+  }
+}
+
+function applyIncentiveSettings(settings: SupplyIncentiveSettings): void {
+  incentiveForm.enabled = settings.enabled
+  // 深拷贝：后端返回的对象会被表单就地改写，直接引用等于让「已保存的值」
+  // 跟着草稿一起变，保存失败时就没有东西可回退了。
+  incentiveForm.programs = (settings.programs ?? []).map((program) => ({
+    slug: program.slug,
+    platform: program.platform ?? '',
+    // 起算日原样回填。**不要**在这里给一个"今天"的兜底：那会把一期已经开跑的活动
+    // 在保存时静默改成从今天重算，而天数桶还停在原来那期——所有人当场不够格。
+    start_at: program.start_at ?? '',
+    new_users_only: program.new_users_only ?? false,
+    tiers: (program.tiers ?? []).map((tier) => ({ ...tier })),
+  }))
+  incentiveMeta.budget_cap_usd = settings.budget_cap_usd
+  incentiveMeta.budget_bounded = settings.budget_bounded
+  incentiveMeta.programs_max = settings.programs_max
+  incentiveMeta.tiers_max = settings.tiers_max
+  incentiveMeta.slug_max_len = settings.slug_max_len
+  incentiveMeta.amount_max_usd = settings.amount_max_usd
+  incentiveMeta.slots_max = settings.slots_max
+  incentiveMeta.min_active_days_max = settings.min_active_days_max
+}
+
+async function loadIncentive(): Promise<void> {
+  applyIncentiveSettings(await adminSupplyMarketAPI.getIncentiveSettings())
+}
+
+/** 今天（UTC）的 YYYY-MM-DD。与后端起算日的时区、粒度一致。 */
+function todayUTCDate(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function addIncentiveProgram(): void {
+  if (incentiveForm.programs.length >= incentiveMeta.programs_max) return
+  // 起算日默认填今天：后端拒绝回填，留空或填过去只会在保存时被打回。
+  incentiveForm.programs.push({
+    slug: '',
+    platform: '',
+    start_at: todayUTCDate(),
+    new_users_only: false,
+    tiers: [],
+  })
+}
+
+function removeIncentiveProgram(index: number): void {
+  incentiveForm.programs.splice(index, 1)
+}
+
+function addIncentiveTier(programIndex: number): void {
+  const program = incentiveForm.programs[programIndex]
+  if (!program || program.tiers.length >= incentiveMeta.tiers_max) return
+  program.tiers.push({ min_active_days: 10, amount_usd: 5, slots: 0 })
+}
+
+function removeIncentiveTier(programIndex: number, tierIndex: number): void {
+  incentiveForm.programs[programIndex]?.tiers.splice(tierIndex, 1)
+}
+
+/** 草稿态的预算估算。后端会用同一个公式算一遍并回读，这里只是让人边填边看见。 */
+const incentiveDraftBudget = computed<{ total: number; bounded: boolean }>(() => {
+  let total = 0
+  for (const program of incentiveForm.programs) {
+    for (const tier of program.tiers) {
+      if (!tier.slots || tier.slots <= 0) return { total: 0, bounded: false }
+      total += tier.slots * (tier.amount_usd || 0)
+    }
+  }
+  return { total, bounded: true }
+})
+
+/**
+ * 写挂号奖励规则。
+ *
+ * 与观察期那组刻意不同：后端**越界直接 400**，不夹回。所以这里失败时把错误原文
+ * 原样弹出来，且**不动表单**——运营需要看见自己填的那个值还在，才知道要改哪里。
+ */
+async function saveIncentive(): Promise<void> {
+  savingIncentive.value = true
+  try {
+    applyIncentiveSettings(
+      await adminSupplyMarketAPI.updateIncentiveSettings({
+        enabled: incentiveForm.enabled,
+        programs: incentiveForm.programs,
+      })
+    )
+    appStore.showSuccess(t('supplyAdmin.incentive.saved'))
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('supplyAdmin.error.saveFailed')))
+  } finally {
+    savingIncentive.value = false
   }
 }
 
@@ -1445,6 +1864,12 @@ async function saveProbation(): Promise<void> {
       probe_interval_minutes: probationForm.probe_interval_minutes,
       probe_model: probationForm.probe_model,
       drain_window_minutes: probationForm.drain_window_minutes,
+      idle_probe_enabled: probationForm.idle_probe_enabled,
+      idle_after_hours: probationForm.idle_after_hours,
+      // 阈值不在面板上，但必须原样带回去：不带的话后端收到 0，
+      // normalize 会把它回落成默认值——一个手工调过这个数的部署会在
+      // 下一次保存别的字段时被静默改回去。
+      idle_failures_to_demote: probationForm.idle_failures_to_demote,
     })
     // 这一组后端是**夹回区间而不是报错**（与结算参数刻意不同），所以回填不是可选的：
     // 不写回来，运营会以为自己填的 1 分钟生效了，而库里存的是 5。
@@ -1719,6 +2144,8 @@ onMounted(async () => {
       loadAgreement(),
       loadWithdrawal(),
       loadDemandGate(),
+      loadBalance(),
+      loadIncentive(),
       loadHomepageStats(),
     ])
   } catch (error) {

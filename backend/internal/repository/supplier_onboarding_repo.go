@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/domain"
@@ -211,6 +212,43 @@ WHERE deleted_at IS NULL
   AND COALESCE(NULLIF(extra->>'%s', ''), '%s') = $1
 ORDER BY id
 LIMIT $2`, service.SupplyStateExtraKey, service.SupplyStatePendingReview)
+
+// supplierAccountListIdleActiveSQL 列出「已入池、但长期没接过单」的供给账号。
+//
+// # 后半段那三个条件是这条查询的全部要点
+//
+//	AND (rate_limit_reset_at ...)   限流中
+//	AND (overload_until ...)        上游过载中
+//	AND (temp_unschedulable_until ...) 临时不可调度中
+//
+// 它们排除的恰恰是**正忙**的号。这不是性能优化，是判据本身：额度被打满（429）
+// 意味着这个订阅确实在被使用，那是供给成功的证据，不是失效的证据。把它们探一遍
+// 只会得到一次必然的失败，然后按失败计数把一个干得最多的号摘掉——
+// 「干得越多越先被停」是这个功能唯一不能犯的错。
+//
+// 同理 `status = 'active'`：已经是错误态的号不必再探（凭证失效那条路已经把它停了），
+// 再戳一次只会把一句写明原因的 ErrorMessage 覆盖成一句更含糊的探测失败。
+//
+// `last_used_at IS NULL` 必须算作闲置：一个入池后**从未**被派过单的号是这里最该
+// 被查的那一类——它的问题永远不会通过真实流量暴露。刚 promote 的号不会因此被立刻
+// 探到，节流由 service 侧的 SupplyIdleProbeAtExtraKey / SupplyProbeAtExtraKey 兜住
+// （见 supplier_lifecycle_service.go 的 shouldIdleProbe），不在这条 SQL 里。
+var supplierAccountListIdleActiveSQL = fmt.Sprintf(`
+SELECT id
+FROM accounts
+WHERE deleted_at IS NULL
+  AND owner_user_id IS NOT NULL
+  AND schedulable = TRUE
+  AND status = '%s'
+  AND COALESCE(NULLIF(extra->>'%s', ''), '%s') = '%s'
+  AND (last_used_at IS NULL OR last_used_at < $1)
+  AND (rate_limit_reset_at IS NULL OR rate_limit_reset_at <= NOW())
+  AND (overload_until IS NULL OR overload_until <= NOW())
+  AND (temp_unschedulable_until IS NULL OR temp_unschedulable_until <= NOW())
+ORDER BY id
+LIMIT $2`,
+	service.StatusActive,
+	service.SupplyStateExtraKey, service.SupplyStatePendingReview, service.SupplyStateActive)
 
 // supplierAccountListOrphanedSQL 列出「归属人已经不可用、号却还在供货」的账号。
 //
@@ -594,6 +632,35 @@ func (r *supplierOnboardingRepository) ListAccountIDsBySupplyState(ctx context.C
 		var id int64
 		if err := rows.Scan(&id); err != nil {
 			return nil, fmt.Errorf("scan supply state account id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// ListIdleActiveSupplyAccountIDs 列出已入池但在 idleBefore 之后没接过单的供给账号 id。
+func (r *supplierOnboardingRepository) ListIdleActiveSupplyAccountIDs(
+	ctx context.Context, idleBefore time.Time, limit int,
+) ([]int64, error) {
+	// 零值时间会让 `last_used_at < $1` 只剩 NULL 那一支命中，看起来"能跑"但语义
+	// 完全不是调用方要的（只扫从未用过的号）。拒绝比默默降级好。
+	if idleBefore.IsZero() {
+		return nil, fmt.Errorf("list idle active supply accounts: zero idleBefore")
+	}
+	if limit <= 0 {
+		limit = supplierOnboardingStateScanDefaultLimit
+	}
+	rows, err := r.client.QueryContext(ctx, supplierAccountListIdleActiveSQL, idleBefore, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list idle active supply accounts: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan idle active supply account id: %w", err)
 		}
 		ids = append(ids, id)
 	}
