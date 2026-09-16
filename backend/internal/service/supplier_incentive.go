@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // supplyIncentiveKeyPrefix 幂等键的固定前缀。
@@ -46,6 +47,13 @@ type SupplyIncentiveCandidate struct {
 type SupplyIncentiveCandidateQuery struct {
 	// MinActiveDays 该档的天数门槛。
 	MinActiveDays int
+	// ProgramSlug 这期活动的 slug。天数门槛读的是**这期的桶**，不是账号总计。
+	ProgramSlug string
+	// NewUsersOnly 只发给新供给者。
+	NewUsersOnly bool
+	// StartAt 这期活动的起算时刻，只在 NewUsersOnly 为真时用到：
+	// 在这之前就有过供给账号的人不算新人。
+	StartAt time.Time
 	// Platform 限定平台，空 = 不限。
 	Platform string
 	// RequestPrefix 该档的幂等键前缀，用于排除已发过的账号。
@@ -79,7 +87,10 @@ type SupplyIncentiveGrantStats struct {
 type SupplierIncentiveRepository interface {
 	// TickActiveDays 给所有在役供给号的在线天数 +1，同一天重复调用不重复累加。
 	// day 是 UTC 日期串（YYYY-MM-DD）。返回本次真正累加的账号数。
-	TickActiveDays(ctx context.Context, day string) (int64, error)
+	//
+	// startedSlugs 是今天已经开始的活动，它们各自的天数桶与账号总计一起推进。
+	// 传 nil = 没有活动在跑，只推进总计。
+	TickActiveDays(ctx context.Context, day string, startedSlugs []string) (int64, error)
 
 	// GrantStats 某一档已发份数与按人明细。
 	GrantStats(ctx context.Context, requestPrefix string) (*SupplyIncentiveGrantStats, error)

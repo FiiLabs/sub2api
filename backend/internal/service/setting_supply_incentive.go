@@ -98,6 +98,14 @@ var (
 	ErrSupplyIncentiveDuplicateDays = errors.New("tier min_active_days must be distinct within a program")
 	// ErrSupplyIncentiveUnknownPlatform platform 不是已知平台。
 	ErrSupplyIncentiveUnknownPlatform = errors.New("unknown platform")
+	// ErrSupplyIncentiveInvalidStartAt start_at 不是一个 YYYY-MM-DD。
+	ErrSupplyIncentiveInvalidStartAt = errors.New("program start_at must be a UTC date (YYYY-MM-DD)")
+	// ErrSupplyIncentiveBackdatedStartAt start_at 早于今天。
+	//
+	// 必须拒绝而不是夹到今天：夹回去之后管理员以为自己配的是过去那个日期，
+	// 而实际起算点是今天，差额是要发出去的钱。理由与金额越界不夹回是同一条。
+	ErrSupplyIncentiveBackdatedStartAt = errors.New(
+		"program start_at cannot be in the past: online-day buckets accrue forward and cannot be rebuilt")
 )
 
 // SupplyIncentiveTier 是一个档位：挂满 N 天，发 X 美元，限 S 个名额。
@@ -122,8 +130,55 @@ type SupplyIncentiveProgram struct {
 	Slug string `json:"slug"`
 	// Platform 限定平台（anthropic / openai / …）。空 = 全平台共用一套档位与名额池。
 	Platform string `json:"platform,omitempty"`
+	// StartAt 活动起算日（UTC 日期串 YYYY-MM-DD）。**必填**。
+	//
+	// # 它是这期活动自己的时间原点
+	//
+	// 在线天数按活动分桶计数（见 SupplyActiveDaysExtraKey），这个日期决定
+	// 「哪一天开始给这期的桶 +1」。于是每期活动天然从 0 开始，第二期不会把
+	// 第一期攒下的天数算进来——这正是能连着办几期的前提。
+	//
+	// # 为什么不允许回填
+	//
+	// 桶是随着日子一天天累加出来的，历史重建不出来。接受一个过去的日期只会得到
+	// 「配了但那段时间没人涨天数」，而现象是活动看起来生效了、却没有人够格——
+	// 最难被发现的那种错。所以写路径直接拒绝（见 validateAgainst）。
+	//
+	// 与 Enabled 的分工：这个决定**从哪天开始算天数**，Enabled 决定**发不发钱**。
+	// 两者刻意独立——可以先配好 StartAt 让天数跑起来，等文案定稿再开 Enabled，
+	// 届时此前累计的天数照数。
+	StartAt string `json:"start_at"`
+	// NewUsersOnly 是否只发给新供给者。
+	//
+	// 新 = 这个人在 StartAt 之前**名下没有任何供给账号**，含已解绑的。
+	// 「含已解绑」不是苛刻：不含的话，「先解绑再挂回来」就能把自己洗成新用户，
+	// 而那正是 ExcludedUserIDs 那条注释里已经在堵的同一个漏洞。
+	//
+	// 做成 per-program 而不是全局：拉新和普惠是两种活动，同一套代码要都能表达。
+	NewUsersOnly bool `json:"new_users_only,omitempty"`
 	// Tiers 档位表，按 MinActiveDays 升序（normalize 会排好）。
 	Tiers []SupplyIncentiveTier `json:"tiers"`
+}
+
+// SupplyIncentiveDayFormat 活动起算日与在线天数桶共用的日期格式（UTC）。
+const SupplyIncentiveDayFormat = "2006-01-02"
+
+// StartDay 解析 StartAt。第二个返回值为 false 表示这期活动不该被计数或发放。
+func (p SupplyIncentiveProgram) StartDay() (time.Time, bool) {
+	day, err := time.ParseInLocation(SupplyIncentiveDayFormat, strings.TrimSpace(p.StartAt), time.UTC)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return day, true
+}
+
+// Started 这期活动在 now（UTC）这一天是否已经开始。
+func (p SupplyIncentiveProgram) Started(now time.Time) bool {
+	day, ok := p.StartDay()
+	if !ok {
+		return false
+	}
+	return !now.UTC().Truncate(24 * time.Hour).Before(day)
 }
 
 // SupplyIncentiveSettings 是供给激励的全部可配内容。
@@ -166,27 +221,57 @@ func (s *SupplyIncentiveSettings) BudgetCapUSD() (float64, bool) {
 	return total, true
 }
 
-// validate 写路径校验。结构性错误一律拒绝，理由见文件头。
-func (s *SupplyIncentiveSettings) validate() error {
+// validateAgainst 写路径校验。结构性错误一律拒绝，理由见文件头。
+//
+// 需要 prev 与 today 两个额外入参，只为了 start_at 那一条：**回填要拒绝，但改别的
+// 字段不能被连坐**。一期已经开跑的活动，管理员多半会回来调 slots；那时 payload 里
+// 带的 start_at 必然是过去的日期，如果一律按回填拒绝，活动一开始就再也改不动了。
+// 所以判据是「这个 slug 的 start_at 有没有**变**」，不是「它是不是过去」。
+func (s *SupplyIncentiveSettings) validateAgainst(prev *SupplyIncentiveSettings, today time.Time) error {
 	if s == nil {
 		return errors.New("settings cannot be nil")
 	}
 	if len(s.Programs) > SupplyIncentiveProgramsMax {
 		return ErrSupplyIncentiveTooManyPrograms
 	}
+	prevStart := map[string]string{}
+	if prev != nil {
+		for _, p := range prev.Programs {
+			prevStart[p.Slug] = strings.TrimSpace(p.StartAt)
+		}
+	}
+	today = today.UTC().Truncate(24 * time.Hour)
+
 	seenSlug := make(map[string]struct{}, len(s.Programs))
 	for i := range s.Programs {
 		p := &s.Programs[i]
 		p.Slug = strings.ToLower(strings.TrimSpace(p.Slug))
 		p.Platform = strings.ToLower(strings.TrimSpace(p.Platform))
+		p.StartAt = strings.TrimSpace(p.StartAt)
 
 		if !isValidIncentiveSlug(p.Slug) {
 			return fmt.Errorf("%w: %q", ErrSupplyIncentiveInvalidSlug, p.Slug)
 		}
+
 		if _, dup := seenSlug[p.Slug]; dup {
 			return fmt.Errorf("%w: %q", ErrSupplyIncentiveDuplicateSlug, p.Slug)
 		}
 		seenSlug[p.Slug] = struct{}{}
+
+		// 起算日的两条校验排在身份（slug 合法、不重复）之后：slug 是这份配置的
+		// 主键，它错的时候报别的字段只会让人找错地方。
+		startDay, ok := p.StartDay()
+		if !ok {
+			return fmt.Errorf("%w: %q got %q", ErrSupplyIncentiveInvalidStartAt, p.Slug, p.StartAt)
+		}
+		// 只有**新配的活动或改过起算日的活动**才查回填。一期已经开跑的活动，管理员
+		// 回来调 slots 时 payload 里带的必然是过去的日期，一律拒绝会让活动一开始
+		// 就再也改不动了。
+		if before, exists := prevStart[p.Slug]; !exists || before != p.StartAt {
+			if startDay.Before(today) {
+				return fmt.Errorf("%w: %q got %q", ErrSupplyIncentiveBackdatedStartAt, p.Slug, p.StartAt)
+			}
+		}
 
 		if p.Platform != "" && !isKnownIncentivePlatform(p.Platform) {
 			return fmt.Errorf("%w: %q", ErrSupplyIncentiveUnknownPlatform, p.Platform)
@@ -239,8 +324,18 @@ func (s *SupplyIncentiveSettings) normalize() {
 	for _, p := range s.Programs {
 		p.Slug = strings.ToLower(strings.TrimSpace(p.Slug))
 		p.Platform = strings.ToLower(strings.TrimSpace(p.Platform))
+		p.StartAt = strings.TrimSpace(p.StartAt)
 		if !isValidIncentiveSlug(p.Slug) {
 			slog.Warn("[SupplyIncentive] dropping program with invalid slug", "slug", p.Slug)
+			continue
+		}
+		// 起算日读不出来的活动整个丢掉，与 slug 非法同样处理：没有时间原点就
+		// 没法判断「这期跑了几天」，而**猜**一个原点会直接决定发多少钱。
+		// 这也是本功能上线前写进去的旧配置（没有 start_at）的归宿——
+		// fail-closed，管理员重新配一次即可。
+		if _, ok := p.StartDay(); !ok {
+			slog.Warn("[SupplyIncentive] dropping program with invalid start_at",
+				"slug", p.Slug, "start_at", p.StartAt)
 			continue
 		}
 		if _, dup := seenSlug[p.Slug]; dup {
@@ -408,7 +503,10 @@ func (s *SettingService) SetSupplyIncentiveSettings(ctx context.Context, setting
 	if settings == nil {
 		return fmt.Errorf("settings cannot be nil")
 	}
-	if err := settings.validate(); err != nil {
+	// 先读一次现值：start_at 的回填校验要能分辨「新配的活动」与「调已有活动的档位」，
+	// 见 validateAgainst 的注释。读失败时拿一份空的去比——那样所有 slug 都会被
+	// 当成新的、必须填今天或以后，方向偏严，不会放过一个回填。
+	if err := settings.validateAgainst(s.GetSupplyIncentiveSettings(ctx), time.Now()); err != nil {
 		return err
 	}
 
@@ -460,7 +558,12 @@ func cloneSupplyIncentiveSettings(settings *SupplyIncentiveSettings) *SupplyInce
 	}
 	clone.Programs = make([]SupplyIncentiveProgram, 0, len(settings.Programs))
 	for _, p := range settings.Programs {
-		cp := SupplyIncentiveProgram{Slug: p.Slug, Platform: p.Platform}
+		cp := SupplyIncentiveProgram{
+			Slug:         p.Slug,
+			Platform:     p.Platform,
+			StartAt:      p.StartAt,
+			NewUsersOnly: p.NewUsersOnly,
+		}
 		if len(p.Tiers) > 0 {
 			cp.Tiers = make([]SupplyIncentiveTier, len(p.Tiers))
 			copy(cp.Tiers, p.Tiers)

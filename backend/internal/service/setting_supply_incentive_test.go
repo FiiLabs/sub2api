@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -64,12 +65,19 @@ func newSupplyIncentiveSettingService(t *testing.T, repo *supplyIncentiveSetting
 	return &SettingService{settingRepo: repo}
 }
 
+// todayIncentiveStartAt 是「今天」的起算日。写路径拒绝回填，所以夹具里不能钉死一个
+// 字面日期——那样这些用例会在写下它的第二天开始全红。
+func todayIncentiveStartAt() string {
+	return time.Now().UTC().Format(SupplyIncentiveDayFormat)
+}
+
 func validIncentiveSettings() *SupplyIncentiveSettings {
 	return &SupplyIncentiveSettings{
 		Enabled: true,
 		Programs: []SupplyIncentiveProgram{{
 			Slug:     "bind26q4",
 			Platform: "",
+			StartAt:  todayIncentiveStartAt(),
 			Tiers: []SupplyIncentiveTier{
 				{MinActiveDays: 10, AmountUSD: 5, Slots: 60},
 				{MinActiveDays: 30, AmountUSD: 20, Slots: 5},
@@ -219,7 +227,8 @@ func TestSetSupplyIncentiveSortsTiersBeforePersisting(t *testing.T) {
 	settings := &SupplyIncentiveSettings{
 		Enabled: true,
 		Programs: []SupplyIncentiveProgram{{
-			Slug: "bind26q4",
+			Slug:    "bind26q4",
+			StartAt: todayIncentiveStartAt(),
 			Tiers: []SupplyIncentiveTier{
 				{MinActiveDays: 90, AmountUSD: 50, Slots: 5},
 				{MinActiveDays: 10, AmountUSD: 5, Slots: 60},
@@ -262,7 +271,7 @@ func TestSetSupplyIncentiveNormalizesSlugAndPlatformCase(t *testing.T) {
 // 一份被手工改坏的 JSON 不该让 worker 按它发钱。
 func TestGetSupplyIncentiveClampsCorruptValues(t *testing.T) {
 	repo := &supplyIncentiveSettingRepoStub{
-		value: `{"enabled":true,"programs":[{"slug":"bind26q4","tiers":[
+		value: `{"enabled":true,"programs":[{"slug":"bind26q4","start_at":"2020-01-01","tiers":[
 			{"min_active_days":0,"amount_usd":99999,"slots":-3},
 			{"min_active_days":99999,"amount_usd":20,"slots":9999}]}]}`,
 	}
@@ -286,10 +295,10 @@ func TestGetSupplyIncentiveDropsUnusablePrograms(t *testing.T) {
 	repo := &supplyIncentiveSettingRepoStub{
 		value: `{"enabled":true,"programs":[
 			{"slug":"bad slug","tiers":[{"min_active_days":10,"amount_usd":5,"slots":10}]},
-			{"slug":"notiers","tiers":[]},
-			{"slug":"zeroamt","tiers":[{"min_active_days":10,"amount_usd":0,"slots":10}]},
-			{"slug":"badplat","platform":"ollama","tiers":[{"min_active_days":10,"amount_usd":5,"slots":10}]},
-			{"slug":"good","tiers":[{"min_active_days":10,"amount_usd":5,"slots":10}]}]}`,
+			{"slug":"notiers","start_at":"2020-01-01","tiers":[]},
+			{"slug":"zeroamt","start_at":"2020-01-01","tiers":[{"min_active_days":10,"amount_usd":0,"slots":10}]},
+			{"slug":"badplat","start_at":"2020-01-01","platform":"ollama","tiers":[{"min_active_days":10,"amount_usd":5,"slots":10}]},
+			{"slug":"good","start_at":"2020-01-01","tiers":[{"min_active_days":10,"amount_usd":5,"slots":10}]}]}`,
 	}
 	svc := newSupplyIncentiveSettingService(t, repo)
 
@@ -321,7 +330,7 @@ func TestGetSupplyIncentiveFailsClosedOnReadError(t *testing.T) {
 // 改到缓存里那一份，而那份决定发多少钱。
 func TestGetSupplyIncentiveReturnsDeepCopy(t *testing.T) {
 	repo := &supplyIncentiveSettingRepoStub{
-		value: `{"enabled":true,"programs":[{"slug":"bind26q4","tiers":[
+		value: `{"enabled":true,"programs":[{"slug":"bind26q4","start_at":"2020-01-01","tiers":[
 			{"min_active_days":10,"amount_usd":5,"slots":60}]}]}`,
 	}
 	svc := newSupplyIncentiveSettingService(t, repo)
@@ -348,4 +357,153 @@ func TestSupplyIncentiveRequestKeyShape(t *testing.T) {
 	// request_id 是 VARCHAR(64)：最长 slug + 最大档位下标 + 19 位账号 id 也要塞得下。
 	longest := SupplyIncentiveRequestID("abcdefghijkl", SupplyIncentiveTiersMax-1, 9223372036854775807)
 	assert.LessOrEqual(t, len(longest), 64)
+}
+
+// ---------------------------------------------------------------------------
+// 活动起算日
+//
+// 它是「能连着办几期活动」的全部机制：每期的在线天数桶从这一天才开始涨。
+// 所以这一组盯的是两件事——不合法的日期进不来，以及**回填**进不来。
+// ---------------------------------------------------------------------------
+
+func TestSupplyIncentiveProgramStartDay(t *testing.T) {
+	p := SupplyIncentiveProgram{StartAt: "2026-10-01"}
+	day, ok := p.StartDay()
+	require.True(t, ok)
+	assert.Equal(t, 2026, day.Year())
+	assert.Equal(t, time.UTC, day.Location(), "起算日必须按 UTC 解析，与天数桶的日期键同一个时区")
+
+	// 起算日当天就算已开始（不是「第二天才开始」）。
+	assert.True(t, p.Started(time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)))
+	assert.True(t, p.Started(time.Date(2026, 10, 9, 23, 59, 0, 0, time.UTC)))
+	assert.False(t, p.Started(time.Date(2026, 9, 30, 23, 59, 0, 0, time.UTC)))
+
+	for _, bad := range []string{"", "2026/10/01", "2026-13-01", "tomorrow"} {
+		_, ok := SupplyIncentiveProgram{StartAt: bad}.StartDay()
+		assert.False(t, ok, "%q 不该被当成一个起算日", bad)
+		assert.False(t, SupplyIncentiveProgram{StartAt: bad}.Started(time.Now()),
+			"解析不出起算日的活动永远不算已开始——fail-closed")
+	}
+}
+
+func TestSetSupplyIncentiveRejectsMissingOrInvalidStartAt(t *testing.T) {
+	for _, bad := range []string{"", "2026/10/01", "not-a-date"} {
+		repo := &supplyIncentiveSettingRepoStub{}
+		svc := newSupplyIncentiveSettingService(t, repo)
+
+		settings := validIncentiveSettings()
+		settings.Programs[0].StartAt = bad
+
+		err := svc.SetSupplyIncentiveSettings(context.Background(), settings)
+		require.Error(t, err, "start_at=%q", bad)
+		assert.ErrorIs(t, err, ErrSupplyIncentiveInvalidStartAt)
+		assert.Empty(t, repo.setValue)
+	}
+}
+
+// 回填必须拒绝而不是夹到今天：天数桶只能往前累加，历史重建不出来。
+// 夹回去的话管理员以为活动从他填的那天算起，实际从今天算起，差额是要发出去的钱。
+func TestSetSupplyIncentiveRejectsBackdatedStartAtForNewProgram(t *testing.T) {
+	repo := &supplyIncentiveSettingRepoStub{}
+	svc := newSupplyIncentiveSettingService(t, repo)
+
+	settings := validIncentiveSettings()
+	settings.Programs[0].StartAt = time.Now().UTC().AddDate(0, 0, -1).Format(SupplyIncentiveDayFormat)
+
+	err := svc.SetSupplyIncentiveSettings(context.Background(), settings)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrSupplyIncentiveBackdatedStartAt)
+	assert.Empty(t, repo.setValue)
+}
+
+// 但**已经开跑的活动必须还能改**。它的 start_at 必然是过去的日期，一律按回填拒绝
+// 的话，活动一开始就再也调不了 slots——而放量节奏本来就要靠调 slots。
+func TestSetSupplyIncentiveAllowsEditingRunningProgramWithPastStartAt(t *testing.T) {
+	past := time.Now().UTC().AddDate(0, 0, -30).Format(SupplyIncentiveDayFormat)
+	repo := &supplyIncentiveSettingRepoStub{
+		value: `{"enabled":true,"programs":[{"slug":"bind26q4","start_at":"` + past + `",` +
+			`"tiers":[{"min_active_days":10,"amount_usd":5,"slots":3}]}]}`,
+	}
+	svc := newSupplyIncentiveSettingService(t, repo)
+
+	settings := &SupplyIncentiveSettings{
+		Enabled: true,
+		Programs: []SupplyIncentiveProgram{{
+			Slug:    "bind26q4",
+			StartAt: past, // 没变
+			Tiers:   []SupplyIncentiveTier{{MinActiveDays: 10, AmountUSD: 5, Slots: 5}}, // 放量
+		}},
+	}
+	require.NoError(t, svc.SetSupplyIncentiveSettings(context.Background(), settings))
+
+	stored := parseSupplyIncentiveSettings(repo.setValue)
+	require.Len(t, stored.Programs, 1)
+	assert.Equal(t, 5, stored.Programs[0].Tiers[0].Slots)
+	assert.Equal(t, past, stored.Programs[0].StartAt)
+}
+
+// 改动起算日本身则要重新受检：把一期活动的起点往回挪，等于凭空追认一段没人计过数的
+// 时间，而那段时间的桶是空的——所有人都不够格，活动看起来配好了却不发钱。
+func TestSetSupplyIncentiveRejectsMovingStartAtIntoThePast(t *testing.T) {
+	past := time.Now().UTC().AddDate(0, 0, -30).Format(SupplyIncentiveDayFormat)
+	repo := &supplyIncentiveSettingRepoStub{
+		value: `{"enabled":true,"programs":[{"slug":"bind26q4","start_at":"` + past + `",` +
+			`"tiers":[{"min_active_days":10,"amount_usd":5,"slots":3}]}]}`,
+	}
+	svc := newSupplyIncentiveSettingService(t, repo)
+
+	settings := &SupplyIncentiveSettings{
+		Enabled: true,
+		Programs: []SupplyIncentiveProgram{{
+			Slug:    "bind26q4",
+			StartAt: time.Now().UTC().AddDate(0, 0, -60).Format(SupplyIncentiveDayFormat), // 更早
+			Tiers:   []SupplyIncentiveTier{{MinActiveDays: 10, AmountUSD: 5, Slots: 3}},
+		}},
+	}
+	err := svc.SetSupplyIncentiveSettings(context.Background(), settings)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrSupplyIncentiveBackdatedStartAt)
+}
+
+func TestSetSupplyIncentiveAcceptsFutureStartAt(t *testing.T) {
+	repo := &supplyIncentiveSettingRepoStub{}
+	svc := newSupplyIncentiveSettingService(t, repo)
+
+	future := time.Now().UTC().AddDate(0, 0, 14).Format(SupplyIncentiveDayFormat)
+	settings := validIncentiveSettings()
+	settings.Programs[0].StartAt = future
+	settings.Programs[0].NewUsersOnly = true
+
+	require.NoError(t, svc.SetSupplyIncentiveSettings(context.Background(), settings))
+	stored := parseSupplyIncentiveSettings(repo.setValue)
+	require.Len(t, stored.Programs, 1)
+	assert.Equal(t, future, stored.Programs[0].StartAt)
+	assert.True(t, stored.Programs[0].NewUsersOnly, "new_users_only 要能存下来")
+}
+
+// 读路径：起算日读不出来的活动整个丢掉（含本功能上线前写进去的旧配置）。
+// 猜一个原点会直接决定发多少钱，所以这里 fail-closed。
+func TestGetSupplyIncentiveDropsProgramsWithoutStartAt(t *testing.T) {
+	repo := &supplyIncentiveSettingRepoStub{
+		value: `{"enabled":true,"programs":[
+			{"slug":"legacy","tiers":[{"min_active_days":10,"amount_usd":5,"slots":3}]},
+			{"slug":"broken","start_at":"nope","tiers":[{"min_active_days":10,"amount_usd":5,"slots":3}]},
+			{"slug":"good","start_at":"2026-10-01","tiers":[{"min_active_days":10,"amount_usd":5,"slots":3}]}]}`,
+	}
+	svc := newSupplyIncentiveSettingService(t, repo)
+
+	settings := svc.GetSupplyIncentiveSettings(context.Background())
+	require.Len(t, settings.Programs, 1, "只有带合法起算日的活动留下")
+	assert.Equal(t, "good", settings.Programs[0].Slug)
+}
+
+func TestCloneSupplyIncentiveCarriesStartAtAndNewUsersOnly(t *testing.T) {
+	src := &SupplyIncentiveSettings{Programs: []SupplyIncentiveProgram{{
+		Slug: "bind26q4", StartAt: "2026-10-01", NewUsersOnly: true,
+		Tiers: []SupplyIncentiveTier{{MinActiveDays: 10, AmountUSD: 5, Slots: 3}},
+	}}}
+	clone := cloneSupplyIncentiveSettings(src)
+	require.Len(t, clone.Programs, 1)
+	assert.Equal(t, "2026-10-01", clone.Programs[0].StartAt)
+	assert.True(t, clone.Programs[0].NewUsersOnly)
 }

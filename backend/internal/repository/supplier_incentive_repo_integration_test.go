@@ -38,15 +38,52 @@ func activeDaysOf(t *testing.T, ctx context.Context, client *dbent.Client, accou
 	return n
 }
 
-// setActiveDays 直接把天数写到某个值，省掉「跑 30 轮 tick」。
+// setActiveDays 直接把**总计**写到某个值，省掉「跑 30 轮 tick」。
 func setActiveDays(t *testing.T, ctx context.Context, client *dbent.Client, accountID int64, days int, lastDay string) {
 	t.Helper()
 	_, err := client.ExecContext(ctx, fmt.Sprintf(`
 UPDATE accounts
 SET extra = COALESCE(extra, '{}'::jsonb) || jsonb_build_object(
-    '%s', jsonb_build_object('days', $1::int, 'last_day', $2::text))
-WHERE id = $3`, service.SupplyActiveDaysExtraKey), days, lastDay, accountID)
+    '%s', COALESCE(extra->'%s', '{}'::jsonb)
+          || jsonb_build_object('days', $1::int, 'last_day', $2::text))
+WHERE id = $3`, service.SupplyActiveDaysExtraKey, service.SupplyActiveDaysExtraKey),
+		days, lastDay, accountID)
 	require.NoError(t, err)
+}
+
+// setProgramActiveDays 直接把**某一期活动的桶**写到某个值。
+//
+// 候选查询读的是这个桶而不是总计，所以发放相关的用例一律用它——用总计的话，
+// 断言会在「门槛读错了地方」这种恰恰要防的 bug 下照样通过。
+func setProgramActiveDays(
+	t *testing.T, ctx context.Context, client *dbent.Client,
+	accountID int64, slug string, days int, lastDay string,
+) {
+	t.Helper()
+	// 逐层 `||` 合并，不用 jsonb_set：后者的 create_missing 只补路径的**最后一级**，
+	// 中间的 'programs' 不存在时整次写入会被静默丢弃（返回原值、不报错）。
+	// 这与生产那条 tick 语句是同一种写法，也就顺带保证了两边建出来的形状一致。
+	_, err := client.ExecContext(ctx, fmt.Sprintf(`
+UPDATE accounts
+SET extra = COALESCE(extra, '{}'::jsonb) || jsonb_build_object(
+    '%[1]s', COALESCE(extra->'%[1]s', '{}'::jsonb) || jsonb_build_object(
+        'programs', COALESCE(extra->'%[1]s'->'programs', '{}'::jsonb) || jsonb_build_object(
+            $1::text, jsonb_build_object('days', $2::int, 'last_day', $3::text))))
+WHERE id = $4`, service.SupplyActiveDaysExtraKey),
+		slug, days, lastDay, accountID)
+	require.NoError(t, err)
+}
+
+// programActiveDaysOf 读某个账号在某一期活动里的天数。缺失返回 -1。
+func programActiveDaysOf(
+	t *testing.T, ctx context.Context, client *dbent.Client, accountID int64, slug string,
+) int64 {
+	t.Helper()
+	n, err := scanInt64(ctx, client, fmt.Sprintf(
+		"SELECT COALESCE((extra->'%s'->'programs'->($2::text)->>'days')::int, -1) FROM accounts WHERE id = $1",
+		service.SupplyActiveDaysExtraKey), accountID, slug)
+	require.NoError(t, err)
+	return n
 }
 
 func setSchedulable(t *testing.T, ctx context.Context, client *dbent.Client, accountID int64, schedulable bool) {
@@ -71,20 +108,20 @@ func TestSupplyIncentive_TickIsIdempotentWithinSameDay(t *testing.T) {
 	account := mustCreateSupplyAccount(t, client, owner, "tick-idem", service.SupplyStateActive, service.StatusActive, true)
 
 	day := "2026-09-14"
-	_, err := repo.TickActiveDays(txCtx, day)
+	_, err := repo.TickActiveDays(txCtx, day, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), activeDaysOf(t, txCtx, client, account))
 
 	// 同一天再跑三次——模拟 worker 一小时一轮。
 	for i := 0; i < 3; i++ {
-		_, err = repo.TickActiveDays(txCtx, day)
+		_, err = repo.TickActiveDays(txCtx, day, nil)
 		require.NoError(t, err)
 	}
 	assert.Equal(t, int64(1), activeDaysOf(t, txCtx, client, account),
 		"当天重复 tick 必须零行受影响")
 
 	// 换一天才涨。
-	_, err = repo.TickActiveDays(txCtx, "2026-09-15")
+	_, err = repo.TickActiveDays(txCtx, "2026-09-15", nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), activeDaysOf(t, txCtx, client, account))
 }
@@ -106,14 +143,14 @@ func TestSupplyIncentive_TickPausesOnOfflineAndNeverResets(t *testing.T) {
 
 	// 号掉线：schedulable=false（熔断、限流下线、供给者暂停都会走到这里）。
 	setSchedulable(t, txCtx, client, account, false)
-	_, err := repo.TickActiveDays(txCtx, "2026-09-14")
+	_, err := repo.TickActiveDays(txCtx, "2026-09-14", nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(12), activeDaysOf(t, txCtx, client, account),
 		"掉线期间既不该涨，更不该被清零")
 
 	// 接回来：从 12 继续，不是从 0 重来。
 	setSchedulable(t, txCtx, client, account, true)
-	_, err = repo.TickActiveDays(txCtx, "2026-09-15")
+	_, err = repo.TickActiveDays(txCtx, "2026-09-15", nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(13), activeDaysOf(t, txCtx, client, account))
 }
@@ -147,7 +184,7 @@ func TestSupplyIncentive_TickSelectsOnlyLiveSupplyAccounts(t *testing.T) {
 		Status:   service.StatusActive,
 	})
 
-	_, err := repo.TickActiveDays(txCtx, "2026-09-14")
+	_, err := repo.TickActiveDays(txCtx, "2026-09-14", nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, int64(1), activeDaysOf(t, txCtx, client, live))
@@ -177,10 +214,10 @@ func TestSupplyIncentive_ListCandidatesFiltersAndOrders(t *testing.T) {
 	tooNew := mustCreateSupplyAccount(t, client, owner, "cd-toonew", service.SupplyStateActive, service.StatusActive, true)
 	alreadyPaid := mustCreateSupplyAccount(t, client, owner, "cd-paid", service.SupplyStateActive, service.StatusActive, true)
 
-	setActiveDays(t, txCtx, client, veteran, 40, "2026-09-14")
-	setActiveDays(t, txCtx, client, rookie, 11, "2026-09-14")
-	setActiveDays(t, txCtx, client, tooNew, 9, "2026-09-14")
-	setActiveDays(t, txCtx, client, alreadyPaid, 50, "2026-09-14")
+	setProgramActiveDays(t, txCtx, client, veteran, slug, 40, "2026-09-14")
+	setProgramActiveDays(t, txCtx, client, rookie, slug, 11, "2026-09-14")
+	setProgramActiveDays(t, txCtx, client, tooNew, slug, 9, "2026-09-14")
+	setProgramActiveDays(t, txCtx, client, alreadyPaid, slug, 50, "2026-09-14")
 
 	// alreadyPaid 已经拿过这一档。
 	applied, err := credit.Accrue(txCtx, service.SupplierAccrueParams{
@@ -196,6 +233,7 @@ func TestSupplyIncentive_ListCandidatesFiltersAndOrders(t *testing.T) {
 
 	got, err := repo.ListCandidates(txCtx, service.SupplyIncentiveCandidateQuery{
 		MinActiveDays: 10,
+		ProgramSlug:   slug,
 		RequestPrefix: prefix,
 		Limit:         10,
 	})
@@ -246,11 +284,12 @@ func TestSupplyIncentive_ListCandidatesRespectsLimit(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		id := mustCreateSupplyAccount(t, client, owner, fmt.Sprintf("cl-%d", i),
 			service.SupplyStateActive, service.StatusActive, true)
-		setActiveDays(t, txCtx, client, id, 20+i, "2026-09-14")
+		setProgramActiveDays(t, txCtx, client, id, slug, 20+i, "2026-09-14")
 	}
 
 	got, err := repo.ListCandidates(txCtx, service.SupplyIncentiveCandidateQuery{
 		MinActiveDays: 10,
+		ProgramSlug:   slug,
 		RequestPrefix: service.SupplyIncentiveRequestPrefix(slug, 0),
 		Limit:         2,
 	})
@@ -271,7 +310,7 @@ func TestSupplyIncentive_ListCandidatesFiltersByPlatform(t *testing.T) {
 	prefix := service.SupplyIncentiveRequestPrefix(slug, 0)
 
 	claude := mustCreateSupplyAccount(t, client, owner, "cp-claude", service.SupplyStateActive, service.StatusActive, true)
-	setActiveDays(t, txCtx, client, claude, 20, "2026-09-14")
+	setProgramActiveDays(t, txCtx, client, claude, slug, 20, "2026-09-14")
 
 	openaiAccount := mustCreateAccount(t, client, &service.Account{
 		Name:        "cp-openai",
@@ -283,10 +322,11 @@ func TestSupplyIncentive_ListCandidatesFiltersByPlatform(t *testing.T) {
 	_, err := client.ExecContext(txCtx,
 		"UPDATE accounts SET owner_user_id = $1, schedulable = TRUE WHERE id = $2", owner, openaiAccount.ID)
 	require.NoError(t, err)
-	setActiveDays(t, txCtx, client, openaiAccount.ID, 20, "2026-09-14")
+	setProgramActiveDays(t, txCtx, client, openaiAccount.ID, slug, 20, "2026-09-14")
 
 	anthropicOnly, err := repo.ListCandidates(txCtx, service.SupplyIncentiveCandidateQuery{
 		MinActiveDays: 10,
+		ProgramSlug:   slug,
 		Platform:      service.PlatformAnthropic,
 		RequestPrefix: prefix,
 		Limit:         50,
@@ -298,6 +338,7 @@ func TestSupplyIncentive_ListCandidatesFiltersByPlatform(t *testing.T) {
 
 	both, err := repo.ListCandidates(txCtx, service.SupplyIncentiveCandidateQuery{
 		MinActiveDays: 10,
+		ProgramSlug:   slug,
 		RequestPrefix: prefix,
 		Limit:         50,
 	})
@@ -373,12 +414,13 @@ func TestSupplyIncentive_ListCandidatesExcludesCappedUsers(t *testing.T) {
 	// farmer 解绑重挂之后的那个新号：全新的 account id，没有任何发放记录。
 	rebound := mustCreateSupplyAccount(t, client, farmer, "xc-rebound", service.SupplyStateActive, service.StatusActive, true)
 	fresh := mustCreateSupplyAccount(t, client, honest, "xc-fresh", service.SupplyStateActive, service.StatusActive, true)
-	setActiveDays(t, txCtx, client, rebound, 20, "2026-09-14")
-	setActiveDays(t, txCtx, client, fresh, 20, "2026-09-14")
+	setProgramActiveDays(t, txCtx, client, rebound, slug, 20, "2026-09-14")
+	setProgramActiveDays(t, txCtx, client, fresh, slug, 20, "2026-09-14")
 
 	// 不排除任何人时，重挂的号是够格的——这正是要挡的那个形态。
 	got, err := repo.ListCandidates(txCtx, service.SupplyIncentiveCandidateQuery{
 		MinActiveDays: 10,
+		ProgramSlug:   slug,
 		RequestPrefix: prefix,
 		Limit:         50,
 	})
@@ -388,6 +430,7 @@ func TestSupplyIncentive_ListCandidatesExcludesCappedUsers(t *testing.T) {
 	// 把拿满的人排除掉之后，重挂的号连同他名下别的号一起消失，诚实用户不受影响。
 	got, err = repo.ListCandidates(txCtx, service.SupplyIncentiveCandidateQuery{
 		MinActiveDays:   10,
+		ProgramSlug:     slug,
 		RequestPrefix:   prefix,
 		ExcludedUserIDs: []int64{farmer},
 		Limit:           50,
@@ -404,4 +447,251 @@ func candidateIDs(list []service.SupplyIncentiveCandidate) []int64 {
 		ids = append(ids, c.AccountID)
 	}
 	return ids
+}
+
+// ---------------------------------------------------------------------------
+// 按活动分桶
+// ---------------------------------------------------------------------------
+
+// 这一条是「能连着办几期活动」的地基：第二期的桶从 0 开始，不继承第一期攒下的天数。
+//
+// 顺带钉住一个只有真库能照出来的细节——**一期今天才开始的活动，必须能在总计已经
+// 加过的那一天里把桶建起来**。整行要不要更新如果只看总计的 last_day，新活动的
+// 第一天就永远缺一天，而且缺得无声无息。
+func TestSupplyIncentive_TickCreatesPerProgramBuckets(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewSupplierIncentiveRepository(client)
+
+	owner := mustCreateSupplier(t, client, "tick-bucket")
+	account := mustCreateSupplyAccount(t, client, owner, "tick-bucket",
+		service.SupplyStateActive, service.StatusActive, true)
+
+	// 第一期跑三天。
+	for _, day := range []string{"2026-10-01", "2026-10-02", "2026-10-03"} {
+		_, err := repo.TickActiveDays(txCtx, day, []string{"first"})
+		require.NoError(t, err)
+	}
+	assert.Equal(t, int64(3), activeDaysOf(t, txCtx, client, account))
+	assert.Equal(t, int64(3), programActiveDaysOf(t, txCtx, client, account, "first"))
+	assert.Equal(t, int64(-1), programActiveDaysOf(t, txCtx, client, account, "second"),
+		"还没开始的活动不该有桶")
+
+	// 第二期在 10-04 开始，与第一期并存。
+	_, err := repo.TickActiveDays(txCtx, "2026-10-04", []string{"first", "second"})
+	require.NoError(t, err)
+	assert.Equal(t, int64(4), activeDaysOf(t, txCtx, client, account))
+	assert.Equal(t, int64(4), programActiveDaysOf(t, txCtx, client, account, "first"))
+	assert.Equal(t, int64(1), programActiveDaysOf(t, txCtx, client, account, "second"),
+		"第二期必须从 0 开始，不能继承第一期的天数——否则新活动一上线就有人直接够格")
+}
+
+// 总计当天已经加过，仍然要能给一个当天才开始的活动建桶。
+//
+// 这是 WHERE 末尾那个 `OR EXISTS` 的唯一理由。没有它的话，运营在当天配好一期活动，
+// 这期的第一天就被吞掉了——现象是「活动少发一天」，没有任何报错。
+func TestSupplyIncentive_TickAddsNewBucketAfterTotalAlreadyTickedToday(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewSupplierIncentiveRepository(client)
+
+	owner := mustCreateSupplier(t, client, "tick-late")
+	account := mustCreateSupplyAccount(t, client, owner, "tick-late",
+		service.SupplyStateActive, service.StatusActive, true)
+
+	day := "2026-10-05"
+	_, err := repo.TickActiveDays(txCtx, day, nil) // 今天没有任何活动在跑
+	require.NoError(t, err)
+	require.Equal(t, int64(1), activeDaysOf(t, txCtx, client, account))
+
+	// 同一天，运营配好了一期活动。
+	_, err = repo.TickActiveDays(txCtx, day, []string{"late"})
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), activeDaysOf(t, txCtx, client, account), "总计当天不该加第二次")
+	assert.Equal(t, int64(1), programActiveDaysOf(t, txCtx, client, account, "late"),
+		"当天开始的活动，第一天必须记上")
+
+	// 再跑一轮仍然是幂等的。
+	_, err = repo.TickActiveDays(txCtx, day, []string{"late"})
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), programActiveDaysOf(t, txCtx, client, account, "late"))
+}
+
+// 桶不会因为活动从 settings 里被移掉而丢失：停止 +1，但天数留着，配回来接着涨。
+func TestSupplyIncentive_TickKeepsBucketWhenProgramPaused(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewSupplierIncentiveRepository(client)
+
+	owner := mustCreateSupplier(t, client, "tick-pause-prog")
+	account := mustCreateSupplyAccount(t, client, owner, "tick-pause-prog",
+		service.SupplyStateActive, service.StatusActive, true)
+
+	_, err := repo.TickActiveDays(txCtx, "2026-10-01", []string{"p"})
+	require.NoError(t, err)
+	_, err = repo.TickActiveDays(txCtx, "2026-10-02", nil) // 活动被移出 settings
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), programActiveDaysOf(t, txCtx, client, account, "p"),
+		"活动下架只是停止累加，桶不该被抹掉")
+
+	_, err = repo.TickActiveDays(txCtx, "2026-10-03", []string{"p"}) // 配回来
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), programActiveDaysOf(t, txCtx, client, account, "p"),
+		"配回来要接着涨，不是从头再来")
+}
+
+// 门槛读的是**这期的桶**，不是账号总计。
+//
+// 拿总计当门槛的后果正是分桶要解决的问题：一期新活动刚开跑，老号凭着此前攒下的
+// 总天数当场够格——「活动从今天算起」这句话就不成立了。
+func TestSupplyIncentive_ListCandidatesReadsProgramBucketNotTotal(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewSupplierIncentiveRepository(client)
+
+	owner := mustCreateSupplier(t, client, "bucket-scope")
+	slug := fmt.Sprintf("b%d", time.Now().UnixNano()%1e10)
+
+	veteran := mustCreateSupplyAccount(t, client, owner, "bs-veteran",
+		service.SupplyStateActive, service.StatusActive, true)
+	// 总计很高（挂了很久），但这一期才跑了 2 天。
+	setActiveDays(t, txCtx, client, veteran, 200, "2026-10-01")
+	setProgramActiveDays(t, txCtx, client, veteran, slug, 2, "2026-10-01")
+
+	got, err := repo.ListCandidates(txCtx, service.SupplyIncentiveCandidateQuery{
+		MinActiveDays: 10,
+		ProgramSlug:   slug,
+		RequestPrefix: service.SupplyIncentiveRequestPrefix(slug, 0),
+		Limit:         50,
+	})
+	require.NoError(t, err)
+	assert.NotContains(t, candidateIDs(got), veteran,
+		"总计 200 天但这期只跑了 2 天，不该够格")
+
+	setProgramActiveDays(t, txCtx, client, veteran, slug, 10, "2026-10-09")
+	got, err = repo.ListCandidates(txCtx, service.SupplyIncentiveCandidateQuery{
+		MinActiveDays: 10,
+		ProgramSlug:   slug,
+		RequestPrefix: service.SupplyIncentiveRequestPrefix(slug, 0),
+		Limit:         50,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, candidateIDs(got), veteran)
+}
+
+// ---------------------------------------------------------------------------
+// 只发给新供给者
+// ---------------------------------------------------------------------------
+
+// 「新」= 在起算日之前名下没有任何供给账号，**含已解绑的**。
+//
+// 含已解绑那一条是这组里最要紧的：不含的话，「先解绑再挂回来」就能把自己洗成新用户，
+// 而解绑只是软删、account 行还在，真库里一查就知道——但 sqlmock 里两种写法长得一样。
+func TestSupplyIncentive_ListCandidatesNewUsersOnly(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewSupplierIncentiveRepository(client)
+
+	slug := fmt.Sprintf("n%d", time.Now().UnixNano()%1e10)
+	prefix := service.SupplyIncentiveRequestPrefix(slug, 0)
+	startAt := time.Now().UTC().AddDate(0, 0, -10)
+
+	newcomer := mustCreateSupplier(t, client, "nu-newcomer")
+	veteran := mustCreateSupplier(t, client, "nu-veteran")
+	rebinder := mustCreateSupplier(t, client, "nu-rebinder")
+
+	// 三个号都是活动开始之后挂上来的，天数也都够。
+	newAccount := mustCreateSupplyAccount(t, client, newcomer, "nu-new",
+		service.SupplyStateActive, service.StatusActive, true)
+	veteranNewAccount := mustCreateSupplyAccount(t, client, veteran, "nu-vet-new",
+		service.SupplyStateActive, service.StatusActive, true)
+	rebinderAccount := mustCreateSupplyAccount(t, client, rebinder, "nu-rebind-new",
+		service.SupplyStateActive, service.StatusActive, true)
+
+	// 老贡献者在活动开始前就有一个号（还在用）。
+	veteranOldAccount := mustCreateSupplyAccount(t, client, veteran, "nu-vet-old",
+		service.SupplyStateActive, service.StatusActive, true)
+	// 洗白者在活动开始前有过一个号，**已经解绑**（软删）。
+	rebinderOldAccount := mustCreateSupplyAccount(t, client, rebinder, "nu-rebind-old",
+		service.SupplyStateActive, service.StatusActive, true)
+
+	backdateAccount(t, txCtx, client, veteranOldAccount, startAt.AddDate(0, 0, -5))
+	backdateAccount(t, txCtx, client, rebinderOldAccount, startAt.AddDate(0, 0, -5))
+	softDeleteAccount(t, client, rebinderOldAccount)
+
+	// 守住这组用例的前提：那个号必须**真的**被软删了、且创建时间真的在起算日之前。
+	// 两者任一没生效，下面「洗白者拿不到」的断言就会因为完全不同的原因通过，
+	// 而「含已解绑」这条规则被删掉时测试照样绿。
+	require.Equal(t, int64(1), countSoftDeletedAccounts(t, txCtx, client, rebinderOldAccount))
+	require.Equal(t, int64(1), countAccountsCreatedBefore(t, txCtx, client, rebinderOldAccount, startAt))
+
+	for _, id := range []int64{newAccount, veteranNewAccount, rebinderAccount, veteranOldAccount} {
+		setProgramActiveDays(t, txCtx, client, id, slug, 20, "2026-10-01")
+	}
+
+	query := service.SupplyIncentiveCandidateQuery{
+		MinActiveDays: 10,
+		ProgramSlug:   slug,
+		RequestPrefix: prefix,
+		Limit:         50,
+	}
+
+	// 不限新老时，四个够天数的号都在。
+	all, err := repo.ListCandidates(txCtx, query)
+	require.NoError(t, err)
+	allIDs := candidateIDs(all)
+	require.Contains(t, allIDs, newAccount)
+	require.Contains(t, allIDs, veteranNewAccount)
+	require.Contains(t, allIDs, rebinderAccount)
+
+	// 只发新人时，只剩真正的新人。
+	query.NewUsersOnly = true
+	query.StartAt = startAt
+	fresh, err := repo.ListCandidates(txCtx, query)
+	require.NoError(t, err)
+	freshIDs := candidateIDs(fresh)
+
+	assert.Contains(t, freshIDs, newAccount, "活动开始后第一次挂号的人该拿到")
+	assert.NotContains(t, freshIDs, veteranNewAccount,
+		"老贡献者加挂新号也不算新人——摊薄的账在定价文档里算过")
+	assert.NotContains(t, freshIDs, veteranOldAccount)
+	assert.NotContains(t, freshIDs, rebinderAccount,
+		"解绑只是软删，「先解绑再挂回来」不该把自己洗成新用户")
+}
+
+// backdateAccount 把账号的创建时间改到过去——「活动开始前就已经是供给者」这个状态
+// 造不出来，除非直接改库（ent 的 create 钩子会盖上当前时间）。
+func backdateAccount(t *testing.T, ctx context.Context, client *dbent.Client, accountID int64, at time.Time) {
+	t.Helper()
+	_, err := client.ExecContext(ctx,
+		"UPDATE accounts SET created_at = $1 WHERE id = $2", at, accountID)
+	require.NoError(t, err)
+}
+
+func countSoftDeletedAccounts(t *testing.T, ctx context.Context, client *dbent.Client, accountID int64) int64 {
+	t.Helper()
+	n, err := scanInt64(ctx, client,
+		"SELECT COUNT(*) FROM accounts WHERE id = $1 AND deleted_at IS NOT NULL", accountID)
+	require.NoError(t, err)
+	return n
+}
+
+func countAccountsCreatedBefore(
+	t *testing.T, ctx context.Context, client *dbent.Client, accountID int64, before time.Time,
+) int64 {
+	t.Helper()
+	n, err := scanInt64(ctx, client,
+		"SELECT COUNT(*) FROM accounts WHERE id = $1 AND created_at < $2", accountID, before)
+	require.NoError(t, err)
+	return n
 }

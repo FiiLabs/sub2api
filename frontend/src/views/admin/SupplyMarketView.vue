@@ -749,6 +749,26 @@
                 </select>
                 <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.incentive.platformHint') }}</p>
               </div>
+              <div>
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.incentive.startAt') }}</label>
+                <input
+                  v-model="program.start_at"
+                  type="date"
+                  class="input"
+                  :data-testid="`incentive-start-at-${programIndex}`"
+                />
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.incentive.startAtHint') }}</p>
+              </div>
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <label class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.incentive.newUsersOnly') }}</label>
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.incentive.newUsersOnlyHint') }}</p>
+                </div>
+                <Toggle
+                  v-model="program.new_users_only"
+                  :data-testid="`incentive-new-users-only-${programIndex}`"
+                />
+              </div>
             </div>
 
             <div class="space-y-2">
@@ -1622,6 +1642,10 @@ function applyIncentiveSettings(settings: SupplyIncentiveSettings): void {
   incentiveForm.programs = (settings.programs ?? []).map((program) => ({
     slug: program.slug,
     platform: program.platform ?? '',
+    // 起算日原样回填。**不要**在这里给一个"今天"的兜底：那会把一期已经开跑的活动
+    // 在保存时静默改成从今天重算，而天数桶还停在原来那期——所有人当场不够格。
+    start_at: program.start_at ?? '',
+    new_users_only: program.new_users_only ?? false,
     tiers: (program.tiers ?? []).map((tier) => ({ ...tier })),
   }))
   incentiveMeta.budget_cap_usd = settings.budget_cap_usd
@@ -1638,9 +1662,21 @@ async function loadIncentive(): Promise<void> {
   applyIncentiveSettings(await adminSupplyMarketAPI.getIncentiveSettings())
 }
 
+/** 今天（UTC）的 YYYY-MM-DD。与后端起算日的时区、粒度一致。 */
+function todayUTCDate(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
 function addIncentiveProgram(): void {
   if (incentiveForm.programs.length >= incentiveMeta.programs_max) return
-  incentiveForm.programs.push({ slug: '', platform: '', tiers: [] })
+  // 起算日默认填今天：后端拒绝回填，留空或填过去只会在保存时被打回。
+  incentiveForm.programs.push({
+    slug: '',
+    platform: '',
+    start_at: todayUTCDate(),
+    new_users_only: false,
+    tiers: [],
+  })
 }
 
 function removeIncentiveProgram(index: number): void {

@@ -849,9 +849,14 @@ type SupplyIncentiveTierPayload struct {
 
 // SupplyIncentiveProgramPayload 是一期活动的对外形态。
 type SupplyIncentiveProgramPayload struct {
-	Slug     string                       `json:"slug"`
-	Platform string                       `json:"platform"`
-	Tiers    []SupplyIncentiveTierPayload `json:"tiers"`
+	Slug     string `json:"slug"`
+	Platform string `json:"platform"`
+	// StartAt 活动起算日（UTC，YYYY-MM-DD）。必填，且**不接受过去的日期**——
+	// 在线天数桶只能往前累加，回填出来的日期只会得到一期谁也不够格的活动。
+	StartAt string `json:"start_at"`
+	// NewUsersOnly 只发给在 StartAt 之前没挂过任何号的人（含已解绑）。
+	NewUsersOnly bool                         `json:"new_users_only"`
+	Tiers        []SupplyIncentiveTierPayload `json:"tiers"`
 }
 
 // SupplyIncentiveSettingsResponse 是挂号奖励规则的对外形态。
@@ -894,9 +899,11 @@ func newSupplyIncentiveSettingsResponse(s *service.SupplyIncentiveSettings) Supp
 	resp.BudgetCapUSD, resp.BudgetBounded = s.BudgetCapUSD()
 	for _, p := range s.Programs {
 		payload := SupplyIncentiveProgramPayload{
-			Slug:     p.Slug,
-			Platform: p.Platform,
-			Tiers:    make([]SupplyIncentiveTierPayload, 0, len(p.Tiers)),
+			Slug:         p.Slug,
+			Platform:     p.Platform,
+			StartAt:      p.StartAt,
+			NewUsersOnly: p.NewUsersOnly,
+			Tiers:        make([]SupplyIncentiveTierPayload, 0, len(p.Tiers)),
 		}
 		for _, t := range p.Tiers {
 			payload.Tiers = append(payload.Tiers, SupplyIncentiveTierPayload{
@@ -939,9 +946,11 @@ func (h *SettingHandler) UpdateSupplyIncentiveSettings(c *gin.Context) {
 	settings := &service.SupplyIncentiveSettings{Enabled: req.Enabled}
 	for _, p := range req.Programs {
 		program := service.SupplyIncentiveProgram{
-			Slug:     p.Slug,
-			Platform: p.Platform,
-			Tiers:    make([]service.SupplyIncentiveTier, 0, len(p.Tiers)),
+			Slug:         p.Slug,
+			Platform:     p.Platform,
+			StartAt:      p.StartAt,
+			NewUsersOnly: p.NewUsersOnly,
+			Tiers:        make([]service.SupplyIncentiveTier, 0, len(p.Tiers)),
 		}
 		for _, t := range p.Tiers {
 			program.Tiers = append(program.Tiers, service.SupplyIncentiveTier{

@@ -621,6 +621,12 @@ export default {
       slugHint: 'Lowercase letters and digits only. It forms part of the idempotency key — do not change it after creation, or already-paid accounts will be paid again.',
       platform: 'Platform',
       platformAny: 'All platforms (shared slot pool)',
+      startAt: 'Start date (UTC)',
+      startAtHint:
+        "This campaign's time origin. Online-day counters are bucketed per campaign and only start accruing for this one from this date, so every campaign starts everyone at zero and a second campaign never inherits days from the first. Past dates are rejected — buckets only accrue forward and history cannot be rebuilt. When editing a campaign that has already started, leave this field as it is.",
+      newUsersOnly: 'New contributors only',
+      newUsersOnlyHint:
+        'New means the person had no supply account at all before the start date, including disconnected ones. Existing contributors get nothing even if they connect another account. Counting disconnected accounts is deliberate: otherwise disconnecting and reconnecting would launder anyone into a new user.',
       platformHint: 'Leave on “all platforms” to let Claude and ChatGPT accounts share the same tiers and slots, first come first served.',
       minActiveDays: 'Online days',
       amountUsd: 'Reward (USDT)',

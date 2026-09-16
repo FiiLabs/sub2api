@@ -168,15 +168,21 @@ func (w *SupplierIncentiveWorker) RunOnce(ctx context.Context) {
 
 	// 天数**无条件**累加，与活动开没开无关：它是账号的客观属性。活动一开一关就让
 	// 所有人的天数从头再来，那奖励门槛就变成了「运营手抖的次数」。
-	day := time.Now().UTC().Format(supplierIncentiveDayFormat)
-	if ticked, err := w.repo.TickActiveDays(ctx, day); err != nil {
+	//
+	// 所以读配置必须排在累加**之前**——要知道今天有哪些活动已经开始、该给哪些桶 +1。
+	// 但读出来的 Enabled 只影响后面发不发钱，不影响这一步：一期配好了 start_at 却
+	// 还没开 Enabled 的活动，它的天数照常跑，等文案定稿打开开关时此前的天数照数。
+	settings := w.settings(ctx)
+	now := time.Now().UTC()
+	day := now.Format(supplierIncentiveDayFormat)
+
+	if ticked, err := w.repo.TickActiveDays(ctx, day, startedProgramSlugs(settings, now)); err != nil {
 		slog.Error("[SupplierIncentive] failed to tick supply active days", "error", err, "day", day)
 		// 不 return：这一轮的天数没加上，下一轮会补；但已经够格的账号不该被连累。
 	} else if ticked > 0 {
 		slog.Info("[SupplierIncentive] ticked supply active days", "accounts", ticked, "day", day)
 	}
 
-	settings := w.settings(ctx)
 	if !settings.Active() {
 		return
 	}
@@ -190,6 +196,11 @@ func (w *SupplierIncentiveWorker) RunOnce(ctx context.Context) {
 
 	perUserCap := w.perUserGrantCap(ctx)
 	for _, program := range settings.Programs {
+		// 还没到起算日的活动整期跳过。不跳的话，它的桶今天都还没建起来，
+		// 天数一律为 0，各档都不会命中——结果是对的，但那是碰巧对的。
+		if !program.Started(now) {
+			continue
+		}
 		for i, tier := range program.Tiers {
 			if ctx.Err() != nil {
 				return
@@ -197,6 +208,27 @@ func (w *SupplierIncentiveWorker) RunOnce(ctx context.Context) {
 			w.grantTier(ctx, program, i, tier, settlement.FreezeHours, perUserCap)
 		}
 	}
+}
+
+// startedProgramSlugs 挑出今天已经开始的活动，交给 TickActiveDays 去推进它们的桶。
+//
+// 不看 Enabled：开关管的是发不发钱，不是算不算天数（见 RunOnce 里那段）。
+// 也不去重——SQL 那侧的 `SELECT DISTINCT unnest(...)` 已经去过了，而 slug 的
+// 唯一性本来就是写路径保证的。
+func startedProgramSlugs(settings *SupplyIncentiveSettings, now time.Time) []string {
+	if settings == nil || len(settings.Programs) == 0 {
+		return nil
+	}
+	slugs := make([]string, 0, len(settings.Programs))
+	for _, p := range settings.Programs {
+		if p.Started(now) {
+			slugs = append(slugs, p.Slug)
+		}
+	}
+	if len(slugs) == 0 {
+		return nil
+	}
+	return slugs
 }
 
 // perUserGrantCap 同一个人在同一档最多能拿几份。
@@ -269,8 +301,21 @@ func (w *SupplierIncentiveWorker) grantTier(
 		}
 	}
 
+	// StartAt 解析失败时整期跳过：它既是新用户判据的分界线，也是这期活动的时间原点。
+	// 拿一个猜出来的值去发钱，比不发糟得多。正常情况下走不到这里——写路径要求它合法、
+	// 读路径会把不合法的整期丢掉，这一支是第三层兜底。
+	startDay, ok := program.StartDay()
+	if !ok {
+		slog.Error("[SupplierIncentive] program has unusable start_at, skipping tier",
+			"slug", program.Slug, "tier", tierIndex, "start_at", program.StartAt)
+		return
+	}
+
 	candidates, err := w.repo.ListCandidates(ctx, SupplyIncentiveCandidateQuery{
 		MinActiveDays:   tier.MinActiveDays,
+		ProgramSlug:     program.Slug,
+		NewUsersOnly:    program.NewUsersOnly,
+		StartAt:         startDay,
 		Platform:        program.Platform,
 		RequestPrefix:   prefix,
 		ExcludedUserIDs: excludedUsers,

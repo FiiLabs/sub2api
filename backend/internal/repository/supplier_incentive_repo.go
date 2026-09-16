@@ -9,6 +9,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -50,32 +51,83 @@ func NewSupplierIncentiveRepository(client *dbent.Client) service.SupplierIncent
 //
 // extra 的键名从 service 常量拼进来（同 supplierAccountListByStateSQL 的理由）：
 // 漂移了不报错，只会让所有人的天数永远停在 0，一个完全静默的失效。
+//
+// # 一条语句同时推进总计与每期活动的桶
+//
+// $2 是「今天已经开始的活动 slug 列表」。总计那一对与每个桶各自按**自己的**
+// last_day 判断要不要 +1，所以三种情况都对：
+//
+//	总计今天加过、活动是新配的      → 只有新桶 +1
+//	都没加过                        → 一起 +1
+//	都加过（同一天第二轮）          → 受影响行数 0
+//
+// 关键是**不能**让总计的 last_day 单独决定整行要不要更新：一期今天才开始的活动，
+// 它的桶必须能在总计已经加过的那一天里被建出来，否则这期活动的第一天永远缺一天。
+// 这就是 WHERE 末尾那个 OR EXISTS 的全部作用。
+//
+// jsonb_object_agg 在 started 为空时返回 NULL，所以外面必须包一层 COALESCE——
+// 否则 `programs || NULL` 会把整个 programs 抹成 NULL，一次静默的数据丢失。
 var supplierIncentiveTickActiveDaysSQL = fmt.Sprintf(`
-UPDATE accounts
-SET extra = COALESCE(extra, '{}'::jsonb) || jsonb_build_object(
+WITH started AS (
+    SELECT DISTINCT unnest($2::text[]) AS slug
+)
+UPDATE accounts a
+SET extra = COALESCE(a.extra, '{}'::jsonb) || jsonb_build_object(
         '%[1]s',
-        jsonb_build_object(
-            'days',     COALESCE((extra->'%[1]s'->>'days')::int, 0) + 1,
-            'last_day', $1::text
+        COALESCE(a.extra->'%[1]s', '{}'::jsonb) || jsonb_build_object(
+            'days', CASE WHEN COALESCE(a.extra->'%[1]s'->>'last_day', '') <> $1::text
+                         THEN COALESCE((a.extra->'%[1]s'->>'days')::int, 0) + 1
+                         ELSE COALESCE((a.extra->'%[1]s'->>'days')::int, 0) END,
+            'last_day', $1::text,
+            'programs', COALESCE(a.extra->'%[1]s'->'programs', '{}'::jsonb) || COALESCE(
+                (SELECT jsonb_object_agg(s.slug, jsonb_build_object(
+                     'days', CASE WHEN COALESCE(
+                                           a.extra->'%[1]s'->'programs'->s.slug->>'last_day', ''
+                                       ) <> $1::text
+                                  THEN COALESCE(
+                                           (a.extra->'%[1]s'->'programs'->s.slug->>'days')::int, 0
+                                       ) + 1
+                                  ELSE COALESCE(
+                                           (a.extra->'%[1]s'->'programs'->s.slug->>'days')::int, 0
+                                       ) END,
+                     'last_day', $1::text))
+                 FROM started s),
+                '{}'::jsonb)
         )
     ),
     updated_at = NOW()
-WHERE deleted_at IS NULL
-  AND owner_user_id IS NOT NULL
-  AND schedulable = TRUE
-  AND COALESCE(NULLIF(extra->>'%[2]s', ''), '%[3]s') = '%[4]s'
-  AND COALESCE(extra->'%[1]s'->>'last_day', '') <> $1::text`,
+WHERE a.deleted_at IS NULL
+  AND a.owner_user_id IS NOT NULL
+  AND a.schedulable = TRUE
+  AND COALESCE(NULLIF(a.extra->>'%[2]s', ''), '%[3]s') = '%[4]s'
+  AND (
+        COALESCE(a.extra->'%[1]s'->>'last_day', '') <> $1::text
+        OR EXISTS (
+            SELECT 1 FROM started s
+            WHERE COALESCE(a.extra->'%[1]s'->'programs'->s.slug->>'last_day', '') <> $1::text
+        )
+  )`,
 	service.SupplyActiveDaysExtraKey,
 	service.SupplyStateExtraKey,
 	service.SupplyStatePendingReview,
 	service.SupplyStateActive)
 
 // TickActiveDays 给所有在役供给号的在线天数 +1，同一天重复调用不重复累加。
-func (r *supplierIncentiveRepository) TickActiveDays(ctx context.Context, day string) (int64, error) {
+//
+// startedSlugs 是今天已经开始的活动；它们各自的桶与总计一起推进。传 nil 只推进总计
+// （没有任何活动在跑时的行为，与本功能上线前一致）。
+func (r *supplierIncentiveRepository) TickActiveDays(
+	ctx context.Context, day string, startedSlugs []string,
+) (int64, error) {
 	if day == "" {
 		return 0, fmt.Errorf("tick active days: empty day")
 	}
-	result, err := r.client.ExecContext(ctx, supplierIncentiveTickActiveDaysSQL, day)
+	// pq.Array(nil) 产出 NULL，而 `unnest(NULL)` 是零行——语义上正好是「没有活动在跑」，
+	// 但依赖这一点太脆。显式给一个空切片，让 SQL 那侧只需要考虑一种形状。
+	if startedSlugs == nil {
+		startedSlugs = []string{}
+	}
+	result, err := r.client.ExecContext(ctx, supplierIncentiveTickActiveDaysSQL, day, pq.Array(startedSlugs))
 	if err != nil {
 		return 0, fmt.Errorf("tick supply active days: %w", err)
 	}
@@ -147,18 +199,33 @@ func (r *supplierIncentiveRepository) GrantStats(
 //   - platform 那一条走「$2 是空串就不过滤」：program.platform 为空表示全平台共用
 //     一个名额池。写成 OR 而不是在 Go 侧拼两条 SQL，是为了让「空 = 不限」这条语义
 //     只有一个落点。
+//   - 天数读的是**这期活动的桶**（`->'programs'->$6`）而不是总计：总计从计数器上线
+//     那天算起，拿它当门槛会让一期新活动刚开跑就有人够格，而那正是分桶要解决的问题。
+//   - `$7 IS NULL OR NOT EXISTS(...)` 是「只发给新供给者」。$7 为 NULL 时整条恒真，
+//     也就是这期活动不限新老。子查询**刻意不带 `deleted_at IS NULL`**：解绑只是软删，
+//     不算进来的话「先解绑再挂回来」就能把自己洗成新用户——与 ExcludedUserIDs 挡的
+//     是同一个漏洞的两个面。
 var supplierIncentiveListCandidatesSQL = fmt.Sprintf(`
 SELECT a.id,
        a.owner_user_id,
-       COALESCE((a.extra->'%[1]s'->>'days')::int, 0) AS active_days
+       COALESCE((a.extra->'%[1]s'->'programs'->($6::text)->>'days')::int, 0) AS active_days
 FROM accounts a
 WHERE a.deleted_at IS NULL
   AND a.owner_user_id IS NOT NULL
   AND a.schedulable = TRUE
   AND COALESCE(NULLIF(a.extra->>'%[2]s', ''), '%[3]s') = '%[4]s'
-  AND COALESCE((a.extra->'%[1]s'->>'days')::int, 0) >= $1
+  AND COALESCE((a.extra->'%[1]s'->'programs'->($6::text)->>'days')::int, 0) >= $1
   AND ($2 = '' OR a.platform = $2)
   AND NOT (a.owner_user_id = ANY(COALESCE($5::bigint[], ARRAY[]::bigint[])))
+  AND (
+        $7::timestamptz IS NULL
+        OR NOT EXISTS (
+            SELECT 1
+            FROM accounts prev
+            WHERE prev.owner_user_id = a.owner_user_id
+              AND prev.created_at < $7::timestamptz
+        )
+  )
   AND NOT EXISTS (
         SELECT 1
         FROM supplier_credit_ledger l
@@ -177,7 +244,10 @@ func (r *supplierIncentiveRepository) ListCandidates(
 	ctx context.Context,
 	query service.SupplyIncentiveCandidateQuery,
 ) ([]service.SupplyIncentiveCandidate, error) {
-	if query.MinActiveDays <= 0 || query.RequestPrefix == "" {
+	// slug 为空时直接返回空：`->'programs'->''` 恒为 NULL，天数恒为 0，
+	// 门槛必然不满足——但那是「碰巧不发钱」，不是「明确不发钱」。
+	// 让它在这里就停下，免得下一个人以为空 slug 是一种支持的用法。
+	if query.MinActiveDays <= 0 || query.RequestPrefix == "" || query.ProgramSlug == "" {
 		return nil, nil
 	}
 	limit := query.Limit
@@ -189,9 +259,17 @@ func (r *supplierIncentiveRepository) ListCandidates(
 	// NULL、`NOT NULL` 还是 NULL——WHERE 里的 NULL 等于假，于是「没有人被排除」
 	// 这条最常见的路径会把**全部候选**一起筛掉，一个奖励也发不出去。
 	// SQL 侧用 COALESCE 兜成空数组，这里就不必为 nil 再分一条语句。
+	// 只在这期活动限新用户时才把起算时刻传下去；否则给 NULL，SQL 那侧整条判据恒真。
+	// 用 *time.Time 而不是零值：`created_at < '0001-01-01'` 恒为假，会把**所有人**
+	// 都判成新用户——一个恰好反向、且不会报错的失效。
+	var newUserBefore *time.Time
+	if query.NewUsersOnly {
+		startAt := query.StartAt
+		newUserBefore = &startAt
+	}
 	rows, err := r.client.QueryContext(ctx, supplierIncentiveListCandidatesSQL,
 		query.MinActiveDays, query.Platform, query.RequestPrefix, limit,
-		pq.Array(query.ExcludedUserIDs))
+		pq.Array(query.ExcludedUserIDs), query.ProgramSlug, newUserBefore)
 	if err != nil {
 		return nil, fmt.Errorf("list incentive candidates: %w", err)
 	}

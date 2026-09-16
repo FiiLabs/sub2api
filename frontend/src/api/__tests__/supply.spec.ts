@@ -473,6 +473,10 @@ describe('admin supply incentive settings', () => {
         {
           slug: 'bind26q4',
           platform: '',
+          // 起算日与「只发新人」必须原样送到后端：前者是这期活动的时间原点
+          // （天数按活动分桶，少了它后端会整期丢掉），后者决定钱发给谁。
+          start_at: '2026-10-01',
+          new_users_only: true,
           tiers: [
             { min_active_days: 10, amount_usd: 5, slots: 60 },
             { min_active_days: 30, amount_usd: 20, slots: 5 },

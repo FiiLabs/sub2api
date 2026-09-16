@@ -25,6 +25,9 @@ type incentiveRepoStub struct {
 	tickDays  []string
 	tickErr   error
 	tickCount int64
+	// tickSlugs 记下每一轮传下去的「今天已经开始的活动」。
+	// 它是「第二期活动不会把第一期的天数算进来」这条性质的唯一观测点。
+	tickSlugs [][]string
 
 	granted       map[string]int
 	grantedByUser map[string]map[int64]int
@@ -35,8 +38,9 @@ type incentiveRepoStub struct {
 	queries       []SupplyIncentiveCandidateQuery
 }
 
-func (r *incentiveRepoStub) TickActiveDays(_ context.Context, day string) (int64, error) {
+func (r *incentiveRepoStub) TickActiveDays(_ context.Context, day string, startedSlugs []string) (int64, error) {
 	r.tickDays = append(r.tickDays, day)
+	r.tickSlugs = append(r.tickSlugs, startedSlugs)
 	if r.tickErr != nil {
 		return 0, r.tickErr
 	}
@@ -183,7 +187,7 @@ func (r *incentiveSettingRepoStub) Delete(context.Context, string) error {
 }
 
 const (
-	incentiveTwoTierJSON = `{"enabled":true,"programs":[{"slug":"bind26q4","tiers":[
+	incentiveTwoTierJSON = `{"enabled":true,"programs":[{"slug":"bind26q4","start_at":"2020-01-01","tiers":[
 		{"min_active_days":10,"amount_usd":5,"slots":60},
 		{"min_active_days":30,"amount_usd":20,"slots":5}]}]}`
 	settlementOnJSON  = `{"enabled":true,"share_ratio":0.5,"freeze_hours":72}`
@@ -310,7 +314,7 @@ func TestIncentiveWorkerFailsClosedWhenGrantedCountUnavailable(t *testing.T) {
 // 而它在 ledger 长大之后是一次全表扫描。
 func TestIncentiveWorkerUnlimitedTierPassesNoLimit(t *testing.T) {
 	h := newIncentiveWorkerHarness(t,
-		`{"enabled":true,"programs":[{"slug":"bind26q4","tiers":[
+		`{"enabled":true,"programs":[{"slug":"bind26q4","start_at":"2020-01-01","tiers":[
 			{"min_active_days":10,"amount_usd":5,"slots":0}]}]}`, settlementOnJSON)
 
 	h.worker.RunOnce(context.Background())
@@ -366,8 +370,8 @@ func TestIncentiveWorkerSkipsTierWhenCandidateQueryFails(t *testing.T) {
 func TestIncentiveWorkerPassesPlatformFilter(t *testing.T) {
 	h := newIncentiveWorkerHarness(t,
 		`{"enabled":true,"programs":[
-			{"slug":"cl26q4","platform":"anthropic","tiers":[{"min_active_days":10,"amount_usd":5,"slots":3}]},
-			{"slug":"any26q4","tiers":[{"min_active_days":10,"amount_usd":5,"slots":3}]}]}`,
+			{"slug":"cl26q4","start_at":"2020-01-01","platform":"anthropic","tiers":[{"min_active_days":10,"amount_usd":5,"slots":3}]},
+			{"slug":"any26q4","start_at":"2020-01-01","tiers":[{"min_active_days":10,"amount_usd":5,"slots":3}]}]}`,
 		settlementOnJSON)
 
 	h.worker.RunOnce(context.Background())
@@ -416,7 +420,7 @@ func TestIncentiveWorkerExcludesUsersAtPerUserCap(t *testing.T) {
 // 够格的号会在同一批候选里一起出现——不在循环里累计的话，上限为 1 时他会一次拿两份。
 func TestIncentiveWorkerCapsWithinASingleRound(t *testing.T) {
 	h := newIncentiveWorkerHarness(t,
-		`{"enabled":true,"programs":[{"slug":"bind26q4","tiers":[
+		`{"enabled":true,"programs":[{"slug":"bind26q4","start_at":"2020-01-01","tiers":[
 			{"min_active_days":10,"amount_usd":5,"slots":60}]}]}`, settlementOnJSON)
 	// 上限压到 1。
 	h.settingRepo.values[SettingKeySupplyOnboarding] = `{"max_accounts_per_user":1}`
@@ -439,7 +443,7 @@ func TestIncentiveWorkerCapsWithinASingleRound(t *testing.T) {
 // 上限为 2 时，一个人名下两个**真号**该拿两份——防刷不能把正常的多号共享也挡掉。
 func TestIncentiveWorkerAllowsTwoAccountsUnderCapTwo(t *testing.T) {
 	h := newIncentiveWorkerHarness(t,
-		`{"enabled":true,"programs":[{"slug":"bind26q4","tiers":[
+		`{"enabled":true,"programs":[{"slug":"bind26q4","start_at":"2020-01-01","tiers":[
 			{"min_active_days":10,"amount_usd":5,"slots":60}]}]}`, settlementOnJSON)
 
 	prefix := SupplyIncentiveRequestPrefix("bind26q4", 0)
@@ -470,4 +474,102 @@ func TestIncentiveWorkerPerUserCapFollowsOnboardingLimit(t *testing.T) {
 	invalidateSupplyOnboardingCache()
 
 	assert.Equal(t, 3, h.worker.perUserGrantCap(context.Background()))
+}
+
+// ---------------------------------------------------------------------------
+// 分期与新用户
+// ---------------------------------------------------------------------------
+
+func incentiveProgramJSON(slug, startAt string, newUsersOnly bool) string {
+	return `{"enabled":true,"programs":[{"slug":"` + slug + `","start_at":"` + startAt + `"` +
+		`,"new_users_only":` + map[bool]string{true: "true", false: "false"}[newUsersOnly] +
+		`,"tiers":[{"min_active_days":10,"amount_usd":5,"slots":60}]}]}`
+}
+
+func incentiveDay(offsetDays int) string {
+	return time.Now().UTC().AddDate(0, 0, offsetDays).Format(SupplyIncentiveDayFormat)
+}
+
+// 桶只推进**已经开始**的活动。这是「第二期不会把第一期的天数算进来」的机制本身：
+// 一期还没到起算日的活动，它的桶今天一天都不该涨。
+func TestIncentiveWorkerTicksOnlyStartedPrograms(t *testing.T) {
+	h := newIncentiveWorkerHarness(t,
+		`{"enabled":true,"programs":[
+			{"slug":"past","start_at":"`+incentiveDay(-10)+`","tiers":[{"min_active_days":10,"amount_usd":5,"slots":3}]},
+			{"slug":"today","start_at":"`+incentiveDay(0)+`","tiers":[{"min_active_days":10,"amount_usd":5,"slots":3}]},
+			{"slug":"future","start_at":"`+incentiveDay(7)+`","tiers":[{"min_active_days":10,"amount_usd":5,"slots":3}]}]}`,
+		settlementOnJSON)
+
+	h.worker.RunOnce(context.Background())
+
+	require.Len(t, h.repo.tickSlugs, 1)
+	assert.ElementsMatch(t, []string{"past", "today"}, h.repo.tickSlugs[0],
+		"起算日当天就该开始计数，还没到的一天都不该涨")
+}
+
+// 桶的推进与 Enabled 无关：可以先配好起算日让天数跑起来，等文案定稿再开开关，
+// 届时此前累计的天数照数。这正是「开关只管发不发钱」那条分工。
+func TestIncentiveWorkerTicksProgramBucketsWhileDisabled(t *testing.T) {
+	h := newIncentiveWorkerHarness(t,
+		`{"enabled":false,"programs":[{"slug":"bind26q4","start_at":"`+incentiveDay(-1)+
+			`","tiers":[{"min_active_days":10,"amount_usd":5,"slots":3}]}]}`,
+		settlementOnJSON)
+
+	h.worker.RunOnce(context.Background())
+
+	require.Len(t, h.repo.tickSlugs, 1)
+	assert.Equal(t, []string{"bind26q4"}, h.repo.tickSlugs[0])
+	assert.Empty(t, h.credit.accrued, "开关关着不发钱")
+}
+
+// 还没到起算日的活动整期跳过：一次候选查询都不该发出去。
+func TestIncentiveWorkerSkipsProgramsBeforeStart(t *testing.T) {
+	h := newIncentiveWorkerHarness(t, incentiveProgramJSON("soon", incentiveDay(3), false), settlementOnJSON)
+	h.repo.candidates[SupplyIncentiveRequestPrefix("soon", 0)] = []SupplyIncentiveCandidate{
+		{AccountID: 7, OwnerUserID: 42, ActiveDays: 99},
+	}
+
+	h.worker.RunOnce(context.Background())
+
+	assert.Empty(t, h.repo.queries, "活动还没开始就不该去查候选")
+	assert.Empty(t, h.credit.accrued)
+}
+
+// 三个新字段都要原样传到 SQL 层：slug 决定读哪个桶，另外两个决定「新用户」怎么判。
+func TestIncentiveWorkerPassesProgramScopeToQuery(t *testing.T) {
+	start := incentiveDay(-5)
+	h := newIncentiveWorkerHarness(t, incentiveProgramJSON("bind26q4", start, true), settlementOnJSON)
+	h.worker.RunOnce(context.Background())
+
+	require.Len(t, h.repo.queries, 1)
+	q := h.repo.queries[0]
+	assert.Equal(t, "bind26q4", q.ProgramSlug, "天数门槛要读这期的桶，不是账号总计")
+	assert.True(t, q.NewUsersOnly)
+	assert.Equal(t, start, q.StartAt.Format(SupplyIncentiveDayFormat),
+		"新用户的分界线就是这期的起算日")
+}
+
+// 不限新老的活动，StartAt 仍然要带上（SQL 侧靠 NewUsersOnly 决定用不用它），
+// 但 NewUsersOnly 必须是 false——否则一期普惠活动会静默变成拉新活动。
+func TestIncentiveWorkerDefaultsToAllUsers(t *testing.T) {
+	h := newIncentiveWorkerHarness(t, incentiveProgramJSON("bind26q4", incentiveDay(-5), false), settlementOnJSON)
+	h.worker.RunOnce(context.Background())
+
+	require.Len(t, h.repo.queries, 1)
+	assert.False(t, h.repo.queries[0].NewUsersOnly)
+}
+
+func TestStartedProgramSlugs(t *testing.T) {
+	now := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	settings := &SupplyIncentiveSettings{Programs: []SupplyIncentiveProgram{
+		{Slug: "a", StartAt: "2026-10-01"},
+		{Slug: "b", StartAt: "2026-10-10"},
+		{Slug: "c", StartAt: "2026-10-11"},
+		{Slug: "d", StartAt: "garbage"},
+	}}
+	assert.Equal(t, []string{"a", "b"}, startedProgramSlugs(settings, now))
+
+	// 没有活动时返回 nil 而不是空切片：repo 那侧据此走「只推进总计」那条路。
+	assert.Nil(t, startedProgramSlugs(&SupplyIncentiveSettings{}, now))
+	assert.Nil(t, startedProgramSlugs(nil, now))
 }
