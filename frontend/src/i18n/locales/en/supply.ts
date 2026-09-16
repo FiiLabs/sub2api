@@ -563,9 +563,15 @@ export default {
       minObservationHint:
         'Counted from the moment the account is connected. ANDed with the success count: no matter how well the probes go, this much time still has to pass. Max {max} minutes.',
       advancedTucked:
-        'Engineering knobs (probe interval, required passes, drain window, probe model) are tucked away: the defaults are the recommendation, and the settings API still accepts manual overrides.',
+        'Engineering knobs (probe interval, required passes, drain window, probe model, idle failure threshold) are tucked away: the defaults are the recommendation, and the settings API still accepts manual overrides.',
       clampNotice:
         'Out-of-range values in this group are clamped and saved (not rejected). After saving, the form shows what is actually stored.',
+      idleProbeEnabled: 'Re-check idle accounts',
+      idleProbeEnabledHint:
+        'After admission, revoked credentials and rejected live requests are already handled. The one failure that leaves no trace is a downgraded or cancelled subscription whose OAuth grant is still valid — an account that never receives traffic stays counted as live forever. When on, accounts with no traffic for a while get one probe, and only repeated credential/quota failures take them out. Rate-limited or overloaded accounts are never probed: a maxed-out quota is evidence of successful supply.',
+      idleAfterHours: 'Idle threshold (hours)',
+      idleAfterHoursHint:
+        'How long without traffic counts as idle, and also the minimum gap between two re-checks. Each probe spends the contributor\'s own subscription quota, so keep this generous. Range {min}–{max} hours.',
       save: 'Save review settings',
       saved: 'Review settings saved'
     },

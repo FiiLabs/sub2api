@@ -75,6 +75,11 @@ type supplierOnboardingRepoStub struct {
 	orphanIDs []int64
 	orphanErr error
 
+	idleIDs []int64
+	idleErr error
+	// idleBefore 记下闲置扫描传进来的时间点，用来钉住「闲置窗确实被用上了」。
+	idleBefore time.Time
+
 	scrubCalls [][2]int64
 	scrubErr   error
 
@@ -287,6 +292,17 @@ func (r *supplierOnboardingRepoStub) ListAccountIDsBySupplyState(_ context.Conte
 		return nil, r.stateErr
 	}
 	return r.idsByState[state], nil
+}
+
+func (r *supplierOnboardingRepoStub) ListIdleActiveSupplyAccountIDs(
+	_ context.Context, idleBefore time.Time, _ int,
+) ([]int64, error) {
+	r.calls = append(r.calls, "ListIdleActiveSupplyAccountIDs")
+	r.idleBefore = idleBefore
+	if r.idleErr != nil {
+		return nil, r.idleErr
+	}
+	return r.idleIDs, nil
 }
 
 func (r *supplierOnboardingRepoStub) ListAccountIDsWithUnavailableOwner(_ context.Context, _ int) ([]int64, error) {

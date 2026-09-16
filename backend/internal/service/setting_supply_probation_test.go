@@ -212,3 +212,57 @@ func itoaForTest(v int) string {
 	}
 	return digits
 }
+
+// ============================================================================
+// 闲置探测的三个字段
+// ============================================================================
+
+func TestDefaultSupplyProbationSettingsDisablesIdleProbe(t *testing.T) {
+	settings := DefaultSupplyProbationSettings()
+	// 与 Enabled 同向 fail-closed：这个开关会把一个正在赚钱的号停掉。
+	assert.False(t, settings.IdleProbeEnabled)
+	assert.Positive(t, settings.IdleAfterHours)
+	assert.Positive(t, settings.IdleFailuresToDemote)
+}
+
+// 存量配置里没有这三个字段（JSON 缺字段 = 零值）。零值必须回落到默认，
+// 而**不是**夹到下限——夹到 1 小时会让所有存量部署升级后突然开始每小时
+// 探一次别人的号，烧的是供给者的订阅额度。
+func TestGetSupplyProbationSettingsFillsIdleDefaultsForLegacyConfig(t *testing.T) {
+	repo := &supplyProbationSettingRepoStub{
+		value: `{"enabled":true,"min_observation_minutes":60,"required_successes":2,` +
+			`"probe_interval_minutes":15,"drain_window_minutes":10}`,
+	}
+	svc := newSupplyProbationSettingService(t, repo)
+
+	settings := svc.GetSupplyProbationSettings(context.Background())
+	require.NotNil(t, settings)
+	assert.False(t, settings.IdleProbeEnabled, "存量配置升级后不该自己把闲置探测打开")
+	assert.Equal(t, supplyProbationDefaultIdleAfterHours, settings.IdleAfterHours)
+	assert.Equal(t, supplyProbationDefaultIdleFailures, settings.IdleFailuresToDemote)
+}
+
+func TestGetSupplyProbationSettingsClampsIdleBounds(t *testing.T) {
+	repo := &supplyProbationSettingRepoStub{
+		value: `{"idle_probe_enabled":true,"idle_after_hours":99999999,"idle_failures_to_demote":9999}`,
+	}
+	svc := newSupplyProbationSettingService(t, repo)
+
+	settings := svc.GetSupplyProbationSettings(context.Background())
+	assert.True(t, settings.IdleProbeEnabled)
+	assert.Equal(t, SupplyProbationIdleAfterHoursMax, settings.IdleAfterHours)
+	assert.Equal(t, SupplyProbationIdleFailuresMax, settings.IdleFailuresToDemote)
+}
+
+func TestSupplyProbationIdleHelpers(t *testing.T) {
+	settings := &SupplyProbationSettings{IdleAfterHours: 12, IdleFailuresToDemote: 3}
+	assert.Equal(t, 12*time.Hour, settings.IdleWindow())
+	assert.Equal(t, 3, settings.IdleFailureThreshold())
+
+	// nil 与零值都回落到默认，与本文件其余 helper 同一个脾气。
+	var nilSettings *SupplyProbationSettings
+	assert.Equal(t, time.Duration(supplyProbationDefaultIdleAfterHours)*time.Hour, nilSettings.IdleWindow())
+	assert.Equal(t, supplyProbationDefaultIdleFailures, nilSettings.IdleFailureThreshold())
+	assert.Equal(t, supplyProbationDefaultIdleFailures,
+		(&SupplyProbationSettings{}).IdleFailureThreshold())
+}

@@ -490,6 +490,49 @@
 
 
 
+            <!-- 闲置号复检。开关放在面板上而不是跟着工程参数一起收起，因为它不是节奏
+                 参数——它会把一个正在给主人赚分成的号停掉，那是运营该亲手按下的决定。
+                 失败阈值仍然收起：默认 2 次就是推荐值。 -->
+            <div class="space-y-4 border-t border-gray-100 pt-4 dark:border-dark-700">
+              <div class="flex items-center justify-between">
+                <div class="pr-4">
+                  <label class="font-medium text-gray-900 dark:text-white">
+                    {{ t('supplyAdmin.probation.idleProbeEnabled') }}
+                  </label>
+                  <p class="text-sm text-gray-500 dark:text-gray-400">
+                    {{ t('supplyAdmin.probation.idleProbeEnabledHint') }}
+                  </p>
+                </div>
+                <Toggle
+                  v-model="probationForm.idle_probe_enabled"
+                  data-testid="supply-probation-idle-enabled"
+                />
+              </div>
+
+              <div v-if="probationForm.idle_probe_enabled">
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('supplyAdmin.probation.idleAfterHours') }}
+                </label>
+                <input
+                  v-model.number="probationForm.idle_after_hours"
+                  type="number"
+                  step="1"
+                  :min="probationBounds.idle_after_hours_min"
+                  :max="probationBounds.idle_after_hours_max"
+                  class="input"
+                  data-testid="supply-probation-idle-after-hours"
+                />
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {{
+                    t('supplyAdmin.probation.idleAfterHoursHint', {
+                      min: probationBounds.idle_after_hours_min,
+                      max: probationBounds.idle_after_hours_max,
+                    })
+                  }}
+                </p>
+              </div>
+            </div>
+
             <!-- 探测间隔/达标次数/排空窗/探测模型是工程参数，已从面板收起：
                  默认值即推荐值，settings API 仍可手工调（字段与行为原样保留）。 -->
             <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-900">
@@ -1243,6 +1286,9 @@ const probationForm = reactive<SupplyProbationPayload>({
   probe_interval_minutes: 15,
   probe_model: '',
   drain_window_minutes: 10,
+  idle_probe_enabled: false,
+  idle_after_hours: 24 * 7,
+  idle_failures_to_demote: 2,
 })
 
 const probationBounds = reactive({
@@ -1251,6 +1297,9 @@ const probationBounds = reactive({
   probe_interval_minutes_min: 5,
   probe_interval_minutes_max: 60 * 24,
   drain_window_minutes_max: 60 * 24,
+  idle_after_hours_min: 1,
+  idle_after_hours_max: 24 * 90,
+  idle_failures_max: 10,
 })
 
 // 接入上限的兜底初值与后端 DefaultSupplyOnboardingSettings 对齐：每人 5 个、每 IP 不限。
@@ -1464,6 +1513,9 @@ async function loadProbation(): Promise<void> {
   probationForm.probe_interval_minutes = settings.probe_interval_minutes
   probationForm.probe_model = settings.probe_model
   probationForm.drain_window_minutes = settings.drain_window_minutes
+  probationForm.idle_probe_enabled = settings.idle_probe_enabled
+  probationForm.idle_after_hours = settings.idle_after_hours
+  probationForm.idle_failures_to_demote = settings.idle_failures_to_demote
   applyProbationBounds(settings)
 }
 
@@ -1483,6 +1535,15 @@ function applyProbationBounds(settings: SupplyProbationSettings): void {
   }
   if (settings.drain_window_minutes_max > 0) {
     probationBounds.drain_window_minutes_max = settings.drain_window_minutes_max
+  }
+  if (settings.idle_after_hours_min > 0) {
+    probationBounds.idle_after_hours_min = settings.idle_after_hours_min
+  }
+  if (settings.idle_after_hours_max > 0) {
+    probationBounds.idle_after_hours_max = settings.idle_after_hours_max
+  }
+  if (settings.idle_failures_max > 0) {
+    probationBounds.idle_failures_max = settings.idle_failures_max
   }
 }
 
@@ -1767,6 +1828,12 @@ async function saveProbation(): Promise<void> {
       probe_interval_minutes: probationForm.probe_interval_minutes,
       probe_model: probationForm.probe_model,
       drain_window_minutes: probationForm.drain_window_minutes,
+      idle_probe_enabled: probationForm.idle_probe_enabled,
+      idle_after_hours: probationForm.idle_after_hours,
+      // 阈值不在面板上，但必须原样带回去：不带的话后端收到 0，
+      // normalize 会把它回落成默认值——一个手工调过这个数的部署会在
+      // 下一次保存别的字段时被静默改回去。
+      idle_failures_to_demote: probationForm.idle_failures_to_demote,
     })
     // 这一组后端是**夹回区间而不是报错**（与结算参数刻意不同），所以回填不是可选的：
     // 不写回来，运营会以为自己填的 1 分钟生效了，而库里存的是 5。

@@ -1079,3 +1079,113 @@ func TestSupplierOnboarding_FindAccountIDByRelayEndpoint(t *testing.T) {
 		assert.Zero(t, id)
 	})
 }
+
+// 闲置扫描的判据只有真库能验：四个可空的时间列（last_used_at / rate_limit_reset_at /
+// overload_until / temp_unschedulable_until）都走三值逻辑，写成 `NOT (x AND y)` 的那种
+// 直觉写法会把绝大多数健康账号（这些列全是 NULL）静默排除掉。
+//
+// 其中「正在限流的号不返回」是这条查询里最要紧的一条，而它恰恰是最容易被顺手删掉的：
+// 额度被打满是**供给成功**的证据。少了它，这个功能就变成「干得越多越先被停」。
+func TestSupplierOnboarding_ListIdleActiveExcludesBusyAndUnhealthy(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewSupplierOnboardingRepository(client)
+
+	ownerID := mustCreateSupplier(t, client, "idle-owner")
+	stamp := time.Now().UnixNano()
+	activeExtra := map[string]any{service.SupplyStateExtraKey: service.SupplyStateActive}
+
+	newSupply := func(label string, extra map[string]any) *service.Account {
+		a := mustCreateAccount(t, client, &service.Account{
+			Name:  fmt.Sprintf("%s-%d", label, stamp),
+			Extra: extra,
+		})
+		require.NoError(t, repo.SetAccountOwner(txCtx, a.ID, ownerID))
+		return a
+	}
+
+	idle := newSupply("idle", activeExtra)
+	never := newSupply("never-used", activeExtra)
+	busy := newSupply("busy", activeExtra)
+	limited := newSupply("rate-limited", activeExtra)
+	overloaded := newSupply("overloaded", activeExtra)
+	tempUnsched := newSupply("temp-unsched", activeExtra)
+	errored := newSupply("errored", activeExtra)
+	unschedulable := newSupply("unschedulable", activeExtra)
+	pending := newSupply("pending", map[string]any{
+		service.SupplyStateExtraKey: service.SupplyStatePendingReview,
+	})
+	// 自营号：有 active 状态、可调度，但没有归属人，永远不进供给侧任何扫描。
+	firstParty := mustCreateAccount(t, client, &service.Account{
+		Name:  fmt.Sprintf("first-party-idle-%d", stamp),
+		Extra: activeExtra,
+	})
+
+	long := time.Now().Add(-30 * 24 * time.Hour)
+	setAccountTimeColumn(t, client, idle.ID, "last_used_at", &long)
+	setAccountTimeColumn(t, client, errored.ID, "last_used_at", &long)
+	setAccountTimeColumn(t, client, unschedulable.ID, "last_used_at", &long)
+	setAccountTimeColumn(t, client, pending.ID, "last_used_at", &long)
+	setAccountTimeColumn(t, client, firstParty.ID, "last_used_at", &long)
+	// never-used 的 last_used_at 保持 NULL。
+	recent := time.Now().Add(-time.Minute)
+	setAccountTimeColumn(t, client, busy.ID, "last_used_at", &recent)
+
+	// 三个「忙」的形态：都闲置很久了，但各自有一个未到期的不可用窗口。
+	future := time.Now().Add(time.Hour)
+	for id, col := range map[int64]string{
+		limited.ID:     "rate_limit_reset_at",
+		overloaded.ID:  "overload_until",
+		tempUnsched.ID: "temp_unschedulable_until",
+	} {
+		setAccountTimeColumn(t, client, id, "last_used_at", &long)
+		setAccountTimeColumn(t, client, id, col, &future)
+	}
+
+	setAccountStatus(t, client, errored.ID, service.StatusError)
+	setAccountSchedulable(t, client, unschedulable.ID, false)
+
+	ids, err := repo.ListIdleActiveSupplyAccountIDs(txCtx, time.Now().Add(-24*time.Hour), 100)
+	require.NoError(t, err)
+
+	require.Contains(t, ids, idle.ID)
+	require.Contains(t, ids, never.ID, "入池后从未被派过单的号是最该查的那一类")
+
+	require.NotContains(t, ids, busy.ID, "有流量的号靠真实流量自证，不必再烧它主人的额度")
+	require.NotContains(t, ids, limited.ID, "限流 = 额度被打满 = 供给成功，探它等于把干得最多的号停掉")
+	require.NotContains(t, ids, overloaded.ID)
+	require.NotContains(t, ids, tempUnsched.ID)
+	require.NotContains(t, ids, errored.ID, "已经是错误态的号有人管了，再探只会覆盖掉写明原因的 error_message")
+	require.NotContains(t, ids, unschedulable.ID)
+	require.NotContains(t, ids, pending.ID, "还没入池的号归观察期管")
+	require.NotContains(t, ids, firstParty.ID, "自营号（owner_user_id IS NULL）不进供给侧任何扫描")
+}
+
+// 零值时间会让 `last_used_at < $1` 只剩 NULL 那一支命中——语义完全不是调用方要的，
+// 所以是拒绝而不是默默降级。
+func TestSupplierOnboarding_ListIdleActiveRejectsZeroTime(t *testing.T) {
+	tx := testEntTx(t)
+	repo := NewSupplierOnboardingRepository(tx.Client())
+
+	_, err := repo.ListIdleActiveSupplyAccountIDs(
+		dbent.NewTxContext(context.Background(), tx), time.Time{}, 100)
+	require.Error(t, err)
+}
+
+// 下面三个 helper 直接改库：要造的是 ent builder 不暴露、或造起来绕一大圈的列状态。
+func setAccountTimeColumn(t *testing.T, client *dbent.Client, accountID int64, column string, at *time.Time) {
+	t.Helper()
+	// 列名来自本文件内的字面量，不是外部输入；ent 的 ExecContext 不支持标识符占位符。
+	_, err := client.ExecContext(context.Background(),
+		fmt.Sprintf("UPDATE accounts SET %s = $1 WHERE id = $2", column), at, accountID)
+	require.NoError(t, err)
+}
+
+func setAccountStatus(t *testing.T, client *dbent.Client, accountID int64, status string) {
+	t.Helper()
+	_, err := client.ExecContext(context.Background(),
+		"UPDATE accounts SET status = $1 WHERE id = $2", status, accountID)
+	require.NoError(t, err)
+}

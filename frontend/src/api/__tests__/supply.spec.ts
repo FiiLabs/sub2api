@@ -227,6 +227,9 @@ describe('admin supply market api', () => {
       probe_interval_minutes: 15,
       probe_model: '',
       drain_window_minutes: 10,
+      idle_probe_enabled: true,
+      idle_after_hours: 168,
+      idle_failures_to_demote: 2,
     })
     expect(put).toHaveBeenCalledWith('/admin/settings/supply-probation', {
       enabled: true,
@@ -235,6 +238,11 @@ describe('admin supply market api', () => {
       probe_interval_minutes: 15,
       probe_model: '',
       drain_window_minutes: 10,
+      // 闲置复检这三个必须整组送出去。少送任何一个，后端 normalize 会把它
+      // 回落成默认值——手工调过的部署会在下一次保存别的字段时被静默改回去。
+      idle_probe_enabled: true,
+      idle_after_hours: 168,
+      idle_failures_to_demote: 2,
     })
   })
 

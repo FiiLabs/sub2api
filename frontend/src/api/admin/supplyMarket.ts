@@ -72,12 +72,31 @@ export interface SupplyProbationSettings {
   /** 优雅下线的排空窗（分钟）。0 = 优雅下线退化为直接终态。 */
   drain_window_minutes: number
 
+  /**
+   * 闲置探测总开关。默认关。
+   *
+   * 它只解决一件事：**订阅降级/退订而 OAuth 授权仍然有效**。凭证被撤销、真实请求
+   * 401 这两类失效已经有别的路径在管，而这一类在账号行上一点痕迹都没有——只有
+   * 真的打一次上游才会暴露，而一个从不接单的号永远等不到那一次。
+   *
+   * 开它意味着平台会主动花供给者的额度去探测，所以三层节流都在后端：只探闲置的、
+   * 正在限流/过载的不探、单轮有数量上限。
+   */
+  idle_probe_enabled: boolean
+  /** 多久没接过单算闲置（小时），**同时**是两次闲置探测的最小间隔。 */
+  idle_after_hours: number
+  /** 连续几次硬失败（凭证失效/无额度）才把号停下来。限流、网络抖动不计入。 */
+  idle_failures_to_demote: number
+
   /** 后端下发的边界值，前端不要另抄一份。 */
   min_observation_minutes_max: number
   required_successes_max: number
   probe_interval_minutes_min: number
   probe_interval_minutes_max: number
   drain_window_minutes_max: number
+  idle_after_hours_min: number
+  idle_after_hours_max: number
+  idle_failures_max: number
 }
 
 export type SupplyProbationPayload = Omit<
@@ -87,6 +106,9 @@ export type SupplyProbationPayload = Omit<
   | 'probe_interval_minutes_min'
   | 'probe_interval_minutes_max'
   | 'drain_window_minutes_max'
+  | 'idle_after_hours_min'
+  | 'idle_after_hours_max'
+  | 'idle_failures_max'
 >
 
 export interface SupplyAgreementSettings {

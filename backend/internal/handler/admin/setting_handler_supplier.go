@@ -209,6 +209,12 @@ type SupplyProbationSettingsResponse struct {
 	ProbeModel            string `json:"probe_model"`
 	DrainWindowMinutes    int    `json:"drain_window_minutes"`
 
+	// 闲置探测。与上面五个同一张卡，因为它们动的是同一件事的两端——
+	// 上面决定「什么时候可以站到付费消费者面前」，这三个决定「什么时候该被请下来」。
+	IdleProbeEnabled     bool `json:"idle_probe_enabled"`
+	IdleAfterHours       int  `json:"idle_after_hours"`
+	IdleFailuresToDemote int  `json:"idle_failures_to_demote"`
+
 	// 边界值随配置下发，理由同结算参数：前端抄一遍上限，后端改了就对不上。
 	// 探测间隔的**下限**尤其要下发——它不是一个防呆值，它是「不要拿供给者的额度当
 	// 探针耗材」这条规则的具体数字，运营需要在界面上看见它。
@@ -217,6 +223,9 @@ type SupplyProbationSettingsResponse struct {
 	ProbeIntervalMinutesMin  int `json:"probe_interval_minutes_min"`
 	ProbeIntervalMinutesMax  int `json:"probe_interval_minutes_max"`
 	DrainWindowMinutesMax    int `json:"drain_window_minutes_max"`
+	IdleAfterHoursMin        int `json:"idle_after_hours_min"`
+	IdleAfterHoursMax        int `json:"idle_after_hours_max"`
+	IdleFailuresMax          int `json:"idle_failures_max"`
 }
 
 func newSupplyProbationSettingsResponse(s *service.SupplyProbationSettings) SupplyProbationSettingsResponse {
@@ -226,6 +235,9 @@ func newSupplyProbationSettingsResponse(s *service.SupplyProbationSettings) Supp
 		ProbeIntervalMinutesMin:  service.SupplyProbationProbeIntervalMinutesMin,
 		ProbeIntervalMinutesMax:  service.SupplyProbationProbeIntervalMinutesMax,
 		DrainWindowMinutesMax:    service.SupplyProbationDrainWindowMinutesMax,
+		IdleAfterHoursMin:        service.SupplyProbationIdleAfterHoursMin,
+		IdleAfterHoursMax:        service.SupplyProbationIdleAfterHoursMax,
+		IdleFailuresMax:          service.SupplyProbationIdleFailuresMax,
 	}
 	if s == nil {
 		return resp
@@ -236,6 +248,9 @@ func newSupplyProbationSettingsResponse(s *service.SupplyProbationSettings) Supp
 	resp.ProbeIntervalMinutes = s.ProbeIntervalMinutes
 	resp.ProbeModel = s.ProbeModel
 	resp.DrainWindowMinutes = s.DrainWindowMinutes
+	resp.IdleProbeEnabled = s.IdleProbeEnabled
+	resp.IdleAfterHours = s.IdleAfterHours
+	resp.IdleFailuresToDemote = s.IdleFailuresToDemote
 	return resp
 }
 
@@ -254,6 +269,9 @@ type UpdateSupplyProbationSettingsRequest struct {
 	ProbeIntervalMinutes  int    `json:"probe_interval_minutes"`
 	ProbeModel            string `json:"probe_model"`
 	DrainWindowMinutes    int    `json:"drain_window_minutes"`
+	IdleProbeEnabled      bool   `json:"idle_probe_enabled"`
+	IdleAfterHours        int    `json:"idle_after_hours"`
+	IdleFailuresToDemote  int    `json:"idle_failures_to_demote"`
 }
 
 // UpdateSupplyProbationSettings 写观察期参数
@@ -276,6 +294,9 @@ func (h *SettingHandler) UpdateSupplyProbationSettings(c *gin.Context) {
 		ProbeIntervalMinutes:  req.ProbeIntervalMinutes,
 		ProbeModel:            req.ProbeModel,
 		DrainWindowMinutes:    req.DrainWindowMinutes,
+		IdleProbeEnabled:      req.IdleProbeEnabled,
+		IdleAfterHours:        req.IdleAfterHours,
+		IdleFailuresToDemote:  req.IdleFailuresToDemote,
 	}
 	if err := h.settingService.SetSupplyProbationSettings(c.Request.Context(), settings); err != nil {
 		response.BadRequest(c, err.Error())
