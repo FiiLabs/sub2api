@@ -21,12 +21,12 @@
 services:
   sub2api:
     # Built from THIS repo by .github/workflows/publish-tee-images.yml (cosign
-    # keyless + SLSA provenance, tag proof-v39). amd64 child of INDEX
-    # sha256:0727d22a9158ab49e0d73d9ec1b8a81bcc6b4e37e0e21f044f2ab7721ec216c6.
+    # keyless + SLSA provenance, tag proof-v40). amd64 child of INDEX
+    # sha256:f4e7244c3e0fadc43ab565113201d79cbcda83ba8a6bfe154c4e1fe0dc0a2eb7.
     # Resolved with deploy/phala/pin-amd64.sh (--raw + platform match), never by
     # grepping the human-readable inspect output — that is how proof-v38 pinned
     # the unknown/unknown attestation-manifest and took production down.
-    image: docker.io/markerdao/sub2api@sha256:f7a2dc8561627bfb73f6f334f9925c562161fc9c3dcbc050f14aa8bc5bf25837
+    image: docker.io/markerdao/sub2api@sha256:4078c9387194c04cecc07c874bfdb42ff86413714a675a32409483b834918af6
     container_name: sub2api
     restart: unless-stopped
     ulimits:
