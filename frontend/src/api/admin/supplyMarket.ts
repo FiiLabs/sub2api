@@ -831,6 +831,41 @@ async function updateIncentiveSettings(
 }
 
 /** 首页公开数据展示配置（真实数 + 可配基数偏移）。默认关、零偏移。 */
+/**
+ * 首页活动横幅配置。
+ *
+ * 与 HomepageStatsSettings 分家：那一组是「首页展示什么**数据**」，这一组是
+ * 「首页展示什么**话**」。两者变更的理由不同——数据偏移动的是长期对外形象，
+ * 横幅动的是这一期活动的起止。
+ *
+ * 中英各存一份：只出一种语言，会在另一种语言的访客那里变成一块突兀的外语补丁。
+ * 只填一种时后端会回退到已填的那份，而不是渲染空白。
+ */
+export interface HomepageBannerSettings {
+  /** 总开关。默认关——不打开首页不出现这一块。 */
+  enabled: boolean
+  text_zh: string
+  text_en: string
+  /** 按钮文字。留空则只显示文案、不显示按钮。 */
+  cta_text_zh: string
+  cta_text_en: string
+  /** 按钮跳转地址，只接受 http(s)。填了按钮文字就必须填它，否则后端 400。 */
+  cta_url: string
+  /** promo = 活动（醒目），info = 通知（克制）。 */
+  variant: 'promo' | 'info'
+
+  /** 后端下发的边界值，前端不要另抄一份。 */
+  text_max_len: number
+  cta_text_max_len: number
+  url_max_len: number
+}
+
+/** 写回时不带边界值——那是后端算出来的，写回去没有意义。 */
+export type HomepageBannerPayload = Omit<
+  HomepageBannerSettings,
+  'text_max_len' | 'cta_text_max_len' | 'url_max_len'
+>
+
 export interface HomepageStatsSettings {
   enabled: boolean
   shared_accounts_offset: number
@@ -838,6 +873,28 @@ export interface HomepageStatsSettings {
   total_requests_offset: number
   total_tokens_offset: number
   contributor_earnings_offset: number
+}
+
+async function getHomepageBannerSettings(): Promise<HomepageBannerSettings> {
+  const { data } = await apiClient.get<HomepageBannerSettings>('/admin/settings/homepage-banner')
+  return data
+}
+
+/**
+ * 写横幅配置。
+ *
+ * **整条一起发**，不做部分更新：文字、按钮、链接三者必须一起生效或一起不生效，
+ * 否则会造出「新文案配着上一期的旧链接」这种组合，而那正是首页上最不该出现的东西。
+ * 后端对结构性错误（打开却没文案、坏链接、按钮无链接）直接 400，不夹回。
+ */
+async function updateHomepageBannerSettings(
+  payload: HomepageBannerPayload
+): Promise<HomepageBannerSettings> {
+  const { data } = await apiClient.put<HomepageBannerSettings>(
+    '/admin/settings/homepage-banner',
+    payload
+  )
+  return data
 }
 
 async function getHomepageStatsSettings(): Promise<HomepageStatsSettings> {
@@ -1139,6 +1196,8 @@ export const adminSupplyMarketAPI = {
   updateBalanceSettings,
   getIncentiveSettings,
   updateIncentiveSettings,
+  getHomepageBannerSettings,
+  updateHomepageBannerSettings,
   getHomepageStatsSettings,
   updateHomepageStatsSettings,
   getAgreementSettings,

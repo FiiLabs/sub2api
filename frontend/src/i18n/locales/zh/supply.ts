@@ -615,6 +615,24 @@ export default {
     },
 
     // APEXONE-EXT: 首页公开数据展示配置。
+    homepageBanner: {
+      title: '首页活动横幅',
+      description: '首页顶部的一条横幅，未登录访客也能看到。文案与链接都在这里配，换一期活动不需要重新发版。',
+      enabled: '显示横幅',
+      enabledHint: '关掉之后首页就不再出现这一块。默认是关的。',
+      textZh: '正文（中文）',
+      textEn: '正文（英文）',
+      ctaTextZh: '按钮文字（中文）',
+      ctaTextEn: '按钮文字（英文）',
+      ctaUrl: '按钮链接',
+      ctaUrlHint: '只接受 http/https。填了按钮文字就必须填链接——有按钮点不动比没有按钮更像故障，所以后端会直接拒绝。',
+      variant: '样式',
+      variantPromo: '活动（醒目）',
+      variantInfo: '通知（克制）',
+      notice: '只填一种语言时，另一种语言的访客看到已填的那份，而不是空白。正文超长会被截断后回显；打开却没文案、按钮没链接、链接非法，保存会被拒绝。访客关掉横幅后会记住，但换了文案会重新出现。',
+      save: '保存横幅配置',
+      saved: '横幅配置已保存'
+    },
     homepageStats: {
       title: '首页公开数据',
       description: '首页展示的平台数据 = 真实聚合数 + 下面配的基数偏移。默认关、零偏移。',

@@ -655,6 +655,24 @@ export default {
     },
 
     // APEXONE-EXT: public homepage stats display.
+    homepageBanner: {
+      title: 'Homepage banner',
+      description: 'A strip at the top of the homepage, visible to logged-out visitors. Copy and link are configured here, so running a new campaign does not require a release.',
+      enabled: 'Show banner',
+      enabledHint: 'Turn this off and the strip disappears from the homepage. Off by default.',
+      textZh: 'Body (Chinese)',
+      textEn: 'Body (English)',
+      ctaTextZh: 'Button label (Chinese)',
+      ctaTextEn: 'Button label (English)',
+      ctaUrl: 'Button link',
+      ctaUrlHint: 'http/https only. A button label requires a link — a button that goes nowhere reads as a fault, so the backend rejects it outright.',
+      variant: 'Style',
+      variantPromo: 'Campaign (prominent)',
+      variantInfo: 'Notice (restrained)',
+      notice: 'If only one language is filled in, visitors in the other language see the one you filled rather than a blank. Overlong body text is truncated and echoed back; enabling with no text, a label without a link, or a malformed link are all rejected on save. Visitors who dismiss the banner will not see it again until the copy changes.',
+      save: 'Save banner',
+      saved: 'Banner saved'
+    },
     homepageStats: {
       title: 'Homepage public stats',
       description: 'The platform numbers shown on the homepage = real aggregates + the baseline offsets below. Off by default, zero offsets.',

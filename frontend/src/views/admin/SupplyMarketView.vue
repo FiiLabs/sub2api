@@ -858,6 +858,75 @@
           </div>
         </div>
 
+        <!-- ===================== 首页活动横幅 ===================== -->
+        <div class="card space-y-4 p-6">
+          <div>
+            <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('supplyAdmin.homepageBanner.title') }}</h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.homepageBanner.description') }}</p>
+          </div>
+
+          <div class="flex items-center justify-between">
+            <div class="pr-4">
+              <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.homepageBanner.enabled') }}</p>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.homepageBanner.enabledHint') }}</p>
+            </div>
+            <Toggle v-model="bannerForm.enabled" data-testid="home-banner-enabled" />
+          </div>
+
+          <div class="grid gap-4 border-t border-gray-100 pt-4 dark:border-dark-700 md:grid-cols-2">
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.homepageBanner.textZh') }}</label>
+              <textarea
+                v-model="bannerForm.text_zh"
+                rows="2"
+                class="input"
+                :maxlength="bannerMeta.text_max_len"
+                data-testid="home-banner-text-zh"
+              ></textarea>
+            </div>
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.homepageBanner.textEn') }}</label>
+              <textarea
+                v-model="bannerForm.text_en"
+                rows="2"
+                class="input"
+                :maxlength="bannerMeta.text_max_len"
+                data-testid="home-banner-text-en"
+              ></textarea>
+            </div>
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.homepageBanner.ctaTextZh') }}</label>
+              <input v-model="bannerForm.cta_text_zh" type="text" class="input" :maxlength="bannerMeta.cta_text_max_len" data-testid="home-banner-cta-zh" />
+            </div>
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.homepageBanner.ctaTextEn') }}</label>
+              <input v-model="bannerForm.cta_text_en" type="text" class="input" :maxlength="bannerMeta.cta_text_max_len" data-testid="home-banner-cta-en" />
+            </div>
+            <div class="md:col-span-2">
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.homepageBanner.ctaUrl') }}</label>
+              <input v-model="bannerForm.cta_url" type="url" class="input" :maxlength="bannerMeta.url_max_len" placeholder="https://" data-testid="home-banner-cta-url" />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.homepageBanner.ctaUrlHint') }}</p>
+            </div>
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.homepageBanner.variant') }}</label>
+              <select v-model="bannerForm.variant" class="input" data-testid="home-banner-variant">
+                <option value="promo">{{ t('supplyAdmin.homepageBanner.variantPromo') }}</option>
+                <option value="info">{{ t('supplyAdmin.homepageBanner.variantInfo') }}</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-900">
+            <p class="text-xs text-gray-600 dark:text-gray-300">{{ t('supplyAdmin.homepageBanner.notice') }}</p>
+          </div>
+
+          <div class="flex justify-end">
+            <button class="btn btn-primary" :disabled="savingBanner" data-testid="home-banner-save" @click="saveBanner">
+              {{ t('supplyAdmin.homepageBanner.save') }}
+            </button>
+          </div>
+        </div>
+
         <!-- ===================== 首页公开数据 ===================== -->
         <div class="card space-y-4 p-6">
           <div>
@@ -1230,6 +1299,7 @@ import {
   type SupplyPayoutChainStatus,
   type SupplyPoolPayload,
   type SupplyPoolSettings,
+  type HomepageBannerPayload,
   type SupplyProbationPayload,
   type SupplyProbationSettings,
   type SupplyOnboardingPayload,
@@ -1262,6 +1332,25 @@ const savingWithdrawal = ref(false)
 const savingDemandGate = ref(false)
 const savingBalance = ref(false)
 const savingIncentive = ref(false)
+const savingBanner = ref(false)
+
+// 默认值与后端 DefaultHomepageBannerSettings 对齐，只是「后端读不到时也能渲染」的兜底。
+const bannerForm = reactive<HomepageBannerPayload>({
+  enabled: false,
+  text_zh: '',
+  text_en: '',
+  cta_text_zh: '',
+  cta_text_en: '',
+  cta_url: '',
+  variant: 'promo',
+})
+
+const bannerMeta = reactive({
+  text_max_len: 200,
+  cta_text_max_len: 40,
+  url_max_len: 512,
+})
+
 const savingHomepageStats = ref(false)
 
 const settlementForm = reactive({
@@ -1728,6 +1817,39 @@ async function saveIncentive(): Promise<void> {
   }
 }
 
+async function loadBanner(): Promise<void> {
+  const settings = await adminSupplyMarketAPI.getHomepageBannerSettings()
+  bannerForm.enabled = settings.enabled
+  bannerForm.text_zh = settings.text_zh ?? ''
+  bannerForm.text_en = settings.text_en ?? ''
+  bannerForm.cta_text_zh = settings.cta_text_zh ?? ''
+  bannerForm.cta_text_en = settings.cta_text_en ?? ''
+  bannerForm.cta_url = settings.cta_url ?? ''
+  bannerForm.variant = settings.variant ?? 'promo'
+  if (settings.text_max_len > 0) bannerMeta.text_max_len = settings.text_max_len
+  if (settings.cta_text_max_len > 0) bannerMeta.cta_text_max_len = settings.cta_text_max_len
+  if (settings.url_max_len > 0) bannerMeta.url_max_len = settings.url_max_len
+}
+
+async function saveBanner(): Promise<void> {
+  savingBanner.value = true
+  try {
+    // 整条一起发。后端对结构性错误直接 400（不夹回），但长度超限会夹回，
+    // 所以回填不是可选的——那是运营看见截断结果的唯一途径。
+    const saved = await adminSupplyMarketAPI.updateHomepageBannerSettings({ ...bannerForm })
+    bannerForm.text_zh = saved.text_zh ?? ''
+    bannerForm.text_en = saved.text_en ?? ''
+    bannerForm.cta_text_zh = saved.cta_text_zh ?? ''
+    bannerForm.cta_text_en = saved.cta_text_en ?? ''
+    bannerForm.cta_url = saved.cta_url ?? ''
+    appStore.showSuccess(t('supplyAdmin.homepageBanner.saved'))
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('supplyAdmin.error.saveFailed')))
+  } finally {
+    savingBanner.value = false
+  }
+}
+
 async function loadHomepageStats(): Promise<void> {
   const settings = await adminSupplyMarketAPI.getHomepageStatsSettings()
   homepageStatsForm.enabled = settings.enabled
@@ -2147,6 +2269,7 @@ onMounted(async () => {
       loadBalance(),
       loadIncentive(),
       loadHomepageStats(),
+      loadBanner(),
     ])
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, t('supplyAdmin.error.loadFailed')))

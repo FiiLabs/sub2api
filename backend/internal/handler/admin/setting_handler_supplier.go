@@ -1035,3 +1035,102 @@ func (h *SettingHandler) UpdateSupplyBalanceSettings(c *gin.Context) {
 	response.Success(c, newSupplyBalanceSettingsResponse(
 		h.settingService.GetSupplyBalanceSettings(ctx)))
 }
+
+// ============================================================================
+// APEXONE-EXT: 首页活动横幅。
+// ============================================================================
+
+// HomepageBannerSettingsResponse 是首页横幅配置的对外形态。
+//
+// 与公开端点（handler.PublicBannerResponse）刻意不同：那边已经按访客语言挑好了
+// 一份文案，这边要把**两种语言都原样回给管理员**——他要编辑的是配置本身，
+// 不是配置渲染出来的结果。
+type HomepageBannerSettingsResponse struct {
+	Enabled   bool   `json:"enabled"`
+	TextZH    string `json:"text_zh"`
+	TextEN    string `json:"text_en"`
+	CTATextZH string `json:"cta_text_zh"`
+	CTATextEN string `json:"cta_text_en"`
+	CTAURL    string `json:"cta_url"`
+	Variant   string `json:"variant"`
+
+	// 边界值随配置下发，理由同其他几组：前端抄一份就等于给同一条规则立两个源头。
+	TextMaxLen    int `json:"text_max_len"`
+	CTATextMaxLen int `json:"cta_text_max_len"`
+	URLMaxLen     int `json:"url_max_len"`
+}
+
+func newHomepageBannerSettingsResponse(s *service.HomepageBannerSettings) HomepageBannerSettingsResponse {
+	resp := HomepageBannerSettingsResponse{
+		TextMaxLen:    service.HomepageBannerTextMaxLen,
+		CTATextMaxLen: service.HomepageBannerCTATextMaxLen,
+		URLMaxLen:     service.HomepageBannerURLMaxLen,
+	}
+	if s == nil {
+		resp.Variant = service.HomepageBannerVariantInfo
+		return resp
+	}
+	resp.Enabled = s.Enabled
+	resp.TextZH = s.TextZH
+	resp.TextEN = s.TextEN
+	resp.CTATextZH = s.CTATextZH
+	resp.CTATextEN = s.CTATextEN
+	resp.CTAURL = s.CTAURL
+	resp.Variant = s.Variant
+	return resp
+}
+
+// GetHomepageBannerSettings 读首页横幅配置
+// GET /api/v1/admin/settings/homepage-banner
+func (h *SettingHandler) GetHomepageBannerSettings(c *gin.Context) {
+	response.Success(c, newHomepageBannerSettingsResponse(
+		h.settingService.GetHomepageBannerSettings(c.Request.Context())))
+}
+
+// UpdateHomepageBannerSettingsRequest 更新首页横幅配置请求。
+//
+// 全部整值而不是指针（与 homepage-stats 那组相反）：那组是一堆互不相干的数字偏移，
+// 漏传一个沿用旧值是合理的；而横幅是**一整条文案**——文字、按钮、链接三者必须一起
+// 生效或一起不生效。允许部分更新会造出「新文案配着上一期的旧链接」这种组合，
+// 而那正是首页上最不该出现的东西。
+type UpdateHomepageBannerSettingsRequest struct {
+	Enabled   bool   `json:"enabled"`
+	TextZH    string `json:"text_zh"`
+	TextEN    string `json:"text_en"`
+	CTATextZH string `json:"cta_text_zh"`
+	CTATextEN string `json:"cta_text_en"`
+	CTAURL    string `json:"cta_url"`
+	Variant   string `json:"variant"`
+}
+
+// UpdateHomepageBannerSettings 写首页横幅配置
+// PUT /api/v1/admin/settings/homepage-banner
+//
+// 结构性错误（打开却没文案、未知样式、坏链接）**直接 400**，不夹回——理由见
+// service 侧 validate 的注释：被悄悄清空的 CTA 链接运营看不见，他只会以为配好了。
+// 长度超限则夹回后回读，所以这里的回读不是习惯，是他看见截断结果的唯一途径。
+func (h *SettingHandler) UpdateHomepageBannerSettings(c *gin.Context) {
+	var req UpdateHomepageBannerSettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	settings := &service.HomepageBannerSettings{
+		Enabled:   req.Enabled,
+		TextZH:    req.TextZH,
+		TextEN:    req.TextEN,
+		CTATextZH: req.CTATextZH,
+		CTATextEN: req.CTATextEN,
+		CTAURL:    req.CTAURL,
+		Variant:   req.Variant,
+	}
+	ctx := c.Request.Context()
+	if err := h.settingService.SetHomepageBannerSettings(ctx, settings); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.Success(c, newHomepageBannerSettingsResponse(
+		h.settingService.GetHomepageBannerSettings(ctx)))
+}

@@ -14,6 +14,10 @@
 
     <Header />
 
+    <!-- APEXONE-EXT: 可配活动横幅。内容来自后端 settings，换活动不用发版。
+         读不到 / 未开启时它自己什么都不渲染，所以这里不需要 v-if。 -->
+    <HomeBanner />
+
     <!-- Main Content -->
     <main class="relative z-10 flex-1 px-6 py-14">
       <!-- HERO (above the fold — rendered instantly, no reveal) -->
@@ -556,6 +560,7 @@ import AppFooter from '@/components/layout/AppFooter.vue'
 import Header from '@/components/layout/Header.vue'
 import StatusIcon from '@/components/icons/StatusIcon.vue'
 import VideoPlayer from '@/components/common/VideoPlayer.vue'
+import HomeBanner from '@/components/common/HomeBanner.vue'
 import promoPosterUrl from '@/assets/promo-poster.jpg'
 
 // locale 用于按语言选共享者视频（见下方 contributorVideoUrl）

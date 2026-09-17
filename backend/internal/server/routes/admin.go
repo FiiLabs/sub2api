@@ -639,6 +639,8 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		// APEXONE-EXT: 首页公开数据展示配置（真实数 + 可配偏移，默认关）。
 		adminSettings.GET("/homepage-stats", h.Admin.Setting.GetHomepageStatsSettings)
 		adminSettings.PUT("/homepage-stats", h.Admin.Setting.UpdateHomepageStatsSettings)
+		adminSettings.GET("/homepage-banner", h.Admin.Setting.GetHomepageBannerSettings)
+		adminSettings.PUT("/homepage-banner", h.Admin.Setting.UpdateHomepageBannerSettings)
 	}
 }
 

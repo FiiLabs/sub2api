@@ -254,6 +254,15 @@ func RegisterAuthRoutes(
 		stats.GET("/public", h.PublicStats.GetPublicStats)
 	}
 
+	// APEXONE-EXT: 首页活动横幅（无鉴权，同样按 IP 兜底限流）。
+	// 与 /stats 分开挂：那个是「首页展示什么数据」，这个是「首页展示什么话」，
+	// 两者的读者、变更节奏与失效后果都不同。
+	home := v1.Group("/home")
+	home.Use(panelRateLimiter.PublicIP())
+	{
+		home.GET("/banner", h.PublicBanner.GetBanner)
+	}
+
 	// 需要认证的当前用户信息
 	authenticated := v1.Group("")
 	authenticated.Use(gin.HandlerFunc(jwtAuth))

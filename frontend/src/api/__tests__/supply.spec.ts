@@ -423,6 +423,10 @@ describe('admin supply ops api (read-only)', () => {
       // 产出均衡开关。刻意做成 settings 而不是 config.yaml——现网在 TEE 里，
       // 改 config 要重新发 proof reference 并重新远程证明。
       'updateBalanceSettings',
+      // 首页活动横幅。同为配置类写入——它写的是首页上显示什么话，不动任何业务数据。
+      // 加它的理由是首页文案原本写死在 i18n 分片里，改一个字要重新构建镜像、
+      // 重新部署 CVM、重新发 attestation reference；而活动是会反复办的。
+      'updateHomepageBannerSettings',
       // 首页公开数据展示配置。改的是配置不是业务数据，与其余 update*Settings 同类。
       'updateHomepageStatsSettings',
       // 挂号奖励规则。同样是配置类写入——发钱的是后台 worker，不是这个接口：

@@ -72,6 +72,8 @@ type Handlers struct {
 	Supplier *SupplierHandler
 	// APEXONE-EXT: 首页公开数据（无鉴权）
 	PublicStats *PublicStatsHandler
+	// APEXONE-EXT: 首页活动横幅（无鉴权）
+	PublicBanner *PublicBannerHandler
 }
 
 // BuildInfo contains build-time information
