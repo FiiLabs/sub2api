@@ -1051,7 +1051,8 @@ type HomepageBannerSettingsResponse struct {
 	TextEN    string `json:"text_en"`
 	CTATextZH string `json:"cta_text_zh"`
 	CTATextEN string `json:"cta_text_en"`
-	CTAURL    string `json:"cta_url"`
+	CTAURLZH  string `json:"cta_url_zh"`
+	CTAURLEN  string `json:"cta_url_en"`
 	Variant   string `json:"variant"`
 
 	// 边界值随配置下发，理由同其他几组：前端抄一份就等于给同一条规则立两个源头。
@@ -1075,7 +1076,8 @@ func newHomepageBannerSettingsResponse(s *service.HomepageBannerSettings) Homepa
 	resp.TextEN = s.TextEN
 	resp.CTATextZH = s.CTATextZH
 	resp.CTATextEN = s.CTATextEN
-	resp.CTAURL = s.CTAURL
+	resp.CTAURLZH = s.CTAURLZH
+	resp.CTAURLEN = s.CTAURLEN
 	resp.Variant = s.Variant
 	return resp
 }
@@ -1099,7 +1101,8 @@ type UpdateHomepageBannerSettingsRequest struct {
 	TextEN    string `json:"text_en"`
 	CTATextZH string `json:"cta_text_zh"`
 	CTATextEN string `json:"cta_text_en"`
-	CTAURL    string `json:"cta_url"`
+	CTAURLZH  string `json:"cta_url_zh"`
+	CTAURLEN  string `json:"cta_url_en"`
 	Variant   string `json:"variant"`
 }
 
@@ -1122,7 +1125,8 @@ func (h *SettingHandler) UpdateHomepageBannerSettings(c *gin.Context) {
 		TextEN:    req.TextEN,
 		CTATextZH: req.CTATextZH,
 		CTATextEN: req.CTATextEN,
-		CTAURL:    req.CTAURL,
+		CTAURLZH:  req.CTAURLZH,
+		CTAURLEN:  req.CTAURLEN,
 		Variant:   req.Variant,
 	}
 	ctx := c.Request.Context()

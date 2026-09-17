@@ -20,7 +20,7 @@ const activeBanner = {
   enabled: true,
   text: 'Idle quota rewards are live',
   cta_text: 'Learn more',
-  cta_url: 'https://docs.apex1.us/earn/share-subscription/',
+  cta_url: 'https://docs.apex1.us/earn/idle-quota-rewards/',
   variant: 'promo' as const,
 }
 

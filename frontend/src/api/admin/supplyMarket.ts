@@ -849,8 +849,15 @@ export interface HomepageBannerSettings {
   /** 按钮文字。留空则只显示文案、不显示按钮。 */
   cta_text_zh: string
   cta_text_en: string
-  /** 按钮跳转地址，只接受 http(s)。填了按钮文字就必须填它，否则后端 400。 */
-  cta_url: string
+  /**
+   * 按钮跳转地址，**按语言各指各的**，只接受 http(s)。
+   *
+   * 拆成两个是因为文档站是双语的：中文访客该落到 /zh-cn/...，而不是英文页。
+   * 只填一个也可以——另一种语言会回退到已填的那个（回退规则在后端，前端不要再实现一遍）。
+   * 填了按钮文字就必须至少填一个，否则后端 400。
+   */
+  cta_url_zh: string
+  cta_url_en: string
   /** promo = 活动（醒目），info = 通知（克制）。 */
   variant: 'promo' | 'info'
 

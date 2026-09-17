@@ -94,11 +94,16 @@ type HomepageBannerSettings struct {
 	// CTATextZH / CTATextEN 按钮文字。留空则只显示文案、不显示按钮。
 	CTATextZH string `json:"cta_text_zh"`
 	CTATextEN string `json:"cta_text_en"`
-	// CTAURL 按钮跳转地址。只接受 http/https。
+	// CTAURLZH / CTAURLEN 按钮跳转地址，按语言各指各的。只接受 http/https。
 	//
-	// 中英共用一个链接：两种语言指向不同落地页是有道理的需求，但那要配两个 URL、
-	// 两处校验、两条失效路径，而现在还没有那个需求。真需要时再拆。
-	CTAURL string `json:"cta_url"`
+	// 一开始这里是**一个**共用的 URL，注释里写着「两种语言指向不同落地页是有道理的
+	// 需求，但现在还没有」。2026-09-17 就有了：文档站开了双语，中文访客该落到
+	// /zh-cn/... 而不是英文页。拆开的代价是两处校验、两条失效路径，收益是双语站上
+	// 「点了按钮落到看不懂的语言」这件事不再发生。
+	//
+	// 回退规则与文案一致：缺的那一种回退到另一种，而不是渲染一个没有链接的按钮。
+	CTAURLZH string `json:"cta_url_zh"`
+	CTAURLEN string `json:"cta_url_en"`
 	// Variant 样式，promo / info。空视为 info。
 	Variant string `json:"variant"`
 }
@@ -155,6 +160,27 @@ func (s *HomepageBannerSettings) CTATextFor(lang string) string {
 	return zh
 }
 
+// CTAURLFor 按语言取按钮链接，回退规则同 TextFor。
+//
+// 有回退才敢让运营只填一个 URL：活动页只做了英文时，中文访客点过去看英文页，
+// 好过点了一个没反应的按钮。
+func (s *HomepageBannerSettings) CTAURLFor(lang string) string {
+	if s == nil {
+		return ""
+	}
+	zh, en := strings.TrimSpace(s.CTAURLZH), strings.TrimSpace(s.CTAURLEN)
+	if isChineseLang(lang) {
+		if zh != "" {
+			return zh
+		}
+		return en
+	}
+	if en != "" {
+		return en
+	}
+	return zh
+}
+
 // isChineseLang 只认前缀。Accept-Language 会带上 zh-CN / zh-Hant / zh-TW 等等，
 // 精确匹配会让除了 "zh" 之外的所有中文访客都走到英文分支。
 func isChineseLang(lang string) bool {
@@ -175,7 +201,8 @@ func (s *HomepageBannerSettings) validate() error {
 	s.TextEN = clampRunes(strings.TrimSpace(s.TextEN), HomepageBannerTextMaxLen)
 	s.CTATextZH = clampRunes(strings.TrimSpace(s.CTATextZH), HomepageBannerCTATextMaxLen)
 	s.CTATextEN = clampRunes(strings.TrimSpace(s.CTATextEN), HomepageBannerCTATextMaxLen)
-	s.CTAURL = strings.TrimSpace(s.CTAURL)
+	s.CTAURLZH = strings.TrimSpace(s.CTAURLZH)
+	s.CTAURLEN = strings.TrimSpace(s.CTAURLEN)
 	s.Variant = strings.ToLower(strings.TrimSpace(s.Variant))
 
 	if s.Variant == "" {
@@ -191,19 +218,26 @@ func (s *HomepageBannerSettings) validate() error {
 		return ErrHomepageBannerEmptyText
 	}
 
-	hasCTAText := s.CTATextZH != "" || s.CTATextEN != ""
-	if s.CTAURL != "" {
-		if len(s.CTAURL) > HomepageBannerURLMaxLen {
+	// allowInsecureHTTP=true：有些活动会指向合作方还没上 HTTPS 的页面。
+	// 真正要挡的是 javascript: / data: 这类协议头，那才是首页上的一个洞。
+	for _, u := range []*string{&s.CTAURLZH, &s.CTAURLEN} {
+		if *u == "" {
+			continue
+		}
+		if len(*u) > HomepageBannerURLMaxLen {
 			return fmt.Errorf("%w: longer than %d", ErrHomepageBannerInvalidURL, HomepageBannerURLMaxLen)
 		}
-		// allowInsecureHTTP=true：有些活动会指向合作方还没上 HTTPS 的页面。
-		// 真正要挡的是 javascript: / data: 这类协议头，那才是首页上的一个洞。
-		normalized, err := urlvalidator.ValidateURLFormat(s.CTAURL, true)
+		normalized, err := urlvalidator.ValidateURLFormat(*u, true)
 		if err != nil {
 			return fmt.Errorf("%w: %v", ErrHomepageBannerInvalidURL, err)
 		}
-		s.CTAURL = normalized
-	} else if hasCTAText {
+		*u = normalized
+	}
+
+	// 按钮文字要求**至少有一个**链接，而不是要求同语言的那个：只配了英文链接时，
+	// 中文按钮会回退到英文 URL（见 CTAURLFor），那是可用的，不该被拦下。
+	hasCTAText := s.CTATextZH != "" || s.CTATextEN != ""
+	if hasCTAText && s.CTAURLZH == "" && s.CTAURLEN == "" {
 		return ErrHomepageBannerCTAWithoutURL
 	}
 
@@ -223,22 +257,26 @@ func (s *HomepageBannerSettings) normalize() {
 	s.TextEN = clampRunes(strings.TrimSpace(s.TextEN), HomepageBannerTextMaxLen)
 	s.CTATextZH = clampRunes(strings.TrimSpace(s.CTATextZH), HomepageBannerCTATextMaxLen)
 	s.CTATextEN = clampRunes(strings.TrimSpace(s.CTATextEN), HomepageBannerCTATextMaxLen)
-	s.CTAURL = strings.TrimSpace(s.CTAURL)
+	s.CTAURLZH = strings.TrimSpace(s.CTAURLZH)
+	s.CTAURLEN = strings.TrimSpace(s.CTAURLEN)
 	s.Variant = strings.ToLower(strings.TrimSpace(s.Variant))
 
 	if s.Variant != HomepageBannerVariantPromo {
 		s.Variant = HomepageBannerVariantInfo
 	}
-	if s.CTAURL != "" {
-		normalized, err := urlvalidator.ValidateURLFormat(s.CTAURL, true)
-		if err != nil || len(s.CTAURL) > HomepageBannerURLMaxLen {
-			slog.Warn("[HomepageBanner] dropping unusable cta_url", "error", err)
-			s.CTAURL = ""
+	for _, u := range []*string{&s.CTAURLZH, &s.CTAURLEN} {
+		if *u == "" {
+			continue
+		}
+		normalized, err := urlvalidator.ValidateURLFormat(*u, true)
+		if err != nil || len(*u) > HomepageBannerURLMaxLen {
+			slog.Warn("[HomepageBanner] dropping unusable cta url", "error", err)
+			*u = ""
 		} else {
-			s.CTAURL = normalized
+			*u = normalized
 		}
 	}
-	if s.CTAURL == "" {
+	if s.CTAURLZH == "" && s.CTAURLEN == "" {
 		// 没有链接就不该留下按钮文字——否则前端要么渲染死按钮，要么各自判空。
 		s.CTATextZH, s.CTATextEN = "", ""
 	}

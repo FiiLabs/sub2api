@@ -71,7 +71,8 @@ func validBannerSettings() *HomepageBannerSettings {
 		TextEN:    "Idle quota rewards are live",
 		CTATextZH: "了解详情",
 		CTATextEN: "Learn more",
-		CTAURL:    "https://docs.apex1.us/earn/share-subscription/",
+		CTAURLZH:  "https://docs.apex1.us/zh-cn/earn/idle-quota-rewards/",
+		CTAURLEN:  "https://docs.apex1.us/earn/idle-quota-rewards/",
 		Variant:   HomepageBannerVariantPromo,
 	}
 }
@@ -126,7 +127,7 @@ func TestSetHomepageBannerRejectsBadURL(t *testing.T) {
 		svc := newHomepageBannerService(t, repo)
 
 		s := validBannerSettings()
-		s.CTAURL = bad
+		s.CTAURLEN = bad
 
 		err := svc.SetHomepageBannerSettings(context.Background(), s)
 		require.Error(t, err, "cta_url=%q", bad)
@@ -141,7 +142,7 @@ func TestSetHomepageBannerRejectsCTATextWithoutURL(t *testing.T) {
 	svc := newHomepageBannerService(t, repo)
 
 	s := validBannerSettings()
-	s.CTAURL = ""
+	s.CTAURLZH, s.CTAURLEN = "", ""
 
 	err := svc.SetHomepageBannerSettings(context.Background(), s)
 	require.Error(t, err)
@@ -220,12 +221,12 @@ func TestGetHomepageBannerNormalizesCorruptValues(t *testing.T) {
 	assert.Equal(t, HomepageBannerVariantInfo, s.Variant)
 
 	repo2 := &homepageBannerSettingRepoStub{
-		value: `{"enabled":true,"text_en":"hi","cta_text_en":"Go","cta_url":"javascript:alert(1)"}`,
+		value: `{"enabled":true,"text_en":"hi","cta_text_en":"Go","cta_url_en":"javascript:alert(1)"}`,
 	}
 	svc2 := newHomepageBannerService(t, repo2)
 	s2 := svc2.GetHomepageBannerSettings(context.Background())
 	assert.True(t, s2.Active(), "文案还在，横幅照常显示")
-	assert.Empty(t, s2.CTAURL, "坏链接必须被丢掉")
+	assert.Empty(t, s2.CTAURLEN, "坏链接必须被丢掉")
 	assert.Empty(t, s2.CTATextEN, "没有链接就不该留下按钮文字，否则渲染成死按钮")
 }
 
@@ -272,4 +273,40 @@ func TestSetHomepageBannerInvalidatesCache(t *testing.T) {
 
 	// 缓存必须在写入时失效，否则运营点了保存、去首页看不到，会再点一次。
 	assert.True(t, svc.GetHomepageBannerSettings(context.Background()).Active())
+}
+
+// 按语言各指各的落地页。双语站上「点了按钮落到看不懂的语言」是这个字段拆开的全部理由。
+func TestHomepageBannerCTAURLPerLanguage(t *testing.T) {
+	s := &HomepageBannerSettings{
+		CTAURLZH: "https://docs.apex1.us/zh-cn/earn/idle-quota-rewards/",
+		CTAURLEN: "https://docs.apex1.us/earn/idle-quota-rewards/",
+	}
+	assert.Contains(t, s.CTAURLFor("zh-CN"), "/zh-cn/")
+	assert.NotContains(t, s.CTAURLFor("en"), "/zh-cn/")
+
+	// 只做了英文落地页时，中文访客回退到英文页——好过点了一个没反应的按钮。
+	onlyEN := &HomepageBannerSettings{CTAURLEN: "https://example.com/en"}
+	assert.Equal(t, "https://example.com/en", onlyEN.CTAURLFor("zh"))
+
+	onlyZH := &HomepageBannerSettings{CTAURLZH: "https://example.com/zh"}
+	assert.Equal(t, "https://example.com/zh", onlyZH.CTAURLFor("en"))
+
+	var nilSettings *HomepageBannerSettings
+	assert.Empty(t, nilSettings.CTAURLFor("zh"))
+}
+
+// 有按钮文字时只要求**至少一个**链接：只配了英文链接的中文按钮会回退过去，
+// 那是可用的，不该被拦下。
+func TestSetHomepageBannerAcceptsSingleURLForBothLanguages(t *testing.T) {
+	repo := &homepageBannerSettingRepoStub{}
+	svc := newHomepageBannerService(t, repo)
+
+	s := validBannerSettings()
+	s.CTAURLZH = ""
+
+	require.NoError(t, svc.SetHomepageBannerSettings(context.Background(), s))
+	stored := parseHomepageBannerSettings(repo.setValue)
+	assert.Empty(t, stored.CTAURLZH)
+	assert.NotEmpty(t, stored.CTAURLEN)
+	assert.Equal(t, stored.CTAURLEN, stored.CTAURLFor("zh"), "中文按钮回退到英文链接")
 }

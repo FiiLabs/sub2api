@@ -902,10 +902,16 @@
               <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.homepageBanner.ctaTextEn') }}</label>
               <input v-model="bannerForm.cta_text_en" type="text" class="input" :maxlength="bannerMeta.cta_text_max_len" data-testid="home-banner-cta-en" />
             </div>
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.homepageBanner.ctaUrlZh') }}</label>
+              <input v-model="bannerForm.cta_url_zh" type="url" class="input" :maxlength="bannerMeta.url_max_len" placeholder="https://" data-testid="home-banner-cta-url-zh" />
+            </div>
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.homepageBanner.ctaUrlEn') }}</label>
+              <input v-model="bannerForm.cta_url_en" type="url" class="input" :maxlength="bannerMeta.url_max_len" placeholder="https://" data-testid="home-banner-cta-url-en" />
+            </div>
             <div class="md:col-span-2">
-              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.homepageBanner.ctaUrl') }}</label>
-              <input v-model="bannerForm.cta_url" type="url" class="input" :maxlength="bannerMeta.url_max_len" placeholder="https://" data-testid="home-banner-cta-url" />
-              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.homepageBanner.ctaUrlHint') }}</p>
+              <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('supplyAdmin.homepageBanner.ctaUrlHint') }}</p>
             </div>
             <div>
               <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('supplyAdmin.homepageBanner.variant') }}</label>
@@ -1341,7 +1347,8 @@ const bannerForm = reactive<HomepageBannerPayload>({
   text_en: '',
   cta_text_zh: '',
   cta_text_en: '',
-  cta_url: '',
+  cta_url_zh: '',
+  cta_url_en: '',
   variant: 'promo',
 })
 
@@ -1824,7 +1831,8 @@ async function loadBanner(): Promise<void> {
   bannerForm.text_en = settings.text_en ?? ''
   bannerForm.cta_text_zh = settings.cta_text_zh ?? ''
   bannerForm.cta_text_en = settings.cta_text_en ?? ''
-  bannerForm.cta_url = settings.cta_url ?? ''
+  bannerForm.cta_url_zh = settings.cta_url_zh ?? ''
+  bannerForm.cta_url_en = settings.cta_url_en ?? ''
   bannerForm.variant = settings.variant ?? 'promo'
   if (settings.text_max_len > 0) bannerMeta.text_max_len = settings.text_max_len
   if (settings.cta_text_max_len > 0) bannerMeta.cta_text_max_len = settings.cta_text_max_len
@@ -1841,7 +1849,8 @@ async function saveBanner(): Promise<void> {
     bannerForm.text_en = saved.text_en ?? ''
     bannerForm.cta_text_zh = saved.cta_text_zh ?? ''
     bannerForm.cta_text_en = saved.cta_text_en ?? ''
-    bannerForm.cta_url = saved.cta_url ?? ''
+    bannerForm.cta_url_zh = saved.cta_url_zh ?? ''
+    bannerForm.cta_url_en = saved.cta_url_en ?? ''
     appStore.showSuccess(t('supplyAdmin.homepageBanner.saved'))
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, t('supplyAdmin.error.saveFailed')))

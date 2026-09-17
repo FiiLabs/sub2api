@@ -64,7 +64,7 @@ func (h *PublicBannerHandler) GetBanner(c *gin.Context) {
 		Enabled: true,
 		Text:    settings.TextFor(lang),
 		CTAText: settings.CTATextFor(lang),
-		CTAURL:  settings.CTAURL,
+		CTAURL:  settings.CTAURLFor(lang),
 		Variant: settings.Variant,
 	})
 }
