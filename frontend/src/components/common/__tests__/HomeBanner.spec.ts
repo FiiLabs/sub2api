@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { ref } from 'vue'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 const { getPublicBanner } = vi.hoisted(() => ({ getPublicBanner: vi.fn() }))
 vi.mock('@/api/banner', () => ({ getPublicBanner }))
@@ -150,5 +152,60 @@ describe('HomeBanner', () => {
     // 存不住没关系，关掉这一次就够了。
     expect(wrapper.find('[data-testid="home-banner"]').exists()).toBe(false)
     setItem.mockRestore()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 层级不变量
+// ---------------------------------------------------------------------------
+
+/**
+ * 这一组读的是**源码文本**，不是渲染结果——因为 jsdom 不做布局，也不解析 Tailwind，
+ * `getComputedStyle().zIndex` 在这里永远是空的，真正的层叠关系测不出来。
+ *
+ * 能测的是那条不变量本身：**横幅必须排在 Header 之下**。它挡不住所有遮挡问题，
+ * 但挡得住最可能复发的那一种——有人顺手把横幅的 z 调到和 Header 一样。
+ *
+ * 这不是假想的风险。第一版横幅取了 z-20，与 Header 同级，而 DOM 在后 → 画在上面 →
+ * 盖住了语言切换的下拉菜单。用户报的现象是「切语言没反应」，因为点击被横幅吃掉了，
+ * 离根因隔着好几层，很难往层级上想。
+ *
+ * 比对的是**两边的实际数值**而不是硬写 "z-10"：Header 哪天升到 z-30，这条测试
+ * 应该继续通过，而不是变成一次需要同步修改的噪音。
+ */
+function zIndexesIn(source: string): number[] {
+  return [...source.matchAll(/\bz-(\d+)\b/g)].map((m) => Number(m[1]))
+}
+
+describe('HomeBanner stacking order', () => {
+  const headerSource = readFileSync(
+    resolve(process.cwd(), 'src/components/layout/Header.vue'),
+    'utf8',
+  )
+  const bannerSource = readFileSync(
+    resolve(process.cwd(), 'src/components/common/HomeBanner.vue'),
+    'utf8',
+  )
+
+  it('sits below the header, so header dropdowns stay clickable', () => {
+    // Header 的根元素——不是移动端抽屉（那个是 z-40/z-50，且不覆盖横幅所在区域）。
+    const headerRoot = headerSource.match(/<header[^>]*class="([^"]+)"/)
+    expect(headerRoot, '找不到 Header 根元素的 class').not.toBeNull()
+    const headerZ = zIndexesIn(headerRoot![1])
+    expect(headerZ, 'Header 根元素应当有一个 z-index').toHaveLength(1)
+
+    // 横幅的两种样式各有一个 z，都要比 Header 低。
+    const wrapper = bannerSource.match(/const wrapperClass = computed\([\s\S]*?\)\n/)
+    expect(wrapper, '找不到 wrapperClass').not.toBeNull()
+    const bannerZ = zIndexesIn(wrapper![0])
+    expect(bannerZ.length, '横幅的每种样式都该显式带一个 z-index').toBeGreaterThanOrEqual(2)
+
+    for (const z of bannerZ) {
+      expect(
+        z,
+        `横幅 z-${z} 不低于 Header z-${headerZ[0]}：横幅会盖住顶栏的下拉菜单，` +
+          `点击被吃掉，现象是「切语言没反应」`,
+      ).toBeLessThan(headerZ[0])
+    }
   })
 })
