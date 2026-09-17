@@ -31,7 +31,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -179,6 +181,36 @@ func (s *HomepageBannerSettings) CTAURLFor(lang string) string {
 		return en
 	}
 	return zh
+}
+
+// Version 是这期横幅内容的指纹，**与语言无关**。
+//
+// 前端拿它当「用户关掉过这条横幅」的记忆键。最初那一版用的是渲染出来的文案本身，
+// 那在单语站上等价，双语站上就错了：文案随语言变，键也跟着变——关掉中文横幅之后
+// 切到英文，它又冒出来；切回中文，又消失。用户看到的是横幅忽隐忽现。
+//
+// 要记的是**这一期活动**被关过，而不是**这一句话**被关过。所以指纹覆盖两种语言的
+// 文案、两个链接与样式：任何一项改动都意味着「换了一期内容」，横幅该重新出现；
+// 而切换语言不改变其中任何一项。
+//
+// 用 FNV-1a 而不是 sha256：这不是安全用途，碰撞的后果只是某个访客少看一次横幅。
+func (s *HomepageBannerSettings) Version() string {
+	if s == nil {
+		return ""
+	}
+	h := fnv.New64a()
+	for _, part := range []string{
+		s.TextZH, s.TextEN,
+		s.CTATextZH, s.CTATextEN,
+		s.CTAURLZH, s.CTAURLEN,
+		s.Variant,
+	} {
+		_, _ = h.Write([]byte(part))
+		// 分隔符不可省：没有它，("ab","c") 与 ("a","bc") 会算出同一个指纹，
+		// 于是某些改动会被当成「没变过」，横幅不再重新出现。
+		_, _ = h.Write([]byte{0})
+	}
+	return strconv.FormatUint(h.Sum64(), 36)
 }
 
 // isChineseLang 只认前缀。Accept-Language 会带上 zh-CN / zh-Hant / zh-TW 等等，

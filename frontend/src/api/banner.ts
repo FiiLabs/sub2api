@@ -19,6 +19,13 @@ export type HomepageBannerVariant = 'promo' | 'info'
 export interface PublicHomepageBanner {
   /** 总开关。false 时其余字段一律为空，前端只看这一个布尔。 */
   enabled: boolean
+  /**
+   * 这期内容的指纹，**与语言无关**（后端对两种语言的文案、两个链接与样式一起哈希）。
+   *
+   * 用它作「用户关掉过」的记忆键。**不要**改用渲染出来的 text——那会让切换语言
+   * 变成「换了一期内容」：关掉中文横幅、切到英文它又冒出来，切回中文又消失。
+   */
+  version: string
   /** 正文。 */
   text: string
   /** 按钮文字。空 = 只显示文案、不显示按钮。 */

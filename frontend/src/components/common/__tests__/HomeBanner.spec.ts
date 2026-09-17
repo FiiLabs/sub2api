@@ -18,6 +18,7 @@ import HomeBanner from '../HomeBanner.vue'
 
 const activeBanner = {
   enabled: true,
+  version: 'v1abc',
   text: 'Idle quota rewards are live',
   cta_text: 'Learn more',
   cta_url: 'https://docs.apex1.us/earn/idle-quota-rewards/',
@@ -83,14 +84,47 @@ describe('HomeBanner', () => {
     expect(second.find('[data-testid="home-banner"]').exists()).toBe(false)
   })
 
-  // 记的是「这条文案被关掉了」，不是「这个位置永久关掉」——否则下一期活动
+  // 记的是「这一期活动被关掉了」，不是「这个位置永久关掉」——否则下一期活动
   // 对所有关过横幅的老访客永远不可见，而那批人恰恰是回访率最高的。
-  it('reappears when the copy changes', async () => {
+  it('reappears when the campaign version changes', async () => {
     getPublicBanner.mockResolvedValue(activeBanner)
     const first = await mountBanner()
     await first.find('[data-testid="home-banner-close"]').trigger('click')
 
-    getPublicBanner.mockResolvedValue({ ...activeBanner, text: 'A brand new campaign' })
+    getPublicBanner.mockResolvedValue({ ...activeBanner, version: 'v2xyz', text: 'A brand new campaign' })
+    const second = await mountBanner()
+    expect(second.find('[data-testid="home-banner"]').exists()).toBe(true)
+  })
+
+  // 回归：最初拿渲染文案当记忆键，切一次语言文案就变、键也跟着变——
+  // 关掉中文横幅后切到英文它又冒出来，切回中文又消失，横幅忽隐忽现。
+  // version 与语言无关，所以关过之后两种语言都该保持关闭。
+  it('stays dismissed across a language switch', async () => {
+    getPublicBanner.mockResolvedValue(activeBanner)
+    const wrapper = await mountBanner()
+    await wrapper.find('[data-testid="home-banner-close"]').trigger('click')
+    expect(wrapper.find('[data-testid="home-banner"]').exists()).toBe(false)
+
+    // 同一期活动的另一种语言：文案与链接都变了，version 没变。
+    getPublicBanner.mockResolvedValue({
+      ...activeBanner,
+      text: '限时活动：共享闲置订阅额度',
+      cta_text: '了解详情',
+      cta_url: 'https://docs.apex1.us/zh-cn/earn/idle-quota-rewards/',
+    })
+    locale.value = 'zh'
+    await flushPromises()
+    expect(wrapper.find('[data-testid="home-banner"]').exists()).toBe(false)
+  })
+
+  // 没有 version 时只关这一次，不落盘——否则所有缺 version 的情况会共用同一个键，
+  // 关掉任意一期就等于关掉了以后所有期。
+  it('does not persist a dismissal without a version', async () => {
+    getPublicBanner.mockResolvedValue({ ...activeBanner, version: '' })
+    const first = await mountBanner()
+    await first.find('[data-testid="home-banner-close"]').trigger('click')
+    expect(first.find('[data-testid="home-banner"]').exists()).toBe(false)
+
     const second = await mountBanner()
     expect(second.find('[data-testid="home-banner"]').exists()).toBe(true)
   })

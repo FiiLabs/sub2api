@@ -29,6 +29,9 @@ func NewPublicBannerHandler(settingService *service.SettingService) *PublicBanne
 type PublicBannerResponse struct {
 	// Enabled 关着时其余字段一律为空，前端只看这一个布尔。
 	Enabled bool   `json:"enabled"`
+	// Version 是这期内容的指纹，与语言无关。前端用它作「关掉过」的记忆键——
+	// 用渲染文案当键会让切换语言变成「换了一期内容」，横幅忽隐忽现。
+	Version string `json:"version"`
 	Text    string `json:"text"`
 	CTAText string `json:"cta_text"`
 	CTAURL  string `json:"cta_url"`
@@ -62,6 +65,7 @@ func (h *PublicBannerHandler) GetBanner(c *gin.Context) {
 
 	response.Success(c, &PublicBannerResponse{
 		Enabled: true,
+		Version: settings.Version(),
 		Text:    settings.TextFor(lang),
 		CTAText: settings.CTATextFor(lang),
 		CTAURL:  settings.CTAURLFor(lang),

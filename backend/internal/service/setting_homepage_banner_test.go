@@ -310,3 +310,50 @@ func TestSetHomepageBannerAcceptsSingleURLForBothLanguages(t *testing.T) {
 	assert.NotEmpty(t, stored.CTAURLEN)
 	assert.Equal(t, stored.CTAURLEN, stored.CTAURLFor("zh"), "中文按钮回退到英文链接")
 }
+
+// Version 必须**与语言无关**。
+//
+// 这条是一个真实 bug 的回归：最初前端拿渲染出来的文案当「关掉过」的记忆键，
+// 而文案随语言变——关掉中文横幅后切到英文它又冒出来，切回中文又消失，
+// 用户看到的是横幅忽隐忽现。要记的是「这一期活动被关过」，不是「这一句话被关过」。
+func TestHomepageBannerVersionIsLanguageIndependent(t *testing.T) {
+	s := validBannerSettings()
+	base := s.Version()
+	assert.NotEmpty(t, base)
+
+	// 同一份配置，反复调用必须稳定。
+	assert.Equal(t, base, s.Version())
+
+	// 换一期内容——任何一项改动都该让 version 变，横幅要重新出现。
+	for name, mutate := range map[string]func(*HomepageBannerSettings){
+		"改中文文案":   func(x *HomepageBannerSettings) { x.TextZH = "新一期活动" },
+		"改英文文案":   func(x *HomepageBannerSettings) { x.TextEN = "A new campaign" },
+		"改中文按钮":   func(x *HomepageBannerSettings) { x.CTATextZH = "马上看" },
+		"改英文按钮":   func(x *HomepageBannerSettings) { x.CTATextEN = "See it" },
+		"改中文链接":   func(x *HomepageBannerSettings) { x.CTAURLZH = "https://example.com/zh" },
+		"改英文链接":   func(x *HomepageBannerSettings) { x.CTAURLEN = "https://example.com/en" },
+		"改样式":     func(x *HomepageBannerSettings) { x.Variant = HomepageBannerVariantInfo },
+	} {
+		t.Run(name, func(t *testing.T) {
+			v := validBannerSettings()
+			mutate(v)
+			assert.NotEqual(t, base, v.Version(), "%s 之后 version 必须变", name)
+		})
+	}
+
+	// Enabled 不进指纹：关掉再打开同一期内容，不该让已经关过的人又看到它。
+	off := validBannerSettings()
+	off.Enabled = false
+	assert.Equal(t, base, off.Version(), "开关不属于「内容」，不该改变 version")
+
+	var nilSettings *HomepageBannerSettings
+	assert.Empty(t, nilSettings.Version())
+}
+
+// 分隔符不可省：没有它，("ab","c") 与 ("a","bc") 会算出同一个指纹，
+// 于是某些改动会被当成「没变过」，横幅不再重新出现。
+func TestHomepageBannerVersionSeparatesFields(t *testing.T) {
+	a := &HomepageBannerSettings{TextZH: "ab", TextEN: "c"}
+	b := &HomepageBannerSettings{TextZH: "a", TextEN: "bc"}
+	assert.NotEqual(t, a.Version(), b.Version())
+}

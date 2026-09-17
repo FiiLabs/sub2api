@@ -55,6 +55,7 @@ const { t, locale } = useI18n()
 
 const banner = ref<PublicHomepageBanner>({
   enabled: false,
+  version: '',
   text: '',
   cta_text: '',
   cta_url: '',
@@ -66,29 +67,26 @@ let controller: AbortController | null = null
 const visible = computed(() => banner.value.enabled && !!banner.value.text && !dismissed.value)
 
 /**
- * 关闭记忆的键里带着**文案本身的指纹**。
+ * 关闭记忆的键用后端下发的 version，**不是**渲染出来的文案。
  *
- * 只记「关过横幅」的话，下一期活动对所有关过的老访客永远不可见——而那批人恰恰是
- * 回访率最高的。带上指纹之后，文案一换键就变，横幅自然重新出现。
+ * 要记的是「这一期活动被关过」，不是「这一句话被关过」。最初那一版拿 text 当键，
+ * 在单语站上等价，双语站上就错了：文案随语言变，键也跟着变——关掉中文横幅之后
+ * 切到英文它又冒出来，切回中文又消失，用户看到的是横幅忽隐忽现。
  *
- * 用一个简单的 32 位滚动哈希而不是 crypto：这不是安全用途，碰撞的后果只是某个
- * 访客少看一次横幅。crypto.subtle 是异步的，为这件事引入一个 await 不值得。
+ * version 由后端对两种语言的文案、两个链接与样式一起哈希得到，切语言不改变它，
+ * 换一期内容才会变。
  */
-function fingerprint(text: string): string {
-  let h = 0
-  for (let i = 0; i < text.length; i++) {
-    h = (h << 5) - h + text.charCodeAt(i)
-    h |= 0
-  }
-  return (h >>> 0).toString(36)
-}
-
 function storageKey(): string {
-  return `apexone.home-banner.dismissed.${fingerprint(banner.value.text + '|' + banner.value.cta_url)}`
+  return `apexone.home-banner.dismissed.${banner.value.version}`
 }
 
 function dismiss(): void {
   dismissed.value = true
+  // 没有 version 就只关这一次，不落盘：否则所有缺 version 的情况会共用同一个键，
+  // 关掉任意一期就等于关掉了以后所有期。
+  if (!banner.value.version) {
+    return
+  }
   try {
     localStorage.setItem(storageKey(), '1')
   } catch {
@@ -97,6 +95,10 @@ function dismiss(): void {
 }
 
 function restoreDismissed(): void {
+  if (!banner.value.version) {
+    dismissed.value = false
+    return
+  }
   try {
     dismissed.value = localStorage.getItem(storageKey()) === '1'
   } catch {
@@ -115,7 +117,7 @@ async function load(): Promise<void> {
     }
   } catch {
     // fail-soft：读不到就当没有横幅，不打日志、不提示、不占位。
-    banner.value = { enabled: false, text: '', cta_text: '', cta_url: '', variant: 'info' }
+    banner.value = { enabled: false, version: '', text: '', cta_text: '', cta_url: '', variant: 'info' }
   }
 }
 
@@ -124,10 +126,21 @@ onMounted(load)
 watch(locale, load)
 onBeforeUnmount(() => controller?.abort())
 
+/**
+ * z-10 而不是 z-20，这一位数字是有约束的。
+ *
+ * Header 是 `fixed ... z-20`，而语言切换、用户菜单这些下拉是在它**内部**展开的，
+ * 会向下延伸到横幅所占的这块区域。横幅如果也取 z-20，同级之下 DOM 靠后的画在上面
+ * ——横幅就会盖住下拉菜单，点「English」实际点在横幅上，菜单收不到点击。
+ * 现象是「切语言没反应」，而不是「有东西被挡住了」，所以很难往层级上想。
+ *
+ * z-10 与主内容区（main 上的 relative z-10）同级：在背景装饰之上、在 Header 之下。
+ * 改这个值之前，先确认顶栏所有下拉仍然可点。
+ */
 const wrapperClass = computed(() =>
   banner.value.variant === 'promo'
-    ? 'relative z-20 border-b border-primary-500/30 bg-primary-600 text-white dark:bg-primary-700'
-    : 'relative z-20 border-b border-gray-200 bg-gray-100 text-gray-800 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-200'
+    ? 'relative z-10 border-b border-primary-500/30 bg-primary-600 text-white dark:bg-primary-700'
+    : 'relative z-10 border-b border-gray-200 bg-gray-100 text-gray-800 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-200'
 )
 
 const ctaClass = computed(() =>
