@@ -134,6 +134,39 @@
               <li class="flex gap-2"><span aria-hidden="true">·</span><span>{{ t('supply.guide.after2') }}</span></li>
             </ul>
 
+            <!-- APEXONE-EXT: 收益示例表。
+                 「我能赚多少」是仅次于隐私的第二个问题，而此前唯一的答案是一个
+                 百分比——对没算过 token 账的人等于没答。这张表把它落到具体任务上，
+                 每个数字都由公开牌价推导，用户可以自己重算。
+
+                 三档而不是一个数：单看一个数会被当成承诺，三档能让人看出
+                 「取决于任务多大」这件事本身。下面那句 after3 紧跟着说明真正的变量
+                 是流量而不是费率，两者必须挨着出现。 -->
+            <div class="mt-4 overflow-x-auto">
+              <p class="text-sm font-medium text-gray-800 dark:text-gray-100">
+                {{ t('supply.earnings.title') }}
+              </p>
+              <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">{{ t('supply.earnings.basis') }}</p>
+              <table class="mt-2 w-full text-left text-xs" data-testid="supply-earnings-example">
+                <thead class="text-gray-500 dark:text-dark-400">
+                  <tr>
+                    <th class="py-1.5 pr-3 font-medium">{{ t('supply.earnings.colTask') }}</th>
+                    <th class="py-1.5 pr-3 font-medium">{{ t('supply.earnings.colTokens') }}</th>
+                    <th class="py-1.5 pr-3 font-medium">{{ t('supply.earnings.colList') }}</th>
+                    <th class="py-1.5 font-medium">{{ t('supply.earnings.colYou') }}</th>
+                  </tr>
+                </thead>
+                <tbody class="text-gray-700 dark:text-gray-300">
+                  <tr v-for="row in earningsExamples" :key="row.key" class="border-t border-gray-100 dark:border-dark-800">
+                    <td class="py-1.5 pr-3">{{ t(`supply.earnings.${row.key}`) }}</td>
+                    <td class="py-1.5 pr-3 tabular-nums text-gray-500 dark:text-dark-400">{{ row.tokens }}</td>
+                    <td class="py-1.5 pr-3 tabular-nums text-gray-500 dark:text-dark-400">{{ row.list }}</td>
+                    <td class="py-1.5 font-semibold tabular-nums text-primary-700 dark:text-primary-300">{{ row.you }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
             <!-- 中性底色 + 加重字重，刻意**不用**红/黄的警告框：这句话不是风险提示，
                  是对"我能赚多少"的如实回答。做成警告色会让人以为有什么东西可能出错；
                  做成一行灰色小字又会被整段跳过——而它恰恰是最不该被跳过的那句。 -->
@@ -173,6 +206,50 @@
           >
             {{ t('supply.connect.shareRatio', { ratio: shareRatioText }) }}
           </p>
+
+          <!-- APEXONE-EXT: 「我们碰不到你自己的数据」。
+               位置是刻意的——在分成比例之后、协议门禁之前，也就是**点授权按钮之前
+               必经的那一屏**。这是潜在共享者最先想问、而此前整个产品里一个字都没答
+               的问题：「我把账号授权给你，你能不能读我自己的对话？」
+               不答的后果不是投诉，是他直接关掉页面，而那种流失是看不见的。
+
+               措辞上刻意不写「我们承诺不看」，而是把 scope 摆出来：承诺要人信任，
+               而「令牌里没有那个权限」是可核对的事实——用户在上游授权页上就能看到。 -->
+          <div
+            class="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900/40 dark:bg-emerald-900/15"
+            data-testid="supply-privacy-note"
+          >
+            <p class="flex items-center gap-2 text-sm font-semibold text-emerald-900 dark:text-emerald-200">
+              <svg class="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M10 2.5l6 2.5v5c0 3.5-2.5 6.3-6 7.5-3.5-1.2-6-4-6-7.5V5l6-2.5z" stroke-linejoin="round" />
+                <path d="M7.5 10l1.8 1.8L13 8" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              {{ t('supply.privacy.title') }}
+            </p>
+            <p class="mt-2 text-sm leading-relaxed text-emerald-800 dark:text-emerald-300">
+              {{ t('supply.privacy.body') }}
+            </p>
+            <dl class="mt-3 space-y-1.5 text-xs">
+              <div class="flex gap-2">
+                <dt class="shrink-0 font-mono text-emerald-700 dark:text-emerald-400">user:inference</dt>
+                <dd class="text-emerald-800 dark:text-emerald-300">{{ t('supply.privacy.scopeGranted') }}</dd>
+              </div>
+              <div class="flex gap-2">
+                <dt class="shrink-0 font-mono text-emerald-700/60 line-through dark:text-emerald-400/50">
+                  user:sessions
+                </dt>
+                <dd class="text-emerald-800/80 dark:text-emerald-300/80">{{ t('supply.privacy.scopeDenied') }}</dd>
+              </div>
+            </dl>
+            <a
+              :href="t('supply.privacy.docsHref')"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="mt-3 inline-block text-xs font-medium text-emerald-700 underline underline-offset-2 dark:text-emerald-400"
+            >
+              {{ t('supply.privacy.docsCta') }}
+            </a>
+          </div>
 
           <!-- 协议门禁。整块挡在接入按钮之前，而不是做成提交时的一个勾选框：
                服务端在 StartOAuth 和 CompleteOAuth 上都会拒绝没同意的人，界面
@@ -1285,6 +1362,25 @@ const status = ref<SupplyStatus>({ enabled: false, settlement_enabled: false })
  * 取整到整数百分比：0.8 → "80%"。运营不会配 0.805 这种值，多出来的小数位
  * 只会让这个数看起来像浮点误差。
  */
+/**
+ * 收益示例。数字写死在前端，不从后端算——它们是**示例**而不是这个用户的实际收益，
+ * 从后端取会让人以为这是对他账号的预测。
+ *
+ * 推导过程（Claude Fable 5 公开牌价：输入 $10/MTok、输出 $50/MTok、缓存读 $1/MTok，
+ * 平台按牌价 14% 向消费者计费，共享者分成 50%）：
+ *   改一个小 bug   6万缓存读 + 2千输入 + 3千输出  → 牌价 $0.23 → 你 $0.016
+ *   写一个功能模块  25万 + 6千 + 1.5万            → 牌价 $1.06 → 你 $0.074
+ *   大改一个模块   90万 + 2万 + 5万              → 牌价 $3.60 → 你 $0.252
+ * 与现网实测校准过：倍率 0.140 一致。
+ *
+ * 牌价或分成比例调整时这张表要跟着改——它是硬编码的，不会自己跟。
+ */
+const earningsExamples = [
+  { key: 'taskSmall', tokens: '65K', list: '$0.23', you: '$0.016' },
+  { key: 'taskMedium', tokens: '271K', list: '$1.06', you: '$0.074' },
+  { key: 'taskLarge', tokens: '970K', list: '$3.60', you: '$0.252' },
+]
+
 const shareRatioText = computed<string | null>(() => {
   const ratio = status.value.share_ratio
   if (typeof ratio !== 'number' || ratio <= 0 || ratio > 1) return null

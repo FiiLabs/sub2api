@@ -124,6 +124,32 @@ export default {
       unpublishedBody: 'Subscriptions cannot be connected until the agreement is published. Only an administrator can do this — please contact the site admin.'
     },
 
+    // APEXONE-EXT: "we cannot reach your own data". The first thing a prospective
+    // contributor wants to know, and nothing in the product answered it before.
+    privacy: {
+      title: "We can't read your own conversations",
+      body: 'Connecting a subscription hands the platform exactly one permission: send inference requests against your quota. Reading your session history is a separate permission and we do not request it — so this is not a promise to trust, it is a capability the token simply does not carry. You can see which permissions are requested on the vendor\'s authorization screen before you approve.',
+      scopeGranted: 'Granted — run inference against your quota, nothing else',
+      scopeDenied: 'Not requested — reading your sessions and history',
+      docsCta: 'See the full permission comparison',
+      docsHref: 'https://docs.apex1.us/earn/share-subscription/'
+    },
+
+    // APEXONE-EXT: worked earnings example. The only previous answer to
+    // "how much can I earn" was a percentage, which answers nothing to someone
+    // who has never counted tokens.
+    earnings: {
+      title: 'What that looks like on a real task',
+      basis: "Derived from Claude Fable 5's published rates (billed at 14% of list, your share 50%). An example, not a forecast.",
+      colTask: 'Task',
+      colTokens: 'Tokens',
+      colList: 'List price',
+      colYou: 'You receive',
+      taskSmall: 'Fix a small bug',
+      taskMedium: 'Build a feature',
+      taskLarge: 'Refactor a module'
+    },
+
     connect: {
       title: 'Connect a subscription',
       description: 'Two steps: authorize, then paste the code back here.',

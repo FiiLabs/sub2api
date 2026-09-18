@@ -252,3 +252,92 @@ describe('SupplyView layout order & onboarding guide', () => {
     expect(link.attributes('target')).toBe('_blank')
   })
 })
+
+/**
+ * APEXONE-EXT: 「我们读不到你自己的对话」这块说明必须在授权按钮之前看得见。
+ *
+ * 这一组和本文件其余部分同一个脾气：它存在的理由是它会**红**。
+ *
+ * 潜在共享者最先想问的是「我把账号授权给你，你能不能读我自己的对话」。答案是不能
+ * ——令牌只带 user:inference，没有 user:sessions:claude_code——但这件事此前整个产品
+ * 里一个字都没说。不说的后果不是投诉，是他直接关掉页面，而那种流失看不见、
+ * 也不会有人来报，所以只能靠测试守。
+ *
+ * 顺序断言不可省：这块说明挪到协议之后、或者挪到页面底部，与删掉它的效果差不多——
+ * 用户在点授权之前看不到就等于没有。
+ */
+describe('contributor privacy assurance', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    api.getStatus.mockResolvedValue({ enabled: true, settlement_enabled: true, account_count: 0 })
+    api.getWallet.mockResolvedValue({ available: 0, frozen: 0, history_credit: 0, spent: 0 })
+    api.listAccounts.mockResolvedValue([])
+    api.listLedger.mockResolvedValue({ items: [], total: 0 })
+    api.getAgreement.mockResolvedValue({ published: true, accepted: true, version: 'v1', url: '', body: '' })
+    api.getWithdrawalOptions.mockResolvedValue({ enabled: false, channels: [], min_amount: 1, available: 0 })
+    api.listWithdrawals.mockResolvedValue({ items: [], total: 0 })
+    api.getPayoutWallets.mockResolvedValue({ channels: [], wallets: [] })
+  })
+
+  it('is present on the connect card', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="supply-privacy-note"]').exists()).toBe(true)
+  })
+
+  it('appears before the authorize button, not after it', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    // 断言的对象是**授权按钮**，不是分成比例那块——后者带 v-if，读不到比例时整块不画，
+    // 拿它当参照会让这条断言在一个与顺序无关的原因下变红。
+    const order = domOrder(wrapper.html(), ['supply-start-oauth', 'supply-privacy-note'])
+    expect(order).toEqual(['supply-privacy-note', 'supply-start-oauth'])
+  })
+
+  it('names the granted scope and the one we deliberately do not request', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const text = wrapper.find('[data-testid="supply-privacy-note"]').text()
+    // 摆出 scope 是这块说明的全部力量所在：承诺要人信任，
+    // 「令牌里没有那个权限」是用户在上游授权页上能自己核对的事实。
+    // 改成一句「我们不会看你的数据」就退回成了一句空话。
+    expect(text).toContain('user:inference')
+    expect(text).toContain('user:sessions')
+  })
+})
+
+/**
+ * 收益示例表：「我能赚多少」的第二个答案。
+ *
+ * 此前唯一的答案是一个百分比，对没算过 token 账的人等于没答。三档而不是一个数，
+ * 是为了让人看出「取决于任务多大」这件事本身——单看一个数会被当成承诺。
+ */
+describe('earnings example table', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    api.getStatus.mockResolvedValue({ enabled: true, settlement_enabled: true, account_count: 0 })
+    api.getWallet.mockResolvedValue({ available: 0, frozen: 0, history_credit: 0, spent: 0 })
+    api.listAccounts.mockResolvedValue([])
+    api.listLedger.mockResolvedValue({ items: [], total: 0 })
+    api.getAgreement.mockResolvedValue({ published: true, accepted: true, version: 'v1', url: '', body: '' })
+    api.getWithdrawalOptions.mockResolvedValue({ enabled: false, channels: [], min_amount: 1, available: 0 })
+    api.listWithdrawals.mockResolvedValue({ items: [], total: 0 })
+    api.getPayoutWallets.mockResolvedValue({ channels: [], wallets: [] })
+  })
+
+  it('shows three task sizes, not a single number', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const rows = wrapper.findAll('[data-testid="supply-earnings-example"] tbody tr')
+    expect(rows).toHaveLength(3)
+  })
+
+  it('keeps the "we commit to the rate, not to a volume" line next to it', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    // 表格给人一个数，紧跟的那句告诉他真正的变量是流量。两者分开出现，
+    // 表格就变成了一个没有上下文的承诺。
+    const order = domOrder(wrapper.html(), ['supply-earnings-example', 'supply-guide-disclaimer'])
+    expect(order).toEqual(['supply-earnings-example', 'supply-guide-disclaimer'])
+  })
+})

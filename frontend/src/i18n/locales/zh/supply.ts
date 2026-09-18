@@ -113,6 +113,32 @@ export default {
       unpublishedBody: '在协议发布之前无法接入订阅。这一步只有管理员能完成，请联系站点管理员。'
     },
 
+    // APEXONE-EXT: 「我们碰不到你自己的数据」。潜在共享者最先想问、而此前整个产品
+    // 里一个字都没答的问题。措辞刻意不写「我们承诺不看」而是把 scope 摆出来——
+    // 承诺要人信任，「令牌里没有那个权限」是可核对的事实。
+    privacy: {
+      title: '我们读不到你自己的对话',
+      body: '接入订阅只把「用你的额度发起推理」这一个权限交给平台。读取你的会话历史是另一个独立的权限，我们没有申请——所以这不是一句承诺，而是令牌本身就不具备那个能力。你在上游的授权页面上点同意之前，就能看到申请了哪些权限。',
+      scopeGranted: '已授予 —— 用你的额度发起推理请求，仅此而已',
+      scopeDenied: '未申请 —— 读取会话与历史记录的权限，我们没有要',
+      docsCta: '查看完整的权限对照表',
+      docsHref: 'https://docs.apex1.us/zh-cn/earn/share-subscription/'
+    },
+
+    // APEXONE-EXT: 收益示例。「我能赚多少」此前唯一的答案是一个百分比，
+    // 对没算过 token 账的人等于没答。
+    earnings: {
+      title: '换算成真实任务大概是多少',
+      basis: '按 Claude Fable 5 公开牌价推导（平台按牌价 14% 计费，你分成 50%）。示例而非预测。',
+      colTask: '任务',
+      colTokens: 'token 量',
+      colList: '官方牌价',
+      colYou: '你分到',
+      taskSmall: '改一个小 bug',
+      taskMedium: '写一个功能模块',
+      taskLarge: '大改一个模块'
+    },
+
     connect: {
       title: '接入一个新订阅',
       description: '整个过程分两步：先去授权，再把拿到的授权码贴回来。',
