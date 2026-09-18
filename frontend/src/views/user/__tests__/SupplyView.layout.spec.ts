@@ -260,7 +260,8 @@ describe('SupplyView layout order & onboarding guide', () => {
  *
  * 潜在共享者最先想问的是「我把账号授权给你，你能不能读我自己的对话」。答案是不能
  * ——令牌只带 user:inference，没有 user:sessions:claude_code——但这件事此前整个产品
- * 里一个字都没说。不说的后果不是投诉，是他直接关掉页面，而那种流失看不见、
+ * 里一个字都没说。面板上的措辞是通俗版（不出现 scope 名），完整对照表在文档里，
+ * 所以这里额外断言那个文档链接必须在场。不说的后果不是投诉，是他直接关掉页面，而那种流失看不见、
  * 也不会有人来报，所以只能靠测试守。
  *
  * 顺序断言不可省：这块说明挪到协议之后、或者挪到页面底部，与删掉它的效果差不多——
@@ -294,15 +295,25 @@ describe('contributor privacy assurance', () => {
     expect(order).toEqual(['supply-privacy-note', 'supply-start-oauth'])
   })
 
-  it('names the granted scope and the one we deliberately do not request', async () => {
+  it('states both what the token can do and what it cannot', async () => {
     const wrapper = mountView()
     await flushPromises()
-    const text = wrapper.find('[data-testid="supply-privacy-note"]').text()
-    // 摆出 scope 是这块说明的全部力量所在：承诺要人信任，
-    // 「令牌里没有那个权限」是用户在上游授权页上能自己核对的事实。
-    // 改成一句「我们不会看你的数据」就退回成了一句空话。
-    expect(text).toContain('user:inference')
-    expect(text).toContain('user:sessions')
+    const note = wrapper.find('[data-testid="supply-privacy-note"]')
+    // 文案是通俗版（不出现 scope 名，那些留给文档），但**两面都要说**这条性质不能丢：
+    // 只说「我们看不到你的聊天记录」是一句要人信任的承诺；同时说清「能做的是什么」
+    // 才让人看出这是一个有边界的授权，而不是一句安慰。
+    //
+    // 断言的是两个条目都在场，不是具体措辞——文案会改，结构不该改。
+    const items = note.findAll('li')
+    expect(items.length).toBeGreaterThanOrEqual(2)
+    // toContain 而不是 toBe：条目里还有 ✓/✗ 记号，断言整串会把一次纯视觉的改动
+    // 变成一条需要同步修改的噪音。
+    expect(items[0].text()).toContain('supply.privacy.scopeGranted')
+    expect(items[1].text()).toContain('supply.privacy.scopeDenied')
+
+    // 通向可核对事实的那条路必须留着：通俗措辞省掉了 scope 名，
+    // 如果连文档链接也没有，这块就真的只剩一句空话了。
+    expect(note.find('a').exists()).toBe(true)
   })
 })
 

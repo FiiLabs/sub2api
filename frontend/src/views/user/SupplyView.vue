@@ -229,18 +229,19 @@
             <p class="mt-2 text-sm leading-relaxed text-emerald-800 dark:text-emerald-300">
               {{ t('supply.privacy.body') }}
             </p>
-            <dl class="mt-3 space-y-1.5 text-xs">
-              <div class="flex gap-2">
-                <dt class="shrink-0 font-mono text-emerald-700 dark:text-emerald-400">user:inference</dt>
-                <dd class="text-emerald-800 dark:text-emerald-300">{{ t('supply.privacy.scopeGranted') }}</dd>
-              </div>
-              <div class="flex gap-2">
-                <dt class="shrink-0 font-mono text-emerald-700/60 line-through dark:text-emerald-400/50">
-                  user:sessions
-                </dt>
-                <dd class="text-emerald-800/80 dark:text-emerald-300/80">{{ t('supply.privacy.scopeDenied') }}</dd>
-              </div>
-            </dl>
+            <!-- 用 ✓/✗ 而不是 scope 名：这两行是给「不想读文档的人」看的最后一眼，
+                 摆出 user:inference 这种字样会让本来就在犹豫的人觉得更复杂。
+                 想核对的人走下面那个文档链接，那里有完整的权限对照表。 -->
+            <ul class="mt-3 space-y-1.5 text-xs">
+              <li class="flex gap-2 text-emerald-800 dark:text-emerald-300">
+                <span aria-hidden="true" class="shrink-0 font-semibold">✓</span>
+                <span>{{ t('supply.privacy.scopeGranted') }}</span>
+              </li>
+              <li class="flex gap-2 text-emerald-800/80 dark:text-emerald-300/80">
+                <span aria-hidden="true" class="shrink-0 font-semibold">✗</span>
+                <span>{{ t('supply.privacy.scopeDenied') }}</span>
+              </li>
+            </ul>
             <a
               :href="t('supply.privacy.docsHref')"
               target="_blank"

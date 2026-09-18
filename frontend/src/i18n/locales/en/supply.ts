@@ -127,11 +127,11 @@ export default {
     // APEXONE-EXT: "we cannot reach your own data". The first thing a prospective
     // contributor wants to know, and nothing in the product answered it before.
     privacy: {
-      title: "We can't read your own conversations",
-      body: 'Connecting a subscription hands the platform exactly one permission: send inference requests against your quota. Reading your session history is a separate permission and we do not request it — so this is not a promise to trust, it is a capability the token simply does not carry. You can see which permissions are requested on the vendor\'s authorization screen before you approve.',
-      scopeGranted: 'Granted — run inference against your quota, nothing else',
-      scopeDenied: 'Not requested — reading your sessions and history',
-      docsCta: 'See the full permission comparison',
+      title: "We can't see your chats",
+      body: "What you hand over is a key that does exactly one thing: run other people's requests against your quota. Reading your chat history takes a different key, and we never asked for it — so this isn't us promising not to look. We simply don't hold that key. Before you approve, the authorization screen lists everything we asked for; check it yourself.",
+      scopeGranted: "What it can do: run other people's requests on your quota",
+      scopeDenied: 'What it cannot do: read your chats, your profile, your files',
+      docsCta: 'Want to verify? See the full permission list',
       docsHref: 'https://docs.apex1.us/earn/share-subscription/'
     },
 
