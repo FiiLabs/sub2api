@@ -578,7 +578,8 @@ func TestLoadDefaultOpenAICompactModel(t *testing.T) {
 
 	cfg, err := Load()
 	require.NoError(t, err)
-	require.Equal(t, "gpt-5.4", cfg.Gateway.OpenAICompactModel)
+	// gpt-5.4 于 2026-08-31 对「ChatGPT 登录的 Codex」停服，默认值随之换成上游指定的替代。
+	require.Equal(t, "gpt-5.6-terra", cfg.Gateway.OpenAICompactModel)
 }
 
 func TestLoadOpenAICompactModelFromEnv(t *testing.T) {

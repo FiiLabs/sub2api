@@ -887,12 +887,33 @@ const supplyProbeDefaultModel = "claude-fable-5-1"
 
 // supplyProbeDefaultModelOpenAI 是 OpenAI 供给号探测的默认模型。
 //
-// 用 gpt-5.x（对齐 openai.DefaultTestModel）而不是 gpt-6：探测只需确认「这是一个能经
-// Codex 服务的活账号」。gpt-6 Astra 有客户端版本下限（Codex CLI ≥ 0.153.0），拿它探测
-// 会把「账号可用但我们伪装的 Codex 版本偏旧」也算成探测失败——那是转发路径要解决的
-// 版本问题（与 [[fable-cli-version-floor]] 同型），不该在准入探测里连带拒掉一个好账号。
-// gpt-6 专属额度校验作为后续项（同 Fable no-quota 的演进）。
-const supplyProbeDefaultModelOpenAI = "gpt-5.4"
+// 探测只需确认「这是一个能经 Codex 服务的活账号」，所以要挑一个**所有付费档位都
+// 能跑、且不带客户端版本下限**的模型。当前三个候选各自的问题：
+//
+//	gpt-5.4      上游已于 2026-08-31 对「ChatGPT 登录的 Codex」停服（官方 API /
+//	             自带 APIKey 的 Codex 不受影响，所以它只坏了一半）。供给号走的正是
+//	             被停服的那条路，所以它必然探测失败——这是本常量此前的取值，也正是
+//	             OpenAI 供给一直进不了池的原因。
+//	gpt-5.6-sol  对 ChatGPT 账号是 plan-gated：上游返回确定性 400
+//	             "model is not supported when using Codex with a ChatGPT account"
+//	             （我们自己就有这个错误的判别器，见 isOpenAICodexPlanGatedModelError）。
+//	             拿它探测等于按档位拒人，而准入探测不该承担档位判定。
+//	gpt-6-astra  有客户端版本下限（Codex CLI ≥ 0.153.0）。拿它探测会把「账号可用但
+//	             我们伪装的 Codex 版本偏旧」算成账号问题——那是转发路径的版本问题
+//	             （与 [[fable-cli-version-floor]] 同型），不该在准入探测里连带拒号。
+//
+// gpt-5.6-terra 是上游为 gpt-5.4 指定的官方替代，无版本下限、不按档位 gate，因此是
+// 这里唯一正确的取值。
+//
+// 本常量与 openai.DefaultTestModel 当前取值相同，但**语义上互相独立**：那个服务的是
+// 管理端「测试连接」、APIKey Responses 能力探测与定价兜底，取值还要额外满足「在
+// pricingData 里有价格条目」。两者恰好都落在 terra 上是巧合，不是约束——其中一个
+// 需要改时不必连带改另一个。
+//
+// 与 Anthropic 侧的不对称仍然存在：supplyProbeNoQuota 对 openai 恒返回 false，所以
+// 这里探测失败**不会**当场拒收，只会把号留在 pending_review。换言之本常量填错不报错、
+// 只是静默地让所有 OpenAI 供给永远进不了池——改动它必须拿真实 ChatGPT 号验证。
+const supplyProbeDefaultModelOpenAI = "gpt-5.6-terra"
 
 // supplyProbeNoQuota 判定探测失败是不是「这个订阅没有额度服务我们卖的模型」。
 //

@@ -1428,7 +1428,8 @@ func (s *PricingService) matchByModelFamily(model string) *LiteLLMModelPricing {
 // 3. gpt-5.2-20251222 -> gpt-5.2（去掉日期版本号）
 // 4. gpt-5.3-codex -> gpt-5.2-codex
 // 5. gpt-5.4* -> 业务静态兜底价
-// 6. 最终回退到 DefaultTestModel (gpt-5.1-codex)
+// 6. 最终回退到 openai.DefaultTestModel（当前 gpt-5.6-terra；该常量换值会连带
+//    换掉这里的兜底价，改它前先确认新值在 pricingData 里有条目）
 func (s *PricingService) matchOpenAIModel(model string) *LiteLLMModelPricing {
 	if strings.HasPrefix(model, "gpt-5.3-codex-spark") {
 		if pricing, ok := s.pricingData["gpt-5.1-codex"]; ok {

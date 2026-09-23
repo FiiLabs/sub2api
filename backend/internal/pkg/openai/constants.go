@@ -44,8 +44,19 @@ func DefaultModelIDs() []string {
 	return ids
 }
 
-// DefaultTestModel default model for testing OpenAI accounts
-const DefaultTestModel = "gpt-5.4"
+// DefaultTestModel default model for testing OpenAI accounts.
+//
+// 取值要求：同时在**官方 API**（APIKey 账号）与 **Codex/ChatGPT 登录**（OAuth 账号）
+// 两条路上都能跑，且在 model_prices_and_context_window.json 里有价格条目
+// （matchOpenAIModel 的最终兜底会拿它查 pricingData，查不到就退化成"无价格"）。
+//
+// 曾经是 gpt-5.4，2026-08-31 上游对「ChatGPT 登录的 Codex」停服后该取值对 OAuth
+// 账号必然失败（APIKey 侧不受影响，所以只坏了一半，不容易被发现）。gpt-5.6-terra
+// 是上游指定的替代，Sol/Terra/Luna 三档都开放给 API 开发者，两条路都成立。
+//
+// 不要改成 gpt-5.6-sol：它对 ChatGPT 账号是 plan-gated，会退回确定性 400
+// （见 isOpenAICodexPlanGatedModelError）。
+const DefaultTestModel = "gpt-5.6-terra"
 
 // CodexUsageProbeModel is the model used for OAuth Codex usage probes.
 const CodexUsageProbeModel = "codex-auto-review"

@@ -16,6 +16,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -74,9 +76,21 @@ func TestSupplyResolveProbeModelDefaultsToFable(t *testing.T) {
 	assert.Equal(t, "claude-opus-5", supplyResolveProbeModel(configured, PlatformAnthropic),
 		"ops 显式配了就尊重配置，不强塞 Fable")
 
-	// openai 恒用自己的默认（gpt-5.x），忽略 Claude 形状的全局 ProbeModel 覆盖。
+	// openai 恒用自己的默认，忽略 Claude 形状的全局 ProbeModel 覆盖。
 	assert.Equal(t, supplyProbeDefaultModelOpenAI, supplyResolveProbeModel(configured, PlatformOpenAI))
-	assert.Equal(t, "gpt-5.4", supplyProbeDefaultModelOpenAI)
+	// gpt-5.4 于 2026-08-31 对「ChatGPT 登录的 Codex」停服，terra 是上游指定的替代。
+	assert.Equal(t, "gpt-5.6-terra", supplyProbeDefaultModelOpenAI)
+
+	// 这一条钉的是「探测模型必须在我们自己的模型目录里」。
+	//
+	// 上一行那种「常量 == 字面量」的断言挡不住本次这类故障：它只是把常量重抄一遍，
+	// 常量改成任何拼写它都跟着改，更不可能知道上游把某个模型停服了。这一条至少能挡住
+	// 拼写错误和「换成一个我们压根不认识的 id」。
+	//
+	// 真正的失效——上游停服一个目录里仍然存在的模型——本地测不出来，只能靠拿真实
+	// ChatGPT 号跑一次接入。
+	assert.Contains(t, openai.DefaultModelIDs(), supplyProbeDefaultModelOpenAI,
+		"探测模型必须是 DefaultModels 里已知的 id")
 }
 
 // 接入探测探到「没额度」→ CompleteOAuth 报错 + 刚建的号被干净清掉。
